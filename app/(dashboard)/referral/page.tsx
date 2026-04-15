@@ -94,7 +94,7 @@ export default function ReferralPage() {
 
   const shareToTelegram = () => {
     if (!referralLink) return
-    const text = encodeURIComponent(`🚀 Попробуй PRO-DUCT — AI-продюсер для блогеров!\nСоздаёт посты, рилсы и контент-план автоматически.\nРегистрируйся со скидкой 20%: `)
+    const text = encodeURIComponent(`🚀 Попробуй AMAproduct — AI-продюсер для блогеров!\nСоздаёт посты, рилсы и контент-план автоматически.\nРегистрируйся со скидкой 20%: `)
     window.open(`https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${text}`, '_blank')
   }
 
@@ -281,7 +281,7 @@ export default function ReferralPage() {
                 onClick={() => {
                   if (!referralLink) return
                   if (navigator.share) {
-                    navigator.share({ title: 'PRO-DUCT AI', url: referralLink })
+                    navigator.share({ title: 'AMAproduct AI', url: referralLink })
                   } else {
                     copyLink()
                   }
@@ -297,7 +297,7 @@ export default function ReferralPage() {
             <div className="rounded-xl bg-yellow-500/10 border border-yellow-500/20 p-3">
               <p className="text-xs text-yellow-400 font-semibold mb-0.5">💡 Совет</p>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Расскажи в своих Stories или посте, как PRO-DUCT помогает тебе в прогревах.
+                Расскажи в своих Stories или посте, как AMAproduct помогает тебе в прогревах.
                 Искренний отзыв конвертирует лучше любой рекламы.
               </p>
             </div>

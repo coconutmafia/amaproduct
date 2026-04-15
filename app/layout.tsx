@@ -7,7 +7,7 @@ import { Toaster } from '@/components/ui/sonner'
 const inter = Inter({ subsets: ['latin', 'cyrillic'], variable: '--font-sans', display: 'swap', preload: false })
 
 export const metadata: Metadata = {
-  title: 'PRO-DUCT — AI-Продюсер для Блогеров',
+  title: 'AMAproduct — AI-Продюсер для Блогеров',
   description: 'AI-платформа для создания контента запусков микроблогеров и экспертов',
   icons: { icon: '/favicon.ico' },
 }

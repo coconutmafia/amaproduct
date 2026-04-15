@@ -69,7 +69,7 @@ export function Sidebar({ user, projects = [], isAdmin = false }: SidebarProps) 
           <Sparkles className="h-5 w-5 text-white" />
         </div>
         <div>
-          <p className="text-sm font-bold text-sidebar-foreground tracking-wide">PRO-DUCT</p>
+          <p className="text-sm font-bold text-sidebar-foreground tracking-wide">AMAproduct</p>
           <p className="text-xs text-muted-foreground">AI-Продюсер</p>
         </div>
       </div>

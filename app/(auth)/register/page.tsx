@@ -58,7 +58,7 @@ export default function RegisterPage() {
               <Sparkles className="h-6 w-6 text-white" />
             </div>
           </div>
-          <h1 className="text-2xl font-bold text-foreground">PRO-DUCT</h1>
+          <h1 className="text-2xl font-bold text-foreground">AMAproduct</h1>
           <p className="text-sm text-muted-foreground">Создай аккаунт продюсера</p>
         </div>
 
