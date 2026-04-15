@@ -16,7 +16,8 @@ interface Props {
 export default async function StrategyPage({ params }: Props) {
   const { id } = await params
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: { session } } = await supabase.auth.getSession()
+  const user = session?.user
   if (!user) redirect('/login')
 
   const { data: project } = await supabase.from('projects').select('*').eq('id', id).eq('owner_id', user.id).single()
