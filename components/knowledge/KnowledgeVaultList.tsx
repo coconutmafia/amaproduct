@@ -9,11 +9,12 @@ import { toast } from 'sonner'
 import { BookOpen, Trash2, Loader2, CheckCircle2, AlertCircle, Clock, RefreshCw } from 'lucide-react'
 
 const CONTENT_TYPE_LABELS: Record<string, string> = {
-  methodology: 'Методология запуска',
-  framework: 'Фреймворк прогрева',
-  tov_system: 'Система TOV',
-  example: 'Пример запуска',
-  template: 'Шаблон контента',
+  methodology:  'Методология запуска',
+  framework:    'Фреймворк прогрева',
+  tov_system:   'Система TOV',
+  example:      'Пример запуска',
+  template:     'Шаблон контента',
+  additional:   'Дополнительные материалы',
 }
 
 interface Item {

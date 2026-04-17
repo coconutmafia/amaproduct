@@ -42,6 +42,7 @@ export type MaterialType =
   | 'product_description'
   | 'content_reference'
   | 'other'
+  | 'additional'
 
 export interface ProjectMaterial {
   id: string

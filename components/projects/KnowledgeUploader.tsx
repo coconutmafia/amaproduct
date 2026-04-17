@@ -32,14 +32,16 @@ const MATERIAL_TYPES: Array<{ value: MaterialType; label: string; category: stri
   { value: 'product_description', label: 'Описание продукта',            category: 'МАРКЕТИНГ' },
   { value: 'content_reference',   label: 'Референсы контента',           category: 'МАРКЕТИНГ' },
   { value: 'other',               label: 'Другое',                       category: 'ПРОЧЕЕ' },
+  { value: 'additional',          label: 'Дополнительные материалы',      category: 'ПРОЧЕЕ' },
 ]
 
 const SYSTEM_TYPES = [
-  { value: 'methodology', label: 'Методология запуска' },
-  { value: 'framework',   label: 'Фреймворк прогрева' },
-  { value: 'tov_system',  label: 'Система TOV' },
-  { value: 'example',     label: 'Пример успешного запуска' },
-  { value: 'template',    label: 'Шаблон контента' },
+  { value: 'methodology',  label: 'Методология запуска' },
+  { value: 'framework',    label: 'Фреймворк прогрева' },
+  { value: 'tov_system',   label: 'Система TOV' },
+  { value: 'example',      label: 'Пример успешного запуска' },
+  { value: 'template',     label: 'Шаблон контента' },
+  { value: 'additional',   label: 'Дополнительные материалы' },
 ]
 
 type UploadStatus = 'pending' | 'uploading' | 'done' | 'error'
