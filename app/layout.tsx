@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider } from '@/components/shared/ThemeProvider'
@@ -6,10 +6,30 @@ import { Toaster } from '@/components/ui/sonner'
 
 const inter = Inter({ subsets: ['latin', 'cyrillic'], variable: '--font-sans', display: 'swap', preload: false })
 
+export const viewport: Viewport = {
+  themeColor: '#7c3aed',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+}
+
 export const metadata: Metadata = {
   title: 'AMAproduct — AI-Продюсер для Блогеров',
   description: 'AI-платформа для создания контента запусков микроблогеров и экспертов',
-  icons: { icon: '/favicon.ico' },
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'AMAproduct',
+    startupImage: '/icon-512.png',
+  },
+  formatDetection: { telephone: false },
+  openGraph: {
+    type: 'website',
+    title: 'AMAproduct — AI-Продюсер',
+    description: 'AI-платформа для создания контента запусков',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
