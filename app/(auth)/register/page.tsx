@@ -1,23 +1,38 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { Sparkles, Globe, Loader2 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Sparkles, Globe, Loader2, Gift } from 'lucide-react'
 import { toast } from 'sonner'
+import { REFERRAL_REWARDS } from '@/lib/generations-config'
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
+
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // Capture referral code from URL ?ref=CODE
+  const refCode = searchParams.get('ref')?.toUpperCase() ?? ''
+
+  useEffect(() => {
+    if (refCode) {
+      toast.info(`Реферальный код ${refCode} применён — вы получите +${REFERRAL_REWARDS.invitee_signup} генераций после регистрации`, {
+        duration: 5000,
+      })
+    }
+  }, [refCode])
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
@@ -34,17 +49,42 @@ export default function RegisterPage() {
 
     if (error) {
       toast.error(error.message)
-    } else {
-      toast.success('Проверьте почту для подтверждения регистрации')
-      router.push('/login')
+      setLoading(false)
+      return
     }
+
+    // Apply referral code if present
+    if (refCode) {
+      try {
+        // Small delay to let the profile trigger create the profile row
+        await new Promise(r => setTimeout(r, 1500))
+        const res = await fetch('/api/referral?action=register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ referral_code: refCode }),
+        })
+        const data = await res.json()
+        if (res.ok) {
+          toast.success(`+${data.bonus_received} бонусных генераций начислено!`)
+        }
+      } catch {
+        // Non-fatal — registration still succeeded
+      }
+    }
+
+    toast.success('Аккаунт создан! Выполняется вход...')
+    router.push('/dashboard')
     setLoading(false)
   }
 
   async function handleGoogleLogin() {
+    const callbackUrl = refCode
+      ? `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?ref=${refCode}`
+      : `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback` },
+      options: { redirectTo: callbackUrl },
     })
     if (error) toast.error(error.message)
   }
@@ -61,6 +101,20 @@ export default function RegisterPage() {
           <h1 className="text-2xl font-bold text-foreground">AMAproduct</h1>
           <p className="text-sm text-muted-foreground">Создай аккаунт продюсера</p>
         </div>
+
+        {/* Referral banner */}
+        {refCode && (
+          <div className="flex items-center gap-3 rounded-lg border border-amber-200 dark:border-amber-400/30 bg-amber-50 dark:bg-amber-400/10 p-3">
+            <Gift className="h-5 w-5 text-amber-600 shrink-0" />
+            <div className="text-sm">
+              <span className="font-medium text-amber-700 dark:text-amber-400">Приглашение принято!</span>
+              <span className="text-amber-600 dark:text-amber-400/80"> После регистрации вам начислится </span>
+              <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
+                +{REFERRAL_REWARDS.invitee_signup} генераций
+              </Badge>
+            </div>
+          </div>
+        )}
 
         <Card className="border-border bg-card shadow-xl">
           <CardHeader className="space-y-1 pb-4">
@@ -150,5 +204,13 @@ export default function RegisterPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" /></div>}>
+      <RegisterForm />
+    </Suspense>
   )
 }

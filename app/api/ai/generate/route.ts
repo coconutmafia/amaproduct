@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt, buildValidatorPrompt } from '@/lib/ai/prompts/system'
+import { checkAndConsumeGeneration } from '@/lib/generations'
 
 export async function POST(request: Request) {
   try {
@@ -10,6 +11,17 @@ export async function POST(request: Request) {
     const { data: { session } } = await supabase.auth.getSession()
     const user = session?.user
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // Check generation limit before doing any work
+    const genCheck = await checkAndConsumeGeneration(user.id)
+    if (!genCheck.allowed) {
+      return NextResponse.json({
+        error: 'Лимит генераций исчерпан',
+        code: 'GENERATION_LIMIT',
+        remaining: 0,
+        hint: 'Пригласи друга (+10 генераций) или перейди на платный тариф',
+      }, { status: 429 })
+    }
 
     const body = await request.json()
     const { projectId, contentType, dayNumber, totalDays, phase, additionalInstructions } = body

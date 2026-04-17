@@ -14,6 +14,7 @@ import {
   LogOut,
   Sparkles,
   Gift,
+  Zap,
 } from 'lucide-react'
 import { useState } from 'react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -49,15 +50,22 @@ export function Sidebar({ user, projects = [], isAdmin = false }: SidebarProps) 
 
   const bottomNavItems = [
     {
+      href: '/pricing',
+      icon: Zap,
+      label: 'Тарифы',
+      badge: null as string | null,
+    },
+    {
       href: '/referral',
       icon: Gift,
-      label: 'Реферальная программа',
-      badge: '+30 дней',
+      label: 'Рефералы',
+      badge: null as string | null,
     },
     {
       href: '/settings',
       icon: Settings,
       label: 'Настройки',
+      badge: null as string | null,
     },
   ]
 
