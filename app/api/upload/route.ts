@@ -139,7 +139,7 @@ export async function POST(request: Request) {
         })
         .select()
         .single()
-      if (error) throw error
+      if (error) throw new Error(error.message || JSON.stringify(error))
       materialId = item.id
     } else {
       const { data: material, error } = await supabase
@@ -155,7 +155,7 @@ export async function POST(request: Request) {
         })
         .select()
         .single()
-      if (error) throw error
+      if (error) throw new Error(error.message || JSON.stringify(error))
       materialId = material.id
     }
 
@@ -173,7 +173,12 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     console.error('Upload error:', error)
-    return NextResponse.json({ error: `Ошибка загрузки: ${String(error)}` }, { status: 500 })
+    const msg = error instanceof Error
+      ? error.message
+      : (typeof error === 'object' && error !== null && 'message' in error)
+        ? String((error as { message: unknown }).message)
+        : String(error)
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
 
