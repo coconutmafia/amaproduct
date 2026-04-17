@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-// Увеличиваем таймаут до 60 секунд — нужно для векторизации через OpenAI
+// 60 секунд — для векторизации через OpenAI
 export const maxDuration = 60
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
-const ALLOWED_TEXT_TYPES = ['text/plain', 'text/markdown', 'text/csv']
+const MAX_FILE_SIZE = 20 * 1024 * 1024 // 20MB
 
 export async function POST(request: Request) {
   try {
@@ -15,33 +14,56 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const formData = await request.formData()
-    const projectId = formData.get('projectId') as string
-    const title = formData.get('title') as string
+    const projectId   = formData.get('projectId')   as string
+    const title       = formData.get('title')       as string
     const materialType = formData.get('materialType') as string
     const textContent = formData.get('textContent') as string | null
-    const file = formData.get('file') as File | null
+    const file        = formData.get('file')        as File | null
     const isSystemVault = formData.get('isSystemVault') === 'true'
 
     if (!title?.trim()) {
-      return NextResponse.json({ error: 'Title is required' }, { status: 400 })
+      return NextResponse.json({ error: 'Введите название' }, { status: 400 })
     }
 
     let rawContent = textContent?.trim() || null
     let fileUrl: string | null = null
     let fileType: string | null = null
 
-    // Загрузка файла — только текстовые форматы обрабатываем
+    // ── Обработка файла ──────────────────────────────────────────
     if (file && file.size > 0) {
       if (file.size > MAX_FILE_SIZE) {
-        return NextResponse.json({ error: 'Файл слишком большой (макс 10MB)' }, { status: 400 })
+        return NextResponse.json({ error: 'Файл слишком большой (макс 20MB)' }, { status: 400 })
       }
 
-      // Для текстовых файлов — читаем содержимое
-      if (ALLOWED_TEXT_TYPES.includes(file.type) || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
+      fileType = file.name.split('.').pop()?.toLowerCase() || null
+      const name = file.name.toLowerCase()
+
+      // Текстовые форматы — читаем напрямую
+      if (
+        file.type.startsWith('text/') ||
+        name.endsWith('.txt') ||
+        name.endsWith('.md') ||
+        name.endsWith('.csv')
+      ) {
         rawContent = await file.text()
       }
 
-      // Загружаем в Storage
+      // Word (.docx) — извлекаем текст через mammoth
+      if (name.endsWith('.docx') || name.endsWith('.doc')) {
+        try {
+          const mammoth = await import('mammoth')
+          const bytes = await file.arrayBuffer()
+          const result = await mammoth.extractRawText({ buffer: Buffer.from(bytes) })
+          rawContent = result.value
+        } catch {
+          // mammoth не установлен — попросим вставить текст
+          return NextResponse.json({
+            error: 'Для загрузки Word-файлов скопируйте текст и вставьте его в поле "Текст"',
+          }, { status: 400 })
+        }
+      }
+
+      // Загружаем файл в Supabase Storage
       const bytes = await file.arrayBuffer()
       const buffer = Buffer.from(bytes)
       const safeName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
@@ -53,18 +75,25 @@ export async function POST(request: Request) {
         .from('materials')
         .upload(storagePath, buffer, { contentType: file.type })
 
-      if (!uploadError) {
-        const { data: urlData } = supabase.storage.from('materials').getPublicUrl(storagePath)
+      if (uploadError) {
+        console.error('Storage upload error:', uploadError)
+        // Продолжаем без файла — главное текст
+      } else {
+        const { data: urlData } = supabase.storage
+          .from('materials')
+          .getPublicUrl(storagePath)
         fileUrl = urlData.publicUrl
-        fileType = file.name.split('.').pop()?.toLowerCase() || null
       }
     }
 
-    if (!rawContent) {
-      return NextResponse.json({ error: 'Нет текстового содержимого для обработки' }, { status: 400 })
+    // ── Проверяем что есть хоть какой-то текст ───────────────────
+    if (!rawContent || rawContent.trim().length < 10) {
+      return NextResponse.json({
+        error: 'Нет текста для обработки. Вставьте текст в поле ниже или загрузите .txt файл',
+      }, { status: 400 })
     }
 
-    // Сохраняем запись в статусе 'processing'
+    // ── Сохраняем запись ─────────────────────────────────────────
     let materialId: string
 
     if (isSystemVault) {
@@ -101,23 +130,21 @@ export async function POST(request: Request) {
       materialId = material.id
     }
 
-    // Обрабатываем СИНХРОННО — разбиваем на чанки и векторизуем
+    // ── Векторизация (синхронно) ──────────────────────────────────
     try {
       await processContent(materialId, rawContent, projectId, isSystemVault)
+      return NextResponse.json({ materialId, processingStatus: 'ready' })
     } catch (procError) {
-      console.error('Processing error:', procError)
-      // Статус уже обновится в error внутри processContent
+      console.error('Vectorization error:', procError)
       return NextResponse.json({
         materialId,
         processingStatus: 'error',
-        warning: 'Материал сохранён, но векторизация не удалась. Проверьте OPENAI_API_KEY.',
+        warning: 'Материал сохранён, но векторизация не удалась. Проверь OPENAI_API_KEY в Vercel.',
       })
     }
-
-    return NextResponse.json({ materialId, processingStatus: 'ready' })
   } catch (error) {
     console.error('Upload error:', error)
-    return NextResponse.json({ error: 'Ошибка загрузки' }, { status: 500 })
+    return NextResponse.json({ error: `Ошибка загрузки: ${String(error)}` }, { status: 500 })
   }
 }
 
@@ -133,16 +160,18 @@ async function processContent(
   try {
     const { splitIntoChunks } = await import('@/lib/ai/rag')
 
-    // Ограничиваем размер текста чтобы не превысить лимиты OpenAI
-    const truncated = text.slice(0, 100000)
-    const chunks = splitIntoChunks(truncated, 512, 50)
+    // Не больше 80 000 символов за раз
+    const content = text.slice(0, 80000)
+    const chunks = splitIntoChunks(content, 512, 50)
 
-    // Батчами по 20 чанков — лимит OpenAI на batch
-    const BATCH_SIZE = 20
-    const allEmbeddings: number[][] = []
+    if (chunks.length === 0) throw new Error('Нет чанков')
 
-    for (let b = 0; b < chunks.length; b += BATCH_SIZE) {
-      const batch = chunks.slice(b, b + BATCH_SIZE)
+    // Батчи по 20 — лимит OpenAI
+    const BATCH = 20
+    const embeddings: number[][] = []
+
+    for (let i = 0; i < chunks.length; i += BATCH) {
+      const batch = chunks.slice(i, i + BATCH)
       const res = await fetch('https://api.openai.com/v1/embeddings', {
         method: 'POST',
         headers: {
@@ -154,37 +183,41 @@ async function processContent(
 
       if (!res.ok) {
         const err = await res.text()
-        throw new Error(`OpenAI error: ${err}`)
+        throw new Error(`OpenAI error ${res.status}: ${err}`)
       }
 
       const data = await res.json()
-      allEmbeddings.push(...data.data.map((d: { embedding: number[] }) => d.embedding))
+      embeddings.push(...data.data.map((d: { embedding: number[] }) => d.embedding))
     }
 
-    // Сохраняем чанки с векторами
+    // Сохраняем чанки
     const chunkTable = isSystemVault ? 'knowledge_chunks' : 'project_chunks'
-    const idField = isSystemVault ? 'vault_id' : 'material_id'
+    const idField    = isSystemVault ? 'vault_id'         : 'material_id'
 
     for (let i = 0; i < chunks.length; i++) {
       await supabase.from(chunkTable).insert({
-        [idField]: materialId,
+        [idField]:   materialId,
         ...(isSystemVault ? {} : { project_id: projectId }),
         chunk_index: i,
-        chunk_text: chunks[i],
-        embedding: allEmbeddings[i],
-        metadata: { chunk_index: i, total_chunks: chunks.length },
+        chunk_text:  chunks[i],
+        embedding:   embeddings[i],
+        metadata:    { chunk_index: i, total_chunks: chunks.length },
       })
     }
 
-    // Обновляем статус на ready
-    await supabase.from(statusTable).update({ processing_status: 'ready' }).eq('id', materialId)
+    await supabase
+      .from(statusTable)
+      .update({ processing_status: 'ready' })
+      .eq('id', materialId)
 
-    // Пересчитываем completeness для проекта
     if (!isSystemVault && projectId) {
       await recalculateCompleteness(projectId)
     }
   } catch (error) {
-    await supabase.from(statusTable).update({ processing_status: 'error' }).eq('id', materialId)
+    await supabase
+      .from(statusTable)
+      .update({ processing_status: 'error' })
+      .eq('id', materialId)
     throw error
   }
 }
@@ -199,16 +232,17 @@ async function recalculateCompleteness(projectId: string) {
 
   const types = new Set(materials?.map(m => m.material_type) || [])
   let score = 0
-  if (types.has('tone_of_voice')) score += 25
-  if (types.has('unpacking_map')) score += 15
-  if (types.has('cases_reviews')) score += 15
-  if (types.has('marketing_strategy')) score += 15
-  if (types.has('funnel_description')) score += 10
-  if (types.has('audience_research')) score += 10
-  if (types.has('competitors')) score += 5
+  if (types.has('tone_of_voice'))       score += 25
+  if (types.has('unpacking_map'))       score += 15
+  if (types.has('cases_reviews'))       score += 15
+  if (types.has('marketing_strategy'))  score += 15
+  if (types.has('funnel_description'))  score += 10
+  if (types.has('audience_research'))   score += 10
+  if (types.has('competitors'))         score += 5
   if (types.has('product_description')) score += 5
 
-  await supabase.from('projects')
+  await supabase
+    .from('projects')
     .update({ completeness_score: Math.min(100, score) })
     .eq('id', projectId)
 }
