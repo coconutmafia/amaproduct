@@ -66,8 +66,9 @@ export async function POST(request: Request) {
       if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
         try {
           const XLSX = await import('xlsx')
-          const bytes = await file.arrayBuffer()
-          const workbook = XLSX.read(bytes, { type: 'array' })
+          const arrayBuf = await file.arrayBuffer()
+          // SheetJS требует Uint8Array, не ArrayBuffer
+          const workbook = XLSX.read(new Uint8Array(arrayBuf), { type: 'array' })
           const lines: string[] = []
           for (const sheetName of workbook.SheetNames) {
             const sheet = workbook.Sheets[sheetName]
@@ -78,7 +79,13 @@ export async function POST(request: Request) {
             }
           }
           rawContent = lines.join('\n\n')
-        } catch {
+          if (!rawContent.trim()) {
+            return NextResponse.json({
+              error: 'Excel-файл пустой или не содержит текстовых данных',
+            }, { status: 400 })
+          }
+        } catch (xlsxErr) {
+          console.error('xlsx parse error:', xlsxErr)
           return NextResponse.json({
             error: 'Не удалось прочитать Excel-файл. Попробуйте сохранить как .csv и загрузить заново.',
           }, { status: 400 })
