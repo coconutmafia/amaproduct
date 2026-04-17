@@ -47,20 +47,59 @@ export async function POST(request: Request) {
     const user = session?.user
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // ── Register referral at signup ──────────────────
+    // ── Register referral / apply promo at signup ────
     if (action === 'register') {
       const { referral_code } = await request.json()
       if (!referral_code) return NextResponse.json({ error: 'No referral code' }, { status: 400 })
 
-      // Find referrer (level-1)
+      const codeUpper = referral_code.toUpperCase().trim()
+
+      // ── Check if it's an admin PROMO code first ──
+      const { data: promoCode } = await supabase
+        .from('promo_codes')
+        .select('id, bonus_generations, max_uses, uses_count, is_active, expires_at')
+        .eq('code', codeUpper)
+        .single()
+
+      if (promoCode) {
+        if (!promoCode.is_active)
+          return NextResponse.json({ error: 'Промо-код деактивирован' }, { status: 400 })
+        if (promoCode.expires_at && new Date(promoCode.expires_at) < new Date())
+          return NextResponse.json({ error: 'Промо-код просрочен' }, { status: 400 })
+        if (promoCode.max_uses !== null && promoCode.uses_count >= promoCode.max_uses)
+          return NextResponse.json({ error: 'Промо-код исчерпан' }, { status: 400 })
+
+        // Check not already used by this user
+        const { data: alreadyUsed } = await supabase
+          .from('promo_code_uses')
+          .select('id').eq('promo_id', promoCode.id).eq('user_id', user.id).single()
+        if (alreadyUsed)
+          return NextResponse.json({ error: 'Вы уже использовали этот промо-код' }, { status: 409 })
+
+        // Apply bonus
+        await supabase.rpc('add_bonus_generations', {
+          p_user_id: user.id, p_amount: promoCode.bonus_generations,
+        })
+        await supabase.from('promo_code_uses').insert({ promo_id: promoCode.id, user_id: user.id })
+        await supabase.from('promo_codes')
+          .update({ uses_count: promoCode.uses_count + 1 }).eq('id', promoCode.id)
+
+        return NextResponse.json({
+          success: true,
+          bonus_received: promoCode.bonus_generations,
+          type: 'promo',
+        })
+      }
+
+      // ── Regular user referral code ───────────────
       const { data: referrerProfile } = await supabase
         .from('profiles')
         .select('id, referred_by')
-        .eq('referral_code', referral_code.toUpperCase().trim())
+        .eq('referral_code', codeUpper)
         .single()
 
       if (!referrerProfile)
-        return NextResponse.json({ error: 'Referral code not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Код не найден' }, { status: 404 })
       if (referrerProfile.id === user.id)
         return NextResponse.json({ error: 'Cannot refer yourself' }, { status: 400 })
 

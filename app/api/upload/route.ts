@@ -56,9 +56,31 @@ export async function POST(request: Request) {
           const result = await mammoth.extractRawText({ buffer: Buffer.from(bytes) })
           rawContent = result.value
         } catch {
-          // mammoth не установлен — попросим вставить текст
           return NextResponse.json({
             error: 'Для загрузки Word-файлов скопируйте текст и вставьте его в поле "Текст"',
+          }, { status: 400 })
+        }
+      }
+
+      // Excel (.xlsx / .xls) — извлекаем все листы как текст через SheetJS
+      if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+        try {
+          const XLSX = await import('xlsx')
+          const bytes = await file.arrayBuffer()
+          const workbook = XLSX.read(bytes, { type: 'array' })
+          const lines: string[] = []
+          for (const sheetName of workbook.SheetNames) {
+            const sheet = workbook.Sheets[sheetName]
+            const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false })
+            if (csv.trim()) {
+              lines.push(`=== Лист: ${sheetName} ===`)
+              lines.push(csv)
+            }
+          }
+          rawContent = lines.join('\n\n')
+        } catch {
+          return NextResponse.json({
+            error: 'Не удалось прочитать Excel-файл. Попробуйте сохранить как .csv и загрузить заново.',
           }, { status: 400 })
         }
       }

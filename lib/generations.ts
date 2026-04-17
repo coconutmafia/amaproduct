@@ -20,6 +20,13 @@ export interface GenerationCheckResult {
 export async function checkAndConsumeGeneration(userId: string): Promise<GenerationCheckResult> {
   const supabase = await createClient()
 
+  // Admins have unlimited generations — skip the counter entirely
+  const { data: adminCheck } = await supabase
+    .from('profiles').select('role').eq('id', userId).single()
+  if (adminCheck?.role === 'admin') {
+    return { allowed: true, remaining: 999999, monthlyUsed: 0, monthlyLimit: 999999, bonusRemaining: 0 }
+  }
+
   const { data: allowed, error } = await supabase
     .rpc('consume_generation', { p_user_id: userId })
 

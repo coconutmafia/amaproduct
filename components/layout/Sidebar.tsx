@@ -183,6 +183,25 @@ export function Sidebar({ user, projects = [], isAdmin = false }: SidebarProps) 
           </Link>
         )}
 
+        {/* Admin promo codes */}
+        {isAdmin && (
+          <Link
+            href="/admin/promo"
+            className={cn(
+              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+              pathname === '/admin/promo'
+                ? 'bg-primary/20 text-primary font-medium'
+                : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+            )}
+          >
+            <Zap className="h-4 w-4 shrink-0" />
+            Промо-коды
+            <span className="ml-auto text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full">
+              Admin
+            </span>
+          </Link>
+        )}
+
         <div className="pt-2 border-t border-border mt-2">
           {bottomNavItems.map((item) => (
             <Link
