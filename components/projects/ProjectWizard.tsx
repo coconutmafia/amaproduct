@@ -334,15 +334,15 @@ export function ProjectWizard() {
               </div>
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1.5">
-                  <Wallet className="h-3.5 w-3.5 text-primary" /> Бюджет запуска (₽)
+                  <Wallet className="h-3.5 w-3.5 text-primary" /> Ожидаемая выручка запуска (₽)
                 </Label>
                 <Input
                   type="number"
-                  placeholder="300000"
+                  placeholder="500000"
                   value={launchBudget}
                   onChange={e => setLaunchBudget(e.target.value)}
                 />
-                <p className={HINT}>Необязательно, но помогает AI учитывать масштаб и рекомендации</p>
+                <p className={HINT}>Сколько планируешь заработать? AI учтёт масштаб при составлении плана</p>
               </div>
             </div>
 
