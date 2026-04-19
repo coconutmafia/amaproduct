@@ -226,9 +226,9 @@ export function Sidebar({ user, projects = [], isAdmin = false }: SidebarProps) 
         </div>
       </nav>
 
-      {/* User profile */}
+      {/* User profile + logout */}
       {user && (
-        <div className="border-t border-sidebar-border p-3">
+        <div className="border-t border-sidebar-border p-3 space-y-2">
           <div className="flex items-center gap-3 rounded-lg px-2 py-2">
             <Avatar className="h-8 w-8">
               <AvatarImage src={user.avatar} />
@@ -240,17 +240,15 @@ export function Sidebar({ user, projects = [], isAdmin = false }: SidebarProps) 
               <p className="text-xs font-medium text-foreground truncate">{user.name}</p>
               <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-              asChild
-            >
-              <Link href="/auth/logout">
-                <LogOut className="h-3.5 w-3.5" />
-              </Link>
-            </Button>
           </div>
+          {/* Prominent logout button */}
+          <Link
+            href="/auth/logout"
+            className="flex items-center gap-2 w-full rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            Выйти из аккаунта
+          </Link>
         </div>
       )}
     </aside>
