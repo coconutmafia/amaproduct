@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ProjectCard } from '@/components/projects/ProjectCard'
 import { Plus, FolderKanban, FileText, Sparkles, ArrowRight, Clock } from 'lucide-react'
+import { DashboardClient } from '@/components/dashboard/DashboardClient'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -35,17 +36,23 @@ export default async function DashboardPage() {
     .limit(3)
 
   const name = profile?.full_name || user.email?.split('@')[0] || 'Блогер'
+  const aiName = (profile as { ai_assistant_name?: string | null })?.ai_assistant_name
+  const onboardingDone = (profile as { onboarding_done?: boolean })?.onboarding_done ?? true
+  const greeting = aiName ? `${aiName} готов к работе` : 'Твой AI SMM-щик готов к работе'
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-8">
+      {/* Onboarding slides for new users */}
+      <DashboardClient userId={user.id} onboardingDone={onboardingDone} />
+
       {/* Welcome */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">
-            Добро пожаловать, <span className="gradient-text">{name}</span>!
+            Привет, <span className="gradient-text">{name}</span>!
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Ваш AI-продюсер готов к работе
+            {greeting}
           </p>
         </div>
         <Button asChild className="gradient-accent text-white hover:opacity-90">

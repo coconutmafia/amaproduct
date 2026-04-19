@@ -7,9 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Sparkles, Globe, Loader2, Gift } from 'lucide-react'
+import { Sparkles, Globe, Loader2, Gift, Mail, CheckCircle2, Bot, Zap, Target } from 'lucide-react'
 import { toast } from 'sonner'
 import { REFERRAL_REWARDS } from '@/lib/generations-config'
 
@@ -19,30 +18,29 @@ function RegisterForm() {
   const supabase = createClient()
 
   const [fullName, setFullName] = useState('')
-  const [email, setEmail] = useState('')
+  const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading]   = useState(false)
+  const [sent, setSent]         = useState(false) // email confirmation sent state
 
-  // Capture referral code from URL ?ref=CODE
   const refCode = searchParams.get('ref')?.toUpperCase() ?? ''
 
   useEffect(() => {
     if (refCode) {
-      toast.info(`Реферальный код ${refCode} применён — вы получите +${REFERRAL_REWARDS.invitee_signup} генераций после регистрации`, {
-        duration: 5000,
-      })
+      toast.info(`Реферальный код ${refCode} — вы получите +${REFERRAL_REWARDS.invitee_signup} генераций`, { duration: 5000 })
     }
   }, [refCode])
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
+    if (!fullName.trim()) { toast.error('Введите ваше имя'); return }
     setLoading(true)
 
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { full_name: fullName },
+        data: { full_name: fullName.trim() },
         emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
       },
     })
@@ -53,155 +51,209 @@ function RegisterForm() {
       return
     }
 
-    // Apply referral code if present
+    // Apply referral code after signup
     if (refCode) {
       try {
-        // Small delay to let the profile trigger create the profile row
         await new Promise(r => setTimeout(r, 1500))
-        const res = await fetch('/api/referral?action=register', {
+        await fetch('/api/referral?action=register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ referral_code: refCode }),
         })
-        const data = await res.json()
-        if (res.ok) {
-          toast.success(`+${data.bonus_received} бонусных генераций начислено!`)
-        }
-      } catch {
-        // Non-fatal — registration still succeeded
-      }
+      } catch { /* non-fatal */ }
     }
 
-    toast.success('Аккаунт создан! Выполняется вход...')
-    router.push('/dashboard')
+    setSent(true) // show "check email" screen
     setLoading(false)
   }
 
-  async function handleGoogleLogin() {
-    const callbackUrl = refCode
+  async function handleGoogle() {
+    const cb = refCode
       ? `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?ref=${refCode}`
       : `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`
-
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: callbackUrl },
+      options: { redirectTo: cb },
     })
     if (error) toast.error(error.message)
   }
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md space-y-6">
-        <div className="text-center space-y-2">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl gradient-accent shadow-lg shadow-primary/25">
-              <Sparkles className="h-6 w-6 text-white" />
+  // ── AFTER SUBMIT: "Check your email" screen ──────────────────────
+  if (sent) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <div className="w-full max-w-md text-center space-y-6">
+          <div className="flex justify-center">
+            <div className="flex h-20 w-20 items-center justify-center rounded-3xl gradient-accent shadow-xl shadow-primary/30">
+              <Mail className="h-10 w-10 text-white" />
             </div>
           </div>
-          <h1 className="text-2xl font-bold text-foreground">AMAproduct</h1>
-          <p className="text-sm text-muted-foreground">Создай аккаунт продюсера</p>
-        </div>
-
-        {/* Referral banner */}
-        {refCode && (
-          <div className="flex items-center gap-3 rounded-lg border border-amber-200 dark:border-amber-400/30 bg-amber-50 dark:bg-amber-400/10 p-3">
-            <Gift className="h-5 w-5 text-amber-600 shrink-0" />
-            <div className="text-sm">
-              <span className="font-medium text-amber-700 dark:text-amber-400">Приглашение принято!</span>
-              <span className="text-amber-600 dark:text-amber-400/80"> После регистрации вам начислится </span>
-              <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
-                +{REFERRAL_REWARDS.invitee_signup} генераций
-              </Badge>
-            </div>
-          </div>
-        )}
-
-        <Card className="border-border bg-card shadow-xl">
-          <CardHeader className="space-y-1 pb-4">
-            <CardTitle className="text-xl font-semibold">Регистрация</CardTitle>
-            <CardDescription>Заполните данные для создания аккаунта</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Button
-              variant="outline"
-              className="w-full border-border hover:bg-secondary"
-              onClick={handleGoogleLogin}
-            >
-              <Globe className="mr-2 h-4 w-4" />
-              Зарегистрироваться через Google
-            </Button>
-
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-border" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">или</span>
-              </div>
-            </div>
-
-            <form onSubmit={handleRegister} className="space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="name" className="text-sm">Имя</Label>
-                <Input
-                  id="name"
-                  type="text"
-                  placeholder="Ваше имя"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  required
-                  className="bg-input border-border"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="email" className="text-sm">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="bg-input border-border"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="password" className="text-sm">Пароль</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="Минимум 8 символов"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={8}
-                  className="bg-input border-border"
-                />
-              </div>
-              <Button
-                type="submit"
-                className="w-full gradient-accent text-white font-medium hover:opacity-90 transition-opacity"
-                disabled={loading}
-              >
-                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Создать аккаунт
-              </Button>
-            </form>
-          </CardContent>
-          <CardFooter className="pt-0">
-            <p className="text-sm text-muted-foreground">
-              Уже есть аккаунт?{' '}
-              <Link href="/login" className="text-primary hover:underline">
-                Войти
-              </Link>
+          <div className="space-y-3">
+            <h1 className="text-2xl font-bold">Проверь почту!</h1>
+            <p className="text-muted-foreground">
+              Мы отправили письмо на <span className="font-medium text-foreground">{email}</span>
             </p>
-          </CardFooter>
-        </Card>
+            <p className="text-sm text-muted-foreground">
+              Перейди по ссылке в письме — и твой AI SMM-щик уже ждёт тебя 🚀
+            </p>
+          </div>
+          <div className="rounded-xl border border-border bg-secondary/30 p-4 text-sm text-muted-foreground text-left space-y-2">
+            <p className="font-medium text-foreground">Не пришло письмо?</p>
+            <ul className="space-y-1 text-xs">
+              <li>• Проверь папку «Спам» или «Промоакции»</li>
+              <li>• Подожди 1–2 минуты</li>
+              <li>• Убедись что email написан правильно</li>
+            </ul>
+          </div>
+          <Button variant="outline" className="w-full" onClick={() => setSent(false)}>
+            Ввести другой email
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
-        <p className="text-center text-xs text-muted-foreground">
-          Powered by{' '}
-          <span className="gradient-text font-semibold">Ava Marketing Agency</span>
-        </p>
+  // ── REGISTER FORM ────────────────────────────────────────────────
+  return (
+    <div className="min-h-screen flex bg-background">
+      {/* Left: form */}
+      <div className="flex flex-1 flex-col items-center justify-center p-6">
+        <div className="w-full max-w-md space-y-6">
+
+          {/* Logo */}
+          <div className="text-center space-y-2">
+            <div className="flex items-center justify-center gap-3 mb-4">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl gradient-accent shadow-xl shadow-primary/30">
+                <Sparkles className="h-7 w-7 text-white" />
+              </div>
+            </div>
+            <h1 className="text-3xl font-bold">AMAproduct</h1>
+            <p className="text-muted-foreground">Твой личный AI SMM-щик для запусков</p>
+          </div>
+
+          {/* Referral banner */}
+          {refCode && (
+            <div className="flex items-center gap-3 rounded-xl border border-amber-200 dark:border-amber-400/30 bg-amber-50 dark:bg-amber-400/10 p-3">
+              <Gift className="h-5 w-5 text-amber-600 shrink-0" />
+              <div className="text-sm">
+                <span className="font-medium text-amber-700 dark:text-amber-400">Тебя пригласили! </span>
+                <span className="text-amber-600 dark:text-amber-400/80">После регистрации — </span>
+                <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
+                  +{REFERRAL_REWARDS.invitee_signup} генераций в подарок
+                </Badge>
+              </div>
+            </div>
+          )}
+
+          {/* Google */}
+          <Button variant="outline" className="w-full h-12 text-base" onClick={handleGoogle}>
+            <Globe className="mr-2 h-5 w-5" />
+            Зарегистрироваться через Google
+          </Button>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">или заполни форму</span>
+            </div>
+          </div>
+
+          {/* Form */}
+          <form onSubmit={handleRegister} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="name" className="text-sm font-medium">Как тебя зовут?</Label>
+              <Input
+                id="name"
+                type="text"
+                placeholder="Анна Иванова"
+                value={fullName}
+                onChange={e => setFullName(e.target.value)}
+                required
+                className="h-12 text-base"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="email" className="text-sm font-medium">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                required
+                className="h-12 text-base"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="password" className="text-sm font-medium">Пароль</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Минимум 8 символов"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+                minLength={8}
+                className="h-12 text-base"
+              />
+            </div>
+            <Button
+              type="submit"
+              className="w-full h-12 text-base gradient-accent text-white font-semibold hover:opacity-90 transition-opacity"
+              disabled={loading}
+            >
+              {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Sparkles className="mr-2 h-5 w-5" />}
+              Создать аккаунт
+            </Button>
+          </form>
+
+          <p className="text-center text-sm text-muted-foreground">
+            Уже есть аккаунт?{' '}
+            <Link href="/login" className="text-primary font-medium hover:underline">Войти</Link>
+          </p>
+        </div>
+      </div>
+
+      {/* Right: benefits panel (hidden on mobile) */}
+      <div className="hidden lg:flex flex-col justify-center w-96 bg-primary/5 border-l border-border p-10 space-y-8">
+        <div>
+          <h2 className="text-xl font-bold mb-2">Что тебя ждёт</h2>
+          <p className="text-sm text-muted-foreground">
+            AI SMM-щик, который знает твою аудиторию, продукт и стиль — и пишет контент за тебя
+          </p>
+        </div>
+        {[
+          {
+            icon: Bot,
+            title: 'Свой AI SMM-щик',
+            desc: 'Дай ему имя, загрузи свои материалы — и получай контент, который звучит как ты',
+          },
+          {
+            icon: Zap,
+            title: 'Контент-план за минуты',
+            desc: 'Посты, карусели, рилсы, сторис — для всего прогрева от осознания до продажи',
+          },
+          {
+            icon: Target,
+            title: 'Под каждый запуск',
+            desc: 'AI учитывает продукт, ЦА, дату запуска и бюджет — пишет не абстрактно, а конкретно',
+          },
+          {
+            icon: CheckCircle2,
+            title: `${REFERRAL_REWARDS.invitee_signup} генераций бесплатно`,
+            desc: 'Сразу после регистрации — попробуй без оплаты',
+          },
+        ].map(({ icon: Icon, title, desc }) => (
+          <div key={title} className="flex gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+              <Icon className="h-4 w-4 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold">{title}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -209,7 +261,11 @@ function RegisterForm() {
 
 export default function RegisterPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" /></div>}>
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    }>
       <RegisterForm />
     </Suspense>
   )
