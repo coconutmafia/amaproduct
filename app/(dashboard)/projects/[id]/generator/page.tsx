@@ -15,7 +15,7 @@ import { ExportPanel } from '@/components/content/ExportPanel'
 import { toast } from 'sonner'
 import {
   ArrowLeft, Sparkles, Loader2, RefreshCw, CheckCircle, Clock,
-  FileText, Image, Video, Layers, BookMarked, ShieldCheck,
+  FileText, Image, Video, Layers, BookMarked, ShieldCheck, ChevronDown,
 } from 'lucide-react'
 import type { ContentType, WarmupPhase, ContentItem } from '@/types'
 
@@ -27,10 +27,10 @@ const CONTENT_TYPES: Array<{ value: ContentType; label: string; icon: React.Elem
 ]
 
 const PHASES: Array<{ value: WarmupPhase; label: string; desc: string }> = [
-  { value: 'awareness', label: 'Осознание', desc: 'Познакомить с экспертом и проблемой' },
-  { value: 'trust', label: 'Доверие', desc: 'Построить авторитет и кейсы' },
-  { value: 'desire', label: 'Желание', desc: 'Создать желание купить' },
-  { value: 'close', label: 'Закрытие', desc: 'Продажа и финальный призыв' },
+  { value: 'awareness', label: 'Знакомство', desc: 'Аудитория только узнаёт о тебе и твоей теме' },
+  { value: 'trust', label: 'Доверие', desc: 'Строим авторитет через кейсы и экспертные посты' },
+  { value: 'desire', label: 'Желание', desc: 'Создаём желание купить продукт' },
+  { value: 'close', label: 'Закрытие', desc: 'Финальный призыв и работа с возражениями' },
 ]
 
 interface GeneratedContent {
@@ -54,6 +54,7 @@ export default function GeneratorPage() {
   const [editedText, setEditedText] = useState('')
   const [versions, setVersions] = useState<Array<{ version: number; text: string }>>([])
   const [approved, setApproved] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   const handleGenerate = useCallback(async () => {
     setLoading(true)
@@ -87,7 +88,7 @@ export default function GeneratorPage() {
         toast.success('Контент сгенерирован!')
       }
     } catch (error) {
-      toast.error('Ошибка генерации контента')
+      toast.error('Ошибка создания контента')
       console.error(error)
     } finally {
       setLoading(false)
@@ -134,12 +135,27 @@ export default function GeneratorPage() {
         </div>
       </div>
 
+      {!generated && (
+        <div className="flex items-start gap-3 p-4 rounded-xl border border-primary/20 bg-primary/5">
+          <Sparkles className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-foreground mb-2">Как пользоваться генератором</p>
+            <ol className="space-y-1 text-xs text-muted-foreground">
+              <li><span className="text-primary font-bold">1.</span> Выбери тип контента (пост, рилс, карусель или сториз)</li>
+              <li><span className="text-primary font-bold">2.</span> Выбери этап — на каком этапе прогрева находится твоя аудитория</li>
+              <li><span className="text-primary font-bold">3.</span> Нажми «Сгенерировать» — AI создаст контент на основе твоих материалов</li>
+              <li><span className="text-primary font-bold">4.</span> Отредактируй если нужно, нажми «Одобрить стиль» — AI запомнит этот пример и следующие посты будут точнее</li>
+            </ol>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Settings panel */}
         <div className="space-y-4">
           <Card className="border-border bg-card">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Параметры генерации</CardTitle>
+              <CardTitle className="text-sm font-medium">Параметры запроса</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Content type */}
@@ -168,7 +184,7 @@ export default function GeneratorPage() {
 
               {/* Phase */}
               <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Фаза прогрева</Label>
+                <Label className="text-xs text-muted-foreground">Этап работы с аудиторией</Label>
                 <Select value={phase} onValueChange={(v) => v && setPhase(v as WarmupPhase)}>
                   <SelectTrigger className="bg-input border-border">
                     <SelectValue />
@@ -186,30 +202,42 @@ export default function GeneratorPage() {
                 </Select>
               </div>
 
-              {/* Day */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">День прогрева</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="90"
-                    value={dayNumber}
-                    onChange={(e) => setDayNumber(e.target.value)}
-                    className="bg-input border-border"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Всего дней</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="90"
-                    value={totalDays}
-                    onChange={(e) => setTotalDays(e.target.value)}
-                    className="bg-input border-border"
-                  />
-                </div>
+              {/* Advanced settings toggle */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+                  ⚙ Дополнительные настройки
+                </button>
+                {showAdvanced && (
+                  <div className="grid grid-cols-2 gap-3 mt-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">День прогрева</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="90"
+                        value={dayNumber}
+                        onChange={(e) => setDayNumber(e.target.value)}
+                        className="bg-input border-border"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Всего дней</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="90"
+                        value={totalDays}
+                        onChange={(e) => setTotalDays(e.target.value)}
+                        className="bg-input border-border"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Additional */}
@@ -248,8 +276,8 @@ export default function GeneratorPage() {
                   <SelectedTypeIcon className="h-8 w-8 text-white" />
                 </div>
                 <div className="text-center">
-                  <p className="font-medium text-foreground">Настройте параметры и нажмите «Сгенерировать»</p>
-                  <p className="text-sm text-muted-foreground mt-1">AI создаст контент на основе базы знаний проекта</p>
+                  <p className="font-medium text-foreground">Выберите тип и этап, нажмите «Сгенерировать»</p>
+                  <p className="text-sm text-muted-foreground mt-1">AI использует загруженные материалы проекта для создания уникального контента в твоём стиле</p>
                 </div>
               </CardContent>
             </Card>

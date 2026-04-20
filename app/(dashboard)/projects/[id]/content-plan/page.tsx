@@ -196,7 +196,7 @@ export default function ContentPlanPage() {
       ))
       toast.success(`${contentType} для дня ${day} сгенерирован`)
     } catch {
-      toast.error('Ошибка генерации контента')
+      toast.error('Ошибка создания контента')
     }
   }, [id, totalDays])
 

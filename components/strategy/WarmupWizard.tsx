@@ -35,26 +35,37 @@ interface WarmupWizardProps {
 const STEPS = [
   { id: 1, title: 'Продукт', icon: Package },
   { id: 2, title: 'Длительность', icon: Calendar },
-  { id: 3, title: 'Холодная аудитория', icon: Users },
-  { id: 4, title: 'Тёплая аудитория', icon: Star },
+  { id: 3, title: 'Воронка продаж', icon: Users },
+  { id: 4, title: 'Прогрев в блоге', icon: Star },
   { id: 5, title: 'Кейсы', icon: FileText },
   { id: 6, title: 'Смыслы', icon: Lightbulb },
   { id: 7, title: 'Конкуренты', icon: Target },
-  { id: 8, title: 'Резюме', icon: Sparkles },
-]
-
-const WARM_EVENTS = [
-  { id: 'instagram_live', label: 'Эфир в Instagram/VK' },
-  { id: 'webinar', label: 'Вебинар' },
-  { id: 'masterclass_free', label: 'Бесплатный мастер-класс' },
-  { id: 'marathon', label: 'Марафон' },
+  { id: 8, title: 'Итог', icon: Sparkles },
 ]
 
 const HOOK_OPTIONS = [
-  { id: 'transformation', label: 'Личная трансформация/история' },
-  { id: 'backstage', label: 'Закулисье работы' },
-  { id: 'fears', label: 'Ответы на страхи аудитории' },
-  { id: 'myths', label: 'Разрушение мифов в нише' },
+  { id: 'transformation', label: 'Личная трансформация / история', desc: 'Рассказываешь свой путь, как ты пришёл(а) к этому результату' },
+  { id: 'backstage', label: 'Закулисье работы', desc: 'Показываешь как создаётся продукт, рабочий процесс изнутри' },
+  { id: 'fears', label: 'Ответы на страхи аудитории', desc: 'Закрываешь возражения и страхи клиентов через контент' },
+  { id: 'myths', label: 'Разрушение мифов в нише', desc: 'Опровергаешь популярные заблуждения в твоей теме' },
+  { id: 'results', label: 'Результаты учеников / клиентов', desc: 'Показываешь реальные кейсы и трансформации' },
+  { id: 'expertise', label: 'Демонстрация экспертизы', desc: 'Профессиональный контент, советы, разборы — доказываешь компетентность' },
+  { id: 'lifestyle', label: 'Образ жизни и ценности', desc: 'Показываешь свою жизнь, ценности, личность — создаёшь связь с аудиторией' },
+]
+
+const FREE_EVENT_TYPES = [
+  { id: 'webinar', label: 'Вебинар' },
+  { id: 'marathon', label: 'Марафон' },
+  { id: 'masterclass_free', label: 'Бесплатный мастер-класс' },
+  { id: 'live', label: 'Эфир' },
+  { id: 'other', label: 'Другое' },
+]
+
+const PAID_EVENT_TYPES = [
+  { id: 'paid_webinar', label: 'Платный вебинар' },
+  { id: 'paid_masterclass', label: 'Платный мастер-класс' },
+  { id: 'intensive', label: 'Интенсив' },
+  { id: 'other', label: 'Другое' },
 ]
 
 export function WarmupWizard({ projectId, products, funnels, onComplete }: WarmupWizardProps) {
@@ -71,13 +82,32 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   const [coldFunnelId, setColdFunnelId] = useState<string | null>(null)
   const [coldFunnelCustom, setColdFunnelCustom] = useState('')
   const [coldAudienceType, setColdAudienceType] = useState<'existing_funnel' | 'custom' | 'none'>('existing_funnel')
-  const [warmAudienceType, setWarmAudienceType] = useState<'content_only' | 'free_event' | 'paid_event' | 'custom'>('content_only')
-  const [selectedWarmEvents, setSelectedWarmEvents] = useState<string[]>([])
+
+  // Step 4: multi-select warm audience
+  const [warmAudienceTypes, setWarmAudienceTypes] = useState<string[]>(['content_only'])
+
+  // Free event fields
+  const [freeEventName, setFreeEventName] = useState('')
+  const [freeEventDate, setFreeEventDate] = useState('')
+  const [freeEventTypes, setFreeEventTypes] = useState<string[]>([])
+
+  // Paid event fields
+  const [paidEventName, setPaidEventName] = useState('')
+  const [paidEventDate, setPaidEventDate] = useState('')
+  const [paidEventTypes, setPaidEventTypes] = useState<string[]>([])
+
   const [useCases, setUseCases] = useState(true)
   const [selectedHooks, setSelectedHooks] = useState<string[]>([])
   const [extraHooks, setExtraHooks] = useState('')
+  const [competitorNotes, setCompetitorNotes] = useState('')
 
   const selectedProduct = products.find((p) => p.id === selectedProductId)
+
+  function toggleWarmType(value: string) {
+    setWarmAudienceTypes((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
+    )
+  }
 
   async function generateSummary() {
     setGeneratingSummary(true)
@@ -90,17 +120,17 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           conversationType: 'warmup_wizard',
           messages: [{
             role: 'user',
-            content: `Создай стратегическое резюме прогрева:
+            content: `Создай стратегию прогрева:
 - Продукт: ${selectedProduct?.name || 'не выбран'}
 - Длительность: ${duration} дней
-- Холодная аудитория: ${coldAudienceType === 'existing_funnel' ? 'воронка ' + (funnels.find(f => f.id === coldFunnelId)?.name || 'из базы') : coldAudienceType === 'custom' ? coldFunnelCustom : 'без воронки'}
-- Тёплая аудитория: ${warmAudienceType}
-- Мероприятия: ${selectedWarmEvents.join(', ') || 'нет'}
+- Воронка продаж: ${coldAudienceType === 'existing_funnel' ? 'воронка ' + (funnels.find(f => f.id === coldFunnelId)?.name || 'из базы') : coldAudienceType === 'custom' ? coldFunnelCustom : 'без воронки'}
+- Прогрев в блоге: ${warmAudienceTypes.join(', ')}
 - Использовать кейсы: ${useCases ? 'да' : 'нет'}
 - Смысловые крючки: ${selectedHooks.join(', ')}
 - Дополнительно: ${extraHooks}
+- Заметки о конкурентах: ${competitorNotes}
 
-Верни ТОЛЬКО стратегическое резюме в формате для одобрения.`
+Верни ТОЛЬКО стратегию прогрева в формате для одобрения.`
           }]
         })
       })
@@ -120,7 +150,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       setSummary(result)
       setStep(8)
     } catch {
-      toast.error('Ошибка генерации резюме')
+      toast.error('Ошибка формирования стратегии')
     } finally {
       setGeneratingSummary(false)
     }
@@ -253,10 +283,10 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         </div>
       )}
 
-      {/* Step 3: Cold audience */}
+      {/* Step 3: Sales funnel */}
       {step === 3 && (
         <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">Как привлекаем новых (холодных) подписчиков?</p>
+          <p className="text-sm text-muted-foreground">Как происходит продажа — через какую воронку?</p>
 
           {funnels.length > 0 && (
             <button
@@ -268,7 +298,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
               <div className="flex items-center gap-2">
                 <div className={`h-4 w-4 rounded-full border-2 ${coldAudienceType === 'existing_funnel' ? 'border-primary bg-primary' : 'border-muted-foreground'}`} />
                 <div>
-                  <p className="font-medium text-foreground">Использовать воронку из базы</p>
+                  <p className="font-medium text-foreground">Использовать ранее загруженную воронку</p>
                   <p className="text-xs text-muted-foreground">{funnels[0].name} — рекомендуется</p>
                 </div>
               </div>
@@ -326,45 +356,130 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         </div>
       )}
 
-      {/* Step 4: Warm audience */}
+      {/* Step 4: Warm audience — multi-select */}
       {step === 4 && (
         <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">Что делаем с существующей аудиторией?</p>
+          <p className="text-sm text-muted-foreground">Как выглядит прогрев аудитории блога?</p>
 
           {[
-            { value: 'content_only', label: 'Только контент-прогрев (без доп. воронки)' },
-            { value: 'free_event', label: 'Бесплатное мероприятие' },
-            { value: 'paid_event', label: 'Платное мероприятие (трипваер)' },
-          ].map(({ value, label }) => (
-            <button
-              key={value}
-              onClick={() => setWarmAudienceType(value as typeof warmAudienceType)}
-              className={`w-full text-left p-4 rounded-xl border transition-all ${
-                warmAudienceType === value ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/40'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <div className={`h-4 w-4 rounded-full border-2 ${warmAudienceType === value ? 'border-primary bg-primary' : 'border-muted-foreground'}`} />
-                <p className="font-medium text-foreground">{label}</p>
-              </div>
-              {warmAudienceType === value && value === 'free_event' && (
-                <div className="mt-3 pl-6 grid grid-cols-2 gap-2">
-                  {WARM_EVENTS.map(({ id, label: eventLabel }) => (
-                    <label key={id} className="flex items-center gap-2 text-sm cursor-pointer">
-                      <Checkbox
-                        checked={selectedWarmEvents.includes(id)}
-                        onCheckedChange={(checked) => {
-                          if (checked) setSelectedWarmEvents([...selectedWarmEvents, id])
-                          else setSelectedWarmEvents(selectedWarmEvents.filter((e) => e !== id))
-                        }}
+            {
+              value: 'content_only',
+              label: 'Прогрев контента без дополнительной воронки на тёплую аудиторию',
+              desc: 'Продажи только через контент блога и воронку из предыдущего шага. Дополнительных мероприятий не планируется.',
+            },
+            {
+              value: 'free_event',
+              label: 'Бесплатное мероприятие',
+              desc: 'Дополнительно к контенту — бесплатное продающее мероприятие (вебинар, марафон, мастер-класс)',
+            },
+            {
+              value: 'paid_event',
+              label: 'Платное мероприятие (трипваер)',
+              desc: 'Дополнительно к контенту — платное мероприятие (трипваер), которое ведёт на основной продукт',
+            },
+          ].map(({ value, label, desc }) => {
+            const isChecked = warmAudienceTypes.includes(value)
+            return (
+              <div key={value}>
+                <button
+                  onClick={() => toggleWarmType(value)}
+                  className={`w-full text-left p-4 rounded-xl border transition-all ${
+                    isChecked ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/40'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${isChecked ? 'border-primary bg-primary' : 'border-muted-foreground'}`} />
+                    <div>
+                      <p className="font-medium text-foreground">{label}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+                    </div>
+                  </div>
+                </button>
+
+                {/* Free event extra fields */}
+                {isChecked && value === 'free_event' && (
+                  <div className="mt-2 ml-4 p-4 rounded-xl border border-border bg-secondary/20 space-y-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">Название мероприятия (опционально)</Label>
+                      <Input
+                        value={freeEventName}
+                        onChange={(e) => setFreeEventName(e.target.value)}
+                        placeholder="Напр: Вебинар «Как запустить продукт за 30 дней»"
+                        className="bg-input border-border text-sm"
                       />
-                      {eventLabel}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </button>
-          ))}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">Дата мероприятия (опционально)</Label>
+                      <Input
+                        type="date"
+                        value={freeEventDate}
+                        onChange={(e) => setFreeEventDate(e.target.value)}
+                        className="bg-input border-border text-sm"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Формат мероприятия</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {FREE_EVENT_TYPES.map(({ id, label: eventLabel }) => (
+                          <label key={id} className="flex items-center gap-2 text-sm cursor-pointer">
+                            <Checkbox
+                              checked={freeEventTypes.includes(id)}
+                              onCheckedChange={(checked) => {
+                                if (checked) setFreeEventTypes([...freeEventTypes, id])
+                                else setFreeEventTypes(freeEventTypes.filter((e) => e !== id))
+                              }}
+                            />
+                            {eventLabel}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Paid event extra fields */}
+                {isChecked && value === 'paid_event' && (
+                  <div className="mt-2 ml-4 p-4 rounded-xl border border-border bg-secondary/20 space-y-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">Название мероприятия (опционально)</Label>
+                      <Input
+                        value={paidEventName}
+                        onChange={(e) => setPaidEventName(e.target.value)}
+                        placeholder="Напр: Интенсив «За 3 дня к первым продажам»"
+                        className="bg-input border-border text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">Дата мероприятия (опционально)</Label>
+                      <Input
+                        type="date"
+                        value={paidEventDate}
+                        onChange={(e) => setPaidEventDate(e.target.value)}
+                        className="bg-input border-border text-sm"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Формат мероприятия</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {PAID_EVENT_TYPES.map(({ id, label: eventLabel }) => (
+                          <label key={id} className="flex items-center gap-2 text-sm cursor-pointer">
+                            <Checkbox
+                              checked={paidEventTypes.includes(id)}
+                              onCheckedChange={(checked) => {
+                                if (checked) setPaidEventTypes([...paidEventTypes, id])
+                                else setPaidEventTypes(paidEventTypes.filter((e) => e !== id))
+                              }}
+                            />
+                            {eventLabel}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -402,18 +517,26 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           <p className="text-sm text-muted-foreground">Есть ли особые темы или углы для прогрева?</p>
 
           <div className="space-y-2">
-            {HOOK_OPTIONS.map(({ id, label }) => (
-              <label key={id} className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-secondary/30 cursor-pointer transition-colors">
-                <Checkbox
-                  checked={selectedHooks.includes(id)}
-                  onCheckedChange={(checked) => {
-                    if (checked) setSelectedHooks([...selectedHooks, id])
-                    else setSelectedHooks(selectedHooks.filter((h) => h !== id))
-                  }}
-                />
-                <span className="text-sm text-foreground">{label}</span>
-              </label>
-            ))}
+            {HOOK_OPTIONS.map(({ id, label, desc }) => {
+              const isChecked = selectedHooks.includes(id)
+              return (
+                <div key={id}>
+                  <label className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-secondary/30 cursor-pointer transition-colors">
+                    <Checkbox
+                      checked={isChecked}
+                      onCheckedChange={(checked) => {
+                        if (checked) setSelectedHooks([...selectedHooks, id])
+                        else setSelectedHooks(selectedHooks.filter((h) => h !== id))
+                      }}
+                    />
+                    <span className="text-sm text-foreground">{label}</span>
+                  </label>
+                  {isChecked && (
+                    <p className="mt-1 ml-10 text-xs text-muted-foreground">{desc}</p>
+                  )}
+                </div>
+              )
+            })}
           </div>
 
           <div className="space-y-1.5">
@@ -433,7 +556,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       {step === 7 && (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            AI проанализирует загруженных конкурентов и предложит ключевые отличия
+            AI использует загруженных конкурентов для двух целей: найти их сильные стороны (чтобы взять лучшее) и выявить твои отличия (чтобы выделиться)
           </p>
           <Card className="border-border bg-secondary/30">
             <CardContent className="p-4 text-sm text-muted-foreground">
@@ -444,7 +567,9 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           <div className="space-y-1.5">
             <Label className="text-sm">Уточните ключевые отличия (опционально)</Label>
             <Textarea
-              placeholder="Напр: мы единственные, кто работает с нутрициологией без диет..."
+              placeholder="Например: у конкурента сильный сторителлинг, мы хотим взять это за основу; наше отличие — работаем только с нутрициологией без диет..."
+              value={competitorNotes}
+              onChange={(e) => setCompetitorNotes(e.target.value)}
               rows={3}
               className="bg-input border-border resize-none text-sm"
             />
@@ -452,7 +577,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         </div>
       )}
 
-      {/* Step 8: Summary */}
+      {/* Step 8: Summary / Итог */}
       {step === 8 && (
         <div className="space-y-4">
           {summary ? (
@@ -460,7 +585,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-primary" />
-                  Стратегическое резюме прогрева
+                  Стратегия прогрева
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -469,7 +594,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
             </Card>
           ) : (
             <div className="text-center py-8">
-              <p className="text-muted-foreground text-sm mb-4">Нажмите для генерации стратегического резюме</p>
+              <p className="text-muted-foreground text-sm mb-4">Нажмите для формирования стратегии прогрева</p>
             </div>
           )}
 
@@ -480,9 +605,9 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
               className="w-full gradient-accent text-white hover:opacity-90"
             >
               {generatingSummary ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Генерация резюме...</>
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Формируем стратегию...</>
               ) : (
-                <><Sparkles className="mr-2 h-4 w-4" /> Сгенерировать резюме</>
+                <><Sparkles className="mr-2 h-4 w-4" /> Сформировать стратегию</>
               )}
             </Button>
           )}
@@ -548,9 +673,9 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           >
             {step === 7 ? (
               generatingSummary ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Генерация...</>
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Формируем стратегию...</>
               ) : (
-                <><Sparkles className="mr-2 h-4 w-4" /> Сгенерировать резюме</>
+                <><Sparkles className="mr-2 h-4 w-4" /> Сформировать стратегию</>
               )
             ) : (
               <>Далее <ChevronRight className="ml-1 h-4 w-4" /></>

@@ -16,10 +16,10 @@ export async function POST(request: Request) {
     const genCheck = await checkAndConsumeGeneration(user.id)
     if (!genCheck.allowed) {
       return NextResponse.json({
-        error: 'Лимит генераций исчерпан',
+        error: 'Лимит запросов исчерпан',
         code: 'GENERATION_LIMIT',
         remaining: 0,
-        hint: 'Пригласи друга (+10 генераций) или перейди на платный тариф',
+        hint: 'Пригласи друга (+10 бонусных запросов) или перейди на платный тариф',
       }, { status: 429 })
     }
 

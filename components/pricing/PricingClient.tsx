@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { toast } from 'sonner'
-import { CheckCircle2, Zap, Star, Building2, Sparkles, Gift } from 'lucide-react'
+import { CheckCircle2, Zap, Star, Building2, Sparkles, Gift, Users } from 'lucide-react'
 import type { SubscriptionPlan } from '@/lib/generations-config'
 import { PLAN_CONFIG } from '@/lib/generations-config'
 
@@ -78,7 +78,7 @@ export function PricingClient({
           </div>
           <div className="space-y-1.5">
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Использовано в этом месяце</span>
+              <span>Использовано запросов в этом месяце</span>
               <span>{generationsUsed} / {monthlyLimit}</span>
             </div>
             <Progress value={monthlyPct} className="h-1.5" />
@@ -96,15 +96,12 @@ export function PricingClient({
           return (
             <Card
               key={key}
-              className={`relative flex flex-col ${PLAN_COLORS[key]} ${isCurrent ? 'bg-primary/5' : 'bg-card'}`}
+              className={`overflow-visible flex flex-col ${PLAN_COLORS[key]} ${isCurrent ? 'bg-primary/5' : 'bg-card'}`}
             >
-              {badge && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <Badge className="bg-primary text-primary-foreground text-xs px-3">{badge}</Badge>
-                </div>
-              )}
-
               <CardHeader className="pb-4 pt-5">
+                {badge && (
+                  <Badge className="self-start mb-2 bg-primary/15 text-primary border-primary/30 text-xs">{badge}</Badge>
+                )}
                 <div className="flex items-center gap-2 mb-2 text-primary">
                   {PLAN_ICONS[key]}
                   <CardTitle className="text-base">{cfg.label}</CardTitle>
@@ -114,7 +111,7 @@ export function PricingClient({
                   <span className="text-muted-foreground text-sm mb-1">/мес</span>
                 </div>
                 <CardDescription className="text-xs">
-                  {cfg.generations} генераций · {cfg.projects === -1 ? '∞' : cfg.projects} {cfg.projects === 1 ? 'проект' : 'проектов'}
+                  {cfg.generations} {cfg.generations === 5 ? 'запроса' : 'запросов'} к AI · {cfg.projects === -1 ? '∞' : cfg.projects} {cfg.projects === 1 ? 'проект' : cfg.projects <= 4 ? 'проекта' : 'проектов'}
                 </CardDescription>
               </CardHeader>
 
@@ -149,22 +146,23 @@ export function PricingClient({
         })}
       </div>
 
-      {/* Cost transparency */}
-      <Card className="border-border">
-        <CardContent className="p-5">
-          <h3 className="font-semibold text-sm mb-3">Почему именно такие тарифы?</h3>
-          <div className="grid sm:grid-cols-3 gap-4 text-xs text-muted-foreground">
-            <div>
-              <p className="text-foreground font-medium mb-1">Себестоимость</p>
-              <p>Каждая генерация стоит ~$0.03–0.05 в API (Claude + OpenAI embeddings). Тарифы покрывают эти расходы с разумной маржой.</p>
+      {/* Bonuses and referral */}
+      <Card>
+        <CardContent className="p-5 space-y-4">
+          <div className="grid sm:grid-cols-2 gap-4 text-xs">
+            <div className="flex gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-400/10 border border-amber-200 dark:border-amber-400/20">
+              <Gift className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium text-foreground mb-1">Бонусные запросы не сгорают</p>
+                <p className="text-muted-foreground">Накапливаются от реферальной программы и акций. Расходуются после исчерпания месячного лимита.</p>
+              </div>
             </div>
-            <div>
-              <p className="text-foreground font-medium mb-1">Бонусные генерации</p>
-              <p>Не сгорают в конце месяца. Накапливаются от рефералов и акций. Расходуются после исчерпания месячного лимита.</p>
-            </div>
-            <div>
-              <p className="text-foreground font-medium mb-1">Реферальная программа</p>
-              <p>Приглашай коллег — получай +10 при регистрации и +25 при их первой оплате. 2 уровень: +5 и +12.</p>
+            <div className="flex gap-3 p-3 rounded-lg bg-primary/5 border border-primary/20">
+              <Users className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium text-foreground mb-1">Приглашай друзей — получай бонусы</p>
+                <p className="text-muted-foreground">Поделись своей ссылкой: когда друг зарегистрируется — ты получишь +10 запросов, а при покупке тарифа — ещё +25.</p>
+              </div>
             </div>
           </div>
         </CardContent>

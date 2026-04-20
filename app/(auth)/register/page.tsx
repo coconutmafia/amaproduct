@@ -27,7 +27,7 @@ function RegisterForm() {
 
   useEffect(() => {
     if (refCode) {
-      toast.info(`Реферальный код ${refCode} — вы получите +${REFERRAL_REWARDS.invitee_signup} генераций`, { duration: 5000 })
+      toast.info(`Реферальный код ${refCode} — вы получите +${REFERRAL_REWARDS.invitee_signup} запросов к AI`, { duration: 5000 })
     }
   }, [refCode])
 
@@ -139,7 +139,7 @@ function RegisterForm() {
                 <span className="font-medium text-amber-700 dark:text-amber-400">Тебя пригласили! </span>
                 <span className="text-amber-600 dark:text-amber-400/80">После регистрации — </span>
                 <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
-                  +{REFERRAL_REWARDS.invitee_signup} генераций в подарок
+                  +{REFERRAL_REWARDS.invitee_signup} запросов к AI в подарок
                 </Badge>
               </div>
             </div>
@@ -240,7 +240,7 @@ function RegisterForm() {
           },
           {
             icon: CheckCircle2,
-            title: `${REFERRAL_REWARDS.invitee_signup} генераций бесплатно`,
+            title: `${REFERRAL_REWARDS.invitee_signup} запросов к AI бесплатно`,
             desc: 'Сразу после регистрации — попробуй без оплаты',
           },
         ].map(({ icon: Icon, title, desc }) => (

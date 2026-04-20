@@ -23,7 +23,12 @@ export default async function ProjectsPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Мои проекты</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {projects?.length || 0} проектов
+            {(() => {
+              const n = projects?.length || 0
+              if (n === 1) return '1 проект'
+              if (n >= 2 && n <= 4) return `${n} проекта`
+              return `${n} проектов`
+            })()}
           </p>
         </div>
         <Button asChild className="gradient-accent text-white hover:opacity-90">

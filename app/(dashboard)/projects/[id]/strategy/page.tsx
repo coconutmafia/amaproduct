@@ -38,7 +38,7 @@ export default async function StrategyPage({ params }: Props) {
           <Link href={`/projects/${id}`}><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
         <div>
-          <h1 className="text-xl font-bold text-foreground">Стратегия прогрева</h1>
+          <h1 className="text-xl font-bold text-foreground">План прогрева</h1>
           <p className="text-sm text-muted-foreground">{project.name}</p>
         </div>
       </div>

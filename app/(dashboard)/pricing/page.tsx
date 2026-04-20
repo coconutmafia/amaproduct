@@ -22,7 +22,7 @@ export default async function PricingPage() {
       <div className="text-center mb-10">
         <h1 className="text-3xl font-bold mb-2">Тарифные планы</h1>
         <p className="text-muted-foreground max-w-xl mx-auto">
-          Каждый запрос к AI стоит денег — тарифы построены так, чтобы вы платили ровно столько, сколько используете
+          Специально для блогеров и экспертов. Выбери план — и Ava поможет тебе создавать контент, прогревы и стратегии быстрее.
         </p>
       </div>
       <PricingClient

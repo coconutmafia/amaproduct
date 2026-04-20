@@ -60,7 +60,7 @@ export function SettingsClient({ userId, currentAiName }: Props) {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Ошибка')
-      toast.success(`Код применён! +${data.bonus_received} генераций начислено 🎉`)
+      toast.success(`Код применён! +${data.bonus_received} запросов к AI начислено 🎉`)
       setPromoCode('')
       router.refresh()
     } catch (e: unknown) {
@@ -143,7 +143,7 @@ export function SettingsClient({ userId, currentAiName }: Props) {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            Получил промо-код от AMAproduct или реферальную ссылку от друга? Введи код — получишь бонусные генерации.
+            Получил промо-код от AMAproduct или реферальную ссылку от друга? Введи код — получишь дополнительные запросы к AI.
           </p>
           <div className="flex gap-2">
             <Input
@@ -209,7 +209,7 @@ export function SettingsClient({ userId, currentAiName }: Props) {
             <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
               <p className="text-sm font-medium text-destructive">Ты уверен? Это действие необратимо.</p>
               <p className="text-xs text-muted-foreground">
-                Будут удалены: все проекты, материалы, сгенерированный контент, бонусные генерации.
+                Будут удалены: все проекты, материалы, сгенерированный контент, бонусные запросы.
               </p>
               <div className="space-y-1.5">
                 <Label className="text-xs">Напиши <strong>УДАЛИТЬ</strong> для подтверждения</Label>

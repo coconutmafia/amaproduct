@@ -52,7 +52,7 @@ export default async function ProjectPage({ params }: Props) {
   const tabs = [
     { href: `/projects/${id}`, label: 'Обзор' },
     { href: `/projects/${id}/knowledge`, label: 'Материалы' },
-    { href: `/projects/${id}/strategy`, label: 'Стратегия' },
+    { href: `/projects/${id}/strategy`, label: 'План прогрева' },
     { href: `/projects/${id}/content-plan`, label: 'Контент-план' },
     { href: `/projects/${id}/generator`, label: 'Генератор' },
   ]
@@ -86,6 +86,30 @@ export default async function ProjectPage({ params }: Props) {
         </Badge>
       </div>
 
+      {/* Description + target audience */}
+      {(project.description || project.target_audience || project.content_goals) && (
+        <div className="grid sm:grid-cols-2 gap-3">
+          {project.description && (
+            <div className="p-4 rounded-xl border border-border bg-card">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">О блогере</p>
+              <p className="text-sm text-foreground leading-relaxed">{project.description}</p>
+            </div>
+          )}
+          {project.target_audience && (
+            <div className="p-4 rounded-xl border border-border bg-card">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Целевая аудитория</p>
+              <p className="text-sm text-foreground leading-relaxed">{project.target_audience}</p>
+            </div>
+          )}
+          {project.content_goals && (
+            <div className="p-4 rounded-xl border border-border bg-card sm:col-span-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Цели контента</p>
+              <p className="text-sm text-foreground leading-relaxed">{project.content_goals}</p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-border pb-0 overflow-x-auto">
         {tabs.map((tab) => (
@@ -106,7 +130,7 @@ export default async function ProjectPage({ params }: Props) {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { href: `/projects/${id}/knowledge`, icon: BookOpen, label: 'Материалы', color: 'text-blue-400 bg-blue-400/10' },
-              { href: `/projects/${id}/strategy`, icon: Calendar, label: 'Стратегия', color: 'text-green-400 bg-green-400/10' },
+              { href: `/projects/${id}/strategy`, icon: Calendar, label: 'План прогрева', color: 'text-green-400 bg-green-400/10' },
               { href: `/projects/${id}/content-plan`, icon: Grid3X3, label: 'Контент-план', color: 'text-yellow-400 bg-yellow-400/10' },
               { href: `/projects/${id}/generator`, icon: Sparkles, label: 'Генератор', color: 'text-purple-400 bg-purple-400/10' },
               { href: `/projects/${id}/account-analysis`, icon: BarChart2, label: 'Анализ Instagram', color: 'text-pink-400 bg-pink-400/10' },

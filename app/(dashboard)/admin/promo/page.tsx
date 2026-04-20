@@ -112,7 +112,7 @@ export default function AdminPromoPage() {
         <div>
           <h1 className="text-2xl font-bold">Промо-коды</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Создавай коды с любым количеством генераций для тестов и друзей
+            Создавай промо-коды с бонусными запросами для тестов и друзей
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={load}>

@@ -76,14 +76,14 @@ export default async function SettingsPage() {
       <Card>
         <CardHeader className="pb-4">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Zap className="h-4 w-4" /> Подписка и генерации
+            <Zap className="h-4 w-4" /> Подписка и запросы
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-secondary/20">
             <div>
               <p className="text-sm font-medium capitalize">{subscriptionTier === 'free' ? 'Free план' : `${subscriptionTier} план`}</p>
-              <p className="text-xs text-muted-foreground">Использовано в этом месяце: {generationsUsed} генераций</p>
+              <p className="text-xs text-muted-foreground">Использовано в этом месяце: {generationsUsed} запросов к AI</p>
             </div>
             <a href="/pricing" className="text-xs text-primary hover:underline font-medium">Улучшить →</a>
           </div>
@@ -91,7 +91,7 @@ export default async function SettingsPage() {
             <div className="flex items-center gap-2 p-3 rounded-lg border border-amber-200 dark:border-amber-400/30 bg-amber-50 dark:bg-amber-400/10 text-sm">
               <Gift className="h-4 w-4 text-amber-600" />
               <span className="text-amber-700 dark:text-amber-400">
-                Бонусных генераций на счету: <strong>+{bonusGenerations}</strong>
+                Бонусных запросов на счету: <strong>+{bonusGenerations}</strong>
               </span>
             </div>
           )}
@@ -108,7 +108,7 @@ export default async function SettingsPage() {
         <CardContent>
           <div className="grid gap-2">
             {[
-              { label: 'Claude AI (генерация контента)',    ok: !!process.env.ANTHROPIC_API_KEY },
+              { label: 'Claude AI (создание контента)',    ok: !!process.env.ANTHROPIC_API_KEY },
               { label: 'OpenAI (векторизация материалов)', ok: !!process.env.OPENAI_API_KEY },
               { label: 'Supabase (база данных)',            ok: true },
             ].map(({ label, ok }) => (

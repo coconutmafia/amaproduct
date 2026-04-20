@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card } from '@/components/ui/card'
 import { Sparkles, ChevronLeft, ChevronRight, Download, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ContentItem, ContentType, WarmupPhase } from '@/types'
@@ -39,14 +38,12 @@ const CONTENT_TYPE_CONFIG: Record<ContentType, { label: string; color: string; s
   email: { label: 'Email', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-400/20', shortLabel: 'E' },
 }
 
-const PHASE_COLORS: Record<string, string> = {
-  awareness: 'bg-blue-500/10 border-blue-500/20',
-  trust: 'bg-green-500/10 border-green-500/20',
-  desire: 'bg-yellow-500/10 border-yellow-500/20',
-  close: 'bg-red-500/10 border-red-500/20',
+const PHASE_NAMES: Record<string, string> = {
+  awareness: 'Знакомство',
+  trust: 'Доверие',
+  desire: 'Желание',
+  close: 'Закрытие',
 }
-
-const DAYS_RU = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС']
 
 export function ContentPlanGrid({
   projectId,
@@ -82,9 +79,9 @@ export function ContentPlanGrid({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="overflow-x-hidden space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" className="h-8 w-8 border-border" onClick={() => onWeekChange(-1)}>
             <ChevronLeft className="h-4 w-4" />
@@ -109,73 +106,74 @@ export function ContentPlanGrid({
           </Button>
           <Button variant="outline" size="sm" className="border-border text-xs h-8" onClick={onExport}>
             <Download className="mr-1 h-3 w-3" />
-            Экспорт
+            Скачать контент план
           </Button>
         </div>
       </div>
 
-      {/* Grid */}
-      <div className="grid grid-cols-7 gap-2">
-        {/* Day headers */}
-        {DAYS_RU.map((day) => (
-          <div key={day} className="text-center text-xs font-semibold text-muted-foreground py-2">
-            {day}
-          </div>
-        ))}
+      {/* Vertical day list */}
+      <div className="space-y-2">
+        {days.map((day) => {
+          const phaseName = day.phase ? PHASE_NAMES[day.phase] : null
 
-        {/* Day cells */}
-        {days.map((day) => (
-          <div
-            key={day.day}
-            className={`min-h-[140px] rounded-xl border p-2 space-y-1.5 transition-colors ${
-              day.phase ? PHASE_COLORS[day.phase] : 'border-border bg-card/50'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-foreground">Д{day.day}</span>
-              <span className="text-[9px] text-muted-foreground">{day.date}</span>
+          return (
+            <div
+              key={day.day}
+              className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card hover:bg-secondary/20 transition-colors"
+            >
+              {/* Day name + date */}
+              <div className="w-20 shrink-0">
+                <p className="text-sm font-bold text-foreground">{day.dayOfWeek}</p>
+                <p className="text-xs text-muted-foreground">{day.date}</p>
+              </div>
+
+              {/* Theme */}
+              {day.theme && (
+                <p className="text-xs text-muted-foreground hidden sm:block flex-1 truncate min-w-0">{day.theme}</p>
+              )}
+
+              {/* Content type buttons */}
+              <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
+                {day.plannedTypes?.map((type) => {
+                  const config = CONTENT_TYPE_CONFIG[type]
+                  const existingItem = day.items.find((i) => i.content_type === type)
+                  const genKey = `${day.day}-${type}`
+                  const isGenerating = generatingDay === genKey
+
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => !existingItem && handleGenerate(day, type)}
+                      disabled={!!existingItem || isGenerating}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
+                        existingItem
+                          ? `${config.color} opacity-70 cursor-default`
+                          : `${config.color} hover:opacity-80 cursor-pointer`
+                      }`}
+                    >
+                      {isGenerating ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3 w-3" />
+                      )}
+                      {config.label}
+                      {existingItem?.is_approved && ' ✓'}
+                    </button>
+                  )
+                })}
+
+                {!day.plannedTypes && (
+                  <span className="text-xs text-muted-foreground py-1">—</span>
+                )}
+              </div>
+
+              {/* Phase badge */}
+              {phaseName && (
+                <Badge className="text-[10px] shrink-0 hidden md:flex">{phaseName}</Badge>
+              )}
             </div>
-
-            {day.theme && (
-              <p className="text-[9px] text-muted-foreground leading-tight line-clamp-2">{day.theme}</p>
-            )}
-
-            {/* Planned types */}
-            {day.plannedTypes?.map((type) => {
-              const config = CONTENT_TYPE_CONFIG[type]
-              const existingItem = day.items.find((i) => i.content_type === type)
-              const genKey = `${day.day}-${type}`
-              const isGenerating = generatingDay === genKey
-
-              return (
-                <button
-                  key={type}
-                  onClick={() => !existingItem && handleGenerate(day, type)}
-                  disabled={!!existingItem || isGenerating}
-                  className={`w-full flex items-center gap-1 rounded-md px-1.5 py-1 text-[9px] font-medium border transition-all ${
-                    existingItem
-                      ? `${config.color} opacity-70`
-                      : `hover:opacity-80 ${config.color} cursor-pointer`
-                  }`}
-                >
-                  {isGenerating ? (
-                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-2.5 w-2.5" />
-                  )}
-                  <span>{config.label}</span>
-                  {existingItem?.is_approved && (
-                    <span className="ml-auto">✓</span>
-                  )}
-                </button>
-              )
-            })}
-
-            {!day.plannedTypes && (
-              <div className="text-[9px] text-muted-foreground text-center py-2">—</div>
-            )}
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {/* Legend */}

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { usePathname } from 'next/navigation'
 import { Menu, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
@@ -19,6 +20,12 @@ interface MobileNavProps {
 
 export function MobileNav({ user, projects, isAdmin }: MobileNavProps) {
   const [open, setOpen] = useState(false)
+  const pathname = usePathname()
+
+  // Close menu automatically on every navigation
+  useEffect(() => {
+    setOpen(false)
+  }, [pathname])
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -27,7 +34,7 @@ export function MobileNav({ user, projects, isAdmin }: MobileNavProps) {
         <span className="sr-only">Открыть меню</span>
       </SheetTrigger>
       <SheetContent side="left" className="p-0 w-64">
-        <Sidebar user={user} projects={projects} isAdmin={isAdmin} />
+        <Sidebar user={user} projects={projects} isAdmin={isAdmin} onNavigate={() => setOpen(false)} />
       </SheetContent>
     </Sheet>
   )

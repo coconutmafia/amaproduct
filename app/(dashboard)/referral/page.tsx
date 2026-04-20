@@ -80,7 +80,7 @@ export default function ReferralPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Ошибка')
-      toast.success(`Код применён! +${data.bonus_received} генераций начислено`)
+      toast.success(`Код применён! +${data.bonus_received} запросов к AI начислено`)
       setRefInput('')
       load()
     } catch (e: unknown) {
@@ -113,9 +113,9 @@ export default function ReferralPage() {
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold">Реферальная программа</h1>
+        <h1 className="text-2xl font-bold">Твои бонусы</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Приглашай друзей — зарабатывай бонусные генерации
+          Делись AMAproduct с коллегами — получай бонусные запросы к AI за каждого приглашённого
         </p>
       </div>
 
@@ -139,7 +139,7 @@ export default function ReferralPage() {
         </Card>
         <Card>
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Заработано генераций</p>
+            <p className="text-xs text-muted-foreground">Заработано запросов</p>
             <p className="text-2xl font-bold text-primary">{stats?.total_gens_earned ?? 0}</p>
             <p className="text-xs text-muted-foreground mt-1">за всё время</p>
           </CardContent>
@@ -148,7 +148,7 @@ export default function ReferralPage() {
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Бонус на счету</p>
             <p className="text-2xl font-bold text-amber-600">{bonusRemaining}</p>
-            <p className="text-xs text-muted-foreground mt-1">генераций сейчас</p>
+            <p className="text-xs text-muted-foreground mt-1">запросов к AI</p>
           </CardContent>
         </Card>
       </div>
@@ -177,25 +177,21 @@ export default function ReferralPage() {
                   </Badge>
                   <span className="text-xs text-muted-foreground">— код для ручного ввода</span>
                 </div>
-                <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 space-y-1.5 text-xs text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <Zap className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                    Приглашённый получает <span className="text-foreground font-medium">+{REFERRAL_REWARDS.invitee_signup} генераций</span> сразу
+                <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 space-y-2 text-xs">
+                  <p className="font-medium text-foreground">Как это работает:</p>
+                  <div className="flex items-start gap-2 text-muted-foreground">
+                    <Zap className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+                    <span>Друг регистрируется по твоей ссылке → <span className="text-foreground font-medium">ты получаешь +{REFERRAL_REWARDS.referrer_l1_signup} запросов, друг — +{REFERRAL_REWARDS.invitee_signup}</span></span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Gift className="h-3.5 w-3.5 text-primary shrink-0" />
-                    Ты получаешь <span className="text-foreground font-medium">+{REFERRAL_REWARDS.referrer_l1_signup} генераций</span> при регистрации
+                  <div className="flex items-start gap-2 text-muted-foreground">
+                    <TrendingUp className="h-3.5 w-3.5 text-green-500 shrink-0 mt-0.5" />
+                    <span>Друг покупает любой платный тариф → <span className="text-foreground font-medium">ты получаешь ещё +{REFERRAL_REWARDS.referrer_l1_payment} запросов</span></span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className="h-3.5 w-3.5 text-green-500 shrink-0" />
-                    Ты получаешь <span className="text-foreground font-medium">+{REFERRAL_REWARDS.referrer_l1_payment} генераций</span> при первой оплате
+                  <div className="flex items-start gap-2 text-muted-foreground pt-1 border-t border-border">
+                    <Users className="h-3.5 w-3.5 text-blue-500 shrink-0 mt-0.5" />
+                    <span>Если друг сам кого-то пригласит — ты дополнительно получишь <span className="text-foreground font-medium">+{REFERRAL_REWARDS.referrer_l2_signup}</span> / <span className="text-foreground font-medium">+{REFERRAL_REWARDS.referrer_l2_payment}</span> запросов (2-й уровень)</span>
                   </div>
-                  <div className="flex items-center gap-2 pt-1 border-t border-border">
-                    <Users className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-                    <span>2 уровень: когда твой реферал кого-то пригласит — ты тоже получишь
-                      <span className="text-foreground font-medium"> +{REFERRAL_REWARDS.referrer_l2_signup}</span> /
-                      <span className="text-foreground font-medium"> +{REFERRAL_REWARDS.referrer_l2_payment}</span> генераций</span>
-                  </div>
+                  <p className="text-[10px] text-muted-foreground pt-1">Запросы не сгорают и накапливаются на твоём счету</p>
                 </div>
               </>
             ) : (
@@ -209,20 +205,20 @@ export default function ReferralPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-amber-500" />
-              Применить реферальный код
+              У тебя есть реферальный или промо-код?
             </CardTitle>
             <CardDescription className="text-xs">
-              Если вас пригласил друг — введите его код и получите бонусные генерации
+              Введи код — получишь бонусные запросы к AI сразу на счёт
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex gap-2">
               <Input
-                placeholder="Например: AMA3X9PQ"
+                placeholder="Например: AMA3X9PQ или PROMO2025"
                 value={refInput}
                 onChange={e => setRefInput(e.target.value.toUpperCase())}
                 className="font-mono"
-                maxLength={8}
+                maxLength={20}
               />
               <Button onClick={applyReferral} disabled={applyingRef || !refInput.trim()}>
                 {applyingRef ? (
@@ -231,7 +227,7 @@ export default function ReferralPage() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Код можно применить только один раз и только для своего аккаунта.
+              Код применяется один раз. Если тебя пригласили при регистрации — код уже применён.
             </p>
           </CardContent>
         </Card>
@@ -243,7 +239,7 @@ export default function ReferralPage() {
           <div className="flex items-center justify-between">
             <CardTitle className="text-base flex items-center gap-2">
               <Zap className="h-4 w-4 text-amber-500" />
-              Использование генераций
+              Использование запросов к AI
             </CardTitle>
             <Badge variant="outline" className="text-xs capitalize">{planCfg.label}</Badge>
           </div>
@@ -261,7 +257,7 @@ export default function ReferralPage() {
             <div className="flex items-center justify-between rounded-lg bg-amber-50 dark:bg-amber-400/10 border border-amber-200 dark:border-amber-400/20 p-3">
               <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400">
                 <Gift className="h-4 w-4" />
-                Бонусных генераций
+                Бонусных запросов
               </div>
               <span className="font-bold text-amber-700 dark:text-amber-400">+{bonusRemaining}</span>
             </div>
@@ -320,9 +316,9 @@ export default function ReferralPage() {
       <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-background">
         <CardContent className="p-4 flex items-center justify-between">
           <div>
-            <p className="font-semibold text-sm">Нужно больше генераций?</p>
+            <p className="font-semibold text-sm">Нужно больше запросов?</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Тарифы от $19/мес — до 800 генераций в месяц
+              Тарифы от $19/мес — до 800 запросов в месяц
             </p>
           </div>
           <Button variant="default" size="sm" asChild>

@@ -16,7 +16,8 @@ import {
   Gift,
   Zap,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
@@ -34,11 +35,22 @@ interface SidebarProps {
   }
   projects?: Array<{ id: string; name: string; completeness_score: number }>
   isAdmin?: boolean
+  onNavigate?: () => void
 }
 
-export function Sidebar({ user, projects = [], isAdmin = false }: SidebarProps) {
+export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: SidebarProps) {
   const pathname = usePathname()
   const [projectsOpen, setProjectsOpen] = useState(true)
+
+  const handleLogout = useCallback(async () => {
+    try {
+      const supabase = createClient()
+      await supabase.auth.signOut()
+    } catch {
+      // ignore
+    }
+    window.location.href = '/login'
+  }, [])
 
   const navItems = [
     {
@@ -58,7 +70,7 @@ export function Sidebar({ user, projects = [], isAdmin = false }: SidebarProps) 
     {
       href: '/referral',
       icon: Gift,
-      label: 'Рефералы',
+      label: 'Твои бонусы',
       badge: null as string | null,
     },
     {
@@ -83,11 +95,12 @@ export function Sidebar({ user, projects = [], isAdmin = false }: SidebarProps) 
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+      <nav className="flex-1 overflow-y-auto min-h-0 px-3 py-4 space-y-1">
         {navItems.map((item) => (
           <Link
             key={item.href}
             href={item.href}
+            onClick={() => onNavigate?.()}
             className={cn(
               'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
               pathname === item.href
@@ -118,6 +131,7 @@ export function Sidebar({ user, projects = [], isAdmin = false }: SidebarProps) 
               <div key={project.id}>
                 <Link
                   href={`/projects/${project.id}`}
+                  onClick={() => onNavigate?.()}
                   className={cn(
                     'flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors',
                     pathname.startsWith(`/projects/${project.id}`)
@@ -134,12 +148,13 @@ export function Sidebar({ user, projects = [], isAdmin = false }: SidebarProps) 
                 {pathname.startsWith(`/projects/${project.id}`) && (
                   <div className="ml-3 mt-0.5 space-y-0.5 border-l border-border/50 pl-2">
                     {[
-                      { href: `/projects/${project.id}/style-bank`, label: '✦ Банк стиля' },
+                      { href: `/projects/${project.id}/style-bank`, label: '✦ Мой стиль' },
                       { href: `/projects/${project.id}/generator`, label: '✦ Генератор' },
                     ].map((sub) => (
                       <Link
                         key={sub.href}
                         href={sub.href}
+                        onClick={() => onNavigate?.()}
                         className={cn(
                           'block rounded px-2 py-1 text-[10px] transition-colors',
                           pathname === sub.href
@@ -156,6 +171,7 @@ export function Sidebar({ user, projects = [], isAdmin = false }: SidebarProps) 
             ))}
             <Link
               href="/projects/new"
+              onClick={() => onNavigate?.()}
               className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:text-primary transition-colors"
             >
               <Plus className="h-3 w-3" />
@@ -168,6 +184,7 @@ export function Sidebar({ user, projects = [], isAdmin = false }: SidebarProps) 
         {isAdmin && (
           <Link
             href="/knowledge-vault"
+            onClick={() => onNavigate?.()}
             className={cn(
               'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
               pathname === '/knowledge-vault'
@@ -187,6 +204,7 @@ export function Sidebar({ user, projects = [], isAdmin = false }: SidebarProps) 
         {isAdmin && (
           <Link
             href="/admin/promo"
+            onClick={() => onNavigate?.()}
             className={cn(
               'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
               pathname === '/admin/promo'
@@ -207,6 +225,7 @@ export function Sidebar({ user, projects = [], isAdmin = false }: SidebarProps) 
             <Link
               key={item.href}
               href={item.href}
+              onClick={() => onNavigate?.()}
               className={cn(
                 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
                 pathname === item.href
@@ -242,13 +261,13 @@ export function Sidebar({ user, projects = [], isAdmin = false }: SidebarProps) 
             </div>
           </div>
           {/* Prominent logout button */}
-          <Link
-            href="/auth/logout"
-            className="flex items-center gap-2 w-full rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 w-full rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors text-left"
           >
             <LogOut className="h-4 w-4 shrink-0" />
             Выйти из аккаунта
-          </Link>
+          </button>
         </div>
       )}
     </aside>

@@ -96,7 +96,7 @@ export function WarmupTimeline({ planData, projectId, warmupPlanId, onGenerateCo
             ={key === 'post' ? 'Пост' : key === 'stories' ? 'Сториз' : key === 'reels' ? 'Рилс' : key === 'carousel' ? 'Карусель' : key === 'live' ? 'Эфир' : 'Вебинар'}
           </span>
         ))}
-        <span className="text-[10px]">Кликайте на день для просмотра и генерации</span>
+        <span className="text-[10px]">Кликайте на день для просмотра и создания контента</span>
       </div>
 
       {/* Selected day details */}

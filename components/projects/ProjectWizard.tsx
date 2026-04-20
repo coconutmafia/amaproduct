@@ -51,8 +51,10 @@ export function ProjectWizard() {
   const [youtubeUrl, setYoutubeUrl]   = useState('')
 
   // ── Step 2 ──────────────────────────────────────
+  const [salesType, setSalesType] = useState<'launch' | 'evergreen'>('launch')
   const [launchDate, setLaunchDate]     = useState('')
   const [launchBudget, setLaunchBudget] = useState('')
+  const [launchCurrency, setLaunchCurrency] = useState('RUB')
   const [products, setProducts] = useState<Product[]>([{
     name: '', product_type: 'курс', price: '', currency: 'RUB', description: '', sales_page_url: ''
   }])
@@ -224,7 +226,7 @@ export function ProjectWizard() {
 
             {/* Main fields */}
             <div className="space-y-1.5">
-              <Label>Имя блогера / название проекта <span className="text-destructive">*</span></Label>
+              <Label>Имя блогера / название проекта<span className="text-destructive ml-0.5">*</span></Label>
               <Input
                 placeholder="Анна Иванова — Нутрициолог"
                 value={name}
@@ -305,7 +307,7 @@ export function ProjectWizard() {
                   />
                 </div>
               ))}
-              <p className={HINT}>Вставь ссылки на активные площадки. AI учтёт специфику каждой при генерации</p>
+              <p className={HINT}>Вставь ссылки на активные площадки. AI учтёт специфику каждой</p>
             </div>
           </CardContent>
         </Card>
@@ -324,31 +326,68 @@ export function ProjectWizard() {
           </CardHeader>
           <CardContent className="space-y-5">
 
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="flex items-center gap-1.5">
-                  <CalendarDays className="h-3.5 w-3.5 text-primary" /> Дата старта запуска
-                </Label>
-                <Input type="date" value={launchDate} onChange={e => setLaunchDate(e.target.value)} />
-                <p className={HINT}>Когда открываются продажи? AI считает дни прогрева от этой даты</p>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="flex items-center gap-1.5">
-                  <Wallet className="h-3.5 w-3.5 text-primary" /> Ожидаемая выручка запуска (₽)
-                </Label>
-                <Input
-                  type="number"
-                  placeholder="500000"
-                  value={launchBudget}
-                  onChange={e => setLaunchBudget(e.target.value)}
-                />
-                <p className={HINT}>Сколько планируешь заработать? AI учтёт масштаб при составлении плана</p>
+            {/* Sales type selector */}
+            <div className="space-y-2">
+              <Label>Как вы продаёте?</Label>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { value: 'launch', label: 'Запуск в определённую дату', desc: 'Продажи открываются один раз в конкретную дату' },
+                  { value: 'evergreen', label: 'Постоянные продажи', desc: 'Продукты или услуги продаются постоянно без дедлайнов' },
+                ].map(({ value, label, desc }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setSalesType(value as 'launch' | 'evergreen')}
+                    className={`text-left p-4 rounded-xl border transition-all ${salesType === value ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/40'}`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className={`h-4 w-4 rounded-full border-2 shrink-0 ${salesType === value ? 'border-primary bg-primary' : 'border-muted-foreground'}`} />
+                      <span className="text-sm font-medium text-foreground">{label}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground pl-6">{desc}</p>
+                  </button>
+                ))}
               </div>
             </div>
 
+            {/* Launch-specific fields */}
+            {salesType === 'launch' && (
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="flex items-center gap-1.5">
+                    <CalendarDays className="h-3.5 w-3.5 text-primary" /> Дата старта запуска
+                  </Label>
+                  <Input type="date" value={launchDate} onChange={e => setLaunchDate(e.target.value)} />
+                  <p className={HINT}>Когда открываются продажи? AI считает дни прогрева от этой даты</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="flex items-center gap-1.5">
+                    <Wallet className="h-3.5 w-3.5 text-primary" /> Ожидаемая выручка запуска
+                  </Label>
+                  <div className="flex gap-1.5">
+                    <Input
+                      type="number"
+                      placeholder="500000"
+                      value={launchBudget}
+                      onChange={e => setLaunchBudget(e.target.value)}
+                    />
+                    <Select value={launchCurrency} onValueChange={v => { if (v) setLaunchCurrency(v) }}>
+                      <SelectTrigger className="w-24">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {['RUB', 'USD', 'EUR', 'KZT'].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <p className={HINT}>Сколько планируешь заработать? AI учтёт масштаб при составлении плана</p>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label>Продукты для запуска</Label>
+                <Label>{salesType === 'launch' ? 'Продукты для запуска' : 'Продукты / услуги'}</Label>
                 <Badge variant="outline" className="text-xs">{products.length} продукт(ов)</Badge>
               </div>
 
@@ -388,7 +427,7 @@ export function ProjectWizard() {
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Цена</Label>
+                      <Label className="text-xs">Средняя цена</Label>
                       <div className="flex gap-1.5">
                         <Input
                           type="number"
@@ -450,7 +489,7 @@ export function ProjectWizard() {
               <GitBranch className="h-5 w-5 text-primary" /> Воронки продаж
             </CardTitle>
             <CardDescription>
-              Как аудитория попадает в продажу? Можно пропустить — добавишь позже
+              Как происходит продажа? Опиши путь клиента — можно пропустить и добавить позже
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -532,7 +571,7 @@ export function ProjectWizard() {
 
       {/* Navigation */}
       <div className="flex items-center justify-between">
-        <Button variant="outline" onClick={() => setStep(s => s - 1)} disabled={step === 1}>
+        <Button variant="outline" onClick={() => { setStep(s => s - 1); window.scrollTo({ top: 0, behavior: 'smooth' }) }} disabled={step === 1}>
           <ChevronLeft className="mr-2 h-4 w-4" /> Назад
         </Button>
 
@@ -541,6 +580,7 @@ export function ProjectWizard() {
             onClick={() => {
               if (step === 1 && !name.trim()) { toast.error('Введите имя / название проекта'); return }
               setStep(s => s + 1)
+              window.scrollTo({ top: 0, behavior: 'smooth' })
             }}
             className="gradient-accent text-white hover:opacity-90"
           >

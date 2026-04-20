@@ -19,6 +19,7 @@ import {
   Filter,
   BookMarked,
   TrendingUp,
+  ChevronDown,
 } from 'lucide-react'
 import type { StyleExample, ContentType } from '@/types'
 
@@ -52,6 +53,8 @@ export default function StyleBankPage() {
   const [loading, setLoading] = useState(true)
   const [activeFilter, setActiveFilter] = useState<ContentType | 'all'>('all')
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [tipOpen, setTipOpen] = useState(true)
+  const [tipInitialized, setTipInitialized] = useState(false)
 
   const fetchExamples = useCallback(async () => {
     try {
@@ -67,6 +70,13 @@ export default function StyleBankPage() {
   }, [id])
 
   useEffect(() => { fetchExamples() }, [fetchExamples])
+
+  useEffect(() => {
+    if (!loading && !tipInitialized) {
+      setTipOpen(examples.length === 0)
+      setTipInitialized(true)
+    }
+  }, [loading, examples.length, tipInitialized])
 
   const handleDelete = async (exampleId: string) => {
     try {
@@ -118,12 +128,12 @@ export default function StyleBankPage() {
         <div className="flex-1">
           <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
             <BookMarked className="h-5 w-5 text-primary" />
-            Банк стиля
+            Мой стиль контента
           </h1>
           <p className="text-sm text-muted-foreground">
             {examples.length === 0
               ? 'Одобри первый пост — и AI начнёт писать в твоём стиле'
-              : `${examples.length} пример${examples.length === 1 ? '' : examples.length < 5 ? 'а' : 'ов'} · AI учится на них при генерации`}
+              : `${examples.length} пример${examples.length === 1 ? '' : examples.length < 5 ? 'а' : 'ов'} · AI учится на них при создании контента`}
           </p>
         </div>
         <Link href={`/projects/${id}/generator`}>
@@ -134,27 +144,33 @@ export default function StyleBankPage() {
         </Link>
       </div>
 
-      {/* How it works banner */}
-      {examples.length === 0 && (
-        <Card className="border-primary/20 bg-primary/5">
-          <CardContent className="p-5 flex gap-4 items-start">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl gradient-accent">
-              <TrendingUp className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <p className="font-semibold text-foreground mb-1">Как работает Банк Стиля?</p>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Когда ты одобряешь пост в генераторе — он попадает сюда как эталон.
-                AI анализирует эти примеры и при следующей генерации имитирует твой уникальный стиль, структуру и подачу.
-                Чем больше одобренных постов — тем точнее AI пишет под тебя.
-              </p>
-              <p className="text-xs text-primary mt-2 font-medium">
-                Совет: одобри 5–7 постов и качество генерации резко вырастет.
-              </p>
-            </div>
+      {/* Always-visible tip card */}
+      <Card className="border-primary/20 bg-primary/5">
+        <button
+          onClick={() => setTipOpen(!tipOpen)}
+          className="w-full flex items-center justify-between p-4 text-left"
+        >
+          <span className="text-sm font-semibold flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-primary" />
+            Зачем нужен «Мой стиль контента»?
+          </span>
+          <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${tipOpen ? 'rotate-180' : ''}`} />
+        </button>
+        {tipOpen && (
+          <CardContent className="pt-0 pb-4 px-4">
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Здесь хранятся примеры контента, которые ты одобрил(а) в генераторе. AI изучает их, чтобы понять твой уникальный стиль — как ты пишешь, какие слова используешь, какова структура твоих постов.
+              Чем больше одобренных примеров — тем точнее AI пишет под тебя.
+            </p>
+            <p className="text-xs text-primary font-medium mt-2">
+              💡 Одобри 5–7 постов в генераторе — и качество контента резко вырастет
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Чтобы добавить примеры: перейди в Генератор → создай пост → нажми «Одобрить стиль»
+            </p>
           </CardContent>
-        </Card>
-      )}
+        )}
+      </Card>
 
       {/* Filter bar */}
       {contentTypes.length > 1 && (

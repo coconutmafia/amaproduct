@@ -16,7 +16,7 @@ export function ProgressIndicator({ score, showLabel = true, className }: Progre
     if (score >= 90) return 'База знаний отлична!'
     if (score >= 70) return 'Загрузите Tone of Voice для персонального контента'
     if (score >= 50) return 'Добавьте кейсы и маркетинговую стратегию'
-    return 'Загрузите материалы для начала генерации контента'
+    return 'Загрузите материалы для начала работы с AI'
   }
 
   return (
