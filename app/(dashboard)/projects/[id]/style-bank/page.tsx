@@ -300,7 +300,7 @@ export default function StyleBankPage() {
           <CardContent className="flex flex-col items-center justify-center py-12 gap-3 text-center">
             <BookMarked className="h-10 w-10 text-muted-foreground opacity-40" />
             <p className="text-sm font-medium text-foreground">
-              {activeFilter === 'all' ? 'Банк стиля пуст' : `Нет примеров типа «${CONTENT_TYPE_CONFIG[activeFilter as ContentType]?.label}»`}
+              {activeFilter === 'all' ? 'Мой стиль пуст — добавь первый пример' : `Нет примеров типа «${CONTENT_TYPE_CONFIG[activeFilter as ContentType]?.label}»`}
             </p>
             <p className="text-xs text-muted-foreground">
               Генерируй контент и нажимай «Одобрить стиль» — примеры появятся здесь
