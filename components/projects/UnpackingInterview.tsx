@@ -82,14 +82,54 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
   const [isSaving, setIsSaving] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const recognitionRef = useRef<unknown>(null)
+  const shouldRecordRef = useRef(false)
 
   const currentQ = step >= 1 && step <= QUESTIONS.length ? QUESTIONS[step - 1] : null
   const totalSteps = QUESTIONS.length
   const progress = step === 0 ? 0 : Math.round((step / totalSteps) * 100)
 
   // ── Voice recording ────────────────────────────────────────────────────────
+  // iOS Safari stops SpeechRecognition after each utterance even with continuous=true.
+  // Fix: track intent via ref and restart a new session on onend until user taps Stop.
+  const startRecognitionSession = useCallback(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SR) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = new SR()
+    r.lang = 'ru-RU'
+    r.continuous = true
+    r.interimResults = false
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    r.onresult = (e: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const transcript = Array.from(e.results as any[])
+        .map((x: any) => x[0].transcript).join('')
+      setCurrentText(prev => prev ? prev + ' ' + transcript : transcript)
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    r.onerror = (e: any) => {
+      if (e.error === 'no-speech') return // iOS pause — will restart via onend
+      shouldRecordRef.current = false
+      setIsRecording(false)
+    }
+    r.onend = () => {
+      // If user hasn't tapped Stop — restart a new session (iOS workaround)
+      if (shouldRecordRef.current) {
+        setTimeout(() => {
+          if (shouldRecordRef.current) startRecognitionSession()
+        }, 150)
+      } else {
+        setIsRecording(false)
+      }
+    }
+    recognitionRef.current = r
+    r.start()
+  }, [])
+
   const toggleRecording = useCallback(() => {
     if (isRecording) {
+      shouldRecordRef.current = false
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(recognitionRef.current as any)?.stop()
       setIsRecording(false)
@@ -101,22 +141,10 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
       toast.error('Голосовой ввод не поддерживается в этом браузере')
       return
     }
-    const r = new SR()
-    r.lang = 'ru-RU'
-    r.continuous = true
-    r.interimResults = false
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    r.onresult = (e: any) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const text = Array.from(e.results as any[]).map((x: any) => x[0].transcript).join('')
-      setCurrentText(prev => prev ? prev + ' ' + text : text)
-    }
-    r.onerror = () => setIsRecording(false)
-    r.onend = () => setIsRecording(false)
-    recognitionRef.current = r
-    r.start()
+    shouldRecordRef.current = true
+    startRecognitionSession()
     setIsRecording(true)
-  }, [isRecording])
+  }, [isRecording, startRecognitionSession])
 
   // ── Navigation ─────────────────────────────────────────────────────────────
   const saveCurrentAnswer = useCallback(() => {

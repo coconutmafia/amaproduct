@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -131,7 +131,8 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
   const [textContent, setTextContent] = useState('')
   const [isRecording, setIsRecording] = useState(false)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = { current: null as any }
+  const recognitionRef = useRef<any>(null)
+  const shouldRecordRef = useRef(false)
 
   const addFiles = (files: FileList | File[]) => {
     const arr = Array.from(files)
@@ -155,17 +156,44 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
     setTextTitle(''); setTextContent(''); setShowText(false)
   }
 
+  const startRecognitionSession = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SR) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = new SR()
+    r.lang = 'ru-RU'; r.continuous = true; r.interimResults = false
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    r.onresult = (ev: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const t = Array.from(ev.results as any[]).map((x: any) => x[0].transcript).join('')
+      setTextContent(p => p ? p + ' ' + t : t)
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    r.onerror = (e: any) => { if (e.error !== 'no-speech') { shouldRecordRef.current = false; setIsRecording(false) } }
+    r.onend = () => {
+      if (shouldRecordRef.current) {
+        setTimeout(() => { if (shouldRecordRef.current) startRecognitionSession() }, 150)
+      } else {
+        setIsRecording(false)
+      }
+    }
+    recognitionRef.current = r; r.start()
+  }
+
   const toggleRecording = () => {
-    if (isRecording) { recognitionRef.current?.stop(); setIsRecording(false); return }
+    if (isRecording) {
+      shouldRecordRef.current = false
+      recognitionRef.current?.stop()
+      setIsRecording(false)
+      return
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!SR) { toast.error('Голосовой ввод не поддерживается'); return }
-    const r = new SR(); r.lang = 'ru-RU'; r.continuous = true; r.interimResults = false
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    r.onresult = (ev: any) => setTextContent(p => p + ' ' + Array.from(ev.results as any[]).map((x: any) => x[0].transcript).join(''))
-    r.onerror = () => setIsRecording(false)
-    r.onend = () => setIsRecording(false)
-    recognitionRef.current = r; r.start(); setIsRecording(true)
+    shouldRecordRef.current = true
+    startRecognitionSession()
+    setIsRecording(true)
   }
 
   const uploadOne = async (item: QueueItem): Promise<{ materialId: string; processingStatus: string }> => {
