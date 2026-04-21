@@ -133,6 +133,7 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
   const shouldRecordRef = useRef(false)
+  const restartCountRef = useRef(0)
 
   const addFiles = (files: FileList | File[]) => {
     const arr = Array.from(files)
@@ -157,33 +158,45 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
   }
 
   const startRecognitionSession = () => {
+    if (!shouldRecordRef.current) return
+    if (restartCountRef.current > 60) { shouldRecordRef.current = false; setIsRecording(false); return }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!SR) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const r = new SR()
-    r.lang = 'ru-RU'; r.continuous = true; r.interimResults = false
+    r.lang = 'ru-RU'; r.continuous = true; r.interimResults = true
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     r.onresult = (ev: any) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const t = Array.from(ev.results as any[]).map((x: any) => x[0].transcript).join('')
-      setTextContent(p => p ? p + ' ' + t : t)
+      restartCountRef.current = 0
+      let finalText = ''
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        if (ev.results[i].isFinal) finalText += ev.results[i][0].transcript
+      }
+      if (finalText) setTextContent(p => p ? p + ' ' + finalText : finalText)
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    r.onerror = (e: any) => { if (e.error !== 'no-speech') { shouldRecordRef.current = false; setIsRecording(false) } }
+    r.onerror = (e: any) => {
+      if (e.error === 'no-speech') return
+      shouldRecordRef.current = false; setIsRecording(false)
+      if (e.error === 'not-allowed') toast.error('Нет доступа к микрофону. Разреши в настройках браузера.')
+    }
     r.onend = () => {
       if (shouldRecordRef.current) {
-        setTimeout(() => { if (shouldRecordRef.current) startRecognitionSession() }, 150)
+        restartCountRef.current++
+        setTimeout(() => { if (shouldRecordRef.current) startRecognitionSession() }, 200)
       } else {
         setIsRecording(false)
       }
     }
-    recognitionRef.current = r; r.start()
+    recognitionRef.current = r
+    try { r.start() } catch { shouldRecordRef.current = false; setIsRecording(false) }
   }
 
   const toggleRecording = () => {
     if (isRecording) {
       shouldRecordRef.current = false
+      restartCountRef.current = 0
       recognitionRef.current?.stop()
       setIsRecording(false)
       return
@@ -192,6 +205,7 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!SR) { toast.error('Голосовой ввод не поддерживается'); return }
     shouldRecordRef.current = true
+    restartCountRef.current = 0
     startRecognitionSession()
     setIsRecording(true)
   }
