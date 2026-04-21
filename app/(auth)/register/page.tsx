@@ -41,7 +41,7 @@ function RegisterForm() {
       password,
       options: {
         data: { full_name: fullName.trim() },
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     })
 
@@ -68,9 +68,10 @@ function RegisterForm() {
   }
 
   async function handleGoogle() {
+    const base = window.location.origin
     const cb = refCode
-      ? `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?ref=${refCode}`
-      : `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`
+      ? `${base}/auth/callback?ref=${refCode}`
+      : `${base}/auth/callback`
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: cb },
