@@ -69,23 +69,23 @@ export default async function ProjectPage({ params }: Props) {
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-5 md:space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild className="h-8 w-8">
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-2">
+          <Button variant="ghost" size="icon" asChild className="h-8 w-8 shrink-0">
             <Link href="/projects">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">{project.name}</h1>
-            {project.niche && (
-              <p className="text-sm text-muted-foreground">{project.niche}</p>
-            )}
-          </div>
+          <Badge className="text-xs bg-green-500 text-white border-transparent shrink-0">
+            Активный
+          </Badge>
         </div>
-        <Badge className="text-xs bg-green-500 text-white border-transparent shrink-0">
-          Активный
-        </Badge>
+        <div className="px-1">
+          <h1 className="text-2xl font-bold text-foreground leading-tight">{project.name}</h1>
+          {project.niche && (
+            <p className="text-sm text-muted-foreground mt-0.5">{project.niche}</p>
+          )}
+        </div>
       </div>
 
       {/* Description + target audience */}
