@@ -1,9 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -15,7 +13,7 @@ import { toast } from 'sonner'
 import {
   CheckCircle2, Circle, Loader, AlertCircle, Upload, BookOpen,
   X, File, Loader2, Plus, FileText, Mic, ChevronDown, ChevronUp,
-  Info, MessageSquare, Sparkles,
+  Info, MessageSquare, Sparkles, Trash2,
 } from 'lucide-react'
 
 interface Material {
@@ -32,7 +30,6 @@ interface Props {
   userName?: string
 }
 
-// ── Descriptions & hints per type ────────────────────────────────────────────
 const TYPE_META: Record<string, { label: string; hint: string; category: string }> = {
   audience_survey: {
     label: 'Результаты опросов',
@@ -97,33 +94,17 @@ const TYPE_META: Record<string, { label: string; hint: string; category: string 
 }
 
 const CATEGORIES = [
-  {
-    key: 'АУДИТОРИЯ',
-    title: 'АУДИТОРИЯ',
-    types: ['audience_survey', 'interview_transcript', 'audience_research'],
-  },
-  {
-    key: 'СТРАТЕГИЯ',
-    title: 'СТРАТЕГИЯ',
-    types: ['unpacking_map', 'meanings_map', 'competitors', 'tone_of_voice'],
-  },
-  {
-    key: 'СОЦИАЛЬНЫЕ ДОКАЗАТЕЛЬСТВА',
-    title: 'СОЦИАЛЬНЫЕ ДОКАЗАТЕЛЬСТВА',
-    types: ['cases_reviews'],
-  },
-  {
-    key: 'МАРКЕТИНГ',
-    title: 'МАРКЕТИНГ',
-    types: ['marketing_strategy', 'marketing_tactics', 'funnel_description', 'chatbot_description'],
-  },
+  { key: 'АУДИТОРИЯ', title: 'АУДИТОРИЯ', types: ['audience_survey', 'interview_transcript', 'audience_research'] },
+  { key: 'СТРАТЕГИЯ', title: 'СТРАТЕГИЯ', types: ['unpacking_map', 'meanings_map', 'competitors', 'tone_of_voice'] },
+  { key: 'СОЦИАЛЬНЫЕ ДОКАЗАТЕЛЬСТВА', title: 'СОЦИАЛЬНЫЕ ДОКАЗАТЕЛЬСТВА', types: ['cases_reviews'] },
+  { key: 'МАРКЕТИНГ', title: 'МАРКЕТИНГ', types: ['marketing_strategy', 'marketing_tactics', 'funnel_description', 'chatbot_description'] },
 ]
 
 function StatusIcon({ status }: { status: string }) {
-  if (status === 'ready') return <CheckCircle2 className="h-4 w-4 text-green-400 shrink-0" />
-  if (status === 'processing') return <Loader className="h-4 w-4 text-yellow-400 animate-spin shrink-0" />
-  if (status === 'error') return <AlertCircle className="h-4 w-4 text-red-400 shrink-0" />
-  return <Circle className="h-4 w-4 text-muted-foreground shrink-0" />
+  if (status === 'ready') return <CheckCircle2 className="h-3.5 w-3.5 text-green-400 shrink-0" />
+  if (status === 'processing') return <Loader className="h-3.5 w-3.5 text-yellow-400 animate-spin shrink-0" />
+  if (status === 'error') return <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+  return <Circle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
 }
 
 // ── Upload Dialog ─────────────────────────────────────────────────────────────
@@ -133,13 +114,13 @@ interface UploadDialogProps {
   typeLabel: string
   open: boolean
   onClose: () => void
-  onSuccess: () => void
+  onSuccess: (newMaterials: Material[]) => void
 }
 
 type UploadStatus = 'pending' | 'uploading' | 'done' | 'error'
 interface QueueItem {
   id: string; file?: File; text?: string; title: string
-  status: UploadStatus; error?: string
+  status: UploadStatus; error?: string; materialId?: string
 }
 
 function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuccess }: UploadDialogProps) {
@@ -187,7 +168,7 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
     recognitionRef.current = r; r.start(); setIsRecording(true)
   }
 
-  const uploadOne = async (item: QueueItem) => {
+  const uploadOne = async (item: QueueItem): Promise<{ materialId: string; processingStatus: string }> => {
     const fd = new FormData()
     fd.append('projectId', projectId)
     fd.append('title', item.title || 'Без названия')
@@ -197,30 +178,40 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
     if (item.text) fd.append('textContent', item.text)
     const res = await fetch('/api/upload', { method: 'POST', body: fd })
     if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Ошибка ${res.status}`) }
+    return res.json()
   }
 
   const handleUpload = async () => {
     const pending = queue.filter(i => i.status === 'pending')
     if (!pending.length) { toast.error('Нет файлов для загрузки'); return }
     setIsUploading(true)
-    let ok = 0; let err = 0
+    const uploaded: Material[] = []
+    let err = 0
+
     for (const item of pending) {
       setQueue(p => p.map(i => i.id === item.id ? { ...i, status: 'uploading' } : i))
       try {
-        await uploadOne(item)
-        setQueue(p => p.map(i => i.id === item.id ? { ...i, status: 'done' } : i))
-        ok++
+        const { materialId, processingStatus } = await uploadOne(item)
+        setQueue(p => p.map(i => i.id === item.id ? { ...i, status: 'done', materialId } : i))
+        uploaded.push({ id: materialId, material_type: materialType, title: item.title, processing_status: processingStatus })
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Ошибка'
         setQueue(p => p.map(i => i.id === item.id ? { ...i, status: 'error', error: msg } : i))
         err++
       }
     }
+
     setIsUploading(false)
-    if (ok > 0) toast.success(`Загружено: ${ok}`)
+    if (uploaded.length > 0) toast.success(`Загружено: ${uploaded.length}`)
     if (err > 0) toast.error(`Ошибок: ${err}`)
-    if (err === 0) { setTimeout(() => { setQueue([]); onClose(); onSuccess() }, 600) }
-    else { onSuccess() }
+
+    if (uploaded.length > 0) {
+      onSuccess(uploaded)
+      // Close if no errors
+      if (err === 0) {
+        setTimeout(() => { setQueue([]); onClose() }, 400)
+      }
+    }
   }
 
   const pending = queue.filter(i => i.status === 'pending').length
@@ -275,7 +266,9 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
                    item.status === 'error' ? <AlertCircle className="h-3.5 w-3.5 text-destructive shrink-0" /> :
                    <File className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
                   <span className="flex-1 truncate">{item.title}</span>
-                  {item.error && <span className="text-destructive text-[10px]">{item.error}</span>}
+                  {item.status === 'uploading' && <span className="text-primary text-[10px]">Загружаем...</span>}
+                  {item.status === 'done' && <span className="text-green-500 text-[10px]">Готово ✓</span>}
+                  {item.error && <span className="text-destructive text-[10px] shrink-0">{item.error}</span>}
                   {item.status === 'pending' && (
                     <button onClick={() => setQueue(p => p.filter(i => i.id !== item.id))}>
                       <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
@@ -328,12 +321,12 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export function KnowledgePageClient({ projectId, completenessScore, initialMaterials, userName }: Props) {
-  const router = useRouter()
   const [uploadFor, setUploadFor] = useState<string | null>(null)
   const [showInterview, setShowInterview] = useState(false)
-  const [score, setScore] = useState(completenessScore)
+  const [score] = useState(completenessScore)
   const [materials, setMaterials] = useState(initialMaterials)
   const [showHint, setShowHint] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const materialsByType = materials.reduce<Record<string, Material[]>>((acc, m) => {
     if (!acc[m.material_type]) acc[m.material_type] = []
@@ -341,8 +334,27 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
     return acc
   }, {})
 
-  const handleSuccess = () => {
-    router.refresh()
+  // Called after upload — add new materials to state instantly (no page refresh)
+  const handleUploaded = (newMaterials: Material[]) => {
+    setMaterials(prev => [...newMaterials, ...prev])
+  }
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id)
+    // Optimistic remove
+    setMaterials(prev => prev.filter(m => m.id !== id))
+    try {
+      const res = await fetch(`/api/materials?id=${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Ошибка удаления')
+      toast.success('Материал удалён')
+    } catch {
+      // Rollback on error — re-fetch would be ideal but we don't have the item anymore
+      toast.error('Не удалось удалить материал')
+      // Soft refresh to restore correct state
+      window.location.reload()
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   return (
@@ -372,73 +384,83 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                 const meta = TYPE_META[type]
                 const items = materialsByType[type] || []
                 const hasItems = items.length > 0
-                const latest = items[0]
 
                 return (
                   <div key={type}>
                     <div className={`p-4 rounded-xl border transition-colors ${
-                      hasItems
-                        ? 'border-green-500/20 bg-green-500/5'
-                        : 'border-border bg-secondary/20'
+                      hasItems ? 'border-green-500/20 bg-green-500/5' : 'border-border bg-secondary/20'
                     }`}>
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 shrink-0">
-                          <StatusIcon status={latest?.processing_status || 'none'} />
+                      {/* Label row */}
+                      <div className="flex items-start justify-between gap-2 mb-3">
+                        <div className="flex items-center gap-2">
+                          {hasItems
+                            ? <CheckCircle2 className="h-4 w-4 text-green-400 shrink-0 mt-0.5" />
+                            : <Circle className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                          }
+                          <p className="text-sm font-semibold text-foreground leading-snug">
+                            {meta?.label || type}
+                          </p>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          {/* Label row */}
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-semibold text-foreground leading-snug">
-                                {meta?.label || type}
-                                {items.length > 1 && (
-                                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">({items.length})</span>
-                                )}
-                              </p>
-                              {latest && (
-                                <p className="text-xs text-muted-foreground mt-0.5 truncate">{latest.title}</p>
-                              )}
-                            </div>
-                            {/* Подробнее text link */}
-                            <button
-                              onClick={() => setShowHint(showHint === type ? null : type)}
-                              className="text-xs text-primary/70 hover:text-primary transition-colors whitespace-nowrap shrink-0 mt-0.5"
-                            >
-                              {showHint === type ? 'Скрыть' : 'Подробнее'}
-                            </button>
-                          </div>
+                        <button
+                          onClick={() => setShowHint(showHint === type ? null : type)}
+                          className="text-xs text-primary/70 hover:text-primary transition-colors whitespace-nowrap shrink-0"
+                        >
+                          {showHint === type ? 'Скрыть' : 'Подробнее'}
+                        </button>
+                      </div>
 
-                          {/* Hint panel */}
-                          {showHint === type && meta && (
-                            <div className="mt-2 px-3 py-2 rounded-lg bg-primary/5 border border-primary/10 text-xs text-muted-foreground">
-                              {meta.hint}
-                            </div>
-                          )}
+                      {/* Hint panel */}
+                      {showHint === type && meta && (
+                        <div className="mb-3 px-3 py-2 rounded-lg bg-primary/5 border border-primary/10 text-xs text-muted-foreground">
+                          {meta.hint}
+                        </div>
+                      )}
 
-                          {/* Upload button below label */}
-                          <div className="flex items-center gap-2 mt-3">
-                            {type === 'unpacking_map' && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="text-xs h-8 px-3 border-primary/40 text-primary hover:bg-primary/10"
-                                onClick={() => setShowInterview(true)}
+                      {/* Uploaded files list */}
+                      {items.length > 0 && (
+                        <div className="mb-3 space-y-1.5">
+                          {items.map(item => (
+                            <div key={item.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-background/60 border border-border/60 text-xs">
+                              <StatusIcon status={item.processing_status} />
+                              <span className="flex-1 truncate text-foreground/80">{item.title}</span>
+                              <button
+                                onClick={() => handleDelete(item.id)}
+                                disabled={deletingId === item.id}
+                                className="p-0.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0"
+                                title="Удалить"
                               >
-                                <MessageSquare className="h-3 w-3 mr-1.5" />
-                                Пройти интервью
-                              </Button>
-                            )}
-                            <Button
-                              size="sm"
-                              variant={hasItems ? 'outline' : 'default'}
-                              className={`text-xs h-8 px-4 ${hasItems ? 'border-border' : 'gradient-accent text-white hover:opacity-90 border-0'}`}
-                              onClick={() => setUploadFor(type)}
-                            >
-                              <Upload className="h-3 w-3 mr-1.5" />
-                              {hasItems ? 'Добавить файл' : 'Загрузить'}
-                            </Button>
-                          </div>
+                                {deletingId === item.id
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : <Trash2 className="h-3 w-3" />
+                                }
+                              </button>
+                            </div>
+                          ))}
                         </div>
+                      )}
+
+                      {/* Upload button */}
+                      <div className="flex items-center gap-2">
+                        {type === 'unpacking_map' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-8 px-3 border-primary/40 text-primary hover:bg-primary/10"
+                            onClick={() => setShowInterview(true)}
+                          >
+                            <MessageSquare className="h-3 w-3 mr-1.5" />
+                            Пройти интервью
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant={hasItems ? 'outline' : 'default'}
+                          className={`text-xs h-8 px-4 ${hasItems ? 'border-border' : 'gradient-accent text-white hover:opacity-90 border-0'}`}
+                          onClick={() => setUploadFor(type)}
+                        >
+                          <Upload className="h-3 w-3 mr-1.5" />
+                          {hasItems ? 'Добавить ещё' : 'Загрузить'}
+                        </Button>
                       </div>
                     </div>
                   </div>
@@ -474,7 +496,10 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
           typeLabel={TYPE_META[uploadFor]?.label || uploadFor}
           open={!!uploadFor}
           onClose={() => setUploadFor(null)}
-          onSuccess={handleSuccess}
+          onSuccess={(newMaterials) => {
+            handleUploaded(newMaterials)
+            setUploadFor(null)
+          }}
         />
       )}
 
@@ -483,7 +508,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
         projectId={projectId}
         open={showInterview}
         onClose={() => setShowInterview(false)}
-        onSuccess={handleSuccess}
+        onSuccess={() => window.location.reload()}
       />
     </>
   )
