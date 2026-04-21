@@ -48,15 +48,15 @@ export async function POST(request: Request) {
         rawContent = await file.text()
       }
 
-      // PDF — извлекаем текст через pdf-parse
+      // PDF — извлекаем текст через pdf-parse (v2 class-based API)
       if (name.endsWith('.pdf') || file.type === 'application/pdf') {
         try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const pdfModule = await import('pdf-parse') as any
-          const pdfParse = pdfModule.default ?? pdfModule
+          const { PDFParse } = await import('pdf-parse')
           const bytes = await file.arrayBuffer()
-          const result = await pdfParse(Buffer.from(bytes))
-          rawContent = result.text
+          const parser = new PDFParse({ data: Buffer.from(bytes) })
+          const textResult = await parser.getText()
+          rawContent = textResult.text
+          await parser.destroy()
           if (!rawContent || rawContent.trim().length < 10) {
             return NextResponse.json({
               error: 'PDF не содержит читаемого текста. Возможно, это скан. Скопируй текст вручную и вставь в поле ниже.',
