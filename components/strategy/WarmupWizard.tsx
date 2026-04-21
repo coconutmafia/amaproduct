@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -22,6 +22,7 @@ import {
   FileText,
   Sparkles,
   Loader2,
+  Upload,
 } from 'lucide-react'
 import type { Product, Funnel } from '@/types'
 
@@ -36,7 +37,7 @@ const STEPS = [
   { id: 1, title: 'Продукт', icon: Package },
   { id: 2, title: 'Длительность', icon: Calendar },
   { id: 3, title: 'Воронка продаж', icon: Users },
-  { id: 4, title: 'Прогрев в блоге', icon: Star },
+  { id: 4, title: 'Прогрев тёплой аудитории', icon: Star },
   { id: 5, title: 'Кейсы', icon: FileText },
   { id: 6, title: 'Смыслы', icon: Lightbulb },
   { id: 7, title: 'Конкуренты', icon: Target },
@@ -54,49 +55,106 @@ const HOOK_OPTIONS = [
 ]
 
 const FREE_EVENT_TYPES = [
-  { id: 'webinar', label: 'Вебинар' },
-  { id: 'marathon', label: 'Марафон' },
-  { id: 'masterclass_free', label: 'Бесплатный мастер-класс' },
-  { id: 'live', label: 'Эфир' },
-  { id: 'other', label: 'Другое' },
+  { id: 'webinar', label: 'вебинар' },
+  { id: 'marathon', label: 'марафон' },
+  { id: 'masterclass_free', label: 'бесплатный мастер-класс' },
+  { id: 'live', label: 'эфир' },
+  { id: 'other', label: 'другое' },
 ]
 
 const PAID_EVENT_TYPES = [
-  { id: 'paid_webinar', label: 'Платный вебинар' },
-  { id: 'paid_masterclass', label: 'Платный мастер-класс' },
-  { id: 'intensive', label: 'Интенсив' },
-  { id: 'other', label: 'Другое' },
+  { id: 'paid_webinar', label: 'платный вебинар' },
+  { id: 'paid_masterclass', label: 'платный мастер-класс' },
+  { id: 'intensive', label: 'интенсив' },
+  { id: 'other', label: 'другое' },
 ]
+
+// Fallback summary when AI is unavailable
+function buildFallbackSummary(params: {
+  productName: string
+  duration: number
+  funnelDesc: string
+  warmTypes: string[]
+  useCases: boolean
+  hooks: string[]
+  extraHooks: string
+  competitors: string
+  startDate: string
+}) {
+  const hookLabels = params.hooks.map(h => HOOK_OPTIONS.find(o => o.id === h)?.label || h)
+  const warmLabels = params.warmTypes.map(t =>
+    t === 'content_only' ? 'прогрев через контент блога' :
+    t === 'free_event' ? 'бесплатное мероприятие' :
+    t === 'paid_event' ? 'платное мероприятие (трипваер)' : t
+  )
+
+  return `# Стратегия прогрева
+
+**Продукт:** ${params.productName}
+**Длительность:** ${params.duration} дней${params.startDate ? `\n**Старт прогрева:** ${params.startDate}` : ''}
+
+## Цель
+
+Создать целенаправленный прогрев аудитории для продажи продукта «${params.productName}» за ${params.duration} дней.
+
+## Воронка привлечения
+
+${params.funnelDesc}
+
+## Прогрев в блоге
+
+${warmLabels.join(', ') || 'Прогрев через контент блога'}
+
+## Ключевые смысловые крючки
+
+${hookLabels.length > 0 ? hookLabels.map(h => `— ${h}`).join('\n') : '— Будут определены на основе материалов проекта'}
+${params.extraHooks ? `\nДополнительно: ${params.extraHooks}` : ''}
+
+## Социальные доказательства
+
+${params.useCases ? 'Использовать кейсы и отзывы клиентов из базы проекта.' : 'Прогрев без кейсов — фокус на экспертности и личной истории.'}
+
+${params.competitors ? `## Конкуренты\n${params.competitors}` : ''}
+
+## Структура прогрева
+
+**Фаза 1 — Знакомство (25%):** Рассказываем о себе, ценностях, методе. Создаём первый контакт с аудиторией.
+
+**Фаза 2 — Доверие (30%):** Кейсы, закулисье, экспертный контент. Формируем авторитет.
+
+**Фаза 3 — Желание (28%):** Трансформации клиентов, боли без решения, детали продукта.
+
+**Фаза 4 — Закрытие (17%):** Открытие продаж, работа с возражениями, дедлайны.`
+}
 
 export function WarmupWizard({ projectId, products, funnels, onComplete }: WarmupWizardProps) {
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [generatingSummary, setGeneratingSummary] = useState(false)
   const [summary, setSummary] = useState<string | null>(null)
-  const [planData, setPlanData] = useState<Record<string, unknown> | null>(null)
   const [summaryApproved, setSummaryApproved] = useState(false)
 
   // Wizard state
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [duration, setDuration] = useState<30 | 45 | 60>(45)
+  const [startDate, setStartDate] = useState('')
   const [coldFunnelId, setColdFunnelId] = useState<string | null>(null)
   const [coldFunnelCustom, setColdFunnelCustom] = useState('')
   const [coldAudienceType, setColdAudienceType] = useState<'existing_funnel' | 'custom' | 'none'>('existing_funnel')
 
-  // Step 4: multi-select warm audience
   const [warmAudienceTypes, setWarmAudienceTypes] = useState<string[]>(['content_only'])
 
-  // Free event fields
   const [freeEventName, setFreeEventName] = useState('')
   const [freeEventDate, setFreeEventDate] = useState('')
   const [freeEventTypes, setFreeEventTypes] = useState<string[]>([])
 
-  // Paid event fields
   const [paidEventName, setPaidEventName] = useState('')
   const [paidEventDate, setPaidEventDate] = useState('')
   const [paidEventTypes, setPaidEventTypes] = useState<string[]>([])
 
   const [useCases, setUseCases] = useState(true)
+  const [extraCasesText, setExtraCasesText] = useState('')
+  const [extraCasesFile, setExtraCasesFile] = useState<File | null>(null)
   const [selectedHooks, setSelectedHooks] = useState<string[]>([])
   const [extraHooks, setExtraHooks] = useState('')
   const [competitorNotes, setCompetitorNotes] = useState('')
@@ -112,6 +170,12 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   async function generateSummary() {
     setGeneratingSummary(true)
     try {
+      const funnelDesc =
+        coldAudienceType === 'existing_funnel'
+          ? `Существующая воронка: ${funnels.find(f => f.id === coldFunnelId)?.name || 'из базы'}`
+          : coldAudienceType === 'custom' ? coldFunnelCustom
+          : 'Без воронки — прямые продажи'
+
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -120,25 +184,23 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           conversationType: 'warmup_wizard',
           messages: [{
             role: 'user',
-            content: `Создай стратегию прогрева:
+            content: `Создай детальную стратегию прогрева:
 - Продукт: ${selectedProduct?.name || 'не выбран'}
-- Длительность: ${duration} дней
-- Воронка продаж: ${coldAudienceType === 'existing_funnel' ? 'воронка ' + (funnels.find(f => f.id === coldFunnelId)?.name || 'из базы') : coldAudienceType === 'custom' ? coldFunnelCustom : 'без воронки'}
+- Длительность: ${duration} дней${startDate ? `, старт: ${startDate}` : ''}
+- Воронка продаж: ${funnelDesc}
 - Прогрев в блоге: ${warmAudienceTypes.join(', ')}
-- Использовать кейсы: ${useCases ? 'да' : 'нет'}
+- Использовать кейсы: ${useCases ? 'да' : 'нет'}${extraCasesText ? `\n- Дополнительные кейсы: ${extraCasesText}` : ''}
 - Смысловые крючки: ${selectedHooks.join(', ')}
 - Дополнительно: ${extraHooks}
 - Заметки о конкурентах: ${competitorNotes}
 
-Верни ТОЛЬКО стратегию прогрева в формате для одобрения.`
-          }]
-        })
+Верни ТОЛЬКО стратегию прогрева в формате для одобрения.`,
+          }],
+        }),
       })
 
       if (!res.ok) {
-        let errMsg = 'Ошибка сервера'
-        try { const d = await res.json(); errMsg = d.error || errMsg } catch { /* ignore */ }
-        throw new Error(errMsg)
+        throw new Error('AI недоступен')
       }
 
       const reader = res.body?.getReader()
@@ -153,12 +215,31 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       }
       result += decoder.decode()
 
-      if (!result.trim()) throw new Error('AI вернул пустой ответ — попробуйте ещё раз')
+      if (!result.trim()) throw new Error('Пустой ответ')
 
       setSummary(result)
       setStep(8)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка формирования стратегии')
+    } catch {
+      // Fallback: generate template summary
+      toast.info('AI временно недоступен — используем готовый шаблон стратегии')
+      const funnelDesc =
+        coldAudienceType === 'existing_funnel'
+          ? `Существующая воронка: ${funnels.find(f => f.id === coldFunnelId)?.name || 'из базы'}`
+          : coldAudienceType === 'custom' ? coldFunnelCustom || 'Описать позже'
+          : 'Без воронки — прямые продажи'
+      const fallback = buildFallbackSummary({
+        productName: selectedProduct?.name || 'Продукт',
+        duration,
+        funnelDesc,
+        warmTypes: warmAudienceTypes,
+        useCases,
+        hooks: selectedHooks,
+        extraHooks,
+        competitors: competitorNotes,
+        startDate,
+      })
+      setSummary(fallback)
+      setStep(8)
     } finally {
       setGeneratingSummary(false)
     }
@@ -177,14 +258,15 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
             name: `Прогрев ${duration} дней — ${selectedProduct?.name || 'продукт'}`,
             product_id: selectedProductId,
             duration_days: duration,
+            start_date: startDate || null,
             audience_type: 'cold_warm',
             funnel_id: coldFunnelId,
             use_cases: useCases,
             extra_hooks: [selectedHooks.join(', '), extraHooks].filter(Boolean).join('; '),
             strategic_summary: summary,
             summary_approved: true,
-          }
-        })
+          },
+        }),
       })
 
       const { planId } = await res.json()
@@ -198,29 +280,29 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Steps indicator */}
-      <div className="flex items-center gap-0 overflow-x-auto pb-1">
+      <div className="flex items-center overflow-x-auto pb-1 gap-0">
         {STEPS.map((s, i) => (
           <div key={s.id} className="flex items-center shrink-0">
             <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-colors ${
               step === s.id
-                ? 'gradient-accent text-white ring-2 ring-primary/40 ring-offset-1 ring-offset-background'
+                ? 'gradient-accent text-white ring-2 ring-primary/30 ring-offset-1 ring-offset-background'
                 : step > s.id
                 ? 'bg-green-500/20 text-green-400'
                 : 'bg-secondary text-muted-foreground'
             }`}>
-              {step > s.id ? <Check className="h-3.5 w-3.5" /> : s.id}
+              {step > s.id ? <Check className="h-3 w-3" /> : s.id}
             </div>
             {i < STEPS.length - 1 && (
-              <div className={`h-px w-5 mx-0.5 shrink-0 ${step > s.id ? 'bg-green-500/40' : 'bg-border'}`} />
+              <div className={`h-px w-4 mx-0.5 shrink-0 ${step > s.id ? 'bg-green-500/40' : 'bg-border'}`} />
             )}
           </div>
         ))}
       </div>
 
       <div className="text-sm font-medium text-foreground">
-        Шаг {step}: {STEPS[step - 1].title}
+        Шаг {step}: {STEPS[step - 1]?.title}
       </div>
 
       {/* Step 1: Product */}
@@ -257,7 +339,6 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
               </div>
             </button>
           ))}
-
           {products.length === 0 && (
             <div className="text-center py-8 text-muted-foreground text-sm">
               Нет продуктов. Добавьте продукт в настройках проекта.
@@ -266,46 +347,54 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         </div>
       )}
 
-      {/* Step 2: Duration */}
+      {/* Step 2: Duration + start date */}
       {step === 2 && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {([30, 45, 60] as const).map((days) => {
-            const selected = duration === days
-            return (
-              <button
-                key={days}
-                onClick={() => setDuration(days)}
-                className={`flex sm:flex-col items-center sm:justify-center gap-3 sm:gap-1 p-4 sm:p-6 rounded-xl border text-left sm:text-center transition-all ${
-                  selected
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border bg-card hover:border-primary/40'
-                }`}
-              >
-                <div className={`flex h-8 w-8 sm:h-auto sm:w-auto items-center justify-center rounded-full shrink-0 sm:contents ${selected ? 'bg-primary/20' : 'bg-secondary'}`}>
-                  <p className={`text-2xl sm:text-3xl font-bold ${selected ? 'text-primary' : 'text-foreground'}`}>{days}</p>
-                </div>
-                <div className="flex-1 sm:flex-none">
-                  <p className="text-sm font-medium text-foreground">
-                    {days === 30 ? '1 месяц' : days === 45 ? '1,5 месяца' : '2 месяца'}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {days === 30 ? 'Короткий запуск' : days === 45 ? 'Рекомендуется' : 'Глубокий прогрев'}
-                  </p>
-                </div>
-                {selected && (
-                  <Check className="h-4 w-4 text-primary shrink-0 sm:hidden" />
-                )}
-              </button>
-            )
-          })}
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {([30, 45, 60] as const).map((days) => {
+              const selected = duration === days
+              return (
+                <button
+                  key={days}
+                  onClick={() => setDuration(days)}
+                  className={`flex sm:flex-col items-center gap-3 sm:gap-1 p-4 rounded-xl border text-left sm:text-center transition-all ${
+                    selected ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/40'
+                  }`}
+                >
+                  <div className={`flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-full text-base sm:text-lg font-bold ${selected ? 'bg-primary/20 text-primary' : 'bg-secondary text-foreground'}`}>
+                    {days}
+                  </div>
+                  <div className="flex-1 sm:flex-none">
+                    <p className="text-sm font-medium text-foreground">
+                      {days === 30 ? '1 месяц' : days === 45 ? '1,5 месяца' : '2 месяца'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {days === 30 ? 'Короткий запуск' : days === 45 ? 'Рекомендуется' : 'Глубокий прогрев'}
+                    </p>
+                  </div>
+                  {selected && <Check className="h-4 w-4 text-primary shrink-0 sm:hidden" />}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Start date */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-foreground">Дата старта прогрева</Label>
+            <p className="text-xs text-muted-foreground">С этой даты сервис сформирует расписание контент-плана</p>
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="bg-input border-border h-10 text-sm max-w-xs"
+            />
+          </div>
         </div>
       )}
 
       {/* Step 3: Sales funnel */}
       {step === 3 && (
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">Как происходит продажа — через какую воронку?</p>
-
+        <div className="space-y-2">
           {funnels.length > 0 && (
             <button
               onClick={() => { setColdAudienceType('existing_funnel'); setColdFunnelId(funnels[0].id) }}
@@ -324,12 +413,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                 <div className="mt-3 grid grid-cols-1 gap-2 pl-7">
                   {funnels.map((f) => (
                     <label key={f.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input
-                        type="radio"
-                        checked={coldFunnelId === f.id}
-                        onChange={() => setColdFunnelId(f.id)}
-                        className="accent-primary"
-                      />
+                      <input type="radio" checked={coldFunnelId === f.id} onChange={() => setColdFunnelId(f.id)} className="accent-primary" />
                       {f.name}
                     </label>
                   ))}
@@ -347,11 +431,11 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
             <div className="flex items-start gap-3">
               <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${coldAudienceType === 'custom' ? 'border-primary bg-primary' : 'border-muted-foreground'}`} />
               <div className="flex-1">
-                <p className="font-medium text-foreground">Описать новую воронку</p>
+                <p className="font-medium text-foreground">Описать механику продающей воронки</p>
                 {coldAudienceType === 'custom' && (
                   <Textarea
                     className="mt-2 bg-input border-border resize-none text-sm"
-                    placeholder="Опишите как будете привлекать холодную аудиторию..."
+                    placeholder="Опишите, какая будет механика продающей воронки"
                     value={coldFunnelCustom}
                     onChange={(e) => setColdFunnelCustom(e.target.value)}
                     rows={3}
@@ -376,16 +460,14 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         </div>
       )}
 
-      {/* Step 4: Warm audience — multi-select */}
+      {/* Step 4: Warm audience (renamed) */}
       {step === 4 && (
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">Как выглядит прогрев аудитории блога?</p>
-
+        <div className="space-y-2">
           {[
             {
               value: 'content_only',
-              label: 'Прогрев контента без дополнительной воронки на тёплую аудиторию',
-              desc: 'Продажи только через контент блога и воронку из предыдущего шага. Дополнительных мероприятий не планируется.',
+              label: 'Прогрев контентом без дополнительной воронки на тёплую аудиторию',
+              desc: 'Продажи только через контент блога. Дополнительных мероприятий не планируется.',
             },
             {
               value: 'free_event',
@@ -395,7 +477,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
             {
               value: 'paid_event',
               label: 'Платное мероприятие (трипваер)',
-              desc: 'Дополнительно к контенту — платное мероприятие (трипваер), которое ведёт на основной продукт',
+              desc: 'Дополнительно к контенту — платное мероприятие (трипваер), которое ведёт на продажу основного продукта',
             },
           ].map(({ value, label, desc }) => {
             const isChecked = warmAudienceTypes.includes(value)
@@ -416,29 +498,21 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                   </div>
                 </button>
 
-                {/* Free event extra fields */}
+                {/* Free event fields */}
                 {isChecked && value === 'free_event' && (
-                  <div className="mt-2 ml-4 p-4 rounded-xl border border-border bg-secondary/20 space-y-3">
-                    <div className="space-y-1.5">
-                      <Label className="text-sm">Название мероприятия (опционально)</Label>
-                      <Input
-                        value={freeEventName}
-                        onChange={(e) => setFreeEventName(e.target.value)}
-                        placeholder="Напр: Вебинар «Как запустить продукт за 30 дней»"
-                        className="bg-input border-border text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-sm">Дата мероприятия (опционально)</Label>
-                      <Input
-                        type="date"
-                        value={freeEventDate}
-                        onChange={(e) => setFreeEventDate(e.target.value)}
-                        className="bg-input border-border text-sm"
-                      />
+                  <div className="mt-1 ml-4 p-4 rounded-xl border border-border bg-secondary/20 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-sm">Название мероприятия</Label>
+                        <Input value={freeEventName} onChange={(e) => setFreeEventName(e.target.value)} placeholder="Вебинар «Как запустить за 30 дней»" className="bg-input border-border text-sm h-10" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-sm">Дата мероприятия</Label>
+                        <Input type="date" value={freeEventDate} onChange={(e) => setFreeEventDate(e.target.value)} className="bg-input border-border text-sm h-10" />
+                      </div>
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm">Формат мероприятия</Label>
+                      <Label className="text-sm">Формат</Label>
                       <div className="grid grid-cols-2 gap-2">
                         {FREE_EVENT_TYPES.map(({ id, label: eventLabel }) => (
                           <label key={id} className="flex items-center gap-2 text-sm cursor-pointer">
@@ -457,29 +531,21 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                   </div>
                 )}
 
-                {/* Paid event extra fields */}
+                {/* Paid event fields */}
                 {isChecked && value === 'paid_event' && (
-                  <div className="mt-2 ml-4 p-4 rounded-xl border border-border bg-secondary/20 space-y-3">
-                    <div className="space-y-1.5">
-                      <Label className="text-sm">Название мероприятия (опционально)</Label>
-                      <Input
-                        value={paidEventName}
-                        onChange={(e) => setPaidEventName(e.target.value)}
-                        placeholder="Напр: Интенсив «За 3 дня к первым продажам»"
-                        className="bg-input border-border text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-sm">Дата мероприятия (опционально)</Label>
-                      <Input
-                        type="date"
-                        value={paidEventDate}
-                        onChange={(e) => setPaidEventDate(e.target.value)}
-                        className="bg-input border-border text-sm"
-                      />
+                  <div className="mt-1 ml-4 p-4 rounded-xl border border-border bg-secondary/20 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-sm">Название мероприятия</Label>
+                        <Input value={paidEventName} onChange={(e) => setPaidEventName(e.target.value)} placeholder="Интенсив «За 3 дня к первым продажам»" className="bg-input border-border text-sm h-10" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-sm">Дата мероприятия</Label>
+                        <Input type="date" value={paidEventDate} onChange={(e) => setPaidEventDate(e.target.value)} className="bg-input border-border text-sm h-10" />
+                      </div>
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm">Формат мероприятия</Label>
+                      <Label className="text-sm">Формат</Label>
                       <div className="grid grid-cols-2 gap-2">
                         {PAID_EVENT_TYPES.map(({ id, label: eventLabel }) => (
                           <label key={id} className="flex items-center gap-2 text-sm cursor-pointer">
@@ -505,7 +571,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
       {/* Step 5: Cases */}
       {step === 5 && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <p className="text-sm text-muted-foreground">Какие доказательства используем в прогреве?</p>
 
           {[
@@ -528,15 +594,38 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
               </div>
             </button>
           ))}
+
+          {/* Additional cases */}
+          <div className="rounded-xl border border-border bg-secondary/20 p-4 space-y-3">
+            <p className="text-sm font-medium text-foreground">Добавить дополнительные кейсы</p>
+            <Textarea
+              placeholder="Опишите кейсы текстом — результаты клиентов, трансформации, цифры..."
+              value={extraCasesText}
+              onChange={(e) => setExtraCasesText(e.target.value)}
+              rows={3}
+              className="bg-input border-border resize-none text-sm"
+            />
+            <div>
+              <label className="flex items-center gap-2 cursor-pointer text-xs text-primary hover:text-primary/80 transition-colors">
+                <Upload className="h-3.5 w-3.5" />
+                {extraCasesFile ? extraCasesFile.name : 'Загрузить файл с кейсами (PDF, DOCX)'}
+                <input
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.docx,.doc,.txt"
+                  onChange={(e) => setExtraCasesFile(e.target.files?.[0] || null)}
+                />
+              </label>
+            </div>
+          </div>
         </div>
       )}
 
       {/* Step 6: Hooks */}
       {step === 6 && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <p className="text-sm text-muted-foreground">Есть ли особые темы или углы для прогрева?</p>
-
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {HOOK_OPTIONS.map(({ id, label, desc }) => {
               const isChecked = selectedHooks.includes(id)
               return (
@@ -552,13 +641,12 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                     <span className="text-sm text-foreground">{label}</span>
                   </label>
                   {isChecked && (
-                    <p className="mt-1 ml-10 text-xs text-muted-foreground">{desc}</p>
+                    <p className="mt-0.5 ml-10 text-xs text-muted-foreground">{desc}</p>
                   )}
                 </div>
               )
             })}
           </div>
-
           <div className="space-y-1.5">
             <Label className="text-sm">Добавить свои идеи</Label>
             <Textarea
@@ -574,94 +662,67 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
       {/* Step 7: Competitors */}
       {step === 7 && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            AI использует загруженных конкурентов для двух целей: найти их сильные стороны (чтобы взять лучшее) и выявить твои отличия (чтобы выделиться)
+            AI использует загруженных конкурентов для двух целей: найти их сильные стороны и выявить твои отличия.
           </p>
-          <Card className="border-border bg-secondary/30">
-            <CardContent className="p-4 text-sm text-muted-foreground">
-              <p>После загрузки конкурентов в базу знаний проекта, AI автоматически создаст анализ отстройки.
-              Если список конкурентов не загружен — этот шаг пропускается.</p>
-            </CardContent>
-          </Card>
           <div className="space-y-1.5">
             <Label className="text-sm">Уточните ключевые отличия (опционально)</Label>
             <Textarea
-              placeholder="Например: у конкурента сильный сторителлинг, мы хотим взять это за основу; наше отличие — работаем только с нутрициологией без диет..."
+              placeholder="Например: у конкурента сильный сторителлинг — мы хотим взять это за основу; наше отличие — работаем только с нутрициологией без диет..."
               value={competitorNotes}
               onChange={(e) => setCompetitorNotes(e.target.value)}
-              rows={3}
+              rows={4}
               className="bg-input border-border resize-none text-sm"
             />
           </div>
         </div>
       )}
 
-      {/* Step 8: Summary / Итог */}
+      {/* Step 8: Summary */}
       {step === 8 && (
         <div className="space-y-4">
           {summary ? (
-            <Card className="border-primary/30 bg-primary/5">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-primary" />
-                  План прогрева
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{summary}</div>
-              </CardContent>
-            </Card>
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+              <p className="flex items-center gap-2 text-sm font-semibold text-foreground mb-3">
+                <Sparkles className="h-4 w-4 text-primary" />
+                Стратегия прогрева
+              </p>
+              <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{summary}</div>
+            </div>
           ) : (
-            <div className="text-center py-8">
+            <div className="text-center py-6">
               <p className="text-muted-foreground text-sm mb-4">Нажмите для формирования стратегии прогрева</p>
             </div>
           )}
 
           {!summary && (
-            <Button
-              onClick={generateSummary}
-              disabled={generatingSummary}
-              className="w-full gradient-accent text-white hover:opacity-90"
-            >
-              {generatingSummary ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Формируем стратегию...</>
-              ) : (
-                <><Sparkles className="mr-2 h-4 w-4" /> Сформировать стратегию</>
-              )}
+            <Button onClick={generateSummary} disabled={generatingSummary} className="w-full gradient-accent text-white hover:opacity-90">
+              {generatingSummary
+                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Формируем стратегию...</>
+                : <><Sparkles className="mr-2 h-4 w-4" /> Создать план прогрева</>
+              }
             </Button>
           )}
 
           {summary && !summaryApproved && (
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                className="flex-1 border-border"
-                onClick={() => setSummary(null)}
-              >
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button variant="outline" className="flex-1 border-border" onClick={() => setSummary(null)}>
                 Изменить настройки
               </Button>
-              <Button
-                className="flex-1 gradient-accent text-white hover:opacity-90"
-                onClick={() => setSummaryApproved(true)}
-              >
+              <Button className="flex-1 gradient-accent text-white hover:opacity-90" onClick={() => setSummaryApproved(true)}>
                 <Check className="mr-2 h-4 w-4" />
-                Одобрить и создать план
+                Одобрить стратегию
               </Button>
             </div>
           )}
 
           {summaryApproved && (
-            <Button
-              onClick={createPlan}
-              disabled={loading}
-              className="w-full gradient-accent text-white hover:opacity-90"
-            >
-              {loading ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Создание плана...</>
-              ) : (
-                <><Check className="mr-2 h-4 w-4" /> Создать план прогрева</>
-              )}
+            <Button onClick={createPlan} disabled={loading} className="w-full gradient-accent text-white hover:opacity-90">
+              {loading
+                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Создание плана...</>
+                : <><Check className="mr-2 h-4 w-4" /> Создать план прогрева</>
+              }
             </Button>
           )}
         </div>
@@ -669,7 +730,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
       {/* Navigation */}
       {step < 8 && (
-        <div className="flex justify-between">
+        <div className="flex items-center justify-between pt-2 border-t border-border">
           <Button
             variant="outline"
             onClick={() => setStep(Math.max(1, step - 1))}
@@ -682,21 +743,16 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
           <Button
             onClick={() => {
-              if (step === 7) {
-                generateSummary()
-              } else {
-                setStep(step + 1)
-              }
+              if (step === 7) generateSummary()
+              else setStep(step + 1)
             }}
             className="gradient-accent text-white hover:opacity-90"
             disabled={step === 7 && generatingSummary}
           >
             {step === 7 ? (
-              generatingSummary ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Формируем стратегию...</>
-              ) : (
-                <><Sparkles className="mr-2 h-4 w-4" /> Сформировать стратегию</>
-              )
+              generatingSummary
+                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Формируем...</>
+                : <><Sparkles className="mr-2 h-4 w-4" /> Создать план прогрева</>
             ) : (
               <>Далее <ChevronRight className="ml-1 h-4 w-4" /></>
             )}

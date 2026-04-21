@@ -56,7 +56,7 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
     {
       href: '/dashboard',
       icon: LayoutDashboard,
-      label: 'Дашборд',
+      label: 'Главная',
     },
   ]
 

@@ -16,20 +16,15 @@ export default async function KnowledgePage({ params }: Props) {
   const user = session?.user
   if (!user) redirect('/login')
 
-  const { data: project } = await supabase
-    .from('projects')
-    .select('*')
-    .eq('id', id)
-    .eq('owner_id', user.id)
-    .single()
+  const [{ data: project }, { data: profile }, { data: materials }] = await Promise.all([
+    supabase.from('projects').select('*').eq('id', id).eq('owner_id', user.id).single(),
+    supabase.from('profiles').select('full_name').eq('id', user.id).single(),
+    supabase.from('project_materials').select('*').eq('project_id', id).order('created_at', { ascending: false }),
+  ])
 
   if (!project) notFound()
 
-  const { data: materials } = await supabase
-    .from('project_materials')
-    .select('*')
-    .eq('project_id', id)
-    .order('created_at', { ascending: false })
+  const userName = profile?.full_name || user.email?.split('@')[0] || ''
 
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-5">
@@ -47,6 +42,7 @@ export default async function KnowledgePage({ params }: Props) {
         projectId={id}
         completenessScore={project.completeness_score}
         initialMaterials={materials || []}
+        userName={userName}
       />
     </div>
   )

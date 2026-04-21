@@ -15,7 +15,7 @@ import { toast } from 'sonner'
 import {
   CheckCircle2, Circle, Loader, AlertCircle, Upload, BookOpen,
   X, File, Loader2, Plus, FileText, Mic, ChevronDown, ChevronUp,
-  Info, MessageSquare,
+  Info, MessageSquare, Sparkles,
 } from 'lucide-react'
 
 interface Material {
@@ -29,6 +29,7 @@ interface Props {
   projectId: string
   completenessScore: number
   initialMaterials: Material[]
+  userName?: string
 }
 
 // ── Descriptions & hints per type ────────────────────────────────────────────
@@ -80,7 +81,7 @@ const TYPE_META: Record<string, { label: string; hint: string; category: string 
   },
   marketing_tactics: {
     label: 'Маркетинговая тактика',
-    hint: 'Конкретные тактики продвижения: где и как привлекаешь аудиторию.',
+    hint: 'Конкретная тактика продвижения и продаж: где и как ты привлекаешь аудиторию, как ты доводишь её до продажи.',
     category: 'МАРКЕТИНГ',
   },
   funnel_description: {
@@ -90,7 +91,7 @@ const TYPE_META: Record<string, { label: string; hint: string; category: string 
   },
   chatbot_description: {
     label: 'Описание чат-ботов',
-    hint: 'Скрипты или описание чат-ботов в Telegram/Instagram, если они есть.',
+    hint: 'Скрипты, сценарии, тексты или описание чат-ботов Telegram/Instagram, если они есть.',
     category: 'МАРКЕТИНГ',
   },
 }
@@ -250,13 +251,13 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
             <input
               id={`file-input-${materialType}`}
               type="file" multiple className="hidden"
-              accept=".txt,.md,.csv,.docx,.doc,.xlsx,.xls"
+              accept=".pdf,.txt,.md,.csv,.docx,.doc,.xlsx,.xls,.pages,.numbers,.rtf,.odt"
               onChange={(e) => e.target.files && addFiles(e.target.files)}
             />
             <Upload className="h-7 w-7 text-muted-foreground" />
             <p className="text-sm text-center text-muted-foreground">
               Перетащи файлы или нажми для выбора<br />
-              <span className="text-xs">TXT, DOCX, CSV, XLSX</span>
+              <span className="text-xs">PDF, DOCX, TXT, CSV, XLSX и другие</span>
             </p>
           </div>
 
@@ -326,7 +327,7 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export function KnowledgePageClient({ projectId, completenessScore, initialMaterials }: Props) {
+export function KnowledgePageClient({ projectId, completenessScore, initialMaterials, userName }: Props) {
   const router = useRouter()
   const [uploadFor, setUploadFor] = useState<string | null>(null)
   const [showInterview, setShowInterview] = useState(false)
@@ -448,6 +449,23 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
         ))}
       </div>
 
+      {/* Completion prompt */}
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-5 space-y-3">
+        <p className="text-sm font-semibold text-foreground">
+          {userName ? `Отлично, ${userName}! Ты справилась 🎉` : 'Отлично! 🎉'}
+        </p>
+        <p className="text-sm text-muted-foreground">
+          Теперь переходи к следующему шагу — создай план прогрева, и AI выстроит стратегию контента под твой запуск.
+        </p>
+        <a
+          href={`/projects/${projectId}/strategy`}
+          className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold gradient-accent text-white hover:opacity-90 transition-opacity"
+        >
+          <Sparkles className="h-4 w-4" />
+          Создать план прогрева
+        </a>
+      </div>
+
       {/* Upload dialog */}
       {uploadFor && (
         <UploadDialog
@@ -459,6 +477,14 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
           onSuccess={handleSuccess}
         />
       )}
+
+      {/* Unpacking interview dialog */}
+      <UnpackingInterview
+        projectId={projectId}
+        open={showInterview}
+        onClose={() => setShowInterview(false)}
+        onSuccess={handleSuccess}
+      />
     </>
   )
 }

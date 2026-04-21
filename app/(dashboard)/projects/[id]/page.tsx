@@ -83,7 +83,7 @@ export default async function ProjectPage({ params }: Props) {
             )}
           </div>
         </div>
-        <Badge className="text-xs bg-green-500/15 text-green-400 border-green-500/25">
+        <Badge className="text-xs bg-green-500 text-white border-transparent shrink-0">
           Активный
         </Badge>
       </div>

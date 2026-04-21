@@ -25,7 +25,6 @@ export async function POST(request: Request) {
     if (action === 'generate_quick_plan') {
       const { duration = 45 } = data || {}
 
-      // Fetch project to get product names
       const { data: project } = await supabase
         .from('projects')
         .select('name, description, target_audience')
@@ -40,7 +39,6 @@ export async function POST(request: Request) {
 
       const productName = products?.[0]?.name || project?.name || 'продукт'
 
-      // Build structured plan_data with phases and daily themes
       const phases: Array<{ phase: string; ratio: number; themes: string[] }> = [
         { phase: 'awareness', ratio: 0.25, themes: ['Знакомство с экспертом', 'Моя история', 'Зачем этот блог', 'Кому я помогаю', 'Мои ценности', 'Факты обо мне', 'Антикейс — чего я не делаю'] },
         { phase: 'trust',     ratio: 0.30, themes: ['Кейс клиента', 'За кулисами работы', 'Отзывы и результаты', 'Мой метод', 'Частые вопросы', 'Разбор мифа', 'Почему я в этой нише'] },
@@ -118,6 +116,36 @@ export async function PATCH(request: Request) {
     }
 
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
+  } catch (error) {
+    console.error(error)
+    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const supabase = await createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const user = session?.user
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const { searchParams } = new URL(request.url)
+    const projectId = searchParams.get('id')
+    if (!projectId) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
+
+    const { data: project } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('id', projectId)
+      .eq('owner_id', user.id)
+      .single()
+
+    if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    const { error } = await supabase.from('projects').delete().eq('id', projectId)
+    if (error) throw error
+
+    return NextResponse.json({ success: true })
   } catch (error) {
     console.error(error)
     return NextResponse.json({ error: 'Server error' }, { status: 500 })

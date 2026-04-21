@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { ProjectCard } from '@/components/projects/ProjectCard'
 import { Plus, FolderKanban } from 'lucide-react'
+import { ProjectsListClient } from '@/components/projects/ProjectsListClient'
 
 function pluralizeProjects(n: number) {
   const abs = Math.abs(n) % 100
@@ -27,7 +28,7 @@ export default async function ProjectsPage() {
     .order('updated_at', { ascending: false })
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Мои проекты</h1>
@@ -38,17 +39,14 @@ export default async function ProjectsPage() {
         <Button asChild className="gradient-accent text-white hover:opacity-90">
           <Link href="/projects/new">
             <Plus className="mr-2 h-4 w-4" />
-            Новый проект
+            <span className="hidden sm:inline">Новый проект</span>
+            <span className="sm:hidden">Создать</span>
           </Link>
         </Button>
       </div>
 
       {projects && projects.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {projects.map((project) => (
-            <ProjectCard key={project.id} project={project} />
-          ))}
-        </div>
+        <ProjectsListClient projects={projects} />
       ) : (
         <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
           <FolderKanban className="h-16 w-16 text-muted-foreground/40" />
