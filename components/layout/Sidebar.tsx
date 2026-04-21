@@ -82,7 +82,7 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
   ]
 
   return (
-    <aside className="flex h-screen w-64 flex-col border-r border-border bg-sidebar">
+    <aside className="flex h-full w-64 flex-col border-r border-border bg-sidebar">
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-sidebar-border">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl gradient-accent shadow-lg">
@@ -149,7 +149,7 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
                   <div className="ml-3 mt-0.5 space-y-0.5 border-l border-border/50 pl-2">
                     {[
                       { href: `/projects/${project.id}/style-bank`, label: '✦ Мой стиль' },
-                      { href: `/projects/${project.id}/generator`, label: '✦ Генератор' },
+                      { href: `/projects/${project.id}/generator`, label: '✦ Сделать контент' },
                     ].map((sub) => (
                       <Link
                         key={sub.href}

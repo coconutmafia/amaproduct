@@ -7,6 +7,15 @@ import { ProjectCard } from '@/components/projects/ProjectCard'
 import { Plus, FolderKanban, FileText, Sparkles, ArrowRight, Clock } from 'lucide-react'
 import { DashboardClient } from '@/components/dashboard/DashboardClient'
 
+function pluralize(n: number, one: string, few: string, many: string) {
+  const abs = Math.abs(n) % 100
+  if (abs >= 11 && abs <= 19) return many
+  const last = abs % 10
+  if (last === 1) return one
+  if (last >= 2 && last <= 4) return few
+  return many
+}
+
 export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
@@ -41,13 +50,13 @@ export default async function DashboardPage() {
   const greeting = aiName ? `${aiName} готов к работе` : 'Твой AI SMM-щик готов к работе'
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-8">
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6 md:space-y-8">
       {/* Onboarding slides for new users */}
       <DashboardClient userId={user.id} onboardingDone={onboardingDone} />
 
       {/* Welcome */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold text-foreground">
             Привет, <span className="gradient-text">{name}</span>!
           </h1>
@@ -55,29 +64,32 @@ export default async function DashboardPage() {
             {greeting}
           </p>
         </div>
-        <Button asChild className="gradient-accent text-white hover:opacity-90">
+        <Button asChild className="gradient-accent text-white hover:opacity-90 shrink-0">
           <Link href="/projects/new">
             <Plus className="mr-2 h-4 w-4" />
-            Новый проект
+            <span className="hidden sm:inline">Новый проект</span>
+            <span className="sm:hidden">Создать</span>
           </Link>
         </Button>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="border-border bg-card">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/15">
-                <FolderKanban className="h-6 w-6 text-primary" />
+        <Link href="/projects">
+          <Card className="border-border bg-card hover:border-primary/40 hover:bg-card/80 transition-all cursor-pointer">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/15">
+                  <FolderKanban className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <p className="text-3xl font-bold text-foreground">{projects?.length || 0}</p>
+                  <p className="text-sm text-muted-foreground">{pluralize(projects?.length || 0, 'Проект', 'Проекта', 'Проектов')}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-3xl font-bold text-foreground">{projects?.length || 0}</p>
-                <p className="text-sm text-muted-foreground">Проектов</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </Link>
 
         <Card className="border-border bg-card">
           <CardContent className="p-6">

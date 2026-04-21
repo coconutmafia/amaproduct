@@ -375,66 +375,71 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
 
                 return (
                   <div key={type}>
-                    <div className={`flex items-center justify-between p-3 rounded-xl border transition-colors ${
+                    <div className={`p-4 rounded-xl border transition-colors ${
                       hasItems
                         ? 'border-green-500/20 bg-green-500/5'
                         : 'border-border bg-secondary/20'
                     }`}>
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <StatusIcon status={latest?.processing_status || 'none'} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-medium text-foreground truncate">
-                              {meta?.label || type}
-                            </span>
-                            {items.length > 1 && (
-                              <span className="text-xs text-muted-foreground">({items.length})</span>
-                            )}
-                            {/* Hint toggle */}
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5 shrink-0">
+                          <StatusIcon status={latest?.processing_status || 'none'} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {/* Label row */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-semibold text-foreground leading-snug">
+                                {meta?.label || type}
+                                {items.length > 1 && (
+                                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">({items.length})</span>
+                                )}
+                              </p>
+                              {latest && (
+                                <p className="text-xs text-muted-foreground mt-0.5 truncate">{latest.title}</p>
+                              )}
+                            </div>
+                            {/* Подробнее text link */}
                             <button
                               onClick={() => setShowHint(showHint === type ? null : type)}
-                              className="text-muted-foreground hover:text-primary transition-colors ml-0.5"
+                              className="text-xs text-primary/70 hover:text-primary transition-colors whitespace-nowrap shrink-0 mt-0.5"
                             >
-                              <Info className="h-3 w-3" />
+                              {showHint === type ? 'Скрыть' : 'Подробнее'}
                             </button>
                           </div>
-                          {latest && (
-                            <p className="text-xs text-muted-foreground truncate">{latest.title}</p>
+
+                          {/* Hint panel */}
+                          {showHint === type && meta && (
+                            <div className="mt-2 px-3 py-2 rounded-lg bg-primary/5 border border-primary/10 text-xs text-muted-foreground">
+                              {meta.hint}
+                            </div>
                           )}
+
+                          {/* Upload button below label */}
+                          <div className="flex items-center gap-2 mt-3">
+                            {type === 'unpacking_map' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs h-8 px-3 border-primary/40 text-primary hover:bg-primary/10"
+                                onClick={() => setShowInterview(true)}
+                              >
+                                <MessageSquare className="h-3 w-3 mr-1.5" />
+                                Пройти интервью
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant={hasItems ? 'outline' : 'default'}
+                              className={`text-xs h-8 px-4 ${hasItems ? 'border-border' : 'gradient-accent text-white hover:opacity-90 border-0'}`}
+                              onClick={() => setUploadFor(type)}
+                            >
+                              <Upload className="h-3 w-3 mr-1.5" />
+                              {hasItems ? 'Добавить файл' : 'Загрузить'}
+                            </Button>
+                          </div>
                         </div>
                       </div>
-
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {type === 'unpacking_map' && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs h-7 px-3 border-primary/40 text-primary hover:bg-primary/10"
-                            onClick={() => setShowInterview(true)}
-                          >
-                            <MessageSquare className="h-3 w-3 mr-1" />
-                            Интервью
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant={hasItems ? 'outline' : 'default'}
-                          className={`text-xs h-7 px-3 ${hasItems ? '' : 'gradient-accent text-white hover:opacity-90 border-0'}`}
-                          onClick={() => setUploadFor(type)}
-                        >
-                          <Upload className="h-3 w-3 mr-1" />
-                          {hasItems ? 'Добавить' : 'Загрузить'}
-                        </Button>
-                      </div>
                     </div>
-
-                    {/* Hint panel */}
-                    {showHint === type && meta && (
-                      <div className="mt-1 px-3 py-2 rounded-lg bg-primary/5 border border-primary/10 text-xs text-muted-foreground flex gap-2">
-                        <Info className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
-                        {meta.hint}
-                      </div>
-                    )}
                   </div>
                 )
               })}

@@ -35,7 +35,7 @@ export default async function DashboardLayout({
   const isAdmin = profile?.role === 'admin'
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex overflow-hidden" style={{ height: '100dvh' }}>
       {/* Sidebar — hidden on mobile */}
       <div className="hidden lg:flex">
         <Sidebar

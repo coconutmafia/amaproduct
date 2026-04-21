@@ -19,6 +19,8 @@ import {
   GitBranch,
   ExternalLink,
   BarChart2,
+  CheckCircle2,
+  ChevronRight,
 } from 'lucide-react'
 
 interface Props {
@@ -41,21 +43,21 @@ export default async function ProjectPage({ params }: Props) {
 
   if (!project) notFound()
 
-  const [{ data: products }, { data: funnels }, { data: warmupPlans }, { data: recentContent }] =
+  const [{ data: products }, { data: funnels }, { data: warmupPlans }, { data: recentContent }, { count: materialsCount }] =
     await Promise.all([
       supabase.from('products').select('*').eq('project_id', id).eq('is_active', true),
       supabase.from('funnels').select('*').eq('project_id', id).eq('is_active', true),
-      supabase.from('warmup_plans').select('*').eq('project_id', id).order('created_at', { ascending: false }).limit(1),
+      supabase.from('warmup_plans').select('*').eq('project_id', id).order('created_at', { ascending: false }).limit(3),
       supabase.from('content_items').select('*').eq('project_id', id).order('created_at', { ascending: false }).limit(5),
+      supabase.from('project_materials').select('*', { count: 'exact', head: true }).eq('project_id', id),
     ])
 
-  const tabs = [
-    { href: `/projects/${id}`, label: 'Обзор' },
-    { href: `/projects/${id}/knowledge`, label: 'Материалы' },
-    { href: `/projects/${id}/strategy`, label: 'План прогрева' },
-    { href: `/projects/${id}/content-plan`, label: 'Контент-план' },
-    { href: `/projects/${id}/generator`, label: 'Генератор' },
-  ]
+  // Step completion state
+  const hasMaterials = (materialsCount ?? 0) > 0
+  const hasWarmupPlan = warmupPlans?.some(p => ['approved', 'active'].includes(p.status)) ?? false
+  const hasContentPlan = hasWarmupPlan // content plan depends on warmup plan
+  const hasContent = (recentContent?.length ?? 0) > 0
+  const allStepsDone = hasMaterials && hasWarmupPlan && hasContent
 
   const socials = [
     { icon: Instagram, url: project.instagram_url, label: 'Instagram' },
@@ -65,7 +67,7 @@ export default async function ProjectPage({ params }: Props) {
   ].filter((s) => s.url)
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-5 md:space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -110,43 +112,108 @@ export default async function ProjectPage({ params }: Props) {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-border pb-0 overflow-x-auto">
-        {tabs.map((tab) => (
-          <Link
-            key={tab.href}
-            href={tab.href}
-            className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground border-b-2 border-transparent hover:border-primary/50 whitespace-nowrap transition-colors"
-          >
-            {tab.label}
-          </Link>
-        ))}
-      </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main content */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Quick actions */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              { href: `/projects/${id}/knowledge`, icon: BookOpen, label: 'Материалы', color: 'text-blue-400 bg-blue-400/10' },
-              { href: `/projects/${id}/strategy`, icon: Calendar, label: 'План прогрева', color: 'text-green-400 bg-green-400/10' },
-              { href: `/projects/${id}/content-plan`, icon: Grid3X3, label: 'Контент-план', color: 'text-yellow-400 bg-yellow-400/10' },
-              { href: `/projects/${id}/generator`, icon: Sparkles, label: 'Генератор', color: 'text-purple-400 bg-purple-400/10' },
-              { href: `/projects/${id}/account-analysis`, icon: BarChart2, label: 'Анализ Instagram', color: 'text-pink-400 bg-pink-400/10' },
-            ].map(({ href, icon: Icon, label, color }) => (
-              <Link key={href} href={href}>
-                <Card className="border-border bg-card hover:bg-card/80 hover:border-primary/30 transition-all cursor-pointer">
-                  <CardContent className="p-4 flex flex-col items-center gap-2 text-center">
-                    <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${color}`}>
-                      <Icon className="h-5 w-5" />
-                    </div>
-                    <span className="text-xs font-medium text-foreground">{label}</span>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
-          </div>
+
+          {/* ── Step guide (new users) or Quick actions (returning users) ── */}
+          {!allStepsDone ? (
+            <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Начало работы</p>
+                <h2 className="text-base font-bold text-foreground">Пройди все шаги, чтобы получать максимально эффективный контент</h2>
+              </div>
+              <div className="space-y-2">
+                {/* Step 1 */}
+                <Link href={`/projects/${id}/knowledge`} className="group flex items-center gap-4 p-3 rounded-xl border transition-all hover:border-primary/40 hover:bg-secondary/30 cursor-pointer"
+                  style={{ borderColor: hasMaterials ? 'rgb(34 197 94 / 0.3)' : undefined,
+                           backgroundColor: hasMaterials ? 'rgb(34 197 94 / 0.05)' : undefined }}>
+                  <div className={`flex h-9 w-9 items-center justify-center rounded-full shrink-0 font-bold text-sm ${hasMaterials ? 'bg-green-500/15 text-green-400' : 'bg-primary/15 text-primary'}`}>
+                    {hasMaterials ? <CheckCircle2 className="h-5 w-5 text-green-400" /> : '1'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-semibold ${hasMaterials ? 'text-green-400' : 'text-foreground'}`}>
+                      Загрузи материалы
+                    </p>
+                    <p className="text-xs text-muted-foreground">Распаковка, кейсы, аудитория — AI учится на твоих данных</p>
+                  </div>
+                  {!hasMaterials && <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 group-hover:text-primary transition-colors" />}
+                </Link>
+
+                {/* Step 2 */}
+                <Link href={`/projects/${id}/strategy`} className="group flex items-center gap-4 p-3 rounded-xl border transition-all hover:border-primary/40 hover:bg-secondary/30 cursor-pointer"
+                  style={{ borderColor: hasWarmupPlan ? 'rgb(34 197 94 / 0.3)' : undefined,
+                           backgroundColor: hasWarmupPlan ? 'rgb(34 197 94 / 0.05)' : undefined }}>
+                  <div className={`flex h-9 w-9 items-center justify-center rounded-full shrink-0 font-bold text-sm ${hasWarmupPlan ? 'bg-green-500/15 text-green-400' : hasMaterials ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground'}`}>
+                    {hasWarmupPlan ? <CheckCircle2 className="h-5 w-5 text-green-400" /> : '2'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-semibold ${hasWarmupPlan ? 'text-green-400' : hasMaterials ? 'text-foreground' : 'text-muted-foreground'}`}>
+                      Создай план прогрева
+                    </p>
+                    <p className="text-xs text-muted-foreground">Стратегия контента под твой запуск — фазы, аудитория, хуки</p>
+                  </div>
+                  {!hasWarmupPlan && hasMaterials && <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 group-hover:text-primary transition-colors" />}
+                </Link>
+
+                {/* Step 3 */}
+                <Link href={`/projects/${id}/content-plan`} className="group flex items-center gap-4 p-3 rounded-xl border transition-all hover:border-primary/40 hover:bg-secondary/30 cursor-pointer"
+                  style={{ borderColor: hasContentPlan && hasWarmupPlan ? 'rgb(34 197 94 / 0.3)' : undefined,
+                           backgroundColor: hasContentPlan && hasWarmupPlan ? 'rgb(34 197 94 / 0.05)' : undefined }}>
+                  <div className={`flex h-9 w-9 items-center justify-center rounded-full shrink-0 font-bold text-sm ${hasContentPlan && hasWarmupPlan ? 'bg-green-500/15 text-green-400' : hasWarmupPlan ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground'}`}>
+                    {hasContentPlan && hasWarmupPlan ? <CheckCircle2 className="h-5 w-5 text-green-400" /> : '3'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-semibold ${hasContentPlan && hasWarmupPlan ? 'text-green-400' : hasWarmupPlan ? 'text-foreground' : 'text-muted-foreground'}`}>
+                      Открой контент-план
+                    </p>
+                    <p className="text-xs text-muted-foreground">Расписание постов, рилсов и сториз на каждый день прогрева</p>
+                  </div>
+                  {!hasContent && hasWarmupPlan && <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 group-hover:text-primary transition-colors" />}
+                </Link>
+
+                {/* Step 4 */}
+                <Link href={`/projects/${id}/generator`} className="group flex items-center gap-4 p-3 rounded-xl border transition-all hover:border-primary/40 hover:bg-secondary/30 cursor-pointer"
+                  style={{ borderColor: hasContent ? 'rgb(34 197 94 / 0.3)' : undefined,
+                           backgroundColor: hasContent ? 'rgb(34 197 94 / 0.05)' : undefined }}>
+                  <div className={`flex h-9 w-9 items-center justify-center rounded-full shrink-0 font-bold text-sm ${hasContent ? 'bg-green-500/15 text-green-400' : hasContentPlan && hasWarmupPlan ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground'}`}>
+                    {hasContent ? <CheckCircle2 className="h-5 w-5 text-green-400" /> : '4'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-semibold ${hasContent ? 'text-green-400' : hasContentPlan && hasWarmupPlan ? 'text-foreground' : 'text-muted-foreground'}`}>
+                      Сделай первый контент
+                    </p>
+                    <p className="text-xs text-muted-foreground">AI напишет пост, рилс или карусель в твоём стиле за секунды</p>
+                  </div>
+                  {!hasContent && hasContentPlan && hasWarmupPlan && <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 group-hover:text-primary transition-colors" />}
+                </Link>
+              </div>
+            </div>
+          ) : (
+            /* ── Returning user: quick action buttons ── */
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {[
+                { href: `/projects/${id}/content-plan`, icon: Grid3X3, label: 'Контент-план', color: 'text-yellow-400 bg-yellow-400/10', desc: 'Расписание по дням' },
+                { href: `/projects/${id}/generator`, icon: Sparkles, label: 'Сделать контент', color: 'text-purple-400 bg-purple-400/10', desc: 'AI пишет пост / рилс' },
+                { href: `/projects/${id}/knowledge`, icon: BookOpen, label: 'Материалы', color: 'text-blue-400 bg-blue-400/10', desc: 'База знаний' },
+                { href: `/projects/${id}/strategy`, icon: Calendar, label: 'План прогрева', color: 'text-green-400 bg-green-400/10', desc: 'Стратегия запуска' },
+                { href: `/projects/${id}/account-analysis`, icon: BarChart2, label: 'Анализ Instagram', color: 'text-pink-400 bg-pink-400/10', desc: 'Статистика аккаунта' },
+                { href: `/projects/${id}/style-bank`, icon: Sparkles, label: 'Мой стиль', color: 'text-orange-400 bg-orange-400/10', desc: 'Одобренный контент' },
+              ].map(({ href, icon: Icon, label, color, desc }) => (
+                <Link key={href} href={href}>
+                  <Card className="border-border bg-card hover:bg-card/80 hover:border-primary/30 transition-all cursor-pointer h-full">
+                    <CardContent className="p-4 flex flex-col items-center gap-2 text-center">
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${color}`}>
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <span className="text-xs font-semibold text-foreground">{label}</span>
+                      <span className="text-[10px] text-muted-foreground">{desc}</span>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          )}
 
           {/* Recent content */}
           {recentContent && recentContent.length > 0 && (
@@ -155,7 +222,7 @@ export default async function ProjectPage({ params }: Props) {
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm font-medium">Последний контент</CardTitle>
                   <Button variant="ghost" size="sm" asChild className="text-xs text-muted-foreground">
-                    <Link href={`/projects/${id}/generator`}>Все →</Link>
+                    <Link href={`/projects/${id}/generator`}>Открыть →</Link>
                   </Button>
                 </div>
               </CardHeader>

@@ -130,8 +130,8 @@ export default function GeneratorPage() {
           <Link href={`/projects/${id}`}><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
         <div>
-          <h1 className="text-xl font-bold text-foreground">Генератор контента</h1>
-          <p className="text-sm text-muted-foreground">AI создаёт контент на основе вашей базы знаний</p>
+          <h1 className="text-xl font-bold text-foreground">Сделать контент</h1>
+          <p className="text-sm text-muted-foreground">AI создаёт контент на основе твоих материалов</p>
         </div>
       </div>
 
