@@ -48,6 +48,27 @@ export async function POST(request: Request) {
         rawContent = await file.text()
       }
 
+      // PDF — извлекаем текст через pdf-parse
+      if (name.endsWith('.pdf') || file.type === 'application/pdf') {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const pdfModule = await import('pdf-parse') as any
+          const pdfParse = pdfModule.default ?? pdfModule
+          const bytes = await file.arrayBuffer()
+          const result = await pdfParse(Buffer.from(bytes))
+          rawContent = result.text
+          if (!rawContent || rawContent.trim().length < 10) {
+            return NextResponse.json({
+              error: 'PDF не содержит читаемого текста. Возможно, это скан. Скопируй текст вручную и вставь в поле ниже.',
+            }, { status: 400 })
+          }
+        } catch {
+          return NextResponse.json({
+            error: 'Не удалось прочитать PDF. Попробуй скопировать текст и вставить в поле ниже.',
+          }, { status: 400 })
+        }
+      }
+
       // Word (.docx) — извлекаем текст через mammoth
       if (name.endsWith('.docx') || name.endsWith('.doc')) {
         try {
