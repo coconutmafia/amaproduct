@@ -200,18 +200,20 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   return (
     <div className="space-y-6">
       {/* Steps indicator */}
-      <div className="flex items-center gap-1 overflow-x-auto pb-2">
+      <div className="flex items-center gap-0 overflow-x-auto pb-1">
         {STEPS.map((s, i) => (
           <div key={s.id} className="flex items-center shrink-0">
-            <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-all ${
-              step === s.id ? 'gradient-accent text-white scale-110' :
-              step > s.id ? 'bg-green-500/20 text-green-400' :
-              'bg-secondary text-muted-foreground'
+            <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-colors ${
+              step === s.id
+                ? 'gradient-accent text-white ring-2 ring-primary/40 ring-offset-1 ring-offset-background'
+                : step > s.id
+                ? 'bg-green-500/20 text-green-400'
+                : 'bg-secondary text-muted-foreground'
             }`}>
               {step > s.id ? <Check className="h-3.5 w-3.5" /> : s.id}
             </div>
             {i < STEPS.length - 1 && (
-              <div className={`h-px w-6 mx-1 ${step > s.id ? 'bg-green-500/40' : 'bg-border'}`} />
+              <div className={`h-px w-5 mx-0.5 shrink-0 ${step > s.id ? 'bg-green-500/40' : 'bg-border'}`} />
             )}
           </div>
         ))}
@@ -266,28 +268,36 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
       {/* Step 2: Duration */}
       {step === 2 && (
-        <div className="grid grid-cols-3 gap-4">
-          {([30, 45, 60] as const).map((days) => (
-            <button
-              key={days}
-              onClick={() => setDuration(days)}
-              className={`p-6 rounded-xl border text-center transition-all ${
-                duration === days
-                  ? 'border-primary bg-primary/10'
-                  : 'border-border bg-card hover:border-primary/40'
-              }`}
-            >
-              <p className="text-3xl font-bold text-foreground">{days}</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                {days === 30 ? '1 месяц' : days === 45 ? '1.5 месяца' : '2 месяца'}
-              </p>
-              {duration === days && (
-                <Badge className="mt-2 bg-primary/20 text-primary border-primary/30 text-xs">
-                  Выбрано
-                </Badge>
-              )}
-            </button>
-          ))}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {([30, 45, 60] as const).map((days) => {
+            const selected = duration === days
+            return (
+              <button
+                key={days}
+                onClick={() => setDuration(days)}
+                className={`flex sm:flex-col items-center sm:justify-center gap-3 sm:gap-1 p-4 sm:p-6 rounded-xl border text-left sm:text-center transition-all ${
+                  selected
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border bg-card hover:border-primary/40'
+                }`}
+              >
+                <div className={`flex h-8 w-8 sm:h-auto sm:w-auto items-center justify-center rounded-full shrink-0 sm:contents ${selected ? 'bg-primary/20' : 'bg-secondary'}`}>
+                  <p className={`text-2xl sm:text-3xl font-bold ${selected ? 'text-primary' : 'text-foreground'}`}>{days}</p>
+                </div>
+                <div className="flex-1 sm:flex-none">
+                  <p className="text-sm font-medium text-foreground">
+                    {days === 30 ? '1 месяц' : days === 45 ? '1,5 месяца' : '2 месяца'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {days === 30 ? 'Короткий запуск' : days === 45 ? 'Рекомендуется' : 'Глубокий прогрев'}
+                  </p>
+                </div>
+                {selected && (
+                  <Check className="h-4 w-4 text-primary shrink-0 sm:hidden" />
+                )}
+              </button>
+            )
+          })}
         </div>
       )}
 
@@ -303,15 +313,15 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                 coldAudienceType === 'existing_funnel' ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/40'
               }`}
             >
-              <div className="flex items-center gap-2">
-                <div className={`h-4 w-4 rounded-full border-2 ${coldAudienceType === 'existing_funnel' ? 'border-primary bg-primary' : 'border-muted-foreground'}`} />
+              <div className="flex items-start gap-3">
+                <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${coldAudienceType === 'existing_funnel' ? 'border-primary bg-primary' : 'border-muted-foreground'}`} />
                 <div>
                   <p className="font-medium text-foreground">Использовать ранее загруженную воронку</p>
-                  <p className="text-xs text-muted-foreground">{funnels[0].name} — рекомендуется</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{funnels[0].name} — рекомендуется</p>
                 </div>
               </div>
               {coldAudienceType === 'existing_funnel' && funnels.length > 1 && (
-                <div className="mt-3 grid grid-cols-1 gap-2 pl-6">
+                <div className="mt-3 grid grid-cols-1 gap-2 pl-7">
                   {funnels.map((f) => (
                     <label key={f.id} className="flex items-center gap-2 text-sm cursor-pointer">
                       <input
@@ -334,20 +344,22 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
               coldAudienceType === 'custom' ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/40'
             }`}
           >
-            <div className="flex items-center gap-2">
-              <div className={`h-4 w-4 rounded-full border-2 ${coldAudienceType === 'custom' ? 'border-primary bg-primary' : 'border-muted-foreground'}`} />
-              <p className="font-medium text-foreground">Описать новую воронку</p>
+            <div className="flex items-start gap-3">
+              <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${coldAudienceType === 'custom' ? 'border-primary bg-primary' : 'border-muted-foreground'}`} />
+              <div className="flex-1">
+                <p className="font-medium text-foreground">Описать новую воронку</p>
+                {coldAudienceType === 'custom' && (
+                  <Textarea
+                    className="mt-2 bg-input border-border resize-none text-sm"
+                    placeholder="Опишите как будете привлекать холодную аудиторию..."
+                    value={coldFunnelCustom}
+                    onChange={(e) => setColdFunnelCustom(e.target.value)}
+                    rows={3}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                )}
+              </div>
             </div>
-            {coldAudienceType === 'custom' && (
-              <Textarea
-                className="mt-3 bg-input border-border resize-none text-sm"
-                placeholder="Опишите как будете привлекать холодную аудиторию..."
-                value={coldFunnelCustom}
-                onChange={(e) => setColdFunnelCustom(e.target.value)}
-                rows={3}
-                onClick={(e) => e.stopPropagation()}
-              />
-            )}
           </button>
 
           <button
@@ -356,8 +368,8 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
               coldAudienceType === 'none' ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/40'
             }`}
           >
-            <div className="flex items-center gap-2">
-              <div className={`h-4 w-4 rounded-full border-2 ${coldAudienceType === 'none' ? 'border-primary bg-primary' : 'border-muted-foreground'}`} />
+            <div className="flex items-center gap-3">
+              <div className={`h-4 w-4 rounded-full border-2 shrink-0 ${coldAudienceType === 'none' ? 'border-primary bg-primary' : 'border-muted-foreground'}`} />
               <p className="font-medium text-foreground">Без воронки — продаём напрямую</p>
             </div>
           </button>
@@ -507,11 +519,11 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                 useCases === value ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/40'
               }`}
             >
-              <div className="flex items-center gap-2">
-                <div className={`h-4 w-4 rounded-full border-2 ${useCases === value ? 'border-primary bg-primary' : 'border-muted-foreground'}`} />
+              <div className="flex items-start gap-3">
+                <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${useCases === value ? 'border-primary bg-primary' : 'border-muted-foreground'}`} />
                 <div>
                   <p className="font-medium text-foreground">{label}</p>
-                  <p className="text-xs text-muted-foreground">{desc}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
                 </div>
               </div>
             </button>

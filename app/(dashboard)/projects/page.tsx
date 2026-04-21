@@ -5,6 +5,15 @@ import { Button } from '@/components/ui/button'
 import { ProjectCard } from '@/components/projects/ProjectCard'
 import { Plus, FolderKanban } from 'lucide-react'
 
+function pluralizeProjects(n: number) {
+  const abs = Math.abs(n) % 100
+  const last = abs % 10
+  if (abs >= 11 && abs <= 19) return `${n} проектов`
+  if (last === 1) return `${n} проект`
+  if (last >= 2 && last <= 4) return `${n} проекта`
+  return `${n} проектов`
+}
+
 export default async function ProjectsPage() {
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
@@ -23,12 +32,7 @@ export default async function ProjectsPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Мои проекты</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {(() => {
-              const n = projects?.length || 0
-              if (n === 1) return '1 проект'
-              if (n >= 2 && n <= 4) return `${n} проекта`
-              return `${n} проектов`
-            })()}
+            {pluralizeProjects(projects?.length || 0)}
           </p>
         </div>
         <Button asChild className="gradient-accent text-white hover:opacity-90">
