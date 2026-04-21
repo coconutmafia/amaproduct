@@ -135,22 +135,30 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         })
       })
 
-      if (!res.ok) throw new Error('Failed')
+      if (!res.ok) {
+        let errMsg = 'Ошибка сервера'
+        try { const d = await res.json(); errMsg = d.error || errMsg } catch { /* ignore */ }
+        throw new Error(errMsg)
+      }
 
       const reader = res.body?.getReader()
-      if (!reader) throw new Error('No reader')
+      if (!reader) throw new Error('Нет ответа от AI')
 
       let result = ''
+      const decoder = new TextDecoder()
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        result += new TextDecoder().decode(value)
+        result += decoder.decode(value, { stream: true })
       }
+      result += decoder.decode()
+
+      if (!result.trim()) throw new Error('AI вернул пустой ответ — попробуйте ещё раз')
 
       setSummary(result)
       setStep(8)
-    } catch {
-      toast.error('Ошибка формирования стратегии')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Ошибка формирования стратегии')
     } finally {
       setGeneratingSummary(false)
     }

@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ArrowLeft, Sparkles, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Sparkles, AlertCircle, Zap } from 'lucide-react'
 import { ContentPlanGrid } from '@/components/content/ContentPlanGrid'
 import { toast } from 'sonner'
 import type { ContentItem, ContentType, WarmupPhase, WarmupPlanData, WarmupPhaseData } from '@/types'
@@ -98,6 +98,7 @@ export default function ContentPlanPage() {
   const [planName, setPlanName] = useState<string | null>(null)
   const [hasPlan, setHasPlan] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [generatingQuickPlan, setGeneratingQuickPlan] = useState(false)
 
   // Load warmup plan data
   const loadPlanData = useCallback(async (weekNum: number) => {
@@ -204,6 +205,32 @@ export default function ContentPlanPage() {
     toast.info('Экспорт контент-плана в разработке...')
   }, [])
 
+  const handleQuickPlan = useCallback(async () => {
+    setGeneratingQuickPlan(true)
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'generate_quick_plan',
+          projectId: id,
+          data: { duration: totalDays },
+        }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.error || 'Ошибка создания плана')
+      }
+      toast.success('Быстрый контент-план создан! 🎉')
+      await loadPlanData(1)
+      setWeek(1)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Ошибка')
+    } finally {
+      setGeneratingQuickPlan(false)
+    }
+  }, [id, totalDays, loadPlanData])
+
   const handleWeekChange = (delta: number) => {
     const newWeek = Math.max(1, Math.min(totalWeeks, week + delta))
     setWeek(newWeek)
@@ -232,15 +259,60 @@ export default function ContentPlanPage() {
         )}
       </div>
 
-      {/* No approved plan warning */}
+      {/* No approved plan — offer two paths */}
       {!hasPlan && !loading && (
-        <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-4 flex items-start gap-3">
-          <AlertCircle className="h-4 w-4 text-yellow-400 mt-0.5 shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-yellow-400">Стратегия прогрева не одобрена</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Показан предварительный план. Создай стратегию в разделе «План прогрева» — и план заполнится реальными темами и форматами.
-            </p>
+        <div className="rounded-xl border border-border bg-secondary/30 p-5 space-y-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-4 w-4 text-yellow-400 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-foreground">У тебя ещё нет одобренного плана прогрева</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Ниже показана предварительная структура. Выбери как хочешь продолжить:
+              </p>
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {/* Quick plan */}
+            <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <Zap className="h-4 w-4 text-primary" />
+                <p className="text-sm font-semibold text-foreground">Быстрый старт</p>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                AI создаст структуру контент-плана на {totalDays} дней прямо сейчас — на основе информации проекта. Темы и форматы для каждого дня будут готовы за секунду.
+              </p>
+              <Button
+                size="sm"
+                className="w-full gradient-accent text-white hover:opacity-90 mt-1"
+                onClick={handleQuickPlan}
+                disabled={generatingQuickPlan}
+              >
+                {generatingQuickPlan
+                  ? <><span className="animate-spin mr-1.5">⏳</span> Создаём план...</>
+                  : <><Zap className="h-3.5 w-3.5 mr-1.5" /> Создать контент-план</>
+                }
+              </Button>
+            </div>
+            {/* Full wizard */}
+            <div className="rounded-lg border border-border bg-card p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-muted-foreground" />
+                <p className="text-sm font-semibold text-foreground">Персональная стратегия</p>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Пройди мастер «План прогрева» — AI учтёт твою воронку, продукт, типы прогрева и хуки. Результат точнее под твой запуск.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full mt-1"
+                asChild
+              >
+                <Link href={`/projects/${id}/strategy`}>
+                  <Sparkles className="h-3.5 w-3.5 mr-1.5" /> Открыть мастер
+                </Link>
+              </Button>
+            </div>
           </div>
         </div>
       )}
