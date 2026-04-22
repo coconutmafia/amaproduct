@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -24,8 +24,27 @@ import {
   Sparkles,
   Loader2,
   Upload,
+  RefreshCw,
 } from 'lucide-react'
 import type { Product, Funnel } from '@/types'
+
+// ── Markdown renderer ─────────────────────────────────────────────────────────
+function PlanRenderer({ markdown }: { markdown: string }) {
+  const html = useMemo(() => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const MarkdownIt = require('markdown-it') as new (opts?: object) => { render: (s: string) => string }
+    const md = new MarkdownIt({ html: false, breaks: true, linkify: false })
+    return md.render(markdown)
+  }, [markdown])
+
+  return (
+    <div
+      className="plan-md text-sm text-foreground leading-relaxed"
+      // eslint-disable-next-line react/no-danger
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  )
+}
 
 interface WarmupWizardProps {
   projectId: string
@@ -211,6 +230,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   const [generatingSummary, setGeneratingSummary] = useState(false)
   const [summary, setSummary] = useState<string | null>(null)
   const [summaryApproved, setSummaryApproved] = useState(false)
+  const [isFallback, setIsFallback] = useState(false)
 
   // Wizard state
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
@@ -359,10 +379,11 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       if (!result.trim()) throw new Error('Пустой ответ')
 
       setSummary(result)
+      setIsFallback(false)
       setStep(8)
     } catch {
       // Fallback: generate template summary
-      toast.info('AI временно недоступен — используем готовый шаблон стратегии')
+      toast.info('AI временно недоступен — сформирован базовый шаблон. Можно попробовать AI повторно.')
       const funnelDesc =
         coldAudienceType === 'existing_funnel'
           ? `Существующая воронка: ${funnels.find(f => f.id === coldFunnelId)?.name || 'из базы'}`
@@ -380,6 +401,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         startDate,
       })
       setSummary(fallback)
+      setIsFallback(true)
       setStep(8)
     } finally {
       setGeneratingSummary(false)
@@ -389,6 +411,25 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   async function createPlan() {
     setLoading(true)
     try {
+      // Build structured plan_data for timeline display
+      const phases = [
+        { phase: 'activation', ratio: 0.15, label: 'Активация', themes: ['Личная история эксперта', 'Почему сейчас', 'Диагностика боли (опрос)', 'FOMO для «спящих»', 'Ценности и подход'] },
+        { phase: 'trust', ratio: 0.25, label: 'Знакомство и доверие', themes: ['Экспертный контент из карты смыслов', 'Кейсы клиентов', 'Закулисье работы', 'Разбор мифов в нише', 'Ответы на страхи аудитории'] },
+        { phase: 'desire', ratio: 0.30, label: 'Желание и трансформация', themes: ['Трансформации клиентов до/после', 'Детали продукта (что внутри)', 'Боли без решения', 'Результаты через продукт', 'Событие / прямой эфир', 'Микро-результат для подписчиков'] },
+        { phase: 'close', ratio: 0.30, label: 'Открытие продаж', themes: [`Открытие продаж: ${selectedProduct?.name || 'продукт'}`, 'Early Bird — бонусы первым покупателям', 'Работа с возражениями', 'Обратный отсчёт (5-7 дней)', 'FOMO — что потеряют без покупки', 'Финал: последний шанс'] },
+      ]
+      const contentRotation = [['stories'], ['post'], ['reels', 'stories'], ['carousel'], ['stories'], ['post', 'stories'], ['reels']]
+      let dayCounter = 1
+      const planPhases = phases.map(({ phase, ratio, themes }) => {
+        const phaseDays = Math.round(duration * ratio)
+        const daily_plan = Array.from({ length: phaseDays }, (_, i) => {
+          const entry = { day: dayCounter, format: contentRotation[(dayCounter - 1) % contentRotation.length] as string[], theme: themes[i % themes.length] }
+          dayCounter++
+          return entry
+        })
+        return { phase, daily_plan }
+      })
+
       const res = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -397,27 +438,27 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           projectId,
           data: {
             name: `Прогрев ${duration} дней — ${selectedProduct?.name || 'продукт'}`,
-            product_id: selectedProductId,
             duration_days: duration,
             start_date: startDate || null,
             audience_type: 'cold_warm',
-            funnel_id: coldFunnelId,
-            use_cases: useCases,
-            extra_hooks: [selectedHooks.join(', '), extraHooks].filter(Boolean).join('; '),
             strategic_summary: summary,
             summary_approved: true,
             status: 'approved',
+            plan_data: { warmup_plan: { phases: planPhases } },
           },
         }),
       })
 
-      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Ошибка') }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.error || `Ошибка ${res.status}`)
+      }
       const { planId } = await res.json()
       toast.success('План прогрева создан!')
       router.refresh()
       onComplete?.(planId)
-    } catch {
-      toast.error('Ошибка создания плана')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Ошибка создания плана')
     } finally {
       setLoading(false)
     }
@@ -827,16 +868,45 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       {step === 8 && (
         <div className="space-y-4">
           {summary ? (
-            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
-              <p className="flex items-center gap-2 text-sm font-semibold text-foreground mb-3">
-                <Sparkles className="h-4 w-4 text-primary" />
-                Стратегия прогрева
-              </p>
-              <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{summary}</div>
-            </div>
+            <>
+              {/* Fallback warning with AI retry */}
+              {isFallback && (
+                <div className="flex items-start gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-3">
+                  <Sparkles className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-yellow-600">Базовый шаблон</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">AI временно недоступен. Это шаблон — ты можешь его одобрить или попробовать сгенерировать через AI.</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs h-7 px-2 border-yellow-500/40 text-yellow-600 hover:bg-yellow-500/10 shrink-0"
+                    onClick={() => { setSummary(null); setIsFallback(false); generateSummary() }}
+                    disabled={generatingSummary}
+                  >
+                    {generatingSummary ? <Loader2 className="h-3 w-3 animate-spin" /> : <><RefreshCw className="h-3 w-3 mr-1" />AI</>}
+                  </Button>
+                </div>
+              )}
+
+              {/* Plan rendered beautifully */}
+              <div className="rounded-xl border border-border bg-card overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-primary/5">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-semibold text-foreground">
+                    {isFallback ? 'Шаблон плана прогрева' : 'План прогрева сформирован'}
+                  </span>
+                  {!isFallback && <Badge className="ml-auto text-[10px] bg-green-500/15 text-green-400 border-green-500/25">AI</Badge>}
+                </div>
+                <div className="p-4 max-h-[50vh] overflow-y-auto">
+                  <PlanRenderer markdown={summary} />
+                </div>
+              </div>
+            </>
           ) : (
             <div className="text-center py-6">
-              <p className="text-muted-foreground text-sm mb-4">Нажмите для формирования стратегии прогрева</p>
+              <Sparkles className="h-10 w-10 text-primary/40 mx-auto mb-3" />
+              <p className="text-muted-foreground text-sm">AI проанализирует все данные и создаст персональный план с учётом карты смыслов</p>
             </div>
           )}
 
@@ -850,14 +920,27 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           )}
 
           {summary && !summaryApproved && (
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Button variant="outline" className="flex-1 border-border" onClick={() => setSummary(null)}>
-                Изменить настройки
-              </Button>
-              <Button className="flex-1 gradient-accent text-white hover:opacity-90" onClick={() => setSummaryApproved(true)}>
-                <Check className="mr-2 h-4 w-4" />
-                Одобрить стратегию
-              </Button>
+            <div className="flex flex-col gap-2">
+              {!isFallback && (
+                <Button
+                  variant="outline"
+                  className="w-full border-border text-xs h-9"
+                  onClick={() => { setSummary(null); setIsFallback(false); generateSummary() }}
+                  disabled={generatingSummary}
+                >
+                  <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                  {generatingSummary ? 'Генерируем...' : 'Перегенерировать через AI'}
+                </Button>
+              )}
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1 border-border" onClick={() => { setSummary(null); setIsFallback(false) }}>
+                  Изменить настройки
+                </Button>
+                <Button className="flex-1 gradient-accent text-white hover:opacity-90" onClick={() => setSummaryApproved(true)}>
+                  <Check className="mr-2 h-4 w-4" />
+                  Одобрить
+                </Button>
+              </div>
             </div>
           )}
 

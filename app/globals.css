@@ -208,3 +208,17 @@
   pointer-events: none;
   height: 0;
 }
+/* Warmup plan markdown renderer */
+.plan-md h1 { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; color: var(--foreground); }
+.plan-md h2 { font-size: 0.875rem; font-weight: 700; margin-top: 1.25rem; margin-bottom: 0.5rem; color: var(--foreground); padding-bottom: 0.25rem; border-bottom: 1px solid oklch(0.3 0.02 280 / 0.2); }
+.plan-md h3 { font-size: 0.8125rem; font-weight: 700; margin-top: 1rem; margin-bottom: 0.375rem; color: oklch(0.75 0.12 280); }
+.plan-md p { margin-bottom: 0.5rem; color: var(--foreground); }
+.plan-md ul { margin: 0.375rem 0 0.75rem 1rem; list-style: disc; }
+.plan-md li { margin-bottom: 0.2rem; font-size: 0.8125rem; color: var(--muted-foreground); }
+.plan-md strong { font-weight: 600; color: var(--foreground); }
+.plan-md em { font-style: italic; color: var(--muted-foreground); font-size: 0.75rem; }
+.plan-md hr { border: none; border-top: 1px solid oklch(0.3 0.02 280 / 0.2); margin: 1rem 0; }
+.plan-md table { width: 100%; border-collapse: collapse; font-size: 0.75rem; margin: 0.5rem 0 1rem; }
+.plan-md th { background: oklch(0.25 0.02 280 / 0.5); color: var(--foreground); font-weight: 600; text-align: left; padding: 0.375rem 0.5rem; border: 1px solid oklch(0.3 0.02 280 / 0.3); }
+.plan-md td { padding: 0.3rem 0.5rem; border: 1px solid oklch(0.3 0.02 280 / 0.2); color: var(--muted-foreground); vertical-align: top; }
+.plan-md tr:nth-child(even) td { background: oklch(0.2 0.01 280 / 0.3); }
