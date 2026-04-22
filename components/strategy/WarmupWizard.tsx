@@ -361,9 +361,8 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           action: 'create_warmup_plan',
           projectId,
           data: {
-            name: `Прогрев ${duration} дней — ${selectedProduct?.name || 'продукт'}`,
+            name: `Прогрев ${duration} дней — ${selectedProduct?.name || 'продукт'}${startDate ? ` (старт ${startDate})` : ''}`,
             duration_days: duration,
-            start_date: startDate || null,
             audience_type: 'cold_warm',
             strategic_summary: summary,
             summary_approved: true,

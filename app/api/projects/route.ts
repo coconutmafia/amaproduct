@@ -17,7 +17,10 @@ export async function POST(request: Request) {
         .select()
         .single()
 
-      if (error) throw error
+      if (error) {
+        console.error('create_warmup_plan error:', error)
+        return NextResponse.json({ error: error.message || error.details || 'DB insert failed' }, { status: 500 })
+      }
       return NextResponse.json({ planId: plan.id })
     }
 
