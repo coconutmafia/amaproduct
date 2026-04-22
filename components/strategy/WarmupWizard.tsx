@@ -307,7 +307,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     } catch (err) {
       // Fallback: generate template summary
       const errMsg = err instanceof Error ? err.message : ''
-      toast.info(errMsg ? `Шаблон: ${errMsg.slice(0, 80)}` : 'AI недоступен — сформирован базовый шаблон')
+      toast.error(errMsg || 'AI недоступен', { duration: 8000 })
       const funnelDesc =
         coldAudienceType === 'existing_funnel'
           ? `Существующая воронка: ${funnels.find(f => f.id === coldFunnelId)?.name || 'из базы'}`

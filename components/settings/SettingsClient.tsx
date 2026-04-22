@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
-import { Bot, Gift, LogOut, Trash2, Loader2, CheckCircle2, Sparkles } from 'lucide-react'
+import { Bot, Gift, LogOut, Trash2, Loader2, CheckCircle2, Sparkles, Zap, AlertCircle } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 
 interface Props {
   userId: string
@@ -26,6 +27,28 @@ export function SettingsClient({ userId, currentAiName }: Props) {
   // Promo code
   const [promoCode, setPromoCode]   = useState('')
   const [applyingPromo, setApplyingPromo] = useState(false)
+
+  // AI test
+  const [testingAi, setTestingAi] = useState(false)
+  const [aiTestResult, setAiTestResult] = useState<{ ok: boolean; message: string; detail?: string } | null>(null)
+
+  const testAi = async () => {
+    setTestingAi(true)
+    setAiTestResult(null)
+    try {
+      const res = await fetch('/api/ai/test')
+      const data = await res.json() as { ok: boolean; model?: string; response?: string; error?: string; keyPrefix?: string }
+      if (data.ok) {
+        setAiTestResult({ ok: true, message: `AI работает ✓ Модель: ${data.model}`, detail: `Ключ: ${data.keyPrefix}` })
+      } else {
+        setAiTestResult({ ok: false, message: data.error || 'Неизвестная ошибка', detail: `Ключ: ${data.keyPrefix} · Модель: ${data.model}` })
+      }
+    } catch (e) {
+      setAiTestResult({ ok: false, message: e instanceof Error ? e.message : 'Ошибка соединения' })
+    } finally {
+      setTestingAi(false)
+    }
+  }
 
   // Delete
   const [deleting, setDeleting]     = useState(false)
@@ -97,6 +120,43 @@ export function SettingsClient({ userId, currentAiName }: Props) {
 
   return (
     <div className="space-y-6">
+
+      {/* AI diagnostics */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Zap className="h-4 w-4 text-primary" /> Диагностика AI
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Нажми кнопку ниже чтобы проверить, работает ли AI-генерация. Это сделает тестовый запрос к Anthropic.
+          </p>
+          <Button onClick={testAi} disabled={testingAi} variant="outline" size="sm" className="gap-2">
+            {testingAi ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+            {testingAi ? 'Проверяем...' : 'Проверить AI'}
+          </Button>
+          {aiTestResult && (
+            <div className={`flex items-start gap-2 p-3 rounded-lg border text-sm ${
+              aiTestResult.ok
+                ? 'border-green-500/30 bg-green-500/5 text-green-600'
+                : 'border-red-500/30 bg-red-500/5 text-red-600'
+            }`}>
+              {aiTestResult.ok
+                ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+                : <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              }
+              <div className="space-y-0.5 min-w-0">
+                <p className="font-medium break-words">{aiTestResult.message}</p>
+                {aiTestResult.detail && <p className="text-xs opacity-70 break-words">{aiTestResult.detail}</p>}
+              </div>
+              <Badge variant="outline" className={`ml-auto shrink-0 text-xs ${aiTestResult.ok ? 'border-green-500/40 text-green-600' : 'border-red-500/40 text-red-600'}`}>
+                {aiTestResult.ok ? 'OK' : 'ОШИБКА'}
+              </Badge>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* AI assistant name */}
       <Card>
