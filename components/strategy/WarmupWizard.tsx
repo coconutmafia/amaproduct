@@ -274,89 +274,20 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           : coldAudienceType === 'custom' ? coldFunnelCustom
           : 'Без воронки — прямые продажи'
 
-      const res = await fetch('/api/ai/chat', {
+      const res = await fetch('/api/ai/warmup-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectId,
-          conversationType: 'warmup_wizard',
-          messages: [{
-            role: 'user',
-            content: `Ты эксперт по контент-маркетингу и прогревам в социальных сетях. Создай детальный структурированный план прогрева аудитории.
-
-ДАННЫЕ:
-- Продукт: ${selectedProduct?.name || 'не выбран'}
-- Длительность: ${duration} дней${startDate ? `, старт: ${startDate}` : ''}
-- Воронка продаж: ${funnelDesc}
-- Прогрев в блоге: ${warmAudienceTypes.join(', ')}
-- Использовать кейсы: ${useCases ? 'да' : 'нет'}${extraCasesText ? `\n- Доп. кейсы: ${extraCasesText}` : ''}
-- Смысловые крючки (из карты смыслов): ${selectedHooks.join(', ')}
-- Дополнительно: ${extraHooks}
-- Конкуренты: ${competitorNotes}
-
-МЕТОДОЛОГИЯ (строго соблюдать):
-1. Темы контента берутся из карты смыслов блогера, не придумываются общие
-2. Аудитория сегментируется: новички, скептики, «спящие» (FOMO-триггеры)
-3. Используется «Лестница Ханта»: контент для тех, кто ещё не осознал проблему → осознал → выбирает решение
-4. Обязательно: событийность (вебинар/эфир/челлендж) как кульминация, если выбрано мероприятие
-5. Триггеры: Early Bird, ограниченное окно продаж 5-7 дней, дефицит
-6. Микро-результаты внутри прогрева — польза до покупки
-
-ФОРМАТ ОТВЕТА (строго структурированный, не сплошной текст):
-
-# ПЛАН ПРОГРЕВА: ${selectedProduct?.name || 'продукт'} | ${duration} дней
-
-## Общая информация
-| Параметр | Значение |
-|----------|----------|
-| Продукт | ${selectedProduct?.name || '—'} |
-| Длительность | ${duration} дней |
-| Старт | ${startDate || 'по согласованию'} |
-| Воронка | [вставь] |
-
-## Фазы прогрева
-
-### 🔥 Фаза 1: Активация и осознание проблемы (15%, дни 1-[X])
-**Цель:** Разбудить аудиторию, переключить с режима «у меня всё ок» в «мне нужно решение»
-**Сегменты:** Новички (простой вход), Скептики (факты и цифры), Спящие (FOMO)
-**Типы контента:**
-- [перечисли 4-5 конкретных типов из карты смыслов]
-**Механики:** [опросы, квизы, диагностика]
-
-### 💡 Фаза 2: Знакомство и доверие (25%, дни [X]-[Y])
-**Цель:** Экспертность, личная история, ценности
-**Типы контента:**
-- [перечисли 4-5 типов]
-**Кейсы:** [если useCases=true]
-
-### 🎯 Фаза 3: Желание и трансформация (30%, дни [Y]-[Z])
-**Цель:** Показать результат, закрыть возражения через кейсы
-**Типы контента:**
-- [перечисли 5-6 типов]
-**Событие:** [если есть мероприятие — детали]
-
-### 💰 Фаза 4: Открытие продаж (30%, дни [Z]-конец)
-**Цель:** Продажи с дефицитом и ограниченным окном
-**Механики продаж:**
-- Early Bird: скидка/бонус первым X покупателям
-- Окно продаж: строго 5-7 дней
-- Работа с возражениями в контенте
-- FOMO для тех, кто пропустил середину
-**Типы контента:**
-- [перечисли 4-5 типов]
-
-## Ключевые смыслы (из карты смыслов)
-[перечисли крючки и как они распределяются по фазам]
-
-## Рекомендации по форматам
-| Формат | Частота | Когда использовать |
-|--------|---------|-------------------|
-| Stories | Ежедневно | Поддержание контакта |
-| Reels/видео | 2-3 раза в неделю | Охват и вирусность |
-| Посты/карусели | 3-4 раза в неделю | Глубокий контент |
-
-Верни только структурированный план, без лишних вступлений.`,
-          }],
+          productName: selectedProduct?.name || 'Продукт',
+          duration,
+          startDate: startDate || undefined,
+          funnelDesc,
+          warmTypes: warmAudienceTypes,
+          useCases,
+          hooks: selectedHooks,
+          extraHooks: extraHooks || undefined,
+          competitors: competitorNotes || undefined,
         }),
       })
 
@@ -365,19 +296,10 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         throw new Error(errData.error || `AI ошибка ${res.status}`)
       }
 
-      const reader = res.body?.getReader()
-      if (!reader) throw new Error('Нет ответа от AI')
+      const data = await res.json()
+      const result = data.plan || ''
 
-      let result = ''
-      const decoder = new TextDecoder()
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        result += decoder.decode(value, { stream: true })
-      }
-      result += decoder.decode()
-
-      if (!result.trim()) throw new Error('Пустой ответ')
+      if (!result.trim()) throw new Error('Пустой ответ от AI')
 
       setSummary(result)
       setIsFallback(false)
