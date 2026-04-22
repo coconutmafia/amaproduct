@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -88,46 +89,123 @@ function buildFallbackSummary(params: {
     t === 'paid_event' ? 'платное мероприятие (трипваер)' : t
   )
 
-  return `# Стратегия прогрева
+  const phase1Days = Math.round(params.duration * 0.15)
+  const phase2Days = Math.round(params.duration * 0.25)
+  const phase3Days = Math.round(params.duration * 0.30)
+  const phase4Days = params.duration - phase1Days - phase2Days - phase3Days
 
-**Продукт:** ${params.productName}
-**Длительность:** ${params.duration} дней${params.startDate ? `\n**Старт прогрева:** ${params.startDate}` : ''}
+  const phase1End = phase1Days
+  const phase2End = phase1Days + phase2Days
+  const phase3End = phase1Days + phase2Days + phase3Days
 
-## Цель
+  const hasEvent = params.warmTypes.includes('free_event') || params.warmTypes.includes('paid_event')
 
-Создать целенаправленный прогрев аудитории для продажи продукта «${params.productName}» за ${params.duration} дней.
+  return `# ПЛАН ПРОГРЕВА: ${params.productName} | ${params.duration} дней
 
-## Воронка привлечения
+## Общая информация
 
-${params.funnelDesc}
+| Параметр | Значение |
+|----------|----------|
+| Продукт | ${params.productName} |
+| Длительность | ${params.duration} дней |
+| Старт | ${params.startDate || 'по согласованию'} |
+| Воронка | ${params.funnelDesc} |
+| Прогрев | ${warmLabels.join(', ') || 'через контент блога'} |
+| Кейсы | ${params.useCases ? 'используются' : 'без кейсов'} |
 
-## Прогрев в блоге
+## Фазы прогрева
 
-${warmLabels.join(', ') || 'Прогрев через контент блога'}
+### 🔥 Фаза 1: Активация и осознание проблемы (15%, дни 1–${phase1End})
+
+**Цель:** Разбудить аудиторию, переключить с режима «у меня всё ок» в «мне нужно решение»
+**Сегменты:** Новички (простой вход), Скептики (факты и цифры), Спящие (FOMO-триггеры)
+
+**Типы контента:**
+- Провокационный вопрос / опрос в сторис: «Ты уже сталкивался с этим?»
+- Пост-диагностика: «5 признаков, что тебе нужен [продукт]»
+- Личная история: с чего начинался твой путь в теме
+- Статистика и факты по нише — пробуждение через цифры
+- Квиз или тест для вовлечения и сегментации аудитории
+
+**Механики:** опросы в сторис, интерактивные квизы, призыв комментировать
+
+---
+
+### 💡 Фаза 2: Знакомство и доверие (25%, дни ${phase1End + 1}–${phase2End})
+
+**Цель:** Сформировать экспертность, показать личные ценности, создать эмоциональную связь
+
+**Типы контента:**
+- Закулисье работы: как создаётся продукт / как ты работаешь с клиентами
+- Экспертный пост: разбор типичной ошибки в нише
+- Личные ценности и убеждения — «почему я этим занимаюсь»
+- Ответы на популярные вопросы аудитории (FAQ-формат)
+${params.useCases ? '- Первые кейсы и отзывы — лёгкие истории успеха клиентов' : '- Демонстрация метода через конкретный пример или мини-кейс'}
+
+**Фокус:** регулярность и последовательность, без резких продающих сигналов
+
+---
+
+### 🎯 Фаза 3: Желание и трансформация (30%, дни ${phase2End + 1}–${phase3End})
+
+**Цель:** Показать результат до/после, закрыть ключевые возражения, усилить желание
+
+**Типы контента:**
+- ${params.useCases ? 'Развёрнутые кейсы клиентов с конкретными цифрами и трансформацией' : 'Пошаговая демонстрация метода — как это работает на практике'}
+- Разбор возражений: «Это дорого», «У меня нет времени», «Я уже пробовал»
+- Пост «Что будет, если ничего не менять» — усиление боли
+- Детали продукта: что внутри, как построен процесс, почему это работает
+- Личная трансформация — твой путь и результаты${hasEvent ? '\n- Анонс предстоящего мероприятия — создание ожидания' : ''}
+
+${hookLabels.length > 0 ? `**Смысловые крючки этой фазы:**\n${hookLabels.map(h => `- ${h}`).join('\n')}` : ''}
+
+---
+
+### 💰 Фаза 4: Открытие продаж (30%, дни ${phase3End + 1}–${params.duration})
+
+**Цель:** Конвертировать прогретую аудиторию в покупателей с помощью дефицита и ограниченного окна
+
+**Механики продаж:**
+- Early Bird: специальная цена или бонус для первых покупателей (первые 24–48 часов)
+- Окно продаж: строго 5–7 дней, жёсткий дедлайн
+- Ежедневная работа с возражениями через сторис и посты
+- FOMO-контент для тех, кто «думает»: что они потеряют, если не купят сейчас
+- Отзывы и реакции первых покупателей в реальном времени
+
+**Типы контента:**
+- Пост-открытие продаж: «Это то, к чему мы шли весь [X] дней»
+- Сторис с обратным отсчётом до закрытия
+- Разборы и ответы на вопросы о продукте (прямые эфиры)
+- Посты с кейсами тех, кто уже купил (социальное доказательство)
+- Финальный пост: «Последний шанс» с чётким дедлайном
+
+---
 
 ## Ключевые смысловые крючки
 
-${hookLabels.length > 0 ? hookLabels.map(h => `— ${h}`).join('\n') : '— Будут определены на основе материалов проекта'}
-${params.extraHooks ? `\nДополнительно: ${params.extraHooks}` : ''}
+${hookLabels.length > 0 ? hookLabels.map((h, i) => {
+  const phases = ['Фаза 2–3', 'Фаза 1–2', 'Фаза 3–4', 'Фаза 1–3', 'Фаза 3–4', 'Фаза 2–3', 'Фаза 1–2']
+  return `- **${h}** → ${phases[i % phases.length]}`
+}).join('\n') : '- Смысловые крючки будут определены на основе материалов проекта'}
+${params.extraHooks ? `\n**Дополнительные смыслы:**\n${params.extraHooks}` : ''}
 
-## Социальные доказательства
+## Рекомендации по форматам
 
-${params.useCases ? 'Использовать кейсы и отзывы клиентов из базы проекта.' : 'Прогрев без кейсов — фокус на экспертности и личной истории.'}
+| Формат | Частота | Когда использовать |
+|--------|---------|-------------------|
+| Stories | Ежедневно | Поддержание контакта, опросы, обратный отсчёт |
+| Reels/видео | 2–3 раза в неделю | Охват новой аудитории, виральные темы |
+| Посты/карусели | 3–4 раза в неделю | Глубокий экспертный контент, кейсы |
+| Прямые эфиры | 1–2 в фазах 3–4 | Q&A, разборы, открытие продаж |
 
-${params.competitors ? `## Конкуренты\n${params.competitors}` : ''}
+${params.competitors ? `## Конкурентный анализ\n\n${params.competitors}` : ''}
 
-## Структура прогрева
-
-**Фаза 1 — Знакомство (25%):** Рассказываем о себе, ценностях, методе. Создаём первый контакт с аудиторией.
-
-**Фаза 2 — Доверие (30%):** Кейсы, закулисье, экспертный контент. Формируем авторитет.
-
-**Фаза 3 — Желание (28%):** Трансформации клиентов, боли без решения, детали продукта.
-
-**Фаза 4 — Закрытие (17%):** Открытие продаж, работа с возражениями, дедлайны.`
+---
+*Шаблон сформирован автоматически. Для персонализированного плана с учётом карты смыслов используйте генерацию через AI.*`
 }
 
 export function WarmupWizard({ projectId, products, funnels, onComplete }: WarmupWizardProps) {
+  const router = useRouter()
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [generatingSummary, setGeneratingSummary] = useState(false)
@@ -184,17 +262,80 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           conversationType: 'warmup_wizard',
           messages: [{
             role: 'user',
-            content: `Создай детальную стратегию прогрева:
+            content: `Ты эксперт по контент-маркетингу и прогревам в социальных сетях. Создай детальный структурированный план прогрева аудитории.
+
+ДАННЫЕ:
 - Продукт: ${selectedProduct?.name || 'не выбран'}
 - Длительность: ${duration} дней${startDate ? `, старт: ${startDate}` : ''}
 - Воронка продаж: ${funnelDesc}
 - Прогрев в блоге: ${warmAudienceTypes.join(', ')}
-- Использовать кейсы: ${useCases ? 'да' : 'нет'}${extraCasesText ? `\n- Дополнительные кейсы: ${extraCasesText}` : ''}
-- Смысловые крючки: ${selectedHooks.join(', ')}
+- Использовать кейсы: ${useCases ? 'да' : 'нет'}${extraCasesText ? `\n- Доп. кейсы: ${extraCasesText}` : ''}
+- Смысловые крючки (из карты смыслов): ${selectedHooks.join(', ')}
 - Дополнительно: ${extraHooks}
-- Заметки о конкурентах: ${competitorNotes}
+- Конкуренты: ${competitorNotes}
 
-Верни ТОЛЬКО стратегию прогрева в формате для одобрения.`,
+МЕТОДОЛОГИЯ (строго соблюдать):
+1. Темы контента берутся из карты смыслов блогера, не придумываются общие
+2. Аудитория сегментируется: новички, скептики, «спящие» (FOMO-триггеры)
+3. Используется «Лестница Ханта»: контент для тех, кто ещё не осознал проблему → осознал → выбирает решение
+4. Обязательно: событийность (вебинар/эфир/челлендж) как кульминация, если выбрано мероприятие
+5. Триггеры: Early Bird, ограниченное окно продаж 5-7 дней, дефицит
+6. Микро-результаты внутри прогрева — польза до покупки
+
+ФОРМАТ ОТВЕТА (строго структурированный, не сплошной текст):
+
+# ПЛАН ПРОГРЕВА: ${selectedProduct?.name || 'продукт'} | ${duration} дней
+
+## Общая информация
+| Параметр | Значение |
+|----------|----------|
+| Продукт | ${selectedProduct?.name || '—'} |
+| Длительность | ${duration} дней |
+| Старт | ${startDate || 'по согласованию'} |
+| Воронка | [вставь] |
+
+## Фазы прогрева
+
+### 🔥 Фаза 1: Активация и осознание проблемы (15%, дни 1-[X])
+**Цель:** Разбудить аудиторию, переключить с режима «у меня всё ок» в «мне нужно решение»
+**Сегменты:** Новички (простой вход), Скептики (факты и цифры), Спящие (FOMO)
+**Типы контента:**
+- [перечисли 4-5 конкретных типов из карты смыслов]
+**Механики:** [опросы, квизы, диагностика]
+
+### 💡 Фаза 2: Знакомство и доверие (25%, дни [X]-[Y])
+**Цель:** Экспертность, личная история, ценности
+**Типы контента:**
+- [перечисли 4-5 типов]
+**Кейсы:** [если useCases=true]
+
+### 🎯 Фаза 3: Желание и трансформация (30%, дни [Y]-[Z])
+**Цель:** Показать результат, закрыть возражения через кейсы
+**Типы контента:**
+- [перечисли 5-6 типов]
+**Событие:** [если есть мероприятие — детали]
+
+### 💰 Фаза 4: Открытие продаж (30%, дни [Z]-конец)
+**Цель:** Продажи с дефицитом и ограниченным окном
+**Механики продаж:**
+- Early Bird: скидка/бонус первым X покупателям
+- Окно продаж: строго 5-7 дней
+- Работа с возражениями в контенте
+- FOMO для тех, кто пропустил середину
+**Типы контента:**
+- [перечисли 4-5 типов]
+
+## Ключевые смыслы (из карты смыслов)
+[перечисли крючки и как они распределяются по фазам]
+
+## Рекомендации по форматам
+| Формат | Частота | Когда использовать |
+|--------|---------|-------------------|
+| Stories | Ежедневно | Поддержание контакта |
+| Reels/видео | 2-3 раза в неделю | Охват и вирусность |
+| Посты/карусели | 3-4 раза в неделю | Глубокий контент |
+
+Верни только структурированный план, без лишних вступлений.`,
           }],
         }),
       })
@@ -265,12 +406,15 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
             extra_hooks: [selectedHooks.join(', '), extraHooks].filter(Boolean).join('; '),
             strategic_summary: summary,
             summary_approved: true,
+            status: 'approved',
           },
         }),
       })
 
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Ошибка') }
       const { planId } = await res.json()
       toast.success('План прогрева создан!')
+      router.refresh()
       onComplete?.(planId)
     } catch {
       toast.error('Ошибка создания плана')
@@ -282,7 +426,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   return (
     <div className="space-y-4">
       {/* Steps indicator */}
-      <div className="flex items-center overflow-x-auto pb-1 gap-0">
+      <div className="flex items-center overflow-x-auto py-2 gap-0">
         {STEPS.map((s, i) => (
           <div key={s.id} className="flex items-center shrink-0">
             <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-colors ${
@@ -501,14 +645,14 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                 {/* Free event fields */}
                 {isChecked && value === 'free_event' && (
                   <div className="mt-1 ml-4 p-4 rounded-xl border border-border bg-secondary/20 space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-sm">Название мероприятия</Label>
                         <Input value={freeEventName} onChange={(e) => setFreeEventName(e.target.value)} placeholder="Вебинар «Как запустить за 30 дней»" className="bg-input border-border text-sm h-10" />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-sm">Дата мероприятия</Label>
-                        <Input type="date" value={freeEventDate} onChange={(e) => setFreeEventDate(e.target.value)} className="bg-input border-border text-sm h-10" />
+                        <Input type="date" value={freeEventDate} onChange={(e) => setFreeEventDate(e.target.value)} className="bg-input border-border text-sm h-10 w-full" />
                       </div>
                     </div>
                     <div className="space-y-2">
@@ -534,14 +678,14 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                 {/* Paid event fields */}
                 {isChecked && value === 'paid_event' && (
                   <div className="mt-1 ml-4 p-4 rounded-xl border border-border bg-secondary/20 space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-sm">Название мероприятия</Label>
                         <Input value={paidEventName} onChange={(e) => setPaidEventName(e.target.value)} placeholder="Интенсив «За 3 дня к первым продажам»" className="bg-input border-border text-sm h-10" />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-sm">Дата мероприятия</Label>
-                        <Input type="date" value={paidEventDate} onChange={(e) => setPaidEventDate(e.target.value)} className="bg-input border-border text-sm h-10" />
+                        <Input type="date" value={paidEventDate} onChange={(e) => setPaidEventDate(e.target.value)} className="bg-input border-border text-sm h-10 w-full" />
                       </div>
                     </div>
                     <div className="space-y-2">

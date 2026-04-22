@@ -84,6 +84,8 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
   const recognitionRef = useRef<unknown>(null)
   const shouldRecordRef = useRef(false)
   const restartCountRef = useRef(0)
+  const noSpeechCountRef = useRef(0)
+  const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'paused'>('idle')
 
   const currentQ = step >= 1 && step <= QUESTIONS.length ? QUESTIONS[step - 1] : null
   const totalSteps = QUESTIONS.length
@@ -93,14 +95,19 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
   // iOS Safari stops SpeechRecognition after each utterance even with continuous=true.
   // Workaround: restart on onend while shouldRecordRef is true.
   // Safety: restartCountRef prevents infinite loops on error.
+  const stopRecording = useCallback(() => {
+    shouldRecordRef.current = false
+    restartCountRef.current = 0
+    noSpeechCountRef.current = 0
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(recognitionRef.current as any)?.stop()
+    setIsRecording(false)
+    setRecordingState('idle')
+  }, [])
+
   const startRecognitionSession = useCallback(() => {
     if (!shouldRecordRef.current) return
-    if (restartCountRef.current > 60) {
-      // Too many restarts — bail out gracefully
-      shouldRecordRef.current = false
-      setIsRecording(false)
-      return
-    }
+    if (restartCountRef.current > 60) { stopRecording(); return }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!SR) return
@@ -111,7 +118,9 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
     r.interimResults = true
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     r.onresult = (e: any) => {
-      restartCountRef.current = 0 // reset on successful speech
+      restartCountRef.current = 0
+      noSpeechCountRef.current = 0
+      setRecordingState('recording')
       let finalText = ''
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) finalText += e.results[i][0].transcript
@@ -120,36 +129,42 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     r.onerror = (e: any) => {
-      if (e.error === 'no-speech') return // normal iOS pause, onend will restart
-      // Real error — stop
+      if (e.error === 'no-speech') {
+        noSpeechCountRef.current++
+        setRecordingState('paused')
+        // Auto-stop after ~8 seconds of silence (4 consecutive no-speech events)
+        if (noSpeechCountRef.current >= 4) {
+          stopRecording()
+          toast.info('Запись остановлена — долгая пауза')
+        }
+        return
+      }
       shouldRecordRef.current = false
       setIsRecording(false)
+      setRecordingState('idle')
       if (e.error === 'not-allowed') toast.error('Нет доступа к микрофону. Разреши в настройках браузера.')
     }
     r.onend = () => {
       if (shouldRecordRef.current) {
         restartCountRef.current++
+        setRecordingState('paused')
         setTimeout(() => { if (shouldRecordRef.current) startRecognitionSession() }, 200)
       } else {
         setIsRecording(false)
+        setRecordingState('idle')
       }
     }
     recognitionRef.current = r
-    try {
-      r.start()
-    } catch {
+    try { r.start(); setRecordingState('recording') } catch {
       shouldRecordRef.current = false
       setIsRecording(false)
+      setRecordingState('idle')
     }
-  }, [])
+  }, [stopRecording])
 
   const toggleRecording = useCallback(() => {
     if (isRecording) {
-      shouldRecordRef.current = false
-      restartCountRef.current = 0
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(recognitionRef.current as any)?.stop()
-      setIsRecording(false)
+      stopRecording()
       return
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -158,10 +173,12 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
       toast.error('Голосовой ввод не поддерживается в этом браузере')
       return
     }
+    noSpeechCountRef.current = 0
+    restartCountRef.current = 0
     shouldRecordRef.current = true
     startRecognitionSession()
     setIsRecording(true)
-  }, [isRecording, startRecognitionSession])
+  }, [isRecording, startRecognitionSession, stopRecording])
 
   // ── Navigation ─────────────────────────────────────────────────────────────
   const saveCurrentAnswer = useCallback(() => {
@@ -328,13 +345,17 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
                 <button
                   onClick={toggleRecording}
                   className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${
-                    isRecording
+                    recordingState === 'recording'
                       ? 'border-red-400/50 bg-red-400/10 text-red-400'
+                      : recordingState === 'paused'
+                      ? 'border-yellow-400/50 bg-yellow-400/10 text-yellow-500'
                       : 'border-border text-muted-foreground hover:text-primary hover:border-primary/40'
                   }`}
                 >
-                  {isRecording
+                  {recordingState === 'recording'
                     ? <><MicOff className="h-3.5 w-3.5 animate-pulse" /> Остановить</>
+                    : recordingState === 'paused'
+                    ? <><Mic className="h-3.5 w-3.5 animate-pulse" /> Пауза...</>
                     : <><Mic className="h-3.5 w-3.5" /> Надиктовать</>
                   }
                 </button>
@@ -346,8 +367,11 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
                 rows={5}
                 className="resize-none text-sm"
               />
-              {isRecording && (
+              {recordingState === 'recording' && (
                 <p className="text-xs text-red-400 animate-pulse">🎙 Говори — текст появится автоматически...</p>
+              )}
+              {recordingState === 'paused' && (
+                <p className="text-xs text-yellow-500">⏸ Пауза — продолжи говорить или нажми «Остановить»</p>
               )}
             </div>
 
