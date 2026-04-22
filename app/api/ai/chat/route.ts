@@ -5,6 +5,9 @@ import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt } from '@/lib/ai/prompts/system'
 import type { Message } from '@/types'
 
+// Required for AI responses — Claude can take 30-60 seconds
+export const maxDuration = 60
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
@@ -65,6 +68,8 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error('Chat error:', error)
-    return NextResponse.json({ error: 'Chat failed' }, { status: 500 })
+    const msg = error instanceof Error ? error.message : String(error)
+    // Surface the real error to help diagnose (API key, model, etc.)
+    return NextResponse.json({ error: msg || 'Chat failed' }, { status: 500 })
   }
 }

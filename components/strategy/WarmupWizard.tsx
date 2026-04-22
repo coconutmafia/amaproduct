@@ -361,7 +361,8 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       })
 
       if (!res.ok) {
-        throw new Error('AI недоступен')
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || `AI ошибка ${res.status}`)
       }
 
       const reader = res.body?.getReader()
@@ -381,9 +382,10 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       setSummary(result)
       setIsFallback(false)
       setStep(8)
-    } catch {
+    } catch (err) {
       // Fallback: generate template summary
-      toast.info('AI временно недоступен — сформирован базовый шаблон. Можно попробовать AI повторно.')
+      const errMsg = err instanceof Error ? err.message : ''
+      toast.info(errMsg ? `Шаблон: ${errMsg.slice(0, 80)}` : 'AI недоступен — сформирован базовый шаблон')
       const funnelDesc =
         coldAudienceType === 'existing_funnel'
           ? `Существующая воронка: ${funnels.find(f => f.id === coldFunnelId)?.name || 'из базы'}`
