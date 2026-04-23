@@ -200,12 +200,12 @@ ${contentType === 'post' ? 'Напиши текст поста (без JSON). Н
           .select()
           .single()
 
-        if (error) throw error
+        if (error) throw new Error(error.message || 'DB insert failed')
 
         send({ type: 'done', item: contentItem, structuredData, was_validated: wasValidated })
         controller.close()
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Generation failed'
+        const msg = err instanceof Error ? err.message : (typeof err === 'object' && err !== null && 'message' in err ? String((err as { message: unknown }).message) : 'Generation failed')
         console.error('Generate SSE error:', err)
         send({ type: 'error', message: msg })
         controller.close()
