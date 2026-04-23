@@ -336,22 +336,66 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     setLoading(true)
     try {
       // Build structured plan_data for timeline display
+      const hookLabels = selectedHooks.map(h => HOOK_OPTIONS.find(o => o.id === h)?.label || h)
       const phases = [
-        { phase: 'activation', ratio: 0.15, label: 'Активация', themes: ['Личная история эксперта', 'Почему сейчас', 'Диагностика боли (опрос)', 'FOMO для «спящих»', 'Ценности и подход'] },
-        { phase: 'trust', ratio: 0.25, label: 'Знакомство и доверие', themes: ['Экспертный контент из карты смыслов', 'Кейсы клиентов', 'Закулисье работы', 'Разбор мифов в нише', 'Ответы на страхи аудитории'] },
-        { phase: 'desire', ratio: 0.30, label: 'Желание и трансформация', themes: ['Трансформации клиентов до/после', 'Детали продукта (что внутри)', 'Боли без решения', 'Результаты через продукт', 'Событие / прямой эфир', 'Микро-результат для подписчиков'] },
-        { phase: 'close', ratio: 0.30, label: 'Открытие продаж', themes: [`Открытие продаж: ${selectedProduct?.name || 'продукт'}`, 'Early Bird — бонусы первым покупателям', 'Работа с возражениями', 'Обратный отсчёт (5-7 дней)', 'FOMO — что потеряют без покупки', 'Финал: последний шанс'] },
+        {
+          phase: 'niche', ratio: 0.25, label: 'Прогрев на нишу',
+          themes: [
+            `Почему ${selectedProduct?.name ? 'эта тема' : 'ниша'} важна для жизни подписчика`,
+            'Самые частые мифы и заблуждения в этой теме',
+            'Что теряет человек, игнорируя эту сферу',
+            'История до-после человека, который разобрался в теме',
+            'Почему без системного подхода ничего не работает',
+            'Что большинство людей делают неправильно и почему',
+            'Реальные цифры и факты о теме — пробуждение через данные',
+          ],
+        },
+        {
+          phase: 'expert', ratio: 0.25, label: 'Прогрев на эксперта',
+          themes: [
+            'Почему я пришла в эту нишу — личная история',
+            'Через что я сама прошла и какой опыт получила',
+            'Мои профессиональные принципы и убеждения',
+            'Кейс клиента с подробным разбором пути',
+            'Что отличает мой подход от стандартных решений',
+            'Закулисье моей работы — как я работаю с клиентами',
+            ...(hookLabels.length ? hookLabels : ['Моя система мышления и взгляд на нишу']),
+          ],
+        },
+        {
+          phase: 'product', ratio: 0.25, label: 'Прогрев на продукт',
+          themes: [
+            `Как устроен ${selectedProduct?.name || 'продукт'} — логика и структура`,
+            'Почему именно такой формат — обоснование решения',
+            'Что происходит с клиентом на каждом этапе работы',
+            'Детали программы / что входит и зачем каждый элемент',
+            'Результаты клиентов на конкретных примерах',
+            'Кому подходит и кому не подойдёт — честно',
+            'Разбор страхов: "дорого", "нет времени", "уже пробовала"',
+          ],
+        },
+        {
+          phase: 'objections', ratio: 0.25, label: 'Отработка возражений',
+          themes: [
+            'Главное возражение: почему прошлый опыт мог не сработать',
+            'Что будет, если ничего не менять — через 6 месяцев, год',
+            `Early Bird: специальные условия для первых на ${selectedProduct?.name || 'продукт'}`,
+            'Отзывы и переписки — живые реакции людей',
+            'FAQ: отвечаю на самые частые вопросы про продукт',
+            'Последний шанс: дедлайн и что теряет тот, кто не решился',
+            'Финальный пост: благодарность и закрытие продаж',
+          ],
+        },
       ]
-      const contentRotation = [['stories'], ['post'], ['reels', 'stories'], ['carousel'], ['stories'], ['post', 'stories'], ['reels']]
       let dayCounter = 1
-      const planPhases = phases.map(({ phase, ratio, themes }) => {
+      const planPhases = phases.map(({ phase, ratio, label, themes }) => {
         const phaseDays = Math.round(duration * ratio)
         const daily_plan = Array.from({ length: phaseDays }, (_, i) => {
-          const entry = { day: dayCounter, format: contentRotation[(dayCounter - 1) % contentRotation.length] as string[], theme: themes[i % themes.length] }
+          const entry = { day: dayCounter, meaning: themes[i % themes.length] }
           dayCounter++
           return entry
         })
-        return { phase, daily_plan }
+        return { phase, label, daily_plan }
       })
 
       const res = await fetch('/api/projects', {

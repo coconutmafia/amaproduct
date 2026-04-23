@@ -74,7 +74,7 @@ export function ProjectsListClient({ projects: initial }: { projects: Project[] 
       </div>
 
       <Dialog open={!!confirmId} onOpenChange={(open: boolean) => !open && setConfirmId(null)}>
-        <DialogContent showCloseButton={false} className="border-border bg-card">
+        <DialogContent className="border-border bg-card">
           <DialogHeader>
             <DialogTitle>Удалить проект?</DialogTitle>
             <DialogDescription>

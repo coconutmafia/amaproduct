@@ -39,6 +39,11 @@ const CONTENT_TYPE_CONFIG: Record<ContentType, { label: string; color: string; s
 }
 
 const PHASE_NAMES: Record<string, string> = {
+  niche: 'На нишу',
+  expert: 'На эксперта',
+  product: 'На продукт',
+  objections: 'Возражения',
+  activation: 'Активация',
   awareness: 'Знакомство',
   trust: 'Доверие',
   desire: 'Желание',
@@ -162,8 +167,23 @@ export function ContentPlanGrid({
                   )
                 })}
 
-                {!day.plannedTypes && (
-                  <span className="text-xs text-muted-foreground py-1">—</span>
+                {(!day.plannedTypes || day.plannedTypes.length === 0) && (
+                  (['post', 'stories', 'reels'] as ContentType[]).map((type) => {
+                    const config = CONTENT_TYPE_CONFIG[type]
+                    const genKey = `${day.day}-${type}`
+                    const isGenerating = generatingDay === genKey
+                    return (
+                      <button
+                        key={type}
+                        onClick={() => handleGenerate(day, type)}
+                        disabled={isGenerating}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${config.color} hover:opacity-80 cursor-pointer`}
+                      >
+                        {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                        {config.label}
+                      </button>
+                    )
+                  })
                 )}
               </div>
 

@@ -184,6 +184,7 @@ ${contentType === 'post' ? 'Напиши текст поста (без JSON). Н
     })
   } catch (error) {
     console.error('Generate error:', error)
-    return NextResponse.json({ error: 'Generation failed' }, { status: 500 })
+    const msg = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ error: msg || 'Generation failed' }, { status: 500 })
   }
 }

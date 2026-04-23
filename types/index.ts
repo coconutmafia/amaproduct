@@ -82,7 +82,7 @@ export interface Funnel {
   created_at: string
 }
 
-export type WarmupPhase = 'awareness' | 'trust' | 'desire' | 'close'
+export type WarmupPhase = 'awareness' | 'trust' | 'desire' | 'close' | 'niche' | 'expert' | 'product' | 'objections' | 'activation'
 
 export interface WarmupPlan {
   id: string

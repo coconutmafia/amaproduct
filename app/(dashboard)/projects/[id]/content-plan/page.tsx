@@ -29,11 +29,13 @@ function buildDaysFromWarmupPlan(planData: WarmupPlanData, weekNumber: number, s
 
   for (const phaseData of planData.warmup_plan.phases) {
     for (const dayPlan of phaseData.daily_plan) {
+      // Support both old format (format+theme) and new format (meaning)
+      const dayData = dayPlan as Record<string, unknown>
       allDays.push({
         day: dayPlan.day,
-        phase: phaseData.phase,
-        format: dayPlan.format,
-        theme: dayPlan.theme,
+        phase: phaseData.phase as WarmupPhase,
+        format: (dayData.format as ContentType[]) || [],
+        theme: (dayData.meaning as string) || (dayData.theme as string) || '',
       })
     }
   }
@@ -187,7 +189,10 @@ export default function ContentPlanPage() {
           phase,
         }),
       })
-      if (!res.ok) throw new Error('Generation failed')
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || 'Generation failed')
+      }
       const data = await res.json()
       // Update local state with the new item
       setDays((prev) => prev.map((d) =>
@@ -196,8 +201,8 @@ export default function ContentPlanPage() {
           : d
       ))
       toast.success(`${contentType} для дня ${day} сгенерирован`)
-    } catch {
-      toast.error('Ошибка создания контента')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Ошибка создания контента')
     }
   }, [id, totalDays])
 

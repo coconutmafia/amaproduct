@@ -390,14 +390,6 @@ export default function GeneratorPage() {
             </Card>
           )}
 
-          {/* Phase 2 placeholder */}
-          <Card className="border-border border-dashed bg-card/30">
-            <CardContent className="p-4 text-center space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground">ВИЗУАЛЬНЫЙ РЕДАКТОР</p>
-              <p className="text-xs text-muted-foreground">Оформление каруселей · Оформление сториз · AI-аватар · Автомонтаж рилсов</p>
-              <Badge variant="outline" className="text-xs">Скоро</Badge>
-            </CardContent>
-          </Card>
         </div>
       </div>
     </div>
