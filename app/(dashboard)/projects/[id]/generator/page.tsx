@@ -48,11 +48,13 @@ export default function GeneratorPage() {
   const id = params.id as string
 
   const [contentType, setContentType] = useState<ContentType>('post')
-  const [phase, setPhase] = useState<WarmupPhase>('awareness')
+  const [phase, setPhase] = useState<WarmupPhase>('niche')
   const [dayNumber, setDayNumber] = useState('1')
   const [totalDays, setTotalDays] = useState('45')
   const [additionalInstructions, setAdditionalInstructions] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingStatus, setLoadingStatus] = useState('')
+  const [streamingText, setStreamingText] = useState('')
   const [approving, setApproving] = useState(false)
   const [generated, setGenerated] = useState<GeneratedContent | null>(null)
   const [editedText, setEditedText] = useState('')
@@ -62,6 +64,9 @@ export default function GeneratorPage() {
 
   const handleGenerate = useCallback(async () => {
     setLoading(true)
+    setStreamingText('')
+    setLoadingStatus('Запускаю...')
+
     try {
       const res = await fetch('/api/ai/generate', {
         method: 'POST',
@@ -76,28 +81,78 @@ export default function GeneratorPage() {
         }),
       })
 
-      if (!res.ok) throw new Error(await res.text())
-      const data = await res.json()
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Ошибка сервера' }))
+        throw new Error((err as { error?: string }).error || 'Ошибка сервера')
+      }
+
+      const reader = res.body?.getReader()
+      if (!reader) throw new Error('Нет потока данных')
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let accText = ''
 
       if (generated) {
-        setVersions([...versions, { version: generated.item.version_number, text: editedText || generated.item.body_text || '' }])
+        setVersions(prev => [...prev, {
+          version: generated.item.version_number,
+          text: editedText || generated.item.body_text || '',
+        }])
       }
 
-      setGenerated(data)
-      setEditedText(data.item.body_text || '')
-      setApproved(false)
-      if (data.was_validated) {
-        toast.success('Контент сгенерирован и проверен Валидатором Смыслов ✓')
-      } else {
-        toast.success('Контент сгенерирован!')
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const parts = buffer.split('\n\n')
+        buffer = parts.pop() ?? ''
+
+        for (const part of parts) {
+          if (!part.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(part.slice(6)) as {
+              type: string
+              message?: string
+              delta?: string
+              item?: GeneratedContent['item']
+              structuredData?: Record<string, unknown>
+              was_validated?: boolean
+              error?: string
+            }
+
+            if (data.type === 'status') {
+              setLoadingStatus(data.message ?? '')
+            } else if (data.type === 'text' && data.delta) {
+              accText += data.delta
+              setStreamingText(accText)
+            } else if (data.type === 'done' && data.item) {
+              setGenerated({ item: data.item, structuredData: data.structuredData, was_validated: data.was_validated })
+              setEditedText(data.item.body_text || accText)
+              setApproved(false)
+              setStreamingText('')
+              if (data.was_validated) {
+                toast.success('Контент сгенерирован и проверен Валидатором Смыслов ✓')
+              } else {
+                toast.success('Контент сгенерирован!')
+              }
+            } else if (data.type === 'error') {
+              throw new Error(data.message || 'Ошибка генерации')
+            }
+          } catch (parseErr) {
+            // skip malformed SSE line
+          }
+        }
       }
     } catch (error) {
-      toast.error('Ошибка создания контента')
+      toast.error(error instanceof Error ? error.message : 'Ошибка создания контента')
       console.error(error)
     } finally {
       setLoading(false)
+      setLoadingStatus('')
+      setStreamingText('')
     }
-  }, [id, contentType, phase, dayNumber, totalDays, additionalInstructions, generated, editedText, versions])
+  }, [id, contentType, phase, dayNumber, totalDays, additionalInstructions, generated, editedText])
 
   const handleApprove = useCallback(async () => {
     if (!generated || !editedText.trim()) return
@@ -262,7 +317,7 @@ export default function GeneratorPage() {
                 className="w-full gradient-accent text-white hover:opacity-90"
               >
                 {loading ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Генерация...</>
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {loadingStatus || 'Генерация...'}</>
                 ) : (
                   <><Sparkles className="mr-2 h-4 w-4" /> Сгенерировать {CONTENT_TYPES.find(t => t.value === contentType)?.label}</>
                 )}
@@ -273,7 +328,40 @@ export default function GeneratorPage() {
 
         {/* Result panel */}
         <div className="space-y-4">
-          {!generated ? (
+          {/* Streaming preview — shown while validator is writing */}
+          {loading && streamingText && (
+            <Card className="border-primary/30 bg-primary/5">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs font-medium text-primary flex items-center gap-2">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {loadingStatus || 'Валидатор улучшает контент...'}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                  {streamingText}
+                  <span className="inline-block w-0.5 h-4 bg-primary animate-pulse ml-0.5 align-middle" />
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Loading placeholder — before streaming starts */}
+          {loading && !streamingText && (
+            <Card className="border-border border-dashed bg-card/50">
+              <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl gradient-accent opacity-60">
+                  <Loader2 className="h-8 w-8 text-white animate-spin" />
+                </div>
+                <div className="text-center">
+                  <p className="font-medium text-foreground">{loadingStatus || 'Запускаю...'}</p>
+                  <p className="text-sm text-muted-foreground mt-1">AI анализирует материалы и генерирует контент в твоём стиле</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {!generated && !loading ? (
             <Card className="border-border border-dashed bg-card/50">
               <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
                 <div className="flex h-16 w-16 items-center justify-center rounded-2xl gradient-accent opacity-60">
@@ -285,7 +373,7 @@ export default function GeneratorPage() {
                 </div>
               </CardContent>
             </Card>
-          ) : (
+          ) : generated ? (
             <Card className="border-border bg-card">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
@@ -392,7 +480,7 @@ export default function GeneratorPage() {
                 </div>
               </CardContent>
             </Card>
-          )}
+          ) : null}
 
         </div>
       </div>
