@@ -253,57 +253,18 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         }),
       })
 
+      const json = await res.json().catch(() => ({})) as { planData?: AIPlanData; error?: string }
+
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
-        throw new Error((errData as { error?: string }).error || `Ошибка AI ${res.status}`)
+        throw new Error(json.error || `Ошибка AI ${res.status}`)
       }
 
-      // Читаем SSE-поток
-      const reader = res.body?.getReader()
-      if (!reader) throw new Error('Нет потока данных')
-
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      const processBuffer = (): boolean => {
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() ?? ''
-        for (const part of parts) {
-          if (!part.startsWith('data: ')) continue
-          let data: { type: string; planData?: AIPlanData; message?: string }
-          try {
-            data = JSON.parse(part.slice(6))
-          } catch {
-            continue
-          }
-          if (data.type === 'done' && data.planData) {
-            setAiPlanData(data.planData)
-            setStep(8)
-            return true
-          }
-          if (data.type === 'error') {
-            throw new Error(data.message || 'AI недоступен')
-          }
-        }
-        return false
+      if (!json.planData) {
+        throw new Error('AI не вернул план. Попробуй ещё раз.')
       }
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (value) {
-          buffer += decoder.decode(value, { stream: !done })
-          if (processBuffer()) return
-        }
-        if (done) break
-      }
-
-      // Последний чанк может не заканчиваться \n\n — дообрабатываем остаток
-      if (buffer.trim()) {
-        buffer += '\n\n'
-        if (processBuffer()) return
-      }
-
-      throw new Error('AI не вернул план. Попробуй ещё раз.')
+      setAiPlanData(json.planData)
+      setStep(8)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'AI недоступен'
       toast.error(msg, { duration: 10000 })

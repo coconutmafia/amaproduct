@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL } from '@/lib/ai/client'
 
-export const maxDuration = 60
+export const maxDuration = 300
 
 export async function POST(request: Request) {
   try {
@@ -229,72 +229,31 @@ ${materialsText}` : '⚠️ Текстовые материалы не загр�
   ]
 }`
 
-    // ── SSE stream — keep-alive пинги предотвращают таймаут Vercel ──────────
-    const encoder = new TextEncoder()
-
-    const readable = new ReadableStream({
-      async start(controller) {
-        const send = (data: Record<string, unknown>) => {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
-        }
-
-        try {
-          send({ type: 'status', message: 'Составляю план прогрева...' })
-
-          const claudeStream = anthropic.messages.stream({
-            model: MODEL,
-            max_tokens: 4000,
-            messages: [{ role: 'user', content: prompt }],
-          })
-
-          let fullText = ''
-          let chunkCount = 0
-
-          for await (const chunk of claudeStream) {
-            if (
-              chunk.type === 'content_block_delta' &&
-              chunk.delta.type === 'text_delta'
-            ) {
-              fullText += chunk.delta.text
-              chunkCount++
-              if (chunkCount % 50 === 0) {
-                send({ type: 'progress', chars: fullText.length })
-              }
-            }
-          }
-
-          const jsonStr = fullText
-            .replace(/^```(?:json)?\s*/i, '')
-            .replace(/\s*```\s*$/i, '')
-            .trim()
-
-          if (!jsonStr) throw new Error('Пустой ответ от AI')
-
-          let planData: unknown
-          try {
-            planData = JSON.parse(jsonStr)
-          } catch {
-            console.error('JSON parse failed, raw:', jsonStr.slice(0, 500))
-            throw new Error('AI вернул некорректный формат. Попробуй ещё раз.')
-          }
-
-          send({ type: 'done', planData })
-          controller.close()
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : 'AI недоступен'
-          send({ type: 'error', message: msg })
-          controller.close()
-        }
-      },
+    // ── Простой запрос — maxDuration=300 даёт Claude достаточно времени ─────
+    const response = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 4000,
+      messages: [{ role: 'user', content: prompt }],
     })
 
-    return new Response(readable, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'X-Accel-Buffering': 'no',
-      },
-    })
+    const rawText = response.content[0].type === 'text' ? response.content[0].text : ''
+
+    const jsonStr = rawText
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```\s*$/i, '')
+      .trim()
+
+    if (!jsonStr) throw new Error('Пустой ответ от AI')
+
+    let planData: unknown
+    try {
+      planData = JSON.parse(jsonStr)
+    } catch {
+      console.error('JSON parse failed, raw:', jsonStr.slice(0, 500))
+      throw new Error('AI вернул некорректный формат. Попробуй ещё раз.')
+    }
+
+    return NextResponse.json({ planData })
 
   } catch (error) {
     console.error('Warmup plan AI error:', error)
