@@ -33,11 +33,16 @@ const CONTENT_TYPE_CONFIG: Record<ContentType, { label: string; icon: React.Elem
   email: { label: 'Email', icon: FileText, color: 'text-cyan-400' },
 }
 
-const PHASE_CONFIG = {
+const PHASE_CONFIG: Record<string, { label: string; color: string }> = {
   awareness: { label: 'Осознание', color: 'bg-blue-500/15 text-blue-400 border-blue-500/25' },
   trust: { label: 'Доверие', color: 'bg-green-500/15 text-green-400 border-green-500/25' },
   desire: { label: 'Желание', color: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/25' },
   close: { label: 'Закрытие', color: 'bg-red-500/15 text-red-400 border-red-500/25' },
+  niche: { label: 'Прогрев на нишу', color: 'bg-blue-500/15 text-blue-400 border-blue-500/25' },
+  expert: { label: 'Прогрев на эксперта', color: 'bg-purple-500/15 text-purple-400 border-purple-500/25' },
+  product: { label: 'Прогрев на продукт', color: 'bg-orange-500/15 text-orange-400 border-orange-500/25' },
+  objections: { label: 'Отработка возражений', color: 'bg-green-500/15 text-green-400 border-green-500/25' },
+  activation: { label: 'Активация', color: 'bg-blue-500/15 text-blue-400 border-blue-500/25' },
 }
 
 const SCORE_STARS = (score: number) => {
