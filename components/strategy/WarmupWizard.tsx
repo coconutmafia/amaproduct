@@ -258,14 +258,14 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         throw new Error((errData as { error?: string }).error || `Ошибка AI ${res.status}`)
       }
 
-      // Read SSE stream
+      // Читаем SSE-поток
       const reader = res.body?.getReader()
       if (!reader) throw new Error('Нет потока данных')
 
       const decoder = new TextDecoder()
       let buffer = ''
 
-      const processBuffer = () => {
+      const processBuffer = (): boolean => {
         const parts = buffer.split('\n\n')
         buffer = parts.pop() ?? ''
         for (const part of parts) {
@@ -274,12 +274,12 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           try {
             data = JSON.parse(part.slice(6))
           } catch {
-            continue // skip malformed SSE line
+            continue
           }
           if (data.type === 'done' && data.planData) {
             setAiPlanData(data.planData)
             setStep(8)
-            return true // signal: done
+            return true
           }
           if (data.type === 'error') {
             throw new Error(data.message || 'AI недоступен')
@@ -290,15 +290,20 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
       while (true) {
         const { done, value } = await reader.read()
-        // Process value BEFORE checking done — last chunk may arrive with done:true
         if (value) {
           buffer += decoder.decode(value, { stream: !done })
-          if (processBuffer()) return // got 'done' event
+          if (processBuffer()) return
         }
         if (done) break
       }
 
-      throw new Error('AI не вернул план')
+      // Последний чанк может не заканчиваться \n\n — дообрабатываем остаток
+      if (buffer.trim()) {
+        buffer += '\n\n'
+        if (processBuffer()) return
+      }
+
+      throw new Error('AI не вернул план. Попробуй ещё раз.')
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'AI недоступен'
       toast.error(msg, { duration: 10000 })
