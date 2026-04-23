@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt, buildValidatorPrompt } from '@/lib/ai/prompts/system'
+
+export const maxDuration = 60
 import { checkAndConsumeGeneration } from '@/lib/generations'
 
 export async function POST(request: Request) {
