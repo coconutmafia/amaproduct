@@ -61,12 +61,12 @@ export async function buildRAGContext(
     // ── Fallback: direct queries without embeddings ───────────────────────
     // Load system knowledge vault chunks (all ready chunks, most recent first)
     const { data: sysRaw } = await supabase
-      .from('knowledge_vault_chunks')
+      .from('knowledge_chunks')
       .select('chunk_text, metadata')
       .order('created_at', { ascending: false })
       .limit(15)
 
-    // If no knowledge_vault_chunks table, try knowledge_vault itself
+    // If no knowledge_chunks, try knowledge_vault itself
     if (!sysRaw || sysRaw.length === 0) {
       const { data: vaultItems } = await supabase
         .from('knowledge_vault')

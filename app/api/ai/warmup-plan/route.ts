@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     try {
       // Try chunks table first
       const { data: sysChunks } = await supabase
-        .from('knowledge_vault_chunks')
+        .from('knowledge_chunks')
         .select('chunk_text')
         .order('created_at', { ascending: false })
         .limit(10)
