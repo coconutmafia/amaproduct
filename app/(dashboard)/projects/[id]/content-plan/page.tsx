@@ -30,7 +30,7 @@ function buildDaysFromWarmupPlan(planData: WarmupPlanData, weekNumber: number, s
   for (const phaseData of planData.warmup_plan.phases) {
     for (const dayPlan of phaseData.daily_plan) {
       // Support both old format (format+theme) and new format (meaning)
-      const dayData = dayPlan as Record<string, unknown>
+      const dayData = dayPlan as unknown as Record<string, unknown>
       allDays.push({
         day: dayPlan.day,
         phase: phaseData.phase as WarmupPhase,
