@@ -258,7 +258,8 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         throw new Error((errData as { error?: string }).error || `Ошибка AI ${res.status}`)
       }
 
-      const data = await res.json() as { planData?: AIPlanData }
+      const data = await res.json() as { planData?: AIPlanData; error?: string }
+      if (data.error) throw new Error(data.error)
       if (!data.planData) throw new Error('AI вернул пустой план')
 
       setAiPlanData(data.planData)

@@ -228,30 +228,61 @@ ${materialsText}` : '⚠️ Текстовые материалы не загр�
   ]
 }`
 
-    const response = await anthropic.messages.create({
+    // ── Streaming response — Vercel won't timeout streaming connections ────────
+    const stream = anthropic.messages.stream({
       model: MODEL,
       max_tokens: 4000,
       messages: [{ role: 'user', content: prompt }],
     })
 
-    const raw = response.content[0]?.type === 'text' ? response.content[0].text : ''
-    if (!raw.trim()) throw new Error('Пустой ответ от AI')
+    const readable = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder()
+        let fullText = ''
 
-    // Strip markdown code fences if AI added them anyway
-    const jsonStr = raw
-      .replace(/^```(?:json)?\s*/i, '')
-      .replace(/\s*```\s*$/i, '')
-      .trim()
+        try {
+          for await (const chunk of stream) {
+            if (
+              chunk.type === 'content_block_delta' &&
+              chunk.delta.type === 'text_delta'
+            ) {
+              fullText += chunk.delta.text
+            }
+          }
 
-    let planData: unknown
-    try {
-      planData = JSON.parse(jsonStr)
-    } catch {
-      console.error('JSON parse failed, raw response:', raw.slice(0, 500))
-      throw new Error('AI вернул некорректный формат. Попробуй ещё раз.')
-    }
+          // Strip markdown fences if present
+          const jsonStr = fullText
+            .replace(/^```(?:json)?\s*/i, '')
+            .replace(/\s*```\s*$/i, '')
+            .trim()
 
-    return NextResponse.json({ planData })
+          if (!jsonStr) throw new Error('Пустой ответ от AI')
+
+          let planData: unknown
+          try {
+            planData = JSON.parse(jsonStr)
+          } catch {
+            console.error('JSON parse failed, raw:', jsonStr.slice(0, 500))
+            throw new Error('AI вернул некорректный формат. Попробуй ещё раз.')
+          }
+
+          controller.enqueue(encoder.encode(JSON.stringify({ planData })))
+          controller.close()
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'AI недоступен'
+          controller.enqueue(encoder.encode(JSON.stringify({ error: msg })))
+          controller.close()
+        }
+      },
+    })
+
+    return new Response(readable, {
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Transfer-Encoding': 'chunked',
+        'X-Accel-Buffering': 'no',
+      },
+    })
 
   } catch (error) {
     console.error('Warmup plan AI error:', error)

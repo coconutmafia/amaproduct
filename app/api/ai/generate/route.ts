@@ -96,17 +96,27 @@ ${contentType === 'stories' ? `Верни JSON в формате:
 
 ${contentType === 'post' ? 'Напиши текст поста (без JSON). Начни с крючка. Включи переход к CTA. Добавь 5-7 хештегов в конце.' : ''}`
 
-    // === STEP 1: Initial generation ===
+    // === GENERATION with built-in self-reflection ===
+    // For posts: Claude writes <draft> → <critique> → <final> in ONE call
+    // For JSON formats: Claude writes directly inside <final>
+    // max_tokens bumped to 3000 to fit all three stages for posts
     const response = await anthropic.messages.create({
       model: MODEL,
-      max_tokens: 2000,
+      max_tokens: 3000,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     })
 
-    let rawText = response.content[0].type === 'text' ? response.content[0].text : ''
+    const fullResponse = response.content[0].type === 'text' ? response.content[0].text : ''
 
-    // === STEP 2: Parse output ===
+    // Extract <final> tag if present (self-reflection output), otherwise use full response
+    let rawText = fullResponse
+    const finalMatch = fullResponse.match(/<final>([\s\S]*?)<\/final>/i)
+    if (finalMatch) {
+      rawText = finalMatch[1].trim()
+    }
+
+    // === Parse output ===
     let bodyText: string | null = null
     let structuredData: Record<string, Record<string, unknown>> | null = null
     let hashtags: string[] = []
@@ -163,7 +173,7 @@ ${contentType === 'post' ? 'Напиши текст поста (без JSON). Н
     return NextResponse.json({
       item: contentItem,
       structuredData,
-      was_validated: false,
+      was_validated: !!finalMatch,
     })
   } catch (error) {
     console.error('Generate error:', error)
