@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ProgressIndicator } from '@/components/shared/ProgressIndicator'
+import { DeleteContentButton } from '@/components/content/DeleteContentButton'
 import {
   ArrowLeft,
   BookOpen,
@@ -228,7 +229,7 @@ export default async function ProjectPage({ params }: Props) {
               </CardHeader>
               <CardContent className="space-y-2">
                 {recentContent.map((item) => (
-                  <div key={item.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary/50 transition-colors">
+                  <Link key={item.id} href={`/projects/${id}/generator`} className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary/50 transition-colors">
                     <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/15 shrink-0">
                       <Sparkles className="h-3.5 w-3.5 text-primary" />
                     </div>
@@ -239,7 +240,8 @@ export default async function ProjectPage({ params }: Props) {
                     <Badge variant="outline" className={`text-xs ${item.is_approved ? 'text-green-400 border-green-400/30' : 'text-muted-foreground'}`}>
                       {item.is_approved ? 'Одобрен' : 'Черновик'}
                     </Badge>
-                  </div>
+                    <DeleteContentButton itemId={item.id} />
+                  </Link>
                 ))}
               </CardContent>
             </Card>

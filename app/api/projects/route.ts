@@ -10,6 +10,17 @@ export async function POST(request: Request) {
 
     const { action, projectId, data } = await request.json()
 
+    if (action === 'delete_warmup_plan') {
+      const { planId } = data as { planId: string }
+      const { error } = await supabase
+        .from('warmup_plans')
+        .delete()
+        .eq('id', planId)
+        .eq('project_id', projectId)
+      if (error) throw error
+      return NextResponse.json({ success: true })
+    }
+
     if (action === 'create_warmup_plan') {
       const { data: plan, error } = await supabase
         .from('warmup_plans')

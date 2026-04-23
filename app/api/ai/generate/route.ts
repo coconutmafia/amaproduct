@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
-import { buildSystemPrompt, buildValidatorPrompt } from '@/lib/ai/prompts/system'
+import { buildSystemPrompt } from '@/lib/ai/prompts/system'
 
 export const maxDuration = 60
 import { checkAndConsumeGeneration } from '@/lib/generations'
@@ -106,36 +106,7 @@ ${contentType === 'post' ? 'Напиши текст поста (без JSON). Н
 
     let rawText = response.content[0].type === 'text' ? response.content[0].text : ''
 
-    // === STEP 2: Валидатор Смыслов (Self-Reflection) ===
-    // Only for text posts — structured JSON content (reels/carousel/stories) skips validation
-    if (contentType === 'post' && rawText.length > 100) {
-      try {
-        const systemKnowledgeText = ragContext.systemKnowledge
-          .map((c) => c.chunk_text)
-          .join('\n\n')
-
-        const validationResponse = await anthropic.messages.create({
-          model: MODEL,
-          max_tokens: 2000,
-          messages: [{
-            role: 'user',
-            content: buildValidatorPrompt(rawText, systemKnowledgeText),
-          }],
-        })
-
-        const validatedText = validationResponse.content[0].type === 'text'
-          ? validationResponse.content[0].text
-          : ''
-
-        if (validatedText.length > 50) {
-          rawText = validatedText
-        }
-      } catch {
-        // Validator unavailable — use original text
-      }
-    }
-
-    // === STEP 3: Parse output ===
+    // === STEP 2: Parse output ===
     let bodyText: string | null = null
     let structuredData: Record<string, Record<string, unknown>> | null = null
     let hashtags: string[] = []
@@ -160,7 +131,7 @@ ${contentType === 'post' ? 'Напиши текст поста (без JSON). Н
       ? rawText.split('\n')[0].substring(0, 80)
       : `${contentType} — День ${dayNumber}`
 
-    // === STEP 4: Check existing version count for this project+type+day ===
+    // === STEP 3: Check existing version count for this project+type+day ===
     const { count } = await supabase
       .from('content_items')
       .select('*', { count: 'exact', head: true })
@@ -192,7 +163,7 @@ ${contentType === 'post' ? 'Напиши текст поста (без JSON). Н
     return NextResponse.json({
       item: contentItem,
       structuredData,
-      was_validated: contentType === 'post',
+      was_validated: false,
     })
   } catch (error) {
     console.error('Generate error:', error)

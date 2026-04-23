@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 import { WarmupWizard } from '@/components/strategy/WarmupWizard'
 import { WarmupTimeline } from '@/components/strategy/WarmupTimeline'
+import { DeletePlanButton } from '@/components/strategy/DeletePlanButton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import type { WarmupPlanData } from '@/types'
@@ -63,6 +64,7 @@ export default async function StrategyPage({ params }: Props) {
                     }`}>
                       {plan.status}
                     </Badge>
+                    <DeletePlanButton planId={plan.id} projectId={id} />
                   </div>
                 </div>
 

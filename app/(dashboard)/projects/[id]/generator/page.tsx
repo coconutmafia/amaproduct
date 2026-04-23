@@ -27,10 +27,14 @@ const CONTENT_TYPES: Array<{ value: ContentType; label: string; icon: React.Elem
 ]
 
 const PHASES: Array<{ value: WarmupPhase; label: string; desc: string }> = [
-  { value: 'awareness', label: 'Знакомство', desc: 'Аудитория только узнаёт о тебе и твоей теме' },
-  { value: 'trust', label: 'Доверие', desc: 'Строим авторитет через кейсы и экспертные посты' },
-  { value: 'desire', label: 'Желание', desc: 'Создаём желание купить продукт' },
-  { value: 'close', label: 'Закрытие', desc: 'Финальный призыв и работа с возражениями' },
+  { value: 'niche', label: 'Прогрев на нишу', desc: 'Продаём идею категории — почему эта тема важна' },
+  { value: 'expert', label: 'Прогрев на эксперта', desc: 'Почему именно этот человек — история и опыт' },
+  { value: 'product', label: 'Прогрев на продукт', desc: 'Логика продукта, механизм, путь клиента' },
+  { value: 'objections', label: 'Возражения и дожимы', desc: 'Снимаем последнее сопротивление перед покупкой' },
+  { value: 'awareness', label: 'Знакомство (устар.)', desc: 'Аудитория только узнаёт о тебе и теме' },
+  { value: 'trust', label: 'Доверие (устар.)', desc: 'Строим авторитет через кейсы' },
+  { value: 'desire', label: 'Желание (устар.)', desc: 'Создаём желание купить продукт' },
+  { value: 'close', label: 'Закрытие (устар.)', desc: 'Финальный призыв и работа с возражениями' },
 ]
 
 interface GeneratedContent {
