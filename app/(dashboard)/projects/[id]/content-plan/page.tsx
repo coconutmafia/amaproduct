@@ -191,16 +191,36 @@ export default function ContentPlanPage() {
       })
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}))
-        throw new Error(errData.error || 'Generation failed')
+        throw new Error((errData as { error?: string }).error || 'Generation failed')
       }
-      const data = await res.json()
-      // Update local state with the new item
-      setDays((prev) => prev.map((d) =>
-        d.day === day
-          ? { ...d, items: [...d.items, data.item] }
-          : d
-      ))
-      toast.success(`${contentType} для дня ${day} сгенерирован`)
+
+      // Read SSE stream — wait for 'done' event
+      const reader = res.body?.getReader()
+      if (!reader) throw new Error('Нет потока')
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const parts = buffer.split('\n\n')
+        buffer = parts.pop() ?? ''
+        for (const part of parts) {
+          if (!part.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(part.slice(6)) as { type: string; item?: ContentItem; message?: string }
+            if (data.type === 'done' && data.item) {
+              setDays((prev) => prev.map((d) =>
+                d.day === day ? { ...d, items: [...d.items, data.item!] } : d
+              ))
+              toast.success(`${contentType} для дня ${day} сгенерирован`)
+              return
+            }
+            if (data.type === 'error') throw new Error(data.message || 'Ошибка')
+          } catch { /* skip malformed */ }
+        }
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Ошибка создания контента')
     }

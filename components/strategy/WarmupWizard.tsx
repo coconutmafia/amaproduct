@@ -258,12 +258,46 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         throw new Error((errData as { error?: string }).error || `Ошибка AI ${res.status}`)
       }
 
-      const data = await res.json() as { planData?: AIPlanData; error?: string }
-      if (data.error) throw new Error(data.error)
-      if (!data.planData) throw new Error('AI вернул пустой план')
+      // Read SSE stream
+      const reader = res.body?.getReader()
+      if (!reader) throw new Error('Нет потока данных')
 
-      setAiPlanData(data.planData)
-      setStep(8)
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const parts = buffer.split('\n\n')
+        buffer = parts.pop() ?? ''
+
+        for (const part of parts) {
+          if (!part.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(part.slice(6)) as {
+              type: string
+              planData?: AIPlanData
+              message?: string
+            }
+
+            if (data.type === 'done' && data.planData) {
+              setAiPlanData(data.planData)
+              setStep(8)
+              return
+            }
+            if (data.type === 'error') {
+              throw new Error(data.message || 'AI недоступен')
+            }
+            // type === 'status' | 'progress' — ignore, just keep alive
+          } catch (parseErr) {
+            // skip malformed line
+          }
+        }
+      }
+
+      throw new Error('AI не вернул план')
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'AI недоступен'
       toast.error(msg, { duration: 10000 })
