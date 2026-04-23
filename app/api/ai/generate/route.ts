@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { projectId, contentType, dayNumber, totalDays, phase, additionalInstructions } = body
+    const { projectId, contentType, dayNumber, totalDays, phase, additionalInstructions, dayMeaning } = body
 
     const { data: project } = await supabase
       .from('projects')
@@ -57,10 +57,17 @@ export async function POST(request: Request) {
     }
 
     const phaseLabel: Record<string, string> = {
+      // Legacy phases
       awareness: 'осознание (знакомство с экспертом и проблемой)',
       trust: 'доверие (кейсы, авторитет, закулисье)',
       desire: 'желание (ценность продукта, трансформация)',
       close: 'закрытие (продажа, последний призыв)',
+      // New phases
+      niche: 'ПРОГРЕВ НА НИШУ — продаём идею категории, не себя и не продукт',
+      expert: 'ПРОГРЕВ НА ЭКСПЕРТА — почему именно этот человек, его история и опыт',
+      product: 'ПРОГРЕВ НА ПРОДУКТ — логика продукта, механизм, путь клиента',
+      objections: 'ОТРАБОТКА ВОЗРАЖЕНИЙ И ДОЖИМЫ — снимаем последнее сопротивление',
+      activation: 'активация аудитории',
     }
 
     const userPrompt = `Создай ${contentTypeLabel[contentType] || contentType} для блогера.
@@ -70,6 +77,9 @@ export async function POST(request: Request) {
 - Фаза: ${phaseLabel[phase] || phase}
 - Блогер: ${project.name}
 - Ниша: ${project.niche || 'не указана'}
+${dayMeaning ? `- Смысл дня (из плана прогрева): ${dayMeaning}` : ''}
+
+ВАЖНО: Если указан «Смысл дня» — контент должен раскрывать именно этот смысл, не отходи от него.
 
 ${additionalInstructions ? `ДОПОЛНИТЕЛЬНО: ${additionalInstructions}` : ''}
 

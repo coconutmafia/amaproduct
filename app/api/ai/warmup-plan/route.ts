@@ -29,6 +29,37 @@ export async function POST(request: Request) {
       .single()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
+    // ── Load system knowledge vault (expert methodology) ────────────────────
+    let systemKnowledgeText = ''
+    try {
+      // Try chunks table first
+      const { data: sysChunks } = await supabase
+        .from('knowledge_vault_chunks')
+        .select('chunk_text')
+        .order('created_at', { ascending: false })
+        .limit(10)
+
+      if (sysChunks && sysChunks.length > 0) {
+        systemKnowledgeText = sysChunks.map(c => c.chunk_text as string).join('\n\n').slice(0, 3000)
+      } else {
+        // Fallback: load raw content from knowledge_vault
+        const { data: vaultItems } = await supabase
+          .from('knowledge_vault')
+          .select('raw_content, content_type, title')
+          .eq('processing_status', 'ready')
+          .limit(5)
+
+        if (vaultItems && vaultItems.length > 0) {
+          systemKnowledgeText = vaultItems
+            .filter(v => v.raw_content)
+            .map(v => `[${v.content_type}] ${v.title}:\n${(v.raw_content ?? '').slice(0, 600)}`)
+            .join('\n\n')
+        }
+      }
+    } catch {
+      // System vault unavailable — continue without it
+    }
+
     // ── Load project materials (chunks first, fallback to raw) ───────────────
     const { data: chunks } = await supabase
       .from('project_chunks')
@@ -36,15 +67,30 @@ export async function POST(request: Request) {
       .eq('project_id', projectId)
       .limit(30)
 
-    // Also load material titles even if no chunks yet — gives AI context
+    // If no chunks — load raw_content from project_materials directly
+    let materialsText = ''
+    if (chunks && chunks.length > 0) {
+      materialsText = chunks.map(c => `[${c.material_type}]: ${c.chunk_text}`).join('\n\n').slice(0, 5000)
+    } else {
+      const { data: rawMaterials } = await supabase
+        .from('project_materials')
+        .select('title, material_type, raw_content')
+        .eq('project_id', projectId)
+        .not('raw_content', 'is', null)
+        .limit(10)
+
+      if (rawMaterials && rawMaterials.length > 0) {
+        materialsText = rawMaterials
+          .map(m => `[${m.material_type}] ${m.title}:\n${(m.raw_content ?? '').slice(0, 500)}`)
+          .join('\n\n')
+      }
+    }
+
+    // List of all uploaded materials (for AI context even without text)
     const { data: materials } = await supabase
       .from('project_materials')
       .select('title, material_type, processing_status')
       .eq('project_id', projectId)
-
-    const materialsText = chunks && chunks.length > 0
-      ? chunks.map(c => `[${c.material_type}]: ${c.chunk_text}`).join('\n\n').slice(0, 5000)
-      : ''
 
     const materialsList = materials && materials.length > 0
       ? materials.map(m => `• ${m.material_type}: ${m.title} (${m.processing_status})`).join('\n')
@@ -59,7 +105,15 @@ export async function POST(request: Request) {
     const hooksText = hooks.length ? hooks.join(', ') : 'не выбраны'
 
     // ── Prompt ───────────────────────────────────────────────────────────────
-    const prompt = `Ты эксперт по контент-маркетингу и запускам. Создай ПЕРСОНАЛИЗИРОВАННЫЙ план прогрева — не шаблон, а конкретный план для этого блогера, его ниши и его продукта.
+    const prompt = `Ты — AI-продюсер запусков, работающий по методологии конкретного эксперта-маркетолога.
+Создай ПЕРСОНАЛИЗИРОВАННЫЙ план прогрева — не шаблон, а конкретный план для этого блогера, его ниши и его продукта.
+
+${systemKnowledgeText ? `═══════════════════════════════
+МЕТОДОЛОГИЯ ЭКСПЕРТА (Source of Truth — приоритет над всем)
+═══════════════════════════════
+${systemKnowledgeText}
+ВАЖНО: Применяй эту методологию при составлении плана.
+` : ''}
 
 ═══════════════════════════════
 ДАННЫЕ ПРОЕКТА
