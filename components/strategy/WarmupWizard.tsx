@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -28,24 +27,118 @@ import {
 } from 'lucide-react'
 import type { Product, Funnel } from '@/types'
 
-// ── Markdown renderer ─────────────────────────────────────────────────────────
-function PlanRenderer({ markdown }: { markdown: string }) {
-  const html = useMemo(() => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const MarkdownIt = require('markdown-it') as new (opts?: object) => { render: (s: string) => string }
-    const md = new MarkdownIt({ html: false, breaks: true, linkify: false })
-    return md.render(markdown)
-  }, [markdown])
+// ── AI Plan types ────────────────────────────────────────────────────────────
+interface AIDayPlan {
+  day: number
+  meaning: string
+}
+
+interface AIPhase {
+  phase: string
+  label: string
+  days_count: number
+  task: string
+  daily_plan: AIDayPlan[]
+}
+
+interface AIPlanData {
+  strategy_summary: string
+  phases: AIPhase[]
+}
+
+// ── Plan Preview renderer (from structured JSON) ─────────────────────────────
+const PHASE_ICONS: Record<string, string> = {
+  niche: '🔥',
+  expert: '💡',
+  product: '🎯',
+  objections: '💰',
+}
+
+const PHASE_COLORS: Record<string, string> = {
+  niche: 'border-blue-500/30 bg-blue-500/5 text-blue-400',
+  expert: 'border-purple-500/30 bg-purple-500/5 text-purple-400',
+  product: 'border-orange-500/30 bg-orange-500/5 text-orange-400',
+  objections: 'border-green-500/30 bg-green-500/5 text-green-400',
+}
+
+function PlanPreview({ planData, productName, duration }: { planData: AIPlanData; productName: string; duration: number }) {
+  const [expandedPhase, setExpandedPhase] = useState<string | null>(null)
 
   return (
-    <div
-      className="plan-md text-sm text-foreground leading-relaxed"
-      // eslint-disable-next-line react/no-danger
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Sparkles className="h-4 w-4 text-primary" />
+          <span className="text-sm font-semibold text-foreground">
+            ПЛАН ПРОГРЕВА: {productName} | {duration} дней
+          </span>
+          <Badge className="ml-auto text-[10px] bg-green-500/15 text-green-400 border-green-500/25">AI</Badge>
+        </div>
+        <p className="text-xs text-muted-foreground leading-relaxed">{planData.strategy_summary}</p>
+      </div>
+
+      {/* Phases */}
+      <div className="space-y-2">
+        {planData.phases.map((phase) => {
+          const isOpen = expandedPhase === phase.phase
+          const colorClass = PHASE_COLORS[phase.phase] || 'border-border bg-card text-muted-foreground'
+          const icon = PHASE_ICONS[phase.phase] || '📌'
+
+          return (
+            <div key={phase.phase} className={`rounded-xl border overflow-hidden ${colorClass}`}>
+              {/* Phase header — clickable to expand */}
+              <button
+                className="w-full flex items-center justify-between p-3 text-left"
+                onClick={() => setExpandedPhase(isOpen ? null : phase.phase)}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-base">{icon}</span>
+                  <div>
+                    <span className="text-xs font-bold tracking-wide">{phase.label}</span>
+                    <span className="ml-2 text-[10px] opacity-60">{phase.days_count} дней</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] opacity-60 hidden sm:block">{phase.task}</span>
+                  <ChevronRight className={`h-3.5 w-3.5 opacity-60 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+                </div>
+              </button>
+
+              {/* Day table */}
+              {isOpen && (
+                <div className="border-t border-current/10 bg-background/30">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-current/10">
+                        <th className="py-2 px-3 text-left font-medium opacity-60 w-16">День</th>
+                        <th className="py-2 px-3 text-left font-medium opacity-60">Смысл</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {phase.daily_plan.map((d, i) => (
+                        <tr key={d.day} className={i % 2 === 0 ? 'bg-background/20' : ''}>
+                          <td className="py-2 px-3 font-bold opacity-70">{d.day}</td>
+                          <td className="py-2 px-3 text-foreground leading-relaxed">{d.meaning}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <p className="text-[10px] text-muted-foreground text-center">
+        Нажми на фазу чтобы раскрыть все смыслы
+      </p>
+    </div>
   )
 }
 
+// ── Wizard ───────────────────────────────────────────────────────────────────
 interface WarmupWizardProps {
   projectId: string
   products: Product[]
@@ -89,148 +182,13 @@ const PAID_EVENT_TYPES = [
   { id: 'other', label: 'другое' },
 ]
 
-// Fallback summary when AI is unavailable
-function buildFallbackSummary(params: {
-  productName: string
-  duration: number
-  funnelDesc: string
-  warmTypes: string[]
-  useCases: boolean
-  hooks: string[]
-  extraHooks: string
-  competitors: string
-  startDate: string
-}) {
-  const hookLabels = params.hooks.map(h => HOOK_OPTIONS.find(o => o.id === h)?.label || h)
-  const warmLabels = params.warmTypes.map(t =>
-    t === 'content_only' ? 'прогрев через контент блога' :
-    t === 'free_event' ? 'бесплатное мероприятие' :
-    t === 'paid_event' ? 'платное мероприятие (трипваер)' : t
-  )
-
-  const phase1Days = Math.round(params.duration * 0.15)
-  const phase2Days = Math.round(params.duration * 0.25)
-  const phase3Days = Math.round(params.duration * 0.30)
-  const phase4Days = params.duration - phase1Days - phase2Days - phase3Days
-
-  const phase1End = phase1Days
-  const phase2End = phase1Days + phase2Days
-  const phase3End = phase1Days + phase2Days + phase3Days
-
-  const hasEvent = params.warmTypes.includes('free_event') || params.warmTypes.includes('paid_event')
-
-  return `# ПЛАН ПРОГРЕВА: ${params.productName} | ${params.duration} дней
-
-## Общая информация
-
-| Параметр | Значение |
-|----------|----------|
-| Продукт | ${params.productName} |
-| Длительность | ${params.duration} дней |
-| Старт | ${params.startDate || 'по согласованию'} |
-| Воронка | ${params.funnelDesc} |
-| Прогрев | ${warmLabels.join(', ') || 'через контент блога'} |
-| Кейсы | ${params.useCases ? 'используются' : 'без кейсов'} |
-
-## Фазы прогрева
-
-### 🔥 Фаза 1: Активация и осознание проблемы (15%, дни 1–${phase1End})
-
-**Цель:** Разбудить аудиторию, переключить с режима «у меня всё ок» в «мне нужно решение»
-**Сегменты:** Новички (простой вход), Скептики (факты и цифры), Спящие (FOMO-триггеры)
-
-**Типы контента:**
-- Провокационный вопрос / опрос в сторис: «Ты уже сталкивался с этим?»
-- Пост-диагностика: «5 признаков, что тебе нужен [продукт]»
-- Личная история: с чего начинался твой путь в теме
-- Статистика и факты по нише — пробуждение через цифры
-- Квиз или тест для вовлечения и сегментации аудитории
-
-**Механики:** опросы в сторис, интерактивные квизы, призыв комментировать
-
----
-
-### 💡 Фаза 2: Знакомство и доверие (25%, дни ${phase1End + 1}–${phase2End})
-
-**Цель:** Сформировать экспертность, показать личные ценности, создать эмоциональную связь
-
-**Типы контента:**
-- Закулисье работы: как создаётся продукт / как ты работаешь с клиентами
-- Экспертный пост: разбор типичной ошибки в нише
-- Личные ценности и убеждения — «почему я этим занимаюсь»
-- Ответы на популярные вопросы аудитории (FAQ-формат)
-${params.useCases ? '- Первые кейсы и отзывы — лёгкие истории успеха клиентов' : '- Демонстрация метода через конкретный пример или мини-кейс'}
-
-**Фокус:** регулярность и последовательность, без резких продающих сигналов
-
----
-
-### 🎯 Фаза 3: Желание и трансформация (30%, дни ${phase2End + 1}–${phase3End})
-
-**Цель:** Показать результат до/после, закрыть ключевые возражения, усилить желание
-
-**Типы контента:**
-- ${params.useCases ? 'Развёрнутые кейсы клиентов с конкретными цифрами и трансформацией' : 'Пошаговая демонстрация метода — как это работает на практике'}
-- Разбор возражений: «Это дорого», «У меня нет времени», «Я уже пробовал»
-- Пост «Что будет, если ничего не менять» — усиление боли
-- Детали продукта: что внутри, как построен процесс, почему это работает
-- Личная трансформация — твой путь и результаты${hasEvent ? '\n- Анонс предстоящего мероприятия — создание ожидания' : ''}
-
-${hookLabels.length > 0 ? `**Смысловые крючки этой фазы:**\n${hookLabels.map(h => `- ${h}`).join('\n')}` : ''}
-
----
-
-### 💰 Фаза 4: Открытие продаж (30%, дни ${phase3End + 1}–${params.duration})
-
-**Цель:** Конвертировать прогретую аудиторию в покупателей с помощью дефицита и ограниченного окна
-
-**Механики продаж:**
-- Early Bird: специальная цена или бонус для первых покупателей (первые 24–48 часов)
-- Окно продаж: строго 5–7 дней, жёсткий дедлайн
-- Ежедневная работа с возражениями через сторис и посты
-- FOMO-контент для тех, кто «думает»: что они потеряют, если не купят сейчас
-- Отзывы и реакции первых покупателей в реальном времени
-
-**Типы контента:**
-- Пост-открытие продаж: «Это то, к чему мы шли весь [X] дней»
-- Сторис с обратным отсчётом до закрытия
-- Разборы и ответы на вопросы о продукте (прямые эфиры)
-- Посты с кейсами тех, кто уже купил (социальное доказательство)
-- Финальный пост: «Последний шанс» с чётким дедлайном
-
----
-
-## Ключевые смысловые крючки
-
-${hookLabels.length > 0 ? hookLabels.map((h, i) => {
-  const phases = ['Фаза 2–3', 'Фаза 1–2', 'Фаза 3–4', 'Фаза 1–3', 'Фаза 3–4', 'Фаза 2–3', 'Фаза 1–2']
-  return `- **${h}** → ${phases[i % phases.length]}`
-}).join('\n') : '- Смысловые крючки будут определены на основе материалов проекта'}
-${params.extraHooks ? `\n**Дополнительные смыслы:**\n${params.extraHooks}` : ''}
-
-## Рекомендации по форматам
-
-| Формат | Частота | Когда использовать |
-|--------|---------|-------------------|
-| Stories | Ежедневно | Поддержание контакта, опросы, обратный отсчёт |
-| Reels/видео | 2–3 раза в неделю | Охват новой аудитории, виральные темы |
-| Посты/карусели | 3–4 раза в неделю | Глубокий экспертный контент, кейсы |
-| Прямые эфиры | 1–2 в фазах 3–4 | Q&A, разборы, открытие продаж |
-
-${params.competitors ? `## Конкурентный анализ\n\n${params.competitors}` : ''}
-
----
-*Шаблон сформирован автоматически. Для персонализированного плана с учётом карты смыслов используйте генерацию через AI.*`
-}
-
 export function WarmupWizard({ projectId, products, funnels, onComplete }: WarmupWizardProps) {
   const router = useRouter()
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [generatingSummary, setGeneratingSummary] = useState(false)
-  const [summary, setSummary] = useState<string | null>(null)
-  const [summaryApproved, setSummaryApproved] = useState(false)
-  const [isFallback, setIsFallback] = useState(false)
+  const [aiPlanData, setAiPlanData] = useState<AIPlanData | null>(null)
+  const [planApproved, setPlanApproved] = useState(false)
 
   // Wizard state
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
@@ -265,15 +223,19 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     )
   }
 
-  async function generateSummary() {
-    setGeneratingSummary(true)
-    try {
-      const funnelDesc =
-        coldAudienceType === 'existing_funnel'
-          ? `Существующая воронка: ${funnels.find(f => f.id === coldFunnelId)?.name || 'из базы'}`
-          : coldAudienceType === 'custom' ? coldFunnelCustom
-          : 'Без воронки — прямые продажи'
+  function getFunnelDesc() {
+    if (coldAudienceType === 'existing_funnel')
+      return `Существующая воронка: ${funnels.find(f => f.id === coldFunnelId)?.name || 'из базы'}`
+    if (coldAudienceType === 'custom') return coldFunnelCustom || 'Описать позже'
+    return 'Без воронки — прямые продажи'
+  }
 
+  // ── Generate plan via AI ──────────────────────────────────────────────────
+  async function generatePlan() {
+    setGeneratingSummary(true)
+    setAiPlanData(null)
+    setPlanApproved(false)
+    try {
       const res = await fetch('/api/ai/warmup-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -282,7 +244,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           productName: selectedProduct?.name || 'Продукт',
           duration,
           startDate: startDate || undefined,
-          funnelDesc,
+          funnelDesc: getFunnelDesc(),
           warmTypes: warmAudienceTypes,
           useCases,
           hooks: selectedHooks,
@@ -293,110 +255,36 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}))
-        throw new Error(errData.error || `AI ошибка ${res.status}`)
+        throw new Error((errData as { error?: string }).error || `Ошибка AI ${res.status}`)
       }
 
-      const data = await res.json()
-      const result = data.plan || ''
+      const data = await res.json() as { planData?: AIPlanData }
+      if (!data.planData) throw new Error('AI вернул пустой план')
 
-      if (!result.trim()) throw new Error('Пустой ответ от AI')
-
-      setSummary(result)
-      setIsFallback(false)
+      setAiPlanData(data.planData)
       setStep(8)
     } catch (err) {
-      // Fallback: generate template summary
-      const errMsg = err instanceof Error ? err.message : ''
-      toast.error(errMsg || 'AI недоступен', { duration: 8000 })
-      const funnelDesc =
-        coldAudienceType === 'existing_funnel'
-          ? `Существующая воронка: ${funnels.find(f => f.id === coldFunnelId)?.name || 'из базы'}`
-          : coldAudienceType === 'custom' ? coldFunnelCustom || 'Описать позже'
-          : 'Без воронки — прямые продажи'
-      const fallback = buildFallbackSummary({
-        productName: selectedProduct?.name || 'Продукт',
-        duration,
-        funnelDesc,
-        warmTypes: warmAudienceTypes,
-        useCases,
-        hooks: selectedHooks,
-        extraHooks,
-        competitors: competitorNotes,
-        startDate,
-      })
-      setSummary(fallback)
-      setIsFallback(true)
-      setStep(8)
+      const msg = err instanceof Error ? err.message : 'AI недоступен'
+      toast.error(msg, { duration: 10000 })
     } finally {
       setGeneratingSummary(false)
     }
   }
 
+  // ── Save plan ─────────────────────────────────────────────────────────────
   async function createPlan() {
+    if (!aiPlanData) return
     setLoading(true)
     try {
-      // Build structured plan_data for timeline display
-      const hookLabels = selectedHooks.map(h => HOOK_OPTIONS.find(o => o.id === h)?.label || h)
-      const phases = [
-        {
-          phase: 'niche', ratio: 0.25, label: 'Прогрев на нишу',
-          themes: [
-            `Почему ${selectedProduct?.name ? 'эта тема' : 'ниша'} важна для жизни подписчика`,
-            'Самые частые мифы и заблуждения в этой теме',
-            'Что теряет человек, игнорируя эту сферу',
-            'История до-после человека, который разобрался в теме',
-            'Почему без системного подхода ничего не работает',
-            'Что большинство людей делают неправильно и почему',
-            'Реальные цифры и факты о теме — пробуждение через данные',
-          ],
-        },
-        {
-          phase: 'expert', ratio: 0.25, label: 'Прогрев на эксперта',
-          themes: [
-            'Почему я пришла в эту нишу — личная история',
-            'Через что я сама прошла и какой опыт получила',
-            'Мои профессиональные принципы и убеждения',
-            'Кейс клиента с подробным разбором пути',
-            'Что отличает мой подход от стандартных решений',
-            'Закулисье моей работы — как я работаю с клиентами',
-            ...(hookLabels.length ? hookLabels : ['Моя система мышления и взгляд на нишу']),
-          ],
-        },
-        {
-          phase: 'product', ratio: 0.25, label: 'Прогрев на продукт',
-          themes: [
-            `Как устроен ${selectedProduct?.name || 'продукт'} — логика и структура`,
-            'Почему именно такой формат — обоснование решения',
-            'Что происходит с клиентом на каждом этапе работы',
-            'Детали программы / что входит и зачем каждый элемент',
-            'Результаты клиентов на конкретных примерах',
-            'Кому подходит и кому не подойдёт — честно',
-            'Разбор страхов: "дорого", "нет времени", "уже пробовала"',
-          ],
-        },
-        {
-          phase: 'objections', ratio: 0.25, label: 'Отработка возражений',
-          themes: [
-            'Главное возражение: почему прошлый опыт мог не сработать',
-            'Что будет, если ничего не менять — через 6 месяцев, год',
-            `Early Bird: специальные условия для первых на ${selectedProduct?.name || 'продукт'}`,
-            'Отзывы и переписки — живые реакции людей',
-            'FAQ: отвечаю на самые частые вопросы про продукт',
-            'Последний шанс: дедлайн и что теряет тот, кто не решился',
-            'Финальный пост: благодарность и закрытие продаж',
-          ],
-        },
-      ]
-      let dayCounter = 1
-      const planPhases = phases.map(({ phase, ratio, label, themes }) => {
-        const phaseDays = Math.round(duration * ratio)
-        const daily_plan = Array.from({ length: phaseDays }, (_, i) => {
-          const entry = { day: dayCounter, meaning: themes[i % themes.length] }
-          dayCounter++
-          return entry
-        })
-        return { phase, label, daily_plan }
-      })
+      // Build plan_data from AI-generated structure (not hardcoded!)
+      const planPhases = aiPlanData.phases.map((phase) => ({
+        phase: phase.phase,
+        label: phase.label,
+        daily_plan: phase.daily_plan.map((d) => ({
+          day: d.day,
+          meaning: d.meaning,
+        })),
+      }))
 
       const res = await fetch('/api/projects', {
         method: 'POST',
@@ -408,7 +296,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
             name: `Прогрев ${duration} дней — ${selectedProduct?.name || 'продукт'}${startDate ? ` (старт ${startDate})` : ''}`,
             duration_days: duration,
             audience_type: 'cold_warm',
-            strategic_summary: summary,
+            strategic_summary: aiPlanData.strategy_summary,
             summary_approved: true,
             status: 'approved',
             plan_data: { warmup_plan: { phases: planPhases } },
@@ -418,9 +306,9 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
       if (!res.ok) {
         const d = await res.json().catch(() => ({}))
-        throw new Error(d.error || `Ошибка ${res.status}`)
+        throw new Error((d as { error?: string }).error || `Ошибка ${res.status}`)
       }
-      const { planId } = await res.json()
+      const { planId } = await res.json() as { planId: string }
       toast.success('План прогрева создан!')
       router.refresh()
       onComplete?.(planId)
@@ -530,7 +418,6 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
             })}
           </div>
 
-          {/* Start date */}
           <div className="space-y-2">
             <Label className="text-sm font-medium text-foreground">Дата старта прогрева</Label>
             <p className="text-xs text-muted-foreground">С этой даты сервис сформирует расписание контент-плана</p>
@@ -612,7 +499,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         </div>
       )}
 
-      {/* Step 4: Warm audience (renamed) */}
+      {/* Step 4: Warm audience */}
       {step === 4 && (
         <div className="space-y-2">
           {[
@@ -650,7 +537,6 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                   </div>
                 </button>
 
-                {/* Free event fields */}
                 {isChecked && value === 'free_event' && (
                   <div className="mt-1 ml-4 p-4 rounded-xl border border-border bg-secondary/20 space-y-3">
                     <div className="flex flex-col gap-3">
@@ -683,7 +569,6 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                   </div>
                 )}
 
-                {/* Paid event fields */}
                 {isChecked && value === 'paid_event' && (
                   <div className="mt-1 ml-4 p-4 rounded-xl border border-border bg-secondary/20 space-y-3">
                     <div className="flex flex-col gap-3">
@@ -725,7 +610,6 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       {step === 5 && (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">Какие доказательства используем в прогреве?</p>
-
           {[
             { value: true, label: 'Использовать кейсы из базы проекта', desc: 'Рекомендуется для повышения доверия' },
             { value: false, label: 'Без кейсов', desc: 'Для новых продуктов без социальных доказательств' },
@@ -746,8 +630,6 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
               </div>
             </button>
           ))}
-
-          {/* Additional cases */}
           <div className="rounded-xl border border-border bg-secondary/20 p-4 space-y-3">
             <p className="text-sm font-medium text-foreground">Добавить дополнительные кейсы</p>
             <Textarea
@@ -831,93 +713,79 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         </div>
       )}
 
-      {/* Step 8: Summary */}
+      {/* Step 8: Plan preview & approve */}
       {step === 8 && (
         <div className="space-y-4">
-          {summary ? (
+          {/* Loading state */}
+          {generatingSummary && (
+            <div className="flex flex-col items-center justify-center py-10 gap-3">
+              <Loader2 className="h-8 w-8 text-primary animate-spin" />
+              <p className="text-sm text-muted-foreground text-center">
+                AI анализирует материалы проекта<br />и составляет персональный план...
+              </p>
+            </div>
+          )}
+
+          {/* No plan yet */}
+          {!aiPlanData && !generatingSummary && (
+            <div className="space-y-4">
+              <div className="text-center py-6">
+                <Sparkles className="h-10 w-10 text-primary/40 mx-auto mb-3" />
+                <p className="text-muted-foreground text-sm">
+                  AI проанализирует все твои материалы и создаст<br />
+                  персональный план на основе твоей ниши и продукта
+                </p>
+              </div>
+              <Button onClick={generatePlan} className="w-full gradient-accent text-white hover:opacity-90">
+                <Sparkles className="mr-2 h-4 w-4" />
+                Создать план прогрева
+              </Button>
+            </div>
+          )}
+
+          {/* Plan generated */}
+          {aiPlanData && !generatingSummary && (
             <>
-              {/* Fallback warning with AI retry */}
-              {isFallback && (
-                <div className="flex items-start gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-3">
-                  <Sparkles className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-yellow-600">Базовый шаблон</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">AI временно недоступен. Это шаблон — ты можешь его одобрить или попробовать сгенерировать через AI.</p>
-                  </div>
+              <div className="max-h-[55vh] overflow-y-auto rounded-xl border border-border bg-card">
+                <PlanPreview
+                  planData={aiPlanData}
+                  productName={selectedProduct?.name || 'Продукт'}
+                  duration={duration}
+                />
+              </div>
+
+              {!planApproved && (
+                <div className="flex flex-col gap-2">
                   <Button
-                    size="sm"
                     variant="outline"
-                    className="text-xs h-7 px-2 border-yellow-500/40 text-yellow-600 hover:bg-yellow-500/10 shrink-0"
-                    onClick={() => { setSummary(null); setIsFallback(false); generateSummary() }}
+                    className="w-full border-border text-xs h-9"
+                    onClick={generatePlan}
                     disabled={generatingSummary}
                   >
-                    {generatingSummary ? <Loader2 className="h-3 w-3 animate-spin" /> : <><RefreshCw className="h-3 w-3 mr-1" />AI</>}
+                    <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                    Перегенерировать
                   </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1 border-border" onClick={() => { setAiPlanData(null); setPlanApproved(false) }}>
+                      Изменить настройки
+                    </Button>
+                    <Button className="flex-1 gradient-accent text-white hover:opacity-90" onClick={() => setPlanApproved(true)}>
+                      <Check className="mr-2 h-4 w-4" />
+                      Одобрить план
+                    </Button>
+                  </div>
                 </div>
               )}
 
-              {/* Plan rendered beautifully */}
-              <div className="rounded-xl border border-border bg-card overflow-hidden">
-                <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-primary/5">
-                  <Sparkles className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-semibold text-foreground">
-                    {isFallback ? 'Шаблон плана прогрева' : 'План прогрева сформирован'}
-                  </span>
-                  {!isFallback && <Badge className="ml-auto text-[10px] bg-green-500/15 text-green-400 border-green-500/25">AI</Badge>}
-                </div>
-                <div className="p-4 max-h-[50vh] overflow-y-auto">
-                  <PlanRenderer markdown={summary} />
-                </div>
-              </div>
+              {planApproved && (
+                <Button onClick={createPlan} disabled={loading} className="w-full gradient-accent text-white hover:opacity-90">
+                  {loading
+                    ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Создание плана...</>
+                    : <><Check className="mr-2 h-4 w-4" /> Сохранить план прогрева</>
+                  }
+                </Button>
+              )}
             </>
-          ) : (
-            <div className="text-center py-6">
-              <Sparkles className="h-10 w-10 text-primary/40 mx-auto mb-3" />
-              <p className="text-muted-foreground text-sm">AI проанализирует все данные и создаст персональный план с учётом карты смыслов</p>
-            </div>
-          )}
-
-          {!summary && (
-            <Button onClick={generateSummary} disabled={generatingSummary} className="w-full gradient-accent text-white hover:opacity-90">
-              {generatingSummary
-                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Формируем стратегию...</>
-                : <><Sparkles className="mr-2 h-4 w-4" /> Создать план прогрева</>
-              }
-            </Button>
-          )}
-
-          {summary && !summaryApproved && (
-            <div className="flex flex-col gap-2">
-              {!isFallback && (
-                <Button
-                  variant="outline"
-                  className="w-full border-border text-xs h-9"
-                  onClick={() => { setSummary(null); setIsFallback(false); generateSummary() }}
-                  disabled={generatingSummary}
-                >
-                  <RefreshCw className="mr-2 h-3.5 w-3.5" />
-                  {generatingSummary ? 'Генерируем...' : 'Перегенерировать через AI'}
-                </Button>
-              )}
-              <div className="flex gap-2">
-                <Button variant="outline" className="flex-1 border-border" onClick={() => { setSummary(null); setIsFallback(false) }}>
-                  Изменить настройки
-                </Button>
-                <Button className="flex-1 gradient-accent text-white hover:opacity-90" onClick={() => setSummaryApproved(true)}>
-                  <Check className="mr-2 h-4 w-4" />
-                  Одобрить
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {summaryApproved && (
-            <Button onClick={createPlan} disabled={loading} className="w-full gradient-accent text-white hover:opacity-90">
-              {loading
-                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Создание плана...</>
-                : <><Check className="mr-2 h-4 w-4" /> Создать план прогрева</>
-              }
-            </Button>
           )}
         </div>
       )}
@@ -937,7 +805,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
           <Button
             onClick={() => {
-              if (step === 7) generateSummary()
+              if (step === 7) generatePlan()
               else setStep(step + 1)
             }}
             className="gradient-accent text-white hover:opacity-90"
@@ -946,7 +814,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
             {step === 7 ? (
               generatingSummary
                 ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Формируем...</>
-                : <><Sparkles className="mr-2 h-4 w-4" /> Создать план прогрева</>
+                : <><Sparkles className="mr-2 h-4 w-4" /> Создать план</>
             ) : (
               <>Далее <ChevronRight className="ml-1 h-4 w-4" /></>
             )}

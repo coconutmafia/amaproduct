@@ -113,20 +113,23 @@ export interface WarmupPlanData {
 
 export interface WarmupPhaseData {
   phase: WarmupPhase
-  days: string
-  goal: string
+  label?: string          // human-readable phase name (e.g. "ПРОГРЕВ НА НИШУ")
+  days?: string
+  goal?: string
+  task?: string
   daily_plan: DayPlan[]
 }
 
 export interface DayPlan {
   day: number
-  theme: string
-  format: ContentType[]
-  key_message: string
-  warmup_hook: string
-  cta: string
-  visual_mood: string
-  tov_note: string
+  meaning?: string        // AI-generated personalized meaning (new)
+  theme?: string          // legacy field
+  format?: ContentType[]  // legacy field
+  key_message?: string
+  warmup_hook?: string
+  cta?: string
+  visual_mood?: string
+  tov_note?: string
 }
 
 export type ContentType = 'post' | 'carousel' | 'reels' | 'stories' | 'live' | 'webinar' | 'email'
