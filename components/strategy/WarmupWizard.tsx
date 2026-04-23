@@ -265,36 +265,37 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       const decoder = new TextDecoder()
       let buffer = ''
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
+      const processBuffer = () => {
         const parts = buffer.split('\n\n')
         buffer = parts.pop() ?? ''
-
         for (const part of parts) {
           if (!part.startsWith('data: ')) continue
+          let data: { type: string; planData?: AIPlanData; message?: string }
           try {
-            const data = JSON.parse(part.slice(6)) as {
-              type: string
-              planData?: AIPlanData
-              message?: string
-            }
-
-            if (data.type === 'done' && data.planData) {
-              setAiPlanData(data.planData)
-              setStep(8)
-              return
-            }
-            if (data.type === 'error') {
-              throw new Error(data.message || 'AI недоступен')
-            }
-            // type === 'status' | 'progress' — ignore, just keep alive
-          } catch (parseErr) {
-            // skip malformed line
+            data = JSON.parse(part.slice(6))
+          } catch {
+            continue // skip malformed SSE line
+          }
+          if (data.type === 'done' && data.planData) {
+            setAiPlanData(data.planData)
+            setStep(8)
+            return true // signal: done
+          }
+          if (data.type === 'error') {
+            throw new Error(data.message || 'AI недоступен')
           }
         }
+        return false
+      }
+
+      while (true) {
+        const { done, value } = await reader.read()
+        // Process value BEFORE checking done — last chunk may arrive with done:true
+        if (value) {
+          buffer += decoder.decode(value, { stream: !done })
+          if (processBuffer()) return // got 'done' event
+        }
+        if (done) break
       }
 
       throw new Error('AI не вернул план')

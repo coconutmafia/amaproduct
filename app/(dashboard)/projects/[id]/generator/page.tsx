@@ -102,24 +102,22 @@ export default function GeneratorPage() {
 
       while (true) {
         const { done, value } = await reader.read()
-        if (done) break
+        // Process value BEFORE checking done — last chunk may arrive with done:true
+        if (value) {
+          buffer += decoder.decode(value, { stream: !done })
+          const parts = buffer.split('\n\n')
+          buffer = parts.pop() ?? ''
 
-        buffer += decoder.decode(value, { stream: true })
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() ?? ''
-
-        for (const part of parts) {
-          if (!part.startsWith('data: ')) continue
-          try {
-            const data = JSON.parse(part.slice(6)) as {
-              type: string
-              message?: string
-              delta?: string
+          let finished = false
+          for (const part of parts) {
+            if (!part.startsWith('data: ')) continue
+            let data: {
+              type: string; message?: string; delta?: string
               item?: GeneratedContent['item']
               structuredData?: Record<string, unknown>
               was_validated?: boolean
-              error?: string
             }
+            try { data = JSON.parse(part.slice(6)) } catch { continue }
 
             if (data.type === 'status') {
               setLoadingStatus(data.message ?? '')
@@ -131,18 +129,18 @@ export default function GeneratorPage() {
               setEditedText(data.item.body_text || accText)
               setApproved(false)
               setStreamingText('')
-              if (data.was_validated) {
-                toast.success('Контент сгенерирован и проверен Валидатором Смыслов ✓')
-              } else {
-                toast.success('Контент сгенерирован!')
-              }
+              toast.success(data.was_validated
+                ? 'Контент сгенерирован и проверен Валидатором Смыслов ✓'
+                : 'Контент сгенерирован!')
+              finished = true
+              break
             } else if (data.type === 'error') {
               throw new Error(data.message || 'Ошибка генерации')
             }
-          } catch (parseErr) {
-            // skip malformed SSE line
           }
+          if (finished) return
         }
+        if (done) break
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Ошибка создания контента')

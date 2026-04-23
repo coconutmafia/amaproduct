@@ -202,24 +202,29 @@ export default function ContentPlanPage() {
 
       while (true) {
         const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() ?? ''
-        for (const part of parts) {
-          if (!part.startsWith('data: ')) continue
-          try {
-            const data = JSON.parse(part.slice(6)) as { type: string; item?: ContentItem; message?: string }
+        // Process value BEFORE checking done — last chunk may arrive with done:true
+        if (value) {
+          buffer += decoder.decode(value, { stream: !done })
+          const parts = buffer.split('\n\n')
+          buffer = parts.pop() ?? ''
+          let finished = false
+          for (const part of parts) {
+            if (!part.startsWith('data: ')) continue
+            let data: { type: string; item?: ContentItem; message?: string }
+            try { data = JSON.parse(part.slice(6)) } catch { continue }
             if (data.type === 'done' && data.item) {
               setDays((prev) => prev.map((d) =>
                 d.day === day ? { ...d, items: [...d.items, data.item!] } : d
               ))
               toast.success(`${contentType} для дня ${day} сгенерирован`)
-              return
+              finished = true
+              break
             }
             if (data.type === 'error') throw new Error(data.message || 'Ошибка')
-          } catch { /* skip malformed */ }
+          }
+          if (finished) return
         }
+        if (done) break
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Ошибка создания контента')
