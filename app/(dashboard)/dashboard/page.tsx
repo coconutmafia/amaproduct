@@ -91,33 +91,37 @@ export default async function DashboardPage() {
           </Card>
         </Link>
 
-        <Card className="border-border bg-card">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/15">
-                <FileText className="h-6 w-6 text-blue-400" />
+        <Link href={projects && projects.length === 1 ? `/projects/${projects[0].id}/knowledge` : '/projects'}>
+          <Card className="border-border bg-card hover:border-blue-500/40 hover:bg-card/80 transition-all cursor-pointer">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/15">
+                  <FileText className="h-6 w-6 text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-3xl font-bold text-foreground">{totalMaterials || 0}</p>
+                  <p className="text-sm text-muted-foreground">Материалов</p>
+                </div>
               </div>
-              <div>
-                <p className="text-3xl font-bold text-foreground">{totalMaterials || 0}</p>
-                <p className="text-sm text-muted-foreground">Материалов</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card className="border-border bg-card">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-500/15">
-                <Sparkles className="h-6 w-6 text-green-400" />
+        <Link href={projects && projects.length === 1 ? `/projects/${projects[0].id}/generator` : '/projects'}>
+          <Card className="border-border bg-card hover:border-green-500/40 hover:bg-card/80 transition-all cursor-pointer">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-500/15">
+                  <Sparkles className="h-6 w-6 text-green-400" />
+                </div>
+                <div>
+                  <p className="text-3xl font-bold text-foreground">{totalContent || 0}</p>
+                  <p className="text-sm text-muted-foreground">Единиц контента</p>
+                </div>
               </div>
-              <div>
-                <p className="text-3xl font-bold text-foreground">{totalContent || 0}</p>
-                <p className="text-sm text-muted-foreground">Единиц контента</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {/* Projects */}
