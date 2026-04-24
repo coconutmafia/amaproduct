@@ -66,6 +66,15 @@ const PHASE_COLORS: Record<string, string> = {
 function PlanPreview({ planData, productName, duration }: { planData: AIPlanData; productName: string; duration: number }) {
   const [expandedPhase, setExpandedPhase] = useState<string | null>(null)
 
+  // Guard against incomplete/truncated AI output
+  if (!planData?.phases?.length) {
+    return (
+      <div className="py-8 text-center text-sm text-muted-foreground">
+        Данные плана неполные. Попробуй перегенерировать.
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -118,7 +127,7 @@ function PlanPreview({ planData, productName, duration }: { planData: AIPlanData
                       </tr>
                     </thead>
                     <tbody>
-                      {phase.daily_plan.map((d, i) => (
+                      {(phase.daily_plan ?? []).map((d, i) => (
                         <tr key={d.day} className={i % 2 === 0 ? 'bg-background/20' : ''}>
                           <td className="py-2 px-3 font-bold opacity-70">{d.day}</td>
                           <td className="py-2 px-3 text-foreground leading-relaxed">{d.meaning}</td>

@@ -8,8 +8,7 @@ import { REFERRAL_REWARDS } from '@/lib/generations'
 export async function GET() {
   try {
     const supabase = await createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    const user = session?.user
+    const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { data: stats } = await supabase
@@ -43,8 +42,7 @@ export async function POST(request: Request) {
     const { searchParams } = new URL(request.url)
     const action = searchParams.get('action')
     const supabase = await createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    const user = session?.user
+    const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     // ── Register referral / apply promo at signup ────

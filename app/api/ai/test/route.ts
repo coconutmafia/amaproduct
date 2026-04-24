@@ -7,8 +7,8 @@ export const maxDuration = 30
 export async function GET() {
   try {
     const supabase = await createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const keySet = !!process.env.ANTHROPIC_API_KEY
     const keyPrefix = process.env.ANTHROPIC_API_KEY?.slice(0, 12) + '...' || '(not set)'

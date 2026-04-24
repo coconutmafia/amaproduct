@@ -7,8 +7,7 @@ export const maxDuration = 300
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    const user = session?.user
+    const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const {
@@ -199,7 +198,7 @@ ${materialsText}` : '⚠️ Текстовые материалы не загр�
           // TCP-соединение остаётся живым пока идёт генерация
           const claudeStream = anthropic.messages.stream({
             model: MODEL,
-            max_tokens: 4000,
+            max_tokens: 8000,
             tools: [toolDef],
             tool_choice: { type: 'tool' as const, name: 'create_warmup_plan' },
             messages: [{ role: 'user', content: prompt }],
@@ -222,8 +221,15 @@ ${materialsText}` : '⚠️ Текстовые материалы не загр�
             send({ type: 'error', message: 'AI не вернул план. Попробуй ещё раз.' })
           } else {
             const planJson = JSON.stringify(toolBlock.input)
-            console.log(`[warmup-plan] Done, plan size=${planJson.length} bytes, stop_reason=${finalMessage.stop_reason}`)
-            send({ type: 'done', planData: toolBlock.input })
+            const input = toolBlock.input as { strategy_summary?: string; phases?: unknown[] }
+            // Validate plan completeness — truncated output (max_tokens hit) produces empty phases
+            if (!input.phases || !Array.isArray(input.phases) || input.phases.length === 0) {
+              console.error(`[warmup-plan] Incomplete plan (stop_reason=${finalMessage.stop_reason}), phases=${JSON.stringify(input.phases)}, size=${planJson.length}`)
+              send({ type: 'error', message: 'AI не успел сформировать полный план. Попробуй ещё раз.' })
+            } else {
+              console.log(`[warmup-plan] Done, phases=${input.phases.length}, plan size=${planJson.length} bytes, stop_reason=${finalMessage.stop_reason}`)
+              send({ type: 'done', planData: toolBlock.input })
+            }
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'AI недоступен'

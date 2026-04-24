@@ -5,8 +5,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 export async function DELETE() {
   try {
     const supabase = await createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    const user = session?.user
+    const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     // Need service role key to delete users

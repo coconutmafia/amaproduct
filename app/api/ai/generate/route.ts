@@ -10,8 +10,7 @@ export const maxDuration = 60
 export async function POST(request: Request) {
   // ── Pre-checks (auth, limits, project) before starting stream ──────────────
   const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  const user = session?.user
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const genCheck = await checkAndConsumeGeneration(user.id)
