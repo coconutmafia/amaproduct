@@ -351,8 +351,8 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     const timer = setInterval(() => setGeneratingSeconds((s) => s + 1), 1000)
 
     try {
-      // 1. Запускаем генерацию — сервер отвечает мгновенно с jobId
-      const startRes = await fetch('/api/ai/warmup-plan', {
+      // Простой синхронный запрос — сервер генерирует и возвращает готовый план
+      const res = await fetch('/api/ai/warmup-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -369,58 +369,17 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         }),
       })
 
-      if (!startRes.ok) {
-        const errData = await startRes.json().catch(() => ({}))
-        throw new Error((errData as { error?: string }).error || `Ошибка сервера ${startRes.status}`)
+      const data = await res.json() as { planData?: AIPlanData; error?: string }
+
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `Ошибка сервера ${res.status}`)
       }
 
-      const { jobId } = await startRes.json() as { jobId: string }
-      if (!jobId) throw new Error('Не удалось запустить генерацию')
-
-      // 2. Опрашиваем статус каждые 3 секунды — каждый запрос < 1 сек, таймаут невозможен
-      const MAX_POLLS = 100 // 100 × 3сек = 5 минут максимум
-      let serverErrors = 0
-      for (let i = 0; i < MAX_POLLS; i++) {
-        await new Promise((r) => setTimeout(r, 3000))
-
-        let pollRes: Response
-        try {
-          pollRes = await fetch(`/api/ai/warmup-plan/status?jobId=${jobId}`)
-        } catch {
-          // Сеть временно недоступна — продолжаем
-          continue
-        }
-
-        if (!pollRes.ok) {
-          serverErrors++
-          if (serverErrors >= 3) {
-            // 3 подряд ошибки сервера — что-то не так
-            const errData = await pollRes.json().catch(() => ({})) as { error?: string }
-            throw new Error(errData.error || `Ошибка сервера (${pollRes.status}). Примени миграцию 007 в Supabase.`)
-          }
-          continue
-        }
-        serverErrors = 0 // сбрасываем счётчик при успешном ответе
-
-        const poll = await pollRes.json() as {
-          status: 'pending' | 'done' | 'error'
-          planData?: AIPlanData
-          errorMsg?: string
-        }
-
-        if (poll.status === 'done' && poll.planData) {
-          setAiPlanData(poll.planData)
-          return
-        }
-
-        if (poll.status === 'error') {
-          throw new Error(poll.errorMsg || 'AI не смог создать план')
-        }
-
-        // status === 'pending' — продолжаем ждать
+      if (!data.planData) {
+        throw new Error('AI не вернул план. Попробуй ещё раз.')
       }
 
-      throw new Error('Превышено время ожидания. Попробуй ещё раз.')
+      setAiPlanData(data.planData)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'AI недоступен'
       toast.error(msg, { duration: 10000 })
@@ -486,7 +445,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   return (
     <div className="space-y-4">
       {/* Draft restore banner — показывается только если есть несохранённый черновик */}
-      {hasDraft && step === 1 && !selectedProductId && (
+      {hasDraft && step === 1 && (
         <div className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/8 px-4 py-3">
           <RotateCcw className="h-4 w-4 text-amber-400 shrink-0" />
           <div className="flex-1 min-w-0">
