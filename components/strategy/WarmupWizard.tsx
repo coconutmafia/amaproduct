@@ -237,6 +237,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     setGeneratingSeconds(0)
     setAiPlanData(null)
     setPlanApproved(false)
+    setStep(8) // сразу переходим на шаг 8 — показываем loading screen с таймером
 
     // Счётчик секунд — показываем пользователю что план создаётся
     const timer = setInterval(() => setGeneratingSeconds((s) => s + 1), 1000)
@@ -306,6 +307,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'AI недоступен'
       toast.error(msg, { duration: 10000 })
+      setStep(7) // при ошибке возвращаем на шаг 7 чтобы пользователь мог повторить
     } finally {
       clearInterval(timer)
       setGeneratingSummary(false)
