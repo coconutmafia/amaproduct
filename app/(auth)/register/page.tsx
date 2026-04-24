@@ -121,8 +121,8 @@ function RegisterForm() {
       <div className="flex flex-1 flex-col items-center justify-center p-6">
         <div className="w-full max-w-md space-y-6">
 
-          {/* Logo */}
-          <div className="text-center space-y-2">
+          {/* Logo — кликабельный, ведёт на главную */}
+          <Link href="/" className="block text-center space-y-2 hover:opacity-80 transition-opacity">
             <div className="flex items-center justify-center gap-3 mb-4">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl gradient-accent shadow-xl shadow-primary/30">
                 <Sparkles className="h-7 w-7 text-white" />
@@ -130,7 +130,7 @@ function RegisterForm() {
             </div>
             <h1 className="text-3xl font-bold">AMAproduct</h1>
             <p className="text-muted-foreground">Твой личный AI SMM-щик для запусков</p>
-          </div>
+          </Link>
 
           {/* Referral banner */}
           {refCode && (

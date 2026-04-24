@@ -111,7 +111,7 @@ export function SettingsClient({ userId, currentAiName }: Props) {
       if (!res.ok) throw new Error(data.error)
       await supabase.auth.signOut()
       toast.success('Аккаунт удалён')
-      router.push('/login')
+      router.push('/')
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Ошибка удаления')
       setDeleting(false)

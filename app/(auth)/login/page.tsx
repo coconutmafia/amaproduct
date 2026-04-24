@@ -46,8 +46,8 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md space-y-6">
-        {/* Logo */}
-        <div className="text-center space-y-2">
+        {/* Logo — кликабельный, ведёт на главную */}
+        <Link href="/" className="block text-center space-y-2 hover:opacity-80 transition-opacity">
           <div className="flex items-center justify-center gap-3 mb-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl gradient-accent shadow-lg shadow-primary/25">
               <Sparkles className="h-6 w-6 text-white" />
@@ -55,7 +55,7 @@ export default function LoginPage() {
           </div>
           <h1 className="text-2xl font-bold text-foreground">AMAproduct</h1>
           <p className="text-sm text-muted-foreground">AI-продюсер для блогеров</p>
-        </div>
+        </Link>
 
         <Card className="border-border bg-card shadow-xl">
           <CardHeader className="space-y-1 pb-4">

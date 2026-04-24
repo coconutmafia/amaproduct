@@ -49,7 +49,7 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
     } catch {
       // ignore
     }
-    window.location.href = '/login'
+    window.location.href = '/'
   }, [])
 
   const navItems = [
