@@ -231,19 +231,19 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     return 'Без воронки — прямые продажи'
   }
 
-  // ── Generate plan via AI ──────────────────────────────────────────────────
+  // ── Generate plan via AI (polling — no SSE, no browser timeout) ──────────
   async function generatePlan() {
     setGeneratingSummary(true)
     setGeneratingSeconds(0)
     setAiPlanData(null)
     setPlanApproved(false)
-    setStep(8) // сразу переходим на шаг 8 — показываем loading screen с таймером
+    setStep(8) // сразу показываем loading screen с таймером
 
-    // Счётчик секунд — показываем пользователю что план создаётся
     const timer = setInterval(() => setGeneratingSeconds((s) => s + 1), 1000)
 
     try {
-      const res = await fetch('/api/ai/warmup-plan', {
+      // 1. Запускаем генерацию — сервер отвечает мгновенно с jobId
+      const startRes = await fetch('/api/ai/warmup-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -260,54 +260,45 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         }),
       })
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
-        throw new Error((errData as { error?: string }).error || `Ошибка AI ${res.status}`)
+      if (!startRes.ok) {
+        const errData = await startRes.json().catch(() => ({}))
+        throw new Error((errData as { error?: string }).error || `Ошибка сервера ${startRes.status}`)
       }
 
-      const reader = res.body?.getReader()
-      if (!reader) throw new Error('Нет потока данных')
+      const { jobId } = await startRes.json() as { jobId: string }
+      if (!jobId) throw new Error('Не удалось запустить генерацию')
 
-      const decoder = new TextDecoder()
-      let buffer = ''
+      // 2. Опрашиваем статус каждые 3 секунды — каждый запрос < 1 сек, таймаут невозможен
+      const MAX_POLLS = 120 // 120 × 3сек = 6 минут максимум
+      for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise((r) => setTimeout(r, 3000))
 
-      const processBuffer = (): boolean => {
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() ?? ''
-        for (const part of parts) {
-          if (!part.startsWith('data: ')) continue
-          let data: { type: string; planData?: AIPlanData; message?: string }
-          try { data = JSON.parse(part.slice(6)) } catch { continue }
-          if (data.type === 'done' && data.planData) {
-            setAiPlanData(data.planData)
-            setStep(8)
-            return true
-          }
-          if (data.type === 'error') throw new Error(data.message || 'AI недоступен')
+        const pollRes = await fetch(`/api/ai/warmup-plan/status?jobId=${jobId}`)
+        if (!pollRes.ok) continue // временная ошибка сети — продолжаем
+
+        const poll = await pollRes.json() as {
+          status: 'pending' | 'done' | 'error'
+          planData?: AIPlanData
+          errorMsg?: string
         }
-        return false
-      }
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (value) {
-          buffer += decoder.decode(value, { stream: !done })
-          if (processBuffer()) return
+        if (poll.status === 'done' && poll.planData) {
+          setAiPlanData(poll.planData)
+          return
         }
-        if (done) break
+
+        if (poll.status === 'error') {
+          throw new Error(poll.errorMsg || 'AI не смог создать план')
+        }
+
+        // status === 'pending' — продолжаем ждать
       }
 
-      // Дообрабатываем остаток — последний чанк может не кончаться \n\n
-      if (buffer.trim()) {
-        buffer += '\n\n'
-        if (processBuffer()) return
-      }
-
-      throw new Error('AI не вернул план. Попробуй ещё раз.')
+      throw new Error('Превышено время ожидания. Попробуй ещё раз.')
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'AI недоступен'
       toast.error(msg, { duration: 10000 })
-      setStep(7) // при ошибке возвращаем на шаг 7 чтобы пользователь мог повторить
+      setStep(7) // при ошибке возвращаем на шаг 7
     } finally {
       clearInterval(timer)
       setGeneratingSummary(false)
