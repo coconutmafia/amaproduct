@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -24,6 +24,8 @@ import {
   Loader2,
   Upload,
   RefreshCw,
+  Save,
+  RotateCcw,
 } from 'lucide-react'
 import type { Product, Funnel } from '@/types'
 
@@ -218,6 +220,113 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
   const selectedProduct = products.find((p) => p.id === selectedProductId)
 
+  // ── Draft: auto-save to localStorage ─────────────────────────────────────
+  const DRAFT_KEY = `warmup_draft_${projectId}`
+  const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null)
+  const [hasDraft, setHasDraft] = useState(false)
+  const [draftRestored, setDraftRestored] = useState(false)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Check for existing draft on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY)
+      if (raw) {
+        const draft = JSON.parse(raw)
+        if (draft?.step && draft.step > 1) setHasDraft(true)
+      }
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Collect all wizard state into one object
+  const getDraftState = useCallback(() => ({
+    step,
+    selectedProductId,
+    duration,
+    startDate,
+    coldFunnelId,
+    coldFunnelCustom,
+    coldAudienceType,
+    warmAudienceTypes,
+    freeEventName,
+    freeEventDate,
+    freeEventTypes,
+    paidEventName,
+    paidEventDate,
+    paidEventTypes,
+    useCases,
+    extraCasesText,
+    selectedHooks,
+    extraHooks,
+    competitorNotes,
+  }), [
+    step, selectedProductId, duration, startDate,
+    coldFunnelId, coldFunnelCustom, coldAudienceType,
+    warmAudienceTypes, freeEventName, freeEventDate, freeEventTypes,
+    paidEventName, paidEventDate, paidEventTypes,
+    useCases, extraCasesText, selectedHooks, extraHooks, competitorNotes,
+  ])
+
+  // Auto-save with 1.5s debounce after any change
+  useEffect(() => {
+    if (draftRestored) return // не сохраняем пока только что восстановили
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => {
+      try {
+        const state = getDraftState()
+        if (state.step <= 1 && !state.selectedProductId) return // не сохраняем пустой черновик
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...state, savedAt: new Date().toISOString() }))
+        setDraftSavedAt(new Date())
+        setHasDraft(true)
+      } catch { /* ignore */ }
+    }, 1500)
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [getDraftState])
+
+  function restoreDraft() {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY)
+      if (!raw) return
+      const d = JSON.parse(raw)
+      if (d.step) setStep(d.step > 7 ? 7 : d.step)
+      if (d.selectedProductId) setSelectedProductId(d.selectedProductId)
+      if (d.duration) setDuration(d.duration)
+      if (d.startDate !== undefined) setStartDate(d.startDate)
+      if (d.coldFunnelId !== undefined) setColdFunnelId(d.coldFunnelId)
+      if (d.coldFunnelCustom !== undefined) setColdFunnelCustom(d.coldFunnelCustom)
+      if (d.coldAudienceType) setColdAudienceType(d.coldAudienceType)
+      if (d.warmAudienceTypes) setWarmAudienceTypes(d.warmAudienceTypes)
+      if (d.freeEventName !== undefined) setFreeEventName(d.freeEventName)
+      if (d.freeEventDate !== undefined) setFreeEventDate(d.freeEventDate)
+      if (d.freeEventTypes) setFreeEventTypes(d.freeEventTypes)
+      if (d.paidEventName !== undefined) setPaidEventName(d.paidEventName)
+      if (d.paidEventDate !== undefined) setPaidEventDate(d.paidEventDate)
+      if (d.paidEventTypes) setPaidEventTypes(d.paidEventTypes)
+      if (d.useCases !== undefined) setUseCases(d.useCases)
+      if (d.extraCasesText !== undefined) setExtraCasesText(d.extraCasesText)
+      if (d.selectedHooks) setSelectedHooks(d.selectedHooks)
+      if (d.extraHooks !== undefined) setExtraHooks(d.extraHooks)
+      if (d.competitorNotes !== undefined) setCompetitorNotes(d.competitorNotes)
+      setDraftRestored(true)
+      setTimeout(() => setDraftRestored(false), 2000)
+      setHasDraft(false)
+      toast.success('Черновик восстановлен!')
+    } catch {
+      toast.error('Не удалось восстановить черновик')
+    }
+  }
+
+  function clearDraft() {
+    try {
+      localStorage.removeItem(DRAFT_KEY)
+      setHasDraft(false)
+      setDraftSavedAt(null)
+      toast.success('Черновик удалён')
+    } catch { /* ignore */ }
+  }
+
   function toggleWarmType(value: string) {
     setWarmAudienceTypes((prev) =>
       prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
@@ -343,6 +452,10 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         throw new Error((d as { error?: string }).error || `Ошибка ${res.status}`)
       }
       const { planId } = await res.json() as { planId: string }
+      // Черновик больше не нужен — план создан
+      try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
+      setHasDraft(false)
+      setDraftSavedAt(null)
       toast.success('План прогрева создан!')
       router.refresh()
       onComplete?.(planId)
@@ -355,6 +468,35 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
   return (
     <div className="space-y-4">
+      {/* Draft restore banner — показывается только если есть несохранённый черновик */}
+      {hasDraft && step === 1 && !selectedProductId && (
+        <div className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/8 px-4 py-3">
+          <RotateCcw className="h-4 w-4 text-amber-400 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-amber-300">Найден незавершённый черновик</p>
+            <p className="text-[10px] text-amber-400/70">Продолжить с того места где остановился?</p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <Button
+              size="sm"
+              className="h-7 text-xs bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30"
+              variant="outline"
+              onClick={restoreDraft}
+            >
+              Восстановить
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs text-amber-500/60 hover:text-amber-400"
+              onClick={clearDraft}
+            >
+              Удалить
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Steps indicator */}
       <div className="flex items-center overflow-x-auto py-2 gap-0">
         {STEPS.map((s, i) => (
@@ -375,8 +517,17 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         ))}
       </div>
 
-      <div className="text-sm font-medium text-foreground">
-        Шаг {step}: {STEPS[step - 1]?.title}
+      {/* Step title + draft saved indicator */}
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-medium text-foreground">
+          Шаг {step}: {STEPS[step - 1]?.title}
+        </div>
+        {draftSavedAt && step > 1 && step < 8 && (
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60">
+            <Save className="h-3 w-3" />
+            <span>Черновик сохранён</span>
+          </div>
+        )}
       </div>
 
       {/* Step 1: Product */}
