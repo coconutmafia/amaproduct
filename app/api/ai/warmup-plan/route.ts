@@ -1,5 +1,6 @@
 import { NextResponse, after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { anthropic, MODEL } from '@/lib/ai/client'
 
 export const maxDuration = 300
@@ -45,9 +46,8 @@ export async function POST(request: Request) {
     // ── Run generation in background (after response is sent) ───────────────
     after(async () => {
       try {
-        // Need a fresh Supabase client — after() runs after response
-        const { createClient: createServerClient } = await import('@/lib/supabase/server')
-        const bg = await createServerClient()
+        // Admin client не зависит от cookies — работает в after() после отправки ответа
+        const bg = createAdminClient()
 
         // Load system knowledge vault
         let systemKnowledgeText = ''
@@ -247,12 +247,11 @@ ${materialsText}` : '⚠️ Текстовые материалы не загр�
         }).eq('id', jobId)
 
       } catch (err) {
-        // Try to update job with error
+        // Mark job as error — admin client надёжен в любом контексте
         try {
-          const { createClient: createServerClient } = await import('@/lib/supabase/server')
-          const bg = await createServerClient()
+          const errClient = createAdminClient()
           const msg = err instanceof Error ? err.message : 'Ошибка генерации'
-          await bg.from('warmup_jobs').update({
+          await errClient.from('warmup_jobs').update({
             status: 'error',
             error_msg: msg,
           }).eq('id', jobId)

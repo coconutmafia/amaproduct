@@ -19,9 +19,17 @@ export async function GET(request: Request) {
       .select('status, plan_data, error_msg')
       .eq('id', jobId)
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
 
-    if (error || !job) {
+    if (error) {
+      // Таблица не существует (migration не применена) — сообщаем явно
+      const msg = error.message?.includes('does not exist')
+        ? 'Таблица warmup_jobs не найдена. Примени миграцию 007 в Supabase SQL Editor.'
+        : error.message
+      return NextResponse.json({ error: msg }, { status: 500 })
+    }
+
+    if (!job) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 

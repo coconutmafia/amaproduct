@@ -378,12 +378,29 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       if (!jobId) throw new Error('Не удалось запустить генерацию')
 
       // 2. Опрашиваем статус каждые 3 секунды — каждый запрос < 1 сек, таймаут невозможен
-      const MAX_POLLS = 120 // 120 × 3сек = 6 минут максимум
+      const MAX_POLLS = 100 // 100 × 3сек = 5 минут максимум
+      let serverErrors = 0
       for (let i = 0; i < MAX_POLLS; i++) {
         await new Promise((r) => setTimeout(r, 3000))
 
-        const pollRes = await fetch(`/api/ai/warmup-plan/status?jobId=${jobId}`)
-        if (!pollRes.ok) continue // временная ошибка сети — продолжаем
+        let pollRes: Response
+        try {
+          pollRes = await fetch(`/api/ai/warmup-plan/status?jobId=${jobId}`)
+        } catch {
+          // Сеть временно недоступна — продолжаем
+          continue
+        }
+
+        if (!pollRes.ok) {
+          serverErrors++
+          if (serverErrors >= 3) {
+            // 3 подряд ошибки сервера — что-то не так
+            const errData = await pollRes.json().catch(() => ({})) as { error?: string }
+            throw new Error(errData.error || `Ошибка сервера (${pollRes.status}). Примени миграцию 007 в Supabase.`)
+          }
+          continue
+        }
+        serverErrors = 0 // сбрасываем счётчик при успешном ответе
 
         const poll = await pollRes.json() as {
           status: 'pending' | 'done' | 'error'
