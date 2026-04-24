@@ -27,7 +27,11 @@ export async function POST(request: Request) {
       .eq('id', projectId)
       .eq('owner_id', user.id)
       .single()
-    if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    if (!project) {
+      console.error(`[warmup-plan] Project not found: id=${projectId} user=${user.id}`)
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    }
+    console.log(`[warmup-plan] Starting for project="${project.name}" user=${user.id} duration=${duration}`)
 
     // ── Load system knowledge vault ──────────────────────────────────────────
     let systemKnowledgeText = ''
@@ -220,6 +224,7 @@ ${materialsText}` : '⚠️ Текстовые материалы не загр�
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'AI недоступен'
+          console.error('[warmup-plan] Stream error:', msg)
           send({ type: 'error', message: msg })
         } finally {
           controller.close()

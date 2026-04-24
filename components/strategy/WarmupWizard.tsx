@@ -385,16 +385,15 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         buffer = parts.pop() ?? ''
         for (const part of parts) {
           if (!part.startsWith('data: ')) continue
+          let data: { type: string; planData?: AIPlanData; message?: string }
           try {
-            const data = JSON.parse(part.slice(6)) as {
-              type: string; planData?: AIPlanData; message?: string
-            }
-            if (data.type === 'done' && data.planData) return data.planData
-            if (data.type === 'error') throw new Error(data.message || 'AI недоступен')
-          } catch (e) {
-            if (e instanceof Error && e.message !== 'AI недоступен') continue
-            throw e
+            data = JSON.parse(part.slice(6))
+          } catch {
+            continue // невалидный JSON — пропускаем
           }
+          if (data.type === 'done' && data.planData) return data.planData
+          if (data.type === 'error') throw new Error(data.message || 'AI недоступен')
+          // status/progress — просто игнорируем
         }
         return null
       }
