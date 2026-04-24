@@ -43,12 +43,23 @@ const PHASE_LABELS: Record<string, string> = {
 
 export function WarmupTimeline({ planData, projectId }: WarmupTimelineProps) {
   const [selectedDay, setSelectedDay] = useState<number | null>(null)
-  const phases = planData.warmup_plan.phases
+
+  // Защита от старых/неполных данных плана — любое отсутствующее поле не крашит страницу
+  const phases = planData?.warmup_plan?.phases ?? []
 
   const allDays = phases.flatMap((p) =>
-    p.daily_plan.map((d) => ({ ...d, phase: p.phase as WarmupPhase }))
+    (p.daily_plan ?? []).map((d) => ({ ...d, phase: p.phase as WarmupPhase }))
   )
   const selectedDayData = allDays.find((d) => d.day === selectedDay)
+
+  // Если данные плана повреждены — показываем заглушку вместо краша
+  if (!planData?.warmup_plan?.phases) {
+    return (
+      <p className="text-xs text-muted-foreground py-2">
+        Данные плана недоступны. Создайте новый план.
+      </p>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -58,10 +69,10 @@ export function WarmupTimeline({ planData, projectId }: WarmupTimelineProps) {
           <div key={phase.phase} className="space-y-1.5">
             <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-lg border text-xs font-semibold ${PHASE_COLORS[phase.phase] || 'bg-secondary text-muted-foreground border-border'}`}>
               {PHASE_LABELS[phase.phase] || phase.phase}
-              <span className="opacity-60 font-normal">·  {phase.daily_plan.length} дней</span>
+              <span className="opacity-60 font-normal">·  {phase.daily_plan?.length ?? 0} дней</span>
             </div>
             <div className="flex flex-wrap gap-1">
-              {phase.daily_plan.map((day) => (
+              {(phase.daily_plan ?? []).map((day) => (
                 <button
                   key={day.day}
                   onClick={() => setSelectedDay(selectedDay === day.day ? null : day.day)}
