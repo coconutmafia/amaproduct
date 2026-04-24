@@ -187,6 +187,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [generatingSummary, setGeneratingSummary] = useState(false)
+  const [generatingSeconds, setGeneratingSeconds] = useState(0)
   const [aiPlanData, setAiPlanData] = useState<AIPlanData | null>(null)
   const [planApproved, setPlanApproved] = useState(false)
 
@@ -233,8 +234,13 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   // ── Generate plan via AI ──────────────────────────────────────────────────
   async function generatePlan() {
     setGeneratingSummary(true)
+    setGeneratingSeconds(0)
     setAiPlanData(null)
     setPlanApproved(false)
+
+    // Счётчик секунд — показываем пользователю что план создаётся
+    const timer = setInterval(() => setGeneratingSeconds((s) => s + 1), 1000)
+
     try {
       const res = await fetch('/api/ai/warmup-plan', {
         method: 'POST',
@@ -301,6 +307,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       const msg = err instanceof Error ? err.message : 'AI недоступен'
       toast.error(msg, { duration: 10000 })
     } finally {
+      clearInterval(timer)
       setGeneratingSummary(false)
     }
   }
@@ -752,11 +759,31 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         <div className="space-y-4">
           {/* Loading state */}
           {generatingSummary && (
-            <div className="flex flex-col items-center justify-center py-10 gap-3">
-              <Loader2 className="h-8 w-8 text-primary animate-spin" />
-              <p className="text-sm text-muted-foreground text-center">
-                AI анализирует материалы проекта<br />и составляет персональный план...
-              </p>
+            <div className="flex flex-col items-center justify-center py-10 gap-4">
+              <div className="relative">
+                <Loader2 className="h-10 w-10 text-primary animate-spin" />
+                <Sparkles className="h-4 w-4 text-primary/60 absolute -top-1 -right-1 animate-pulse" />
+              </div>
+              <div className="text-center space-y-1">
+                <p className="text-sm font-medium text-foreground">
+                  {generatingSeconds < 10
+                    ? 'AI анализирует материалы проекта...'
+                    : generatingSeconds < 30
+                    ? 'Составляю персональный план прогрева...'
+                    : generatingSeconds < 60
+                    ? 'Прописываю смыслы для каждого дня...'
+                    : 'Финализирую план... почти готово'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {generatingSeconds > 0 ? `${generatingSeconds} сек` : 'Запускаю...'}
+                  {generatingSeconds > 20 && ' · план готовится, не закрывай страницу'}
+                </p>
+              </div>
+              {generatingSeconds > 30 && (
+                <div className="rounded-lg border border-border bg-secondary/30 px-4 py-2 text-xs text-muted-foreground text-center max-w-[260px]">
+                  Подробный план на {duration} дней требует времени — обычно 1–2 минуты
+                </div>
+              )}
             </div>
           )}
 
