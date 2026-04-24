@@ -33,58 +33,44 @@ export async function POST(request: Request) {
     let systemKnowledgeText = ''
     try {
       const { data: sysChunks } = await supabase
-        .from('knowledge_chunks')
-        .select('chunk_text')
-        .order('created_at', { ascending: false })
-        .limit(10)
+        .from('knowledge_chunks').select('chunk_text')
+        .order('created_at', { ascending: false }).limit(10)
       if (sysChunks && sysChunks.length > 0) {
         systemKnowledgeText = sysChunks.map(c => c.chunk_text as string).join('\n\n').slice(0, 3000)
       } else {
         const { data: vaultItems } = await supabase
-          .from('knowledge_vault')
-          .select('raw_content, content_type, title')
-          .eq('processing_status', 'ready')
-          .limit(5)
+          .from('knowledge_vault').select('raw_content, content_type, title')
+          .eq('processing_status', 'ready').limit(5)
         if (vaultItems && vaultItems.length > 0) {
-          systemKnowledgeText = vaultItems
-            .filter(v => v.raw_content)
-            .map(v => `[${v.content_type}] ${v.title}:\n${(v.raw_content ?? '').slice(0, 600)}`)
-            .join('\n\n')
+          systemKnowledgeText = vaultItems.filter(v => v.raw_content)
+            .map(v => `[${v.content_type}] ${v.title}:\n${(v.raw_content ?? '').slice(0, 600)}`).join('\n\n')
         }
       }
     } catch { /* vault unavailable */ }
 
     // ── Load project materials ───────────────────────────────────────────────
     const { data: chunks } = await supabase
-      .from('project_chunks')
-      .select('chunk_text, material_type')
-      .eq('project_id', projectId)
-      .limit(30)
+      .from('project_chunks').select('chunk_text, material_type')
+      .eq('project_id', projectId).limit(30)
 
     let materialsText = ''
     if (chunks && chunks.length > 0) {
       materialsText = chunks.map(c => `[${c.material_type}]: ${c.chunk_text}`).join('\n\n').slice(0, 5000)
     } else {
       const { data: rawMaterials } = await supabase
-        .from('project_materials')
-        .select('title, material_type, raw_content')
-        .eq('project_id', projectId)
-        .not('raw_content', 'is', null)
-        .limit(10)
+        .from('project_materials').select('title, material_type, raw_content')
+        .eq('project_id', projectId).not('raw_content', 'is', null).limit(10)
       if (rawMaterials && rawMaterials.length > 0) {
         materialsText = rawMaterials
-          .map(m => `[${m.material_type}] ${m.title}:\n${(m.raw_content ?? '').slice(0, 500)}`)
-          .join('\n\n')
+          .map(m => `[${m.material_type}] ${m.title}:\n${(m.raw_content ?? '').slice(0, 500)}`).join('\n\n')
       }
     }
 
     const { data: materials } = await supabase
-      .from('project_materials')
-      .select('title, material_type, processing_status')
+      .from('project_materials').select('title, material_type, processing_status')
       .eq('project_id', projectId)
-    const materialsList = materials && materials.length > 0
-      ? materials.map(m => `• ${m.material_type}: ${m.title} (${m.processing_status})`).join('\n')
-      : ''
+    const materialsList = materials?.length
+      ? materials.map(m => `• ${m.material_type}: ${m.title} (${m.processing_status})`).join('\n') : ''
 
     // ── Phase lengths ────────────────────────────────────────────────────────
     const p1 = Math.round(duration * 0.25)
@@ -93,7 +79,6 @@ export async function POST(request: Request) {
     const p4 = duration - p1 - p2 - p3
     const hooksText = hooks.length ? hooks.join(', ') : 'не выбраны'
 
-    // ── Prompt ───────────────────────────────────────────────────────────────
     const prompt = `Ты — AI-продюсер запусков, работающий по методологии конкретного эксперта-маркетолога.
 Создай ПЕРСОНАЛИЗИРОВАННЫЙ план прогрева — не шаблон, а конкретный план для этого блогера, его ниши и его продукта.
 
@@ -120,104 +105,140 @@ ${project.instagram_url ? `Instagram: ${project.instagram_url}` : ''}
 ${project.telegram_url ? `Telegram: ${project.telegram_url}` : ''}
 
 ${materialsList ? `═══════════════════════════════
-ЗАГРУЖЕННЫЕ МАТЕРИАЛЫ (список)
+ЗАГРУЖЕННЫЕ МАТЕРИАЛЫ
 ═══════════════════════════════
 ${materialsList}` : ''}
 
 ${materialsText ? `═══════════════════════════════
-СОДЕРЖИМОЕ МАТЕРИАЛОВ (используй как основу для смыслов)
+СОДЕРЖИМОЕ МАТЕРИАЛОВ
 ═══════════════════════════════
-${materialsText}` : '⚠️ Текстовые материалы не загружены или ещё обрабатываются. Составь план на основе ниши и продукта.'}
+${materialsText}` : '⚠️ Текстовые материалы не загружены. Составь план на основе ниши и продукта.'}
 
 ═══════════════════════════════
-МЕТОДОЛОГИЯ (строго соблюдай)
+МЕТОДОЛОГИЯ
 ═══════════════════════════════
 
 ФАЗА 1 — ПРОГРЕВ НА НИШУ (дни 1–${p1}, ${p1} дней):
 Задача: продать ИДЕЮ ниши. Человек ещё на уровне «а мне это вообще надо?»
-Не про блогера, не про продукт — про то, почему ЭТА ТЕМА важна для жизни человека.
 ВАЖНО: смыслы должны быть конкретно про нишу «${project.niche || productName}».
 
 ФАЗА 2 — ПРОГРЕВ НА ЭКСПЕРТА (дни ${p1 + 1}–${p1 + p2}, ${p2} дней):
 Задача: ответить на вопрос «почему именно этот человек?»
-Раскрываем: история прихода в нишу, через что прошли, какие ошибки видели, с кем работали, закономерности, система мышления, кейсы.
-Используй конкретные детали из материалов проекта если они есть.
+Раскрываем: история, опыт, ошибки, кейсы, система мышления.
 
 ФАЗА 3 — ПРОГРЕВ НА ПРОДУКТ (дни ${p1 + p2 + 1}–${p1 + p2 + p3}, ${p3} дней):
 Задача: продать логику продукта «${productName}», убрать страх непонятности.
-Раскрываем: как устроен процесс, что внутри, этапы работы, логика метода, кому подходит / не подходит.
 
-ФАЗА 4 — ОТРАБОТКА ВОЗРАЖЕНИЙ И ДОЖИМЫ (дни ${p1 + p2 + p3 + 1}–${duration}, ${p4} дней):
-Задача: убрать последнее сопротивление.
-Работа: возражения, страхи, кейсы похожих людей, дедлайн, FOMO, FAQ, живые отзывы.
+ФАЗА 4 — ОТРАБОТКА ВОЗРАЖЕНИЙ (дни ${p1 + p2 + p3 + 1}–${duration}, ${p4} дней):
+Задача: убрать последнее сопротивление. Возражения, FOMO, дедлайн, FAQ.
 
 ═══════════════════════════════
-ПРАВИЛА ГЕНЕРАЦИИ
+ПРАВИЛА
 ═══════════════════════════════
-1. Каждый смысл — КОНКРЕТНЫЙ для этой ниши и этого продукта. Ни одного шаблонного.
-2. Используй реальные данные из материалов: конкретные боли аудитории, реальные результаты, специфику ниши.
-3. НЕ ПИШИ: «Провокационный вопрос», «5 признаков что тебе нужно X», «Пост-диагностика». Это шаблоны.
-4. Каждый день = 1 конкретный смысл (о чём говорить, что именно раскрывать).
-5. Никаких форматов контента (не пиши пост/сторис/рилс).
-6. Смыслы должны звучать как реальная тема для контента, а не как описание задачи.
-7. Каждый смысл — конкретный, ёмкий, без воды.
+1. Каждый смысл — конкретный для этой ниши и продукта, ни одного шаблонного.
+2. Используй данные из материалов проекта.
+3. Каждый день = 1 конкретный смысл.
+4. Никаких форматов контента (не пиши пост/сторис/рилс).
 
-Используй инструмент create_warmup_plan чтобы вернуть план.
-Заполни все фазы полностью — каждый день от 1 до ${duration} должен быть в daily_plan соответствующей фазы.`
+Используй инструмент create_warmup_plan.
+Заполни все дни от 1 до ${duration}.`
 
-    // ── Call Claude with Tool Use — synchronous, returns complete JSON ────────
-    const response = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 4000,
-      tools: [{
-        name: 'create_warmup_plan',
-        description: 'Создаёт структурированный план прогрева',
-        input_schema: {
-          type: 'object' as const,
-          properties: {
-            strategy_summary: { type: 'string' },
-            phases: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  phase: { type: 'string' },
-                  label: { type: 'string' },
-                  days_count: { type: 'number' },
-                  task: { type: 'string' },
-                  daily_plan: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        day: { type: 'number' },
-                        meaning: { type: 'string' },
-                      },
-                      required: ['day', 'meaning'],
+    const toolDef = {
+      name: 'create_warmup_plan',
+      description: 'Создаёт структурированный план прогрева',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          strategy_summary: { type: 'string' },
+          phases: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                phase: { type: 'string' },
+                label: { type: 'string' },
+                days_count: { type: 'number' },
+                task: { type: 'string' },
+                daily_plan: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      day: { type: 'number' },
+                      meaning: { type: 'string' },
                     },
+                    required: ['day', 'meaning'],
                   },
                 },
-                required: ['phase', 'label', 'days_count', 'task', 'daily_plan'],
               },
+              required: ['phase', 'label', 'days_count', 'task', 'daily_plan'],
             },
           },
-          required: ['strategy_summary', 'phases'],
         },
-      }],
-      tool_choice: { type: 'tool' as const, name: 'create_warmup_plan' },
-      messages: [{ role: 'user', content: prompt }],
-    })
-
-    const toolBlock = response.content.find((b) => b.type === 'tool_use')
-    if (!toolBlock || toolBlock.type !== 'tool_use') {
-      return NextResponse.json({ error: 'AI не вернул план. Попробуй ещё раз.' }, { status: 500 })
+        required: ['strategy_summary', 'phases'],
+      },
     }
 
-    return NextResponse.json({ planData: toolBlock.input })
+    // ── Stream Claude response — каждый чанк сразу летит клиенту ────────────
+    // Это держит TCP-соединение живым на мобильных сетях (убивают при 60+ сек тишины)
+    const encoder = new TextEncoder()
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (data: Record<string, unknown>) =>
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+
+        try {
+          send({ type: 'status', message: 'Составляю план прогрева...' })
+
+          // Стримим каждый чанк Claude → клиент видит данные сразу
+          // TCP-соединение остаётся живым пока идёт генерация
+          const claudeStream = anthropic.messages.stream({
+            model: MODEL,
+            max_tokens: 4000,
+            tools: [toolDef],
+            tool_choice: { type: 'tool' as const, name: 'create_warmup_plan' },
+            messages: [{ role: 'user', content: prompt }],
+          })
+
+          // Каждый входящий чанк — отправляем heartbeat клиенту
+          // Данные текут непрерывно → мобильная сеть не закрывает соединение
+          for await (const chunk of claudeStream) {
+            if (chunk.type === 'content_block_delta') {
+              // Отправляем фактический прогресс генерации
+              send({ type: 'progress' })
+            }
+          }
+
+          const finalMessage = await claudeStream.finalMessage()
+          const toolBlock = finalMessage.content.find(b => b.type === 'tool_use')
+
+          if (!toolBlock || toolBlock.type !== 'tool_use') {
+            send({ type: 'error', message: 'AI не вернул план. Попробуй ещё раз.' })
+          } else {
+            send({ type: 'done', planData: toolBlock.input })
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'AI недоступен'
+          send({ type: 'error', message: msg })
+        } finally {
+          controller.close()
+        }
+      },
+    })
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'X-Accel-Buffering': 'no',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    })
 
   } catch (error) {
     console.error('Warmup plan error:', error)
-    const msg = error instanceof Error ? error.message : 'AI недоступен'
+    const msg = error instanceof Error ? error.message : 'Ошибка сервера'
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

@@ -351,7 +351,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     const timer = setInterval(() => setGeneratingSeconds((s) => s + 1), 1000)
 
     try {
-      // Простой синхронный запрос — сервер генерирует и возвращает готовый план
+      // Стриминг — каждый чанк Claude сразу летит клиенту, TCP не закрывается
       const res = await fetch('/api/ai/warmup-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -369,17 +369,55 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         }),
       })
 
-      const data = await res.json() as { planData?: AIPlanData; error?: string }
-
-      if (!res.ok || data.error) {
-        throw new Error(data.error || `Ошибка сервера ${res.status}`)
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({})) as { error?: string }
+        throw new Error(errData.error || `Ошибка сервера ${res.status}`)
       }
 
-      if (!data.planData) {
-        throw new Error('AI не вернул план. Попробуй ещё раз.')
+      const reader = res.body?.getReader()
+      if (!reader) throw new Error('Нет потока данных')
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      const processBuffer = (): AIPlanData | null => {
+        const parts = buffer.split('\n\n')
+        buffer = parts.pop() ?? ''
+        for (const part of parts) {
+          if (!part.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(part.slice(6)) as {
+              type: string; planData?: AIPlanData; message?: string
+            }
+            if (data.type === 'done' && data.planData) return data.planData
+            if (data.type === 'error') throw new Error(data.message || 'AI недоступен')
+          } catch (e) {
+            if (e instanceof Error && e.message !== 'AI недоступен') continue
+            throw e
+          }
+        }
+        return null
       }
 
-      setAiPlanData(data.planData)
+      // Читаем поток — каждый чанк обрабатываем сразу
+      while (true) {
+        const { done, value } = await reader.read()
+        if (value) {
+          buffer += decoder.decode(value, { stream: !done })
+          const plan = processBuffer()
+          if (plan) { setAiPlanData(plan); return }
+        }
+        if (done) break
+      }
+
+      // Обрабатываем остаток буфера
+      if (buffer.trim()) {
+        buffer += '\n\n'
+        const plan = processBuffer()
+        if (plan) { setAiPlanData(plan); return }
+      }
+
+      throw new Error('AI не вернул план. Попробуй ещё раз.')
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'AI недоступен'
       toast.error(msg, { duration: 10000 })
