@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import {
   ChevronDown, ChevronUp, Pencil, Trash2, X, Check, Loader2,
-  Download, Instagram, MessageCircle,
+  Download, Camera, MessageCircle,
 } from 'lucide-react'
 
 interface ProjectInfoSectionProps {
@@ -207,7 +207,7 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
                       >
                         {scrapingIg
                           ? <><Loader2 className="mr-1.5 h-3 w-3 animate-spin" />Загружаю Instagram...</>
-                          : <><Instagram className="mr-1.5 h-3 w-3" />Загрузить посты Instagram</>
+                          : <><Camera className="mr-1.5 h-3 w-3" />Загрузить посты Instagram</>
                         }
                       </Button>
                     )}
