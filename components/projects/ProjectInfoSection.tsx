@@ -46,6 +46,7 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
   // Social scrape state
   const [scrapingIg, setScrapingIg] = useState(false)
   const [scrapingTg, setScrapingTg] = useState(false)
+  const [scrapeStatus, setScrapeStatus] = useState<string | null>(null)
 
   // Form state (initialised from project)
   const [name, setName] = useState(project.name ?? '')
@@ -86,8 +87,39 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
         }),
       })
       if (!res.ok) throw new Error('Ошибка сохранения')
+
       toast.success('Проект обновлён')
       setEditing(false)
+
+      // Auto-scrape social profiles if URLs were provided
+      // Runs in background — user doesn't wait, sees status updates
+      const igUrl = instagram.trim()
+      const tgUrl = telegram.trim()
+      if (igUrl || tgUrl) {
+        setScrapeStatus('Анализирую профили соцсетей...')
+        const scrapePromises: Promise<void>[] = []
+
+        if (igUrl && igUrl !== (project.instagram_url ?? '')) {
+          scrapePromises.push(
+            scrapeSocial('instagram', igUrl).catch(() => {/* already toasted inside */})
+          )
+        }
+        if (tgUrl && tgUrl !== (project.telegram_url ?? '')) {
+          scrapePromises.push(
+            scrapeSocial('telegram', tgUrl).catch(() => {/* already toasted inside */})
+          )
+        }
+
+        // If nothing changed but first-time load, still scrape
+        if (scrapePromises.length === 0) {
+          if (igUrl && !project.instagram_url) scrapePromises.push(scrapeSocial('instagram', igUrl).catch(() => {}))
+          if (tgUrl && !project.telegram_url) scrapePromises.push(scrapeSocial('telegram', tgUrl).catch(() => {}))
+        }
+
+        await Promise.all(scrapePromises)
+        setScrapeStatus(null)
+      }
+
       router.refresh()
     } catch {
       toast.error('Не удалось сохранить изменения')
@@ -119,7 +151,7 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
 
   async function scrapeSocial(platform: 'instagram' | 'telegram', url: string) {
     const username = extractUsername(url)
-    if (!username) { toast.error('Укажи ссылку или имя аккаунта'); return }
+    if (!username) return
 
     if (platform === 'instagram') setScrapingIg(true)
     else setScrapingTg(true)
@@ -132,13 +164,14 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
       })
       const data = await res.json() as { postsCount?: number; message?: string; error?: string }
       if (!res.ok) throw new Error(data.error || 'Ошибка загрузки')
-      toast.success(data.message || `Загружено ${data.postsCount ?? 0} постов`)
-      router.refresh()
+      toast.success(data.message || `Загружено ${data.postsCount ?? 0} постов из ${platform === 'telegram' ? 'Telegram' : 'Instagram'}`)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка загрузки')
+      const msg = e instanceof Error ? e.message : 'Ошибка загрузки'
+      // Only show non-critical errors as warnings, not hard errors
+      toast.warning(`${platform === 'instagram' ? 'Instagram' : 'Telegram'}: ${msg}`, { duration: 8000 })
     } finally {
-      setScrapingIg(false)
-      setScrapingTg(false)
+      if (platform === 'instagram') setScrapingIg(false)
+      else setScrapingTg(false)
     }
   }
 
@@ -191,41 +224,43 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
                 </div>
               )}
 
-              {/* Social scrape buttons — shown if URLs saved */}
+              {/* Social status block — shown if at least one URL is saved */}
               {(project.instagram_url || project.telegram_url) && (
-                <div className="pt-1 space-y-2">
-                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Загрузить контент соцсетей в AI</p>
-                  <p className="text-xs text-muted-foreground">AI проанализирует посты и узнает твой стиль, темы и голос — контент станет точнее</p>
-                  <div className="flex flex-wrap gap-2">
+                <div className="rounded-lg border border-border bg-secondary/20 px-3 py-2.5 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-foreground">Соцсети подключены к AI</p>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-[10px] text-muted-foreground hover:text-foreground px-2"
+                      disabled={scrapingIg || scrapingTg}
+                      onClick={async () => {
+                        if (project.instagram_url) await scrapeSocial('instagram', project.instagram_url)
+                        if (project.telegram_url) await scrapeSocial('telegram', project.telegram_url)
+                        router.refresh()
+                      }}
+                    >
+                      {(scrapingIg || scrapingTg)
+                        ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" />Обновляю...</>
+                        : <><Download className="mr-1 h-3 w-3" />Обновить посты</>
+                      }
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
                     {project.instagram_url && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 text-xs border-pink-500/30 text-pink-400 hover:bg-pink-500/10"
-                        disabled={scrapingIg}
-                        onClick={() => scrapeSocial('instagram', project.instagram_url!)}
-                      >
-                        {scrapingIg
-                          ? <><Loader2 className="mr-1.5 h-3 w-3 animate-spin" />Загружаю Instagram...</>
-                          : <><Camera className="mr-1.5 h-3 w-3" />Загрузить посты Instagram</>
-                        }
-                      </Button>
+                      <span className="flex items-center gap-1 text-[10px] text-pink-400">
+                        <Camera className="h-3 w-3" />
+                        Instagram @{extractUsername(project.instagram_url)}
+                      </span>
                     )}
                     {project.telegram_url && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 text-xs border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
-                        disabled={scrapingTg}
-                        onClick={() => scrapeSocial('telegram', project.telegram_url!)}
-                      >
-                        {scrapingTg
-                          ? <><Loader2 className="mr-1.5 h-3 w-3 animate-spin" />Загружаю Telegram...</>
-                          : <><MessageCircle className="mr-1.5 h-3 w-3" />Загрузить посты Telegram</>
-                        }
-                      </Button>
+                      <span className="flex items-center gap-1 text-[10px] text-blue-400">
+                        <MessageCircle className="h-3 w-3" />
+                        Telegram @{extractUsername(project.telegram_url)}
+                      </span>
                     )}
                   </div>
+                  <p className="text-[10px] text-muted-foreground">Посты загружаются автоматически при сохранении и используются AI в планах и контенте</p>
                 </div>
               )}
 
@@ -322,7 +357,10 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
                 <Textarea value={contentGoals} onChange={e => setContentGoals(e.target.value)} rows={2} className="text-sm bg-input border-border resize-none" />
               </div>
 
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide pt-1">Социальные сети</p>
+              <div className="space-y-1 pt-1">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Социальные сети</p>
+                <p className="text-[10px] text-muted-foreground">Вставь ссылку или @username — AI сам загрузит посты и будет учитывать твой стиль</p>
+              </div>
               <div className="grid sm:grid-cols-2 gap-3">
                 {[
                   { label: 'Instagram', val: instagram, set: setInstagram, placeholder: '@username или ссылка' },
@@ -341,11 +379,15 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
                 <Button
                   size="sm"
                   className="h-8 text-xs gradient-accent text-white hover:opacity-90"
-                  disabled={saving}
+                  disabled={saving || scrapingIg || scrapingTg}
                   onClick={saveChanges}
                 >
-                  {saving ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <Check className="mr-1.5 h-3 w-3" />}
-                  Сохранить
+                  {saving
+                    ? <><Loader2 className="mr-1.5 h-3 w-3 animate-spin" />Сохраняю...</>
+                    : (scrapingIg || scrapingTg)
+                    ? <><Loader2 className="mr-1.5 h-3 w-3 animate-spin" />Загружаю соцсети...</>
+                    : <><Check className="mr-1.5 h-3 w-3" />Сохранить</>
+                  }
                 </Button>
                 <Button
                   size="sm"
