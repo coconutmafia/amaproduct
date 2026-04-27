@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ProgressIndicator } from '@/components/shared/ProgressIndicator'
-import { Play, MessageCircle, ArrowRight, Globe } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import type { Project } from '@/types'
 
 interface ProjectCardProps {
@@ -12,12 +12,6 @@ interface ProjectCardProps {
 }
 
 export function ProjectCard({ project }: ProjectCardProps) {
-  const socials = [
-    project.instagram_url && { icon: Globe, url: project.instagram_url, label: 'Instagram' },
-    project.youtube_url && { icon: Play, url: project.youtube_url, label: 'YouTube' },
-    project.telegram_url && { icon: MessageCircle, url: project.telegram_url, label: 'Telegram' },
-  ].filter(Boolean) as Array<{ icon: React.ElementType; url: string; label: string }>
-
   const statusColor = {
     active: 'bg-green-500/15 text-green-400 border-green-500/25',
     archived: 'bg-gray-500/15 text-gray-400 border-gray-500/25',
@@ -38,8 +32,8 @@ export function ProjectCard({ project }: ProjectCardProps) {
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <Badge className={`text-xs border ${statusColor}`}>
-                {project.status === 'active' ? 'Активный' : project.status === 'draft' ? 'Черновик' : 'Архив'}
+              <Badge className={`text-xs border whitespace-nowrap ${statusColor}`}>
+                {project.status === 'active' ? 'Актив' : project.status === 'draft' ? 'Черновик' : 'Архив'}
               </Badge>
               <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
             </div>
@@ -47,20 +41,6 @@ export function ProjectCard({ project }: ProjectCardProps) {
         </CardHeader>
         <CardContent className="space-y-3">
           <ProgressIndicator score={project.completeness_score} showLabel={false} />
-
-          {socials.length > 0 && (
-            <div className="flex items-center gap-2">
-              {socials.map(({ icon: Icon, label }) => (
-                <div
-                  key={label}
-                  className="flex items-center gap-1 text-xs text-muted-foreground"
-                  title={label}
-                >
-                  <Icon className="h-3 w-3" />
-                </div>
-              ))}
-            </div>
-          )}
 
           <p className="text-xs text-muted-foreground">
             Обновлён {new Date(project.updated_at).toLocaleDateString('ru-RU')}

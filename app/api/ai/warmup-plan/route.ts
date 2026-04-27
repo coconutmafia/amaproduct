@@ -12,13 +12,15 @@ export async function POST(request: Request) {
 
     const {
       projectId, productName, duration, startDate, endDate, launchDate, warmupType,
-      funnelDesc, warmTypes, useCases, hooks, extraHooks, competitors,
+      funnelDesc, warmTypes, useCases, hooks, hookTexts, extraHooks, competitors,
     }: {
       projectId: string; productName: string; duration: number
       startDate?: string; endDate?: string; launchDate?: string
       warmupType?: 'launch' | 'evergreen'
       funnelDesc: string; warmTypes: string[]
-      useCases: boolean; hooks: string[]; extraHooks?: string; competitors?: string
+      useCases: boolean; hooks: string[]
+      hookTexts?: Record<string, string>
+      extraHooks?: string; competitors?: string
     } = await request.json()
 
     // ── Load project ─────────────────────────────────────────────────────────
@@ -83,6 +85,13 @@ export async function POST(request: Request) {
     const p3 = Math.round(duration * 0.25)
     const p4 = duration - p1 - p2 - p3
     const hooksText = hooks.length ? hooks.join(', ') : 'не выбраны'
+    // Детали к каждому хуку (от пользователя)
+    const hookDetailsText = hookTexts && Object.keys(hookTexts).length > 0
+      ? '\n' + Object.entries(hookTexts)
+          .filter(([, v]) => v.trim())
+          .map(([k, v]) => `  — ${k}: ${v.trim()}`)
+          .join('\n')
+      : ''
 
     // Вычисляем, на какие дни приходится запуск продукта (для триггеров)
     const isEvergreen = warmupType === 'evergreen'
@@ -118,7 +127,7 @@ ${systemKnowledgeText}
 Воронка продаж: ${funnelDesc}
 Механики прогрева: ${warmTypes.join(', ')}
 Кейсы клиентов: ${useCases ? 'есть, использовать' : 'нет'}
-Смысловые крючки: ${hooksText}${extraHooks ? `\nДоп. смыслы от блогера: ${extraHooks}` : ''}${competitors ? `\nКонкуренты / отличия: ${competitors}` : ''}
+Смысловые крючки: ${hooksText}${hookDetailsText}${extraHooks ? `\nДоп. смыслы от блогера: ${extraHooks}` : ''}${competitors ? `\nКонкуренты / отличия: ${competitors}` : ''}
 ${project.instagram_url ? `Instagram: ${project.instagram_url}` : ''}
 ${project.telegram_url ? `Telegram: ${project.telegram_url}` : ''}
 

@@ -4,11 +4,11 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
+import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import {
   ChevronLeft,
   ChevronRight,
@@ -228,6 +228,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   const [extraCasesText, setExtraCasesText] = useState('')
   const [extraCasesFile, setExtraCasesFile] = useState<File | null>(null)
   const [selectedHooks, setSelectedHooks] = useState<string[]>([])
+  const [hookTexts, setHookTexts] = useState<Record<string, string>>({}) // текст к каждому хуку
   const [extraHooks, setExtraHooks] = useState('')
   const [competitorNotes, setCompetitorNotes] = useState('')
 
@@ -284,6 +285,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     useCases,
     extraCasesText,
     selectedHooks,
+    hookTexts,
     extraHooks,
     competitorNotes,
   }), [
@@ -291,7 +293,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     coldFunnelId, coldFunnelCustom, coldAudienceType,
     warmAudienceTypes, freeEventName, freeEventDate, freeEventTypes,
     paidEventName, paidEventDate, paidEventTypes,
-    useCases, extraCasesText, selectedHooks, extraHooks, competitorNotes,
+    useCases, extraCasesText, selectedHooks, hookTexts, extraHooks, competitorNotes,
   ])
 
   // Auto-save with 1.5s debounce after any change
@@ -336,6 +338,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       if (d.useCases !== undefined) setUseCases(d.useCases)
       if (d.extraCasesText !== undefined) setExtraCasesText(d.extraCasesText)
       if (d.selectedHooks) setSelectedHooks(d.selectedHooks)
+      if (d.hookTexts) setHookTexts(d.hookTexts)
       if (d.extraHooks !== undefined) setExtraHooks(d.extraHooks)
       if (d.competitorNotes !== undefined) setCompetitorNotes(d.competitorNotes)
       setDraftRestored(true)
@@ -396,6 +399,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           warmTypes: warmAudienceTypes,
           useCases,
           hooks: selectedHooks,
+          hookTexts,
           extraHooks: extraHooks || undefined,
           competitors: competitorNotes || undefined,
         }),
@@ -563,13 +567,13 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       </div>
 
       {/* Step title + draft saved indicator */}
-      <div className="flex items-center justify-between">
-        <div className="flex text-sm font-medium text-foreground">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex text-sm font-medium text-foreground min-w-0">
           <span className="whitespace-nowrap mr-1">Шаг {step}:</span>
           <span>{STEPS[step - 1]?.title}</span>
         </div>
         {draftSavedAt && step > 1 && step < 8 && (
-          <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60">
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60 whitespace-nowrap shrink-0">
             <Save className="h-3 w-3" />
             <span>Черновик сохранён</span>
           </div>
@@ -735,13 +739,12 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
               <div className="flex-1">
                 <p className="font-medium text-foreground">Описать механику продающей воронки</p>
                 {coldAudienceType === 'custom' && (
-                  <Textarea
+                  <VoiceTextarea
                     className="mt-2 bg-input border-border resize-none text-sm"
                     placeholder="Опишите, какая будет механика продающей воронки"
                     value={coldFunnelCustom}
-                    onChange={(e) => setColdFunnelCustom(e.target.value)}
+                    onChange={setColdFunnelCustom}
                     rows={3}
-                    onClick={(e) => e.stopPropagation()}
                   />
                 )}
               </div>
@@ -895,10 +898,10 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           ))}
           <div className="rounded-xl border border-border bg-secondary/20 p-4 space-y-3">
             <p className="text-sm font-medium text-foreground">Добавить дополнительные кейсы</p>
-            <Textarea
+            <VoiceTextarea
               placeholder="Опишите кейсы текстом — результаты клиентов, трансформации, цифры..."
               value={extraCasesText}
-              onChange={(e) => setExtraCasesText(e.target.value)}
+              onChange={setExtraCasesText}
               rows={3}
               className="bg-input border-border resize-none text-sm"
             />
@@ -938,7 +941,16 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                     <span className="text-sm text-foreground">{label}</span>
                   </label>
                   {isChecked && (
-                    <p className="mt-0.5 ml-10 text-xs text-muted-foreground">{desc}</p>
+                    <div className="mt-1 ml-3 space-y-1.5">
+                      <p className="text-xs text-muted-foreground">{desc}</p>
+                      <VoiceTextarea
+                        value={hookTexts[id] ?? ''}
+                        onChange={val => setHookTexts(prev => ({ ...prev, [id]: val }))}
+                        placeholder="Добавь детали: конкретная история, факты, акценты..."
+                        rows={2}
+                        className="bg-input border-border resize-none text-sm"
+                      />
+                    </div>
                   )}
                 </div>
               )
@@ -946,10 +958,10 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           </div>
           <div className="space-y-1.5">
             <Label className="text-sm">Добавить свои идеи</Label>
-            <Textarea
+            <VoiceTextarea
               placeholder="Опишите дополнительные смыслы и темы для прогрева..."
               value={extraHooks}
-              onChange={(e) => setExtraHooks(e.target.value)}
+              onChange={setExtraHooks}
               rows={3}
               className="bg-input border-border resize-none text-sm"
             />
@@ -965,10 +977,10 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           </p>
           <div className="space-y-1.5">
             <Label className="text-sm">Уточните ключевые отличия (опционально)</Label>
-            <Textarea
+            <VoiceTextarea
               placeholder="Например: у конкурента сильный сторителлинг — мы хотим взять это за основу; наше отличие — работаем только с нутрициологией без диет..."
               value={competitorNotes}
-              onChange={(e) => setCompetitorNotes(e.target.value)}
+              onChange={setCompetitorNotes}
               rows={4}
               className="bg-input border-border resize-none text-sm"
             />
