@@ -155,6 +155,36 @@ export function ProjectWizard() {
       }
 
       toast.success('Проект создан! 🎉')
+
+      // Auto-scrape social profiles in background — no waiting, user goes straight to project
+      const igUrl = instagramUrl.trim()
+      const tgUrl = telegramUrl.trim()
+      if (igUrl || tgUrl) {
+        const scrapeAll = async () => {
+          const calls = []
+          if (igUrl) calls.push(
+            fetch('/api/projects/scrape-social', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ projectId: project.id, platform: 'instagram', username: igUrl.replace(/^@/, '').split('/').pop() }),
+            }).then(r => r.json()).then((d: { message?: string; error?: string }) => {
+              if (d.message) toast.success(d.message)
+            }).catch(() => {})
+          )
+          if (tgUrl) calls.push(
+            fetch('/api/projects/scrape-social', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ projectId: project.id, platform: 'telegram', username: tgUrl.replace(/^@/, '').split('/').pop() }),
+            }).then(r => r.json()).then((d: { message?: string; error?: string }) => {
+              if (d.message) toast.success(d.message)
+            }).catch(() => {})
+          )
+          await Promise.all(calls)
+        }
+        scrapeAll() // fire and forget — don't await, user already navigating
+      }
+
       router.push(`/projects/${project.id}`)
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Неизвестная ошибка'
