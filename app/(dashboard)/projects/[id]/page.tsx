@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   ChevronRight,
 } from 'lucide-react'
+import { ProjectInfoSection } from '@/components/projects/ProjectInfoSection'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -31,8 +32,7 @@ interface Props {
 export default async function ProjectPage({ params }: Props) {
   const { id } = await params
   const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  const user = session?.user
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
   const { data: project } = await supabase
@@ -89,29 +89,8 @@ export default async function ProjectPage({ params }: Props) {
         </div>
       </div>
 
-      {/* Description + target audience */}
-      {(project.description || project.target_audience || project.content_goals) && (
-        <div className="grid sm:grid-cols-2 gap-3">
-          {project.description && (
-            <div className="p-4 rounded-xl border border-border bg-card">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">О блогере</p>
-              <p className="text-sm text-foreground leading-relaxed">{project.description}</p>
-            </div>
-          )}
-          {project.target_audience && (
-            <div className="p-4 rounded-xl border border-border bg-card">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Целевая аудитория</p>
-              <p className="text-sm text-foreground leading-relaxed">{project.target_audience}</p>
-            </div>
-          )}
-          {project.content_goals && (
-            <div className="p-4 rounded-xl border border-border bg-card sm:col-span-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Цели контента</p>
-              <p className="text-sm text-foreground leading-relaxed">{project.content_goals}</p>
-            </div>
-          )}
-        </div>
-      )}
+      {/* Project info — collapsible, editable, deletable */}
+      <ProjectInfoSection project={project} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main content */}

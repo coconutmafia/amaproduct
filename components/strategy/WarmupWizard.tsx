@@ -159,7 +159,7 @@ interface WarmupWizardProps {
 
 const STEPS = [
   { id: 1, title: 'Продукт', icon: Package },
-  { id: 2, title: 'Длительность', icon: Calendar },
+  { id: 2, title: 'Тип и даты', icon: Calendar },
   { id: 3, title: 'Воронка продаж', icon: Users },
   { id: 4, title: 'Прогрев тёплой аудитории', icon: Star },
   { id: 5, title: 'Кейсы', icon: FileText },
@@ -204,8 +204,12 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
   // Wizard state
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
-  const [duration, setDuration] = useState<30 | 45 | 60>(45)
+  // Warmup type: 'launch' = под конкретный запуск, 'evergreen' = вечнозелёный (консультации)
+  const [warmupType, setWarmupType] = useState<'launch' | 'evergreen'>('launch')
   const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [launchDate, setLaunchDate] = useState('') // дата старта продаж (≠ конец прогрева)
+  const [evergreenDays, setEvergreenDays] = useState<14 | 21 | 30>(30)
   const [coldFunnelId, setColdFunnelId] = useState<string | null>(null)
   const [coldFunnelCustom, setColdFunnelCustom] = useState('')
   const [coldAudienceType, setColdAudienceType] = useState<'existing_funnel' | 'custom' | 'none'>('existing_funnel')
@@ -248,12 +252,25 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Computed duration from dates (used in prompt + save)
+  const computedDuration = (() => {
+    if (warmupType === 'evergreen') return evergreenDays
+    if (startDate && endDate) {
+      const d = Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000)
+      return d > 0 ? d : 30
+    }
+    return 45
+  })()
+
   // Collect all wizard state into one object
   const getDraftState = useCallback(() => ({
     step,
     selectedProductId,
-    duration,
+    warmupType,
     startDate,
+    endDate,
+    launchDate,
+    evergreenDays,
     coldFunnelId,
     coldFunnelCustom,
     coldAudienceType,
@@ -270,7 +287,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     extraHooks,
     competitorNotes,
   }), [
-    step, selectedProductId, duration, startDate,
+    step, selectedProductId, warmupType, startDate, endDate, launchDate, evergreenDays,
     coldFunnelId, coldFunnelCustom, coldAudienceType,
     warmAudienceTypes, freeEventName, freeEventDate, freeEventTypes,
     paidEventName, paidEventDate, paidEventTypes,
@@ -301,8 +318,11 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       const d = JSON.parse(raw)
       if (d.step) setStep(d.step > 7 ? 7 : d.step)
       if (d.selectedProductId) setSelectedProductId(d.selectedProductId)
-      if (d.duration) setDuration(d.duration)
+      if (d.warmupType) setWarmupType(d.warmupType)
       if (d.startDate !== undefined) setStartDate(d.startDate)
+      if (d.endDate !== undefined) setEndDate(d.endDate)
+      if (d.launchDate !== undefined) setLaunchDate(d.launchDate)
+      if (d.evergreenDays) setEvergreenDays(d.evergreenDays)
       if (d.coldFunnelId !== undefined) setColdFunnelId(d.coldFunnelId)
       if (d.coldFunnelCustom !== undefined) setColdFunnelCustom(d.coldFunnelCustom)
       if (d.coldAudienceType) setColdAudienceType(d.coldAudienceType)
@@ -367,8 +387,11 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         body: JSON.stringify({
           projectId,
           productName: selectedProduct?.name || 'Продукт',
-          duration,
+          duration: computedDuration,
           startDate: startDate || undefined,
+          endDate: endDate || undefined,
+          launchDate: launchDate || undefined,
+          warmupType,
           funnelDesc: getFunnelDesc(),
           warmTypes: warmAudienceTypes,
           useCases,
@@ -458,8 +481,8 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           action: 'create_warmup_plan',
           projectId,
           data: {
-            name: `Прогрев ${duration} дней — ${selectedProduct?.name || 'продукт'}${startDate ? ` (старт ${startDate})` : ''}`,
-            duration_days: duration,
+            name: `Прогрев ${computedDuration} дней — ${selectedProduct?.name || 'продукт'}${startDate ? ` (старт ${startDate})` : ''}`,
+            duration_days: computedDuration,
             audience_type: 'cold_warm',
             strategic_summary: aiPlanData.strategy_summary,
             summary_approved: true,
@@ -541,8 +564,9 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
       {/* Step title + draft saved indicator */}
       <div className="flex items-center justify-between">
-        <div className="text-sm font-medium text-foreground">
-          Шаг {step}: {STEPS[step - 1]?.title}
+        <div className="flex text-sm font-medium text-foreground">
+          <span className="whitespace-nowrap mr-1">Шаг {step}:</span>
+          <span>{STEPS[step - 1]?.title}</span>
         </div>
         {draftSavedAt && step > 1 && step < 8 && (
           <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60">
@@ -594,47 +618,79 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         </div>
       )}
 
-      {/* Step 2: Duration + start date */}
+      {/* Step 2: Тип прогрева + даты */}
       {step === 2 && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {([30, 45, 60] as const).map((days) => {
-              const selected = duration === days
-              return (
-                <button
-                  key={days}
-                  onClick={() => setDuration(days)}
-                  className={`flex sm:flex-col items-center gap-3 sm:gap-1 p-4 rounded-xl border text-left sm:text-center transition-all ${
-                    selected ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/40'
-                  }`}
-                >
-                  <div className={`flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-full text-base sm:text-lg font-bold ${selected ? 'bg-primary/20 text-primary' : 'bg-secondary text-foreground'}`}>
-                    {days}
-                  </div>
-                  <div className="flex-1 sm:flex-none">
-                    <p className="text-sm font-medium text-foreground">
-                      {days === 30 ? '1 месяц' : days === 45 ? '1,5 месяца' : '2 месяца'}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {days === 30 ? 'Короткий запуск' : days === 45 ? 'Рекомендуется' : 'Глубокий прогрев'}
-                    </p>
-                  </div>
-                  {selected && <Check className="h-4 w-4 text-primary shrink-0 sm:hidden" />}
-                </button>
-              )
-            })}
+          {/* Тип прогрева */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              onClick={() => setWarmupType('launch')}
+              className={`text-left p-4 rounded-xl border transition-all ${warmupType === 'launch' ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/40'}`}
+            >
+              <div className="flex items-start gap-3">
+                <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${warmupType === 'launch' ? 'border-primary bg-primary' : 'border-muted-foreground'}`} />
+                <div>
+                  <p className="text-sm font-semibold text-foreground">🚀 Прогрев под запуск</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Инфопродукт, курс, интенсив — есть конкретная дата открытия продаж</p>
+                </div>
+              </div>
+            </button>
+            <button
+              onClick={() => setWarmupType('evergreen')}
+              className={`text-left p-4 rounded-xl border transition-all ${warmupType === 'evergreen' ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/40'}`}
+            >
+              <div className="flex items-start gap-3">
+                <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${warmupType === 'evergreen' ? 'border-primary bg-primary' : 'border-muted-foreground'}`} />
+                <div>
+                  <p className="text-sm font-semibold text-foreground">🌿 Вечнозелёный прогрев</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Консультации, личная работа, услуги — прогрев идёт постоянно без дедлайна</p>
+                </div>
+              </div>
+            </button>
           </div>
 
-          <div className="space-y-2">
-            <Label className="text-sm font-medium text-foreground">Дата старта прогрева</Label>
-            <p className="text-xs text-muted-foreground">С этой даты сервис сформирует расписание контент-плана</p>
-            <Input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="bg-input border-border h-10 text-sm max-w-xs"
-            />
-          </div>
+          {/* Поля под тип */}
+          {warmupType === 'launch' ? (
+            <div className="space-y-3 rounded-xl border border-border bg-secondary/20 p-4">
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Дата старта прогрева</Label>
+                  <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                    className="bg-input border-border h-10 text-sm w-full" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Дата окончания прогрева</Label>
+                  <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                    className="bg-input border-border h-10 text-sm w-full" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Дата запуска продукта <span className="text-muted-foreground font-normal">(открытие продаж)</span></Label>
+                <p className="text-xs text-muted-foreground">AI усилит контент триггерами ажиотажа и ограниченности за несколько дней до и после этой даты</p>
+                <Input type="date" value={launchDate} onChange={e => setLaunchDate(e.target.value)}
+                  className="bg-input border-border h-10 text-sm w-full max-w-xs" />
+              </div>
+              {startDate && endDate && (
+                <p className="text-xs text-primary font-medium">
+                  Длительность прогрева: {computedDuration} {computedDuration === 1 ? 'день' : computedDuration < 5 ? 'дня' : 'дней'}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3 rounded-xl border border-border bg-secondary/20 p-4">
+              <p className="text-xs text-muted-foreground">Контент создаётся по повторяющемуся циклу — можно запустить в любой момент и обновлять бесконечно.</p>
+              <Label className="text-sm font-medium">Длина цикла прогрева</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {([14, 21, 30] as const).map(d => (
+                  <button key={d} onClick={() => setEvergreenDays(d)}
+                    className={`py-2.5 rounded-lg border text-sm font-semibold transition-all ${evergreenDays === d ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-card text-muted-foreground hover:border-primary/40'}`}>
+                    {d} дней
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">По завершении цикла можно перезапустить с новыми смыслами.</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -749,7 +805,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                     <div className="flex flex-col gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-sm">Название мероприятия</Label>
-                        <Input value={freeEventName} onChange={(e) => setFreeEventName(e.target.value)} placeholder="Вебинар «Как запустить за 30 дней»" className="bg-input border-border text-sm h-10" />
+                        <Input value={freeEventName} onChange={(e) => setFreeEventName(e.target.value)} placeholder="Вебинар «Как запустить за 30 дней»" className="bg-input border-border text-sm h-10 w-full" />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-sm">Дата мероприятия</Label>
@@ -781,7 +837,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                     <div className="flex flex-col gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-sm">Название мероприятия</Label>
-                        <Input value={paidEventName} onChange={(e) => setPaidEventName(e.target.value)} placeholder="Интенсив «За 3 дня к первым продажам»" className="bg-input border-border text-sm h-10" />
+                        <Input value={paidEventName} onChange={(e) => setPaidEventName(e.target.value)} placeholder="Интенсив «За 3 дня к первым продажам»" className="bg-input border-border text-sm h-10 w-full" />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-sm">Дата мероприятия</Label>
@@ -947,7 +1003,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
               </div>
               {generatingSeconds > 30 && (
                 <div className="rounded-lg border border-border bg-secondary/30 px-4 py-2 text-xs text-muted-foreground text-center max-w-[260px]">
-                  Подробный план на {duration} дней требует времени — обычно 1–2 минуты
+                  Подробный план на {computedDuration} дней требует времени — обычно 1–2 минуты
                 </div>
               )}
             </div>
@@ -977,7 +1033,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                 <PlanPreview
                   planData={aiPlanData}
                   productName={selectedProduct?.name || 'Продукт'}
-                  duration={duration}
+                  duration={computedDuration}
                 />
               </div>
 

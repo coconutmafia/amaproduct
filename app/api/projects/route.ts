@@ -115,14 +115,35 @@ export async function PATCH(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { action, contentItemId, bodyText } = await request.json()
+    const body = await request.json()
+    const { action } = body
 
     if (action === 'approve_content') {
+      const { contentItemId, bodyText } = body
       const { error } = await supabase
         .from('content_items')
         .update({ is_approved: true, body_text: bodyText })
         .eq('id', contentItemId)
+      if (error) throw error
+      return NextResponse.json({ success: true })
+    }
 
+    if (action === 'update_project') {
+      const { projectId, fields } = body as {
+        projectId: string
+        fields: {
+          name?: string; niche?: string; description?: string
+          target_audience?: string; content_goals?: string
+          instagram_url?: string; telegram_url?: string
+          vk_url?: string; youtube_url?: string
+        }
+      }
+      // Verify ownership first
+      const { data: project } = await supabase
+        .from('projects').select('id').eq('id', projectId).eq('owner_id', user.id).single()
+      if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+      const { error } = await supabase.from('projects').update(fields).eq('id', projectId)
       if (error) throw error
       return NextResponse.json({ success: true })
     }

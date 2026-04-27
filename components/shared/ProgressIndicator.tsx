@@ -15,7 +15,8 @@ export function ProgressIndicator({ score, showLabel = true, className }: Progre
   const getMissingMessage = (score: number) => {
     if (score >= 90) return 'База знаний отлична!'
     if (score >= 70) return 'Загрузите Tone of Voice для персонального контента'
-    if (score >= 50) return 'Добавьте кейсы и маркетинговую стратегию'
+    if (score >= 50) return 'Добавьте маркетинговую стратегию и исследование аудитории'
+    if (score >= 25) return 'Добавьте кейсы и описание продукта'
     return 'Загрузите материалы для начала работы с AI'
   }
 
