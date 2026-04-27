@@ -231,6 +231,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   const [hookTexts, setHookTexts] = useState<Record<string, string>>({}) // текст к каждому хуку
   const [extraHooks, setExtraHooks] = useState('')
   const [competitorNotes, setCompetitorNotes] = useState('')
+  const [extraCompetitors, setExtraCompetitors] = useState('')
 
   const selectedProduct = products.find((p) => p.id === selectedProductId)
 
@@ -288,12 +289,13 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     hookTexts,
     extraHooks,
     competitorNotes,
+    extraCompetitors,
   }), [
     step, selectedProductId, warmupType, startDate, endDate, launchDate, evergreenDays,
     coldFunnelId, coldFunnelCustom, coldAudienceType,
     warmAudienceTypes, freeEventName, freeEventDate, freeEventTypes,
     paidEventName, paidEventDate, paidEventTypes,
-    useCases, extraCasesText, selectedHooks, hookTexts, extraHooks, competitorNotes,
+    useCases, extraCasesText, selectedHooks, hookTexts, extraHooks, competitorNotes, extraCompetitors,
   ])
 
   // Auto-save with 1.5s debounce after any change
@@ -341,6 +343,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       if (d.hookTexts) setHookTexts(d.hookTexts)
       if (d.extraHooks !== undefined) setExtraHooks(d.extraHooks)
       if (d.competitorNotes !== undefined) setCompetitorNotes(d.competitorNotes)
+      if (d.extraCompetitors !== undefined) setExtraCompetitors(d.extraCompetitors)
       setDraftRestored(true)
       setTimeout(() => setDraftRestored(false), 2000)
       setHasDraft(false)
@@ -401,7 +404,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           hooks: selectedHooks,
           hookTexts,
           extraHooks: extraHooks || undefined,
-          competitors: competitorNotes || undefined,
+          competitors: [extraCompetitors, competitorNotes].filter(Boolean).join('\n\n') || undefined,
         }),
       })
 
@@ -971,17 +974,36 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
       {/* Step 7: Competitors */}
       {step === 7 && (
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            AI использует загруженных конкурентов для двух целей: найти их сильные стороны и выявить твои отличия.
-          </p>
+        <div className="space-y-4">
+          {/* Explanation */}
+          <div className="rounded-xl border border-border bg-secondary/20 p-3 space-y-1">
+            <p className="text-xs font-medium text-foreground">📁 Конкуренты из базы знаний</p>
+            <p className="text-xs text-muted-foreground">
+              Если вы загружали материалы конкурентов в базу проекта — AI уже учитывает их при составлении плана прогрева.
+            </p>
+          </div>
+
+          {/* New competitors field */}
           <div className="space-y-1.5">
-            <Label className="text-sm">Уточните ключевые отличия (опционально)</Label>
+            <Label className="text-sm">Добавить конкурентов</Label>
+            <p className="text-xs text-muted-foreground">Перечислите конкурентов, которых ещё нет в базе — AI учтёт их при составлении плана</p>
             <VoiceTextarea
-              placeholder="Например: у конкурента сильный сторителлинг — мы хотим взять это за основу; наше отличие — работаем только с нутрициологией без диет..."
+              placeholder="Например: @bloger_name — сильный сторителлинг и видео; конкурент 2 — большая аудитория, но слабый оффер..."
+              value={extraCompetitors}
+              onChange={setExtraCompetitors}
+              rows={3}
+              className="bg-input border-border resize-none text-sm"
+            />
+          </div>
+
+          {/* Differentiators field */}
+          <div className="space-y-1.5">
+            <Label className="text-sm">Уточните ключевые отличия от конкурентов</Label>
+            <VoiceTextarea
+              placeholder="Например: наш метод без жёстких диет; мы работаем только в индивидуальном формате; результат быстрее на 2 недели..."
               value={competitorNotes}
               onChange={setCompetitorNotes}
-              rows={4}
+              rows={3}
               className="bg-input border-border resize-none text-sm"
             />
           </div>
