@@ -43,10 +43,13 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
-  // Social scrape state
+  // Social scrape state — one flag per platform
   const [scrapingIg, setScrapingIg] = useState(false)
   const [scrapingTg, setScrapingTg] = useState(false)
+  const [scrapingYt, setScrapingYt] = useState(false)
+  const [scrapingVk, setScrapingVk] = useState(false)
   const [scrapeStatus, setScrapeStatus] = useState<string | null>(null)
+  const anyScraping = scrapingIg || scrapingTg || scrapingYt || scrapingVk
 
   // Form state (initialised from project)
   const [name, setName] = useState(project.name ?? '')
@@ -91,32 +94,21 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
       toast.success('Проект обновлён')
       setEditing(false)
 
-      // Auto-scrape social profiles if URLs were provided
-      // Runs in background — user doesn't wait, sees status updates
-      const igUrl = instagram.trim()
-      const tgUrl = telegram.trim()
-      if (igUrl || tgUrl) {
-        setScrapeStatus('Анализирую профили соцсетей...')
-        const scrapePromises: Promise<void>[] = []
+      // Auto-scrape any social profiles that were added or changed
+      const socials: Array<{ platform: 'instagram' | 'telegram' | 'youtube' | 'vk'; newUrl: string; oldUrl: string | null | undefined }> = [
+        { platform: 'instagram', newUrl: instagram.trim(), oldUrl: project.instagram_url },
+        { platform: 'telegram',  newUrl: telegram.trim(),  oldUrl: project.telegram_url },
+        { platform: 'youtube',   newUrl: youtube.trim(),   oldUrl: project.youtube_url },
+        { platform: 'vk',        newUrl: vk.trim(),        oldUrl: project.vk_url },
+      ]
+      const toScrape = socials.filter(s => s.newUrl && s.newUrl !== (s.oldUrl ?? ''))
+      // Also scrape first-time saves (had no url before)
+      const firstTime = socials.filter(s => s.newUrl && !s.oldUrl && !toScrape.includes(s))
 
-        if (igUrl && igUrl !== (project.instagram_url ?? '')) {
-          scrapePromises.push(
-            scrapeSocial('instagram', igUrl).catch(() => {/* already toasted inside */})
-          )
-        }
-        if (tgUrl && tgUrl !== (project.telegram_url ?? '')) {
-          scrapePromises.push(
-            scrapeSocial('telegram', tgUrl).catch(() => {/* already toasted inside */})
-          )
-        }
-
-        // If nothing changed but first-time load, still scrape
-        if (scrapePromises.length === 0) {
-          if (igUrl && !project.instagram_url) scrapePromises.push(scrapeSocial('instagram', igUrl).catch(() => {}))
-          if (tgUrl && !project.telegram_url) scrapePromises.push(scrapeSocial('telegram', tgUrl).catch(() => {}))
-        }
-
-        await Promise.all(scrapePromises)
+      const allToScrape = [...toScrape, ...firstTime]
+      if (allToScrape.length > 0) {
+        setScrapeStatus('Анализирую соцсети...')
+        await Promise.all(allToScrape.map(s => scrapeSocial(s.platform, s.newUrl).catch(() => {})))
         setScrapeStatus(null)
       }
 
@@ -149,12 +141,14 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
     return match ? match[1] : clean.replace('@', '')
   }
 
-  async function scrapeSocial(platform: 'instagram' | 'telegram', url: string) {
+  async function scrapeSocial(platform: 'instagram' | 'telegram' | 'youtube' | 'vk', url: string) {
     const username = extractUsername(url)
     if (!username) return
 
-    if (platform === 'instagram') setScrapingIg(true)
-    else setScrapingTg(true)
+    const setters: Record<string, (v: boolean) => void> = {
+      instagram: setScrapingIg, telegram: setScrapingTg, youtube: setScrapingYt, vk: setScrapingVk,
+    }
+    setters[platform]?.(true)
 
     try {
       const res = await fetch('/api/projects/scrape-social', {
@@ -164,14 +158,12 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
       })
       const data = await res.json() as { postsCount?: number; message?: string; error?: string }
       if (!res.ok) throw new Error(data.error || 'Ошибка загрузки')
-      toast.success(data.message || `Загружено ${data.postsCount ?? 0} постов из ${platform === 'telegram' ? 'Telegram' : 'Instagram'}`)
+      toast.success(data.message || `Загружено материалов из ${platform}`)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Ошибка загрузки'
-      // Only show non-critical errors as warnings, not hard errors
-      toast.warning(`${platform === 'instagram' ? 'Instagram' : 'Telegram'}: ${msg}`, { duration: 8000 })
+      toast.warning(`${platform}: ${msg}`, { duration: 8000 })
     } finally {
-      if (platform === 'instagram') setScrapingIg(false)
-      else setScrapingTg(false)
+      setters[platform]?.(false)
     }
   }
 
@@ -225,7 +217,7 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
               )}
 
               {/* Social status block — shown if at least one URL is saved */}
-              {(project.instagram_url || project.telegram_url) && (
+              {(project.instagram_url || project.telegram_url || project.youtube_url || project.vk_url) && (
                 <div className="rounded-lg border border-border bg-secondary/20 px-3 py-2.5 space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-xs font-medium text-foreground">Соцсети подключены к AI</p>
@@ -233,14 +225,16 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
                       size="sm"
                       variant="ghost"
                       className="h-7 text-[10px] text-muted-foreground hover:text-foreground px-2"
-                      disabled={scrapingIg || scrapingTg}
+                      disabled={anyScraping}
                       onClick={async () => {
                         if (project.instagram_url) await scrapeSocial('instagram', project.instagram_url)
                         if (project.telegram_url) await scrapeSocial('telegram', project.telegram_url)
+                        if (project.youtube_url) await scrapeSocial('youtube', project.youtube_url)
+                        if (project.vk_url) await scrapeSocial('vk', project.vk_url)
                         router.refresh()
                       }}
                     >
-                      {(scrapingIg || scrapingTg)
+                      {anyScraping
                         ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" />Обновляю...</>
                         : <><Download className="mr-1 h-3 w-3" />Обновить посты</>
                       }
@@ -251,12 +245,28 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
                       <span className="flex items-center gap-1 text-[10px] text-pink-400">
                         <Camera className="h-3 w-3" />
                         Instagram @{extractUsername(project.instagram_url)}
+                        {scrapingIg && <Loader2 className="h-2.5 w-2.5 animate-spin ml-0.5" />}
                       </span>
                     )}
                     {project.telegram_url && (
                       <span className="flex items-center gap-1 text-[10px] text-blue-400">
                         <MessageCircle className="h-3 w-3" />
                         Telegram @{extractUsername(project.telegram_url)}
+                        {scrapingTg && <Loader2 className="h-2.5 w-2.5 animate-spin ml-0.5" />}
+                      </span>
+                    )}
+                    {project.youtube_url && (
+                      <span className="flex items-center gap-1 text-[10px] text-red-400">
+                        <Download className="h-3 w-3" />
+                        YouTube @{extractUsername(project.youtube_url)}
+                        {scrapingYt && <Loader2 className="h-2.5 w-2.5 animate-spin ml-0.5" />}
+                      </span>
+                    )}
+                    {project.vk_url && (
+                      <span className="flex items-center gap-1 text-[10px] text-indigo-400">
+                        <Download className="h-3 w-3" />
+                        VK @{extractUsername(project.vk_url)}
+                        {scrapingVk && <Loader2 className="h-2.5 w-2.5 animate-spin ml-0.5" />}
                       </span>
                     )}
                   </div>
@@ -379,12 +389,12 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
                 <Button
                   size="sm"
                   className="h-8 text-xs gradient-accent text-white hover:opacity-90"
-                  disabled={saving || scrapingIg || scrapingTg}
+                  disabled={saving || anyScraping}
                   onClick={saveChanges}
                 >
                   {saving
                     ? <><Loader2 className="mr-1.5 h-3 w-3 animate-spin" />Сохраняю...</>
-                    : (scrapingIg || scrapingTg)
+                    : anyScraping
                     ? <><Loader2 className="mr-1.5 h-3 w-3 animate-spin" />Загружаю соцсети...</>
                     : <><Check className="mr-1.5 h-3 w-3" />Сохранить</>
                   }

@@ -156,33 +156,24 @@ export function ProjectWizard() {
 
       toast.success('Проект создан! 🎉')
 
-      // Auto-scrape social profiles in background — no waiting, user goes straight to project
-      const igUrl = instagramUrl.trim()
-      const tgUrl = telegramUrl.trim()
-      if (igUrl || tgUrl) {
-        const scrapeAll = async () => {
-          const calls = []
-          if (igUrl) calls.push(
-            fetch('/api/projects/scrape-social', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ projectId: project.id, platform: 'instagram', username: igUrl.replace(/^@/, '').split('/').pop() }),
-            }).then(r => r.json()).then((d: { message?: string; error?: string }) => {
-              if (d.message) toast.success(d.message)
-            }).catch(() => {})
-          )
-          if (tgUrl) calls.push(
-            fetch('/api/projects/scrape-social', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ projectId: project.id, platform: 'telegram', username: tgUrl.replace(/^@/, '').split('/').pop() }),
-            }).then(r => r.json()).then((d: { message?: string; error?: string }) => {
-              if (d.message) toast.success(d.message)
-            }).catch(() => {})
-          )
-          await Promise.all(calls)
-        }
-        scrapeAll() // fire and forget — don't await, user already navigating
+      // Auto-scrape all social profiles in background — fire and forget
+      const socialUrls = [
+        { platform: 'instagram', url: instagramUrl.trim() },
+        { platform: 'telegram',  url: telegramUrl.trim() },
+        { platform: 'youtube',   url: youtubeUrl.trim() },
+        { platform: 'vk',        url: vkUrl.trim() },
+      ].filter(s => s.url)
+
+      if (socialUrls.length > 0) {
+        Promise.all(socialUrls.map(({ platform, url }) =>
+          fetch('/api/projects/scrape-social', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId: project.id, platform, username: url }),
+          }).then(r => r.json()).then((d: { message?: string }) => {
+            if (d.message) toast.success(d.message)
+          }).catch(() => {})
+        ))
       }
 
       router.push(`/projects/${project.id}`)
