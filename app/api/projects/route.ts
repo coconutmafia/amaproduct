@@ -136,6 +136,7 @@ export async function PATCH(request: Request) {
           target_audience?: string; content_goals?: string
           instagram_url?: string; telegram_url?: string
           vk_url?: string; youtube_url?: string
+          status?: 'active' | 'draft' | 'archived'
         }
       }
       // Verify ownership first

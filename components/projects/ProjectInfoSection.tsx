@@ -6,13 +6,18 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import { ChevronDown, ChevronUp, Pencil, Trash2, X, Check, Loader2 } from 'lucide-react'
+import {
+  ChevronDown, ChevronUp, Pencil, Trash2, X, Check, Loader2,
+  Download, Instagram, MessageCircle,
+} from 'lucide-react'
 
 interface ProjectInfoSectionProps {
   project: {
     id: string
     name: string
+    status?: string | null
     niche?: string | null
     description?: string | null
     target_audience?: string | null
@@ -24,6 +29,12 @@ interface ProjectInfoSectionProps {
   }
 }
 
+const STATUS_OPTIONS = [
+  { value: 'active',   label: 'Активный',  color: 'bg-green-500/15 text-green-400 border-green-500/25' },
+  { value: 'draft',    label: 'Черновик',  color: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/25' },
+  { value: 'archived', label: 'Архив',     color: 'bg-gray-500/15 text-gray-400 border-gray-500/25' },
+]
+
 export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -32,8 +43,13 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
+  // Social scrape state
+  const [scrapingIg, setScrapingIg] = useState(false)
+  const [scrapingTg, setScrapingTg] = useState(false)
+
   // Form state (initialised from project)
   const [name, setName] = useState(project.name ?? '')
+  const [status, setStatus] = useState<string>(project.status ?? 'active')
   const [niche, setNiche] = useState(project.niche ?? '')
   const [description, setDescription] = useState(project.description ?? '')
   const [targetAudience, setTargetAudience] = useState(project.target_audience ?? '')
@@ -44,6 +60,7 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
   const [youtube, setYoutube] = useState(project.youtube_url ?? '')
 
   const hasContent = project.description || project.target_audience || project.content_goals
+  const currentStatus = STATUS_OPTIONS.find(s => s.value === (project.status ?? 'active')) ?? STATUS_OPTIONS[0]
 
   async function saveChanges() {
     setSaving(true)
@@ -56,6 +73,7 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
           projectId: project.id,
           fields: {
             name: name.trim() || project.name,
+            status,
             niche: niche.trim() || null,
             description: description.trim() || null,
             target_audience: targetAudience.trim() || null,
@@ -88,6 +106,39 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
     } catch {
       toast.error('Не удалось удалить проект')
       setDeleting(false)
+    }
+  }
+
+  // ── Social media scraping ─────────────────────────────────────────────────
+  function extractUsername(url: string): string {
+    // handles: @username, username, https://t.me/username, https://instagram.com/username
+    const clean = url.trim().replace(/\/$/, '')
+    const match = clean.match(/(?:t\.me\/|instagram\.com\/|@)([A-Za-z0-9_.]+)/)
+    return match ? match[1] : clean.replace('@', '')
+  }
+
+  async function scrapeSocial(platform: 'instagram' | 'telegram', url: string) {
+    const username = extractUsername(url)
+    if (!username) { toast.error('Укажи ссылку или имя аккаунта'); return }
+
+    if (platform === 'instagram') setScrapingIg(true)
+    else setScrapingTg(true)
+
+    try {
+      const res = await fetch('/api/projects/scrape-social', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: project.id, platform, username }),
+      })
+      const data = await res.json() as { postsCount?: number; message?: string; error?: string }
+      if (!res.ok) throw new Error(data.error || 'Ошибка загрузки')
+      toast.success(data.message || `Загружено ${data.postsCount ?? 0} постов`)
+      router.refresh()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Ошибка загрузки')
+    } finally {
+      setScrapingIg(false)
+      setScrapingTg(false)
     }
   }
 
@@ -137,6 +188,44 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
                 <div>
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Цели контента</p>
                   <p className="text-sm text-foreground leading-relaxed">{project.content_goals}</p>
+                </div>
+              )}
+
+              {/* Social scrape buttons — shown if URLs saved */}
+              {(project.instagram_url || project.telegram_url) && (
+                <div className="pt-1 space-y-2">
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Загрузить контент соцсетей в AI</p>
+                  <p className="text-xs text-muted-foreground">AI проанализирует посты и узнает твой стиль, темы и голос — контент станет точнее</p>
+                  <div className="flex flex-wrap gap-2">
+                    {project.instagram_url && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs border-pink-500/30 text-pink-400 hover:bg-pink-500/10"
+                        disabled={scrapingIg}
+                        onClick={() => scrapeSocial('instagram', project.instagram_url!)}
+                      >
+                        {scrapingIg
+                          ? <><Loader2 className="mr-1.5 h-3 w-3 animate-spin" />Загружаю Instagram...</>
+                          : <><Instagram className="mr-1.5 h-3 w-3" />Загрузить посты Instagram</>
+                        }
+                      </Button>
+                    )}
+                    {project.telegram_url && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+                        disabled={scrapingTg}
+                        onClick={() => scrapeSocial('telegram', project.telegram_url!)}
+                      >
+                        {scrapingTg
+                          ? <><Loader2 className="mr-1.5 h-3 w-3 animate-spin" />Загружаю Telegram...</>
+                          : <><MessageCircle className="mr-1.5 h-3 w-3" />Загрузить посты Telegram</>
+                        }
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -197,6 +286,29 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
                   <Input value={niche} onChange={e => setNiche(e.target.value)} placeholder="Маркетинг, нутрициология..." className="h-9 text-sm bg-input border-border" />
                 </div>
               </div>
+
+              {/* Status selector */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Статус проекта</Label>
+                <div className="flex gap-2">
+                  {STATUS_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setStatus(opt.value)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+                        status === opt.value
+                          ? opt.color + ' ring-1 ring-offset-1 ring-offset-background ' + opt.color.split(' ')[2]
+                          : 'border-border text-muted-foreground hover:border-primary/40'
+                      }`}
+                    >
+                      {status === opt.value && <Check className="h-3 w-3" />}
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="space-y-1">
                 <Label className="text-xs">О блогере</Label>
                 <Textarea value={description} onChange={e => setDescription(e.target.value)} rows={2} className="text-sm bg-input border-border resize-none" />
@@ -213,14 +325,14 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
               <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide pt-1">Социальные сети</p>
               <div className="grid sm:grid-cols-2 gap-3">
                 {[
-                  { label: 'Instagram', val: instagram, set: setInstagram },
-                  { label: 'Telegram', val: telegram, set: setTelegram },
-                  { label: 'VK', val: vk, set: setVk },
-                  { label: 'YouTube', val: youtube, set: setYoutube },
-                ].map(({ label, val, set }) => (
+                  { label: 'Instagram', val: instagram, set: setInstagram, placeholder: '@username или ссылка' },
+                  { label: 'Telegram', val: telegram, set: setTelegram, placeholder: '@channel или ссылка' },
+                  { label: 'VK', val: vk, set: setVk, placeholder: 'https://vk.com/...' },
+                  { label: 'YouTube', val: youtube, set: setYoutube, placeholder: 'https://youtube.com/...' },
+                ].map(({ label, val, set, placeholder }) => (
                   <div key={label} className="space-y-1">
                     <Label className="text-xs">{label}</Label>
-                    <Input value={val} onChange={e => set(e.target.value)} placeholder="https://..." className="h-9 text-sm bg-input border-border" />
+                    <Input value={val} onChange={e => set(e.target.value)} placeholder={placeholder} className="h-9 text-sm bg-input border-border" />
                   </div>
                 ))}
               </div>

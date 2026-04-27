@@ -77,8 +77,14 @@ export default async function ProjectPage({ params }: Props) {
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <Badge className="text-xs bg-green-500 text-white border-transparent shrink-0">
-            Активный
+          <Badge className={`text-xs border shrink-0 ${
+            project.status === 'active'
+              ? 'bg-green-500/15 text-green-400 border-green-500/25'
+              : project.status === 'archived'
+              ? 'bg-gray-500/15 text-gray-400 border-gray-500/25'
+              : 'bg-yellow-500/15 text-yellow-400 border-yellow-500/25'
+          }`}>
+            {project.status === 'active' ? 'Активный' : project.status === 'archived' ? 'Архив' : 'Черновик'}
           </Badge>
         </div>
         <div className="px-1">
