@@ -685,12 +685,12 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Дата старта прогрева</Label>
                   <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                    className="bg-input border-border h-10 text-sm w-full" />
+                    className="h-10 text-sm" />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Дата окончания прогрева</Label>
                   <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                    className="bg-input border-border h-10 text-sm w-full" />
+                    className="h-10 text-sm" />
                 </div>
               </div>
               <div className="grid sm:grid-cols-2 gap-3">
@@ -698,13 +698,13 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                   <Label className="text-sm font-medium">Дата открытия продаж</Label>
                   <p className="text-xs text-muted-foreground">Когда открывается продажа — AI сделает специальный контент в этот день</p>
                   <Input type="date" value={salesOpenDate} onChange={e => setSalesOpenDate(e.target.value)}
-                    className="bg-input border-border h-10 text-sm w-full" />
+                    className="h-10 text-sm" />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Дата запуска продукта</Label>
                   <p className="text-xs text-muted-foreground">AI усилит контент триггерами ажиотажа и ограниченности за несколько дней до и после этой даты</p>
                   <Input type="date" value={productStartDate} onChange={e => setProductStartDate(e.target.value)}
-                    className="bg-input border-border h-10 text-sm w-full" />
+                    className="h-10 text-sm" />
                 </div>
               </div>
               {startDate && endDate && (
