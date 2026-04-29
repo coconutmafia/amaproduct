@@ -593,9 +593,9 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
       {/* Step title + draft saved indicator */}
       <div className="flex items-center justify-between gap-3">
-        <div className="flex text-sm font-medium text-foreground min-w-0">
-          <span className="whitespace-nowrap mr-1">Шаг {step}:</span>
-          <span>{STEPS[step - 1]?.title}</span>
+        <div className="flex items-center text-sm font-medium text-foreground min-w-0 gap-1">
+          <span className="whitespace-nowrap shrink-0">Шаг {step}:</span>
+          <span className="truncate">{STEPS[step - 1]?.title}</span>
         </div>
         {draftSavedAt && step > 1 && step < 8 && (
           <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60 whitespace-nowrap shrink-0">
@@ -618,12 +618,12 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                   : 'border-border bg-card hover:border-primary/40'
               }`}
             >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-foreground">{product.name}</p>
-                  <p className="text-sm text-muted-foreground">{product.product_type}</p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-medium text-foreground truncate">{product.name}</p>
+                  <p className="text-sm text-muted-foreground truncate">{product.product_type}</p>
                 </div>
-                <div className="text-right">
+                <div className="text-right shrink-0">
                   {product.price && (
                     <p className="font-bold text-foreground">
                       {product.price.toLocaleString()} {product.currency}

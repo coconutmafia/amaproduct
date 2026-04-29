@@ -434,7 +434,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                     }`}>
                       {/* Label row */}
                       <div className="flex items-start justify-between gap-2 mb-3">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
                           {hasItems
                             ? <CheckCircle2 className="h-4 w-4 text-green-400 shrink-0 mt-0.5" />
                             : <Circle className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
@@ -462,9 +462,9 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                       {items.length > 0 && (
                         <div className="mb-3 space-y-1.5">
                           {items.map(item => (
-                            <div key={item.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-background/60 border border-border/60 text-xs">
+                            <div key={item.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-background/60 border border-border/60 text-xs min-w-0">
                               <StatusIcon status={item.processing_status} />
-                              <span className="flex-1 truncate text-foreground/80">{item.title}</span>
+                              <span className="flex-1 min-w-0 truncate text-foreground/80">{item.title}</span>
                               <button
                                 onClick={() => handleDelete(item.id)}
                                 disabled={deletingId === item.id}

@@ -220,7 +220,7 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
               {(project.instagram_url || project.telegram_url || project.youtube_url || project.vk_url) && (
                 <div className="rounded-lg border border-border bg-secondary/20 px-3 py-2.5 space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-medium text-foreground">Соцсети подключены к AI</p>
+                    <p className="text-xs font-medium text-foreground min-w-0 truncate">Соцсети подключены к AI</p>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -295,8 +295,8 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
                     Удалить проект
                   </Button>
                 ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-destructive font-medium">Удалить безвозвратно?</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-destructive font-medium whitespace-nowrap">Удалить безвозвратно?</span>
                     <Button
                       size="sm"
                       variant="destructive"

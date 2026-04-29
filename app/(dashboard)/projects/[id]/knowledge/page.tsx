@@ -32,9 +32,9 @@ export default async function KnowledgePage({ params }: Props) {
         <Button variant="ghost" size="icon" asChild className="h-8 w-8">
           <Link href={`/projects/${id}`}><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
-        <div>
+        <div className="min-w-0">
           <h1 className="text-xl font-bold">Материалы проекта</h1>
-          <p className="text-sm text-muted-foreground">{project.name}</p>
+          <p className="text-sm text-muted-foreground truncate">{project.name}</p>
         </div>
       </div>
 

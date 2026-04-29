@@ -51,12 +51,12 @@ export default async function StrategyPage({ params }: Props) {
           {warmupPlans.map((plan) => (
             <Card key={plan.id} className="border-border bg-card">
               <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-foreground">{plan.name}</p>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-foreground truncate">{plan.name}</p>
                     <p className="text-xs text-muted-foreground">{plan.duration_days} дней</p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
                     <Badge className={`text-xs ${
                       plan.status === 'active' ? 'bg-green-500/15 text-green-400 border-green-500/25' :
                       plan.status === 'approved' ? 'bg-blue-500/15 text-blue-400 border-blue-500/25' :

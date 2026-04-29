@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ProgressIndicator } from '@/components/shared/ProgressIndicator'
-import { ArrowRight } from 'lucide-react'
 import type { Project } from '@/types'
 
 interface ProjectCardProps {
@@ -31,12 +30,9 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 <p className="text-xs text-muted-foreground mt-0.5 truncate">{project.niche}</p>
               )}
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Badge className={`text-xs border whitespace-nowrap ${statusColor}`}>
-                {project.status === 'active' ? 'Актив' : project.status === 'draft' ? 'Черновик' : 'Архив'}
-              </Badge>
-              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
-            </div>
+            <Badge className={`text-xs border whitespace-nowrap shrink-0 ${statusColor}`}>
+              {project.status === 'active' ? 'Актив' : project.status === 'draft' ? 'Черновик' : 'Архив'}
+            </Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">

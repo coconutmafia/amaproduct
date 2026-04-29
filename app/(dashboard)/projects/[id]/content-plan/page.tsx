@@ -339,17 +339,17 @@ export default function ContentPlanPage() {
         <Button variant="ghost" size="icon" asChild className="h-8 w-8">
           <Link href={`/projects/${id}`}><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <h1 className="text-xl font-bold text-foreground">Контент-план</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground truncate">
             {planName ? planName : 'Кликайте на тип контента, чтобы сгенерировать'}
             {totalDays && ` · ${totalDays} дней`}
           </p>
         </div>
         {!hasPlan && (
-          <Link href={`/projects/${id}/strategy`}>
-            <Button size="sm" variant="outline" className="border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10 text-xs gap-1.5">
-              <AlertCircle className="h-3.5 w-3.5" />
+          <Link href={`/projects/${id}/strategy`} className="shrink-0">
+            <Button size="sm" variant="outline" className="border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10 text-xs gap-1.5 whitespace-nowrap">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
               Создать стратегию
             </Button>
           </Link>

@@ -222,7 +222,7 @@ export default async function ProjectPage({ params }: Props) {
                       <p className="text-sm text-foreground truncate">{item.title || item.content_type}</p>
                       <p className="text-xs text-muted-foreground">День {item.day_number} · {item.warmup_phase}</p>
                     </div>
-                    <Badge variant="outline" className={`text-xs ${item.is_approved ? 'text-green-400 border-green-400/30' : 'text-muted-foreground'}`}>
+                    <Badge variant="outline" className={`text-xs shrink-0 ${item.is_approved ? 'text-green-400 border-green-400/30' : 'text-muted-foreground'}`}>
                       {item.is_approved ? 'Одобрен' : 'Черновик'}
                     </Badge>
                     <DeleteContentButton itemId={item.id} />
@@ -239,9 +239,9 @@ export default async function ProjectPage({ params }: Props) {
                 <CardTitle className="text-sm font-medium">Последний план прогрева</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-foreground">{warmupPlans[0].name}</p>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-foreground truncate">{warmupPlans[0].name}</p>
                     <p className="text-xs text-muted-foreground">{warmupPlans[0].duration_days} дней · {warmupPlans[0].status}</p>
                   </div>
                   <Button variant="outline" size="sm" asChild className="border-border">
@@ -283,9 +283,9 @@ export default async function ProjectPage({ params }: Props) {
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    <Icon className="h-3.5 w-3.5" />
-                    <span>{label}</span>
-                    <ExternalLink className="h-3 w-3 ml-auto" />
+                    <Icon className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{label}</span>
+                    <ExternalLink className="h-3 w-3 ml-auto shrink-0" />
                   </a>
                 ))}
               </CardContent>
@@ -303,8 +303,8 @@ export default async function ProjectPage({ params }: Props) {
               </CardHeader>
               <CardContent className="space-y-2">
                 {products.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between text-sm">
-                    <span className="text-foreground truncate">{p.name}</span>
+                  <div key={p.id} className="flex items-center justify-between gap-2 text-sm min-w-0">
+                    <span className="text-foreground truncate min-w-0">{p.name}</span>
                     {p.price && (
                       <span className="text-muted-foreground text-xs ml-2 shrink-0">
                         {p.price.toLocaleString()} {p.currency}

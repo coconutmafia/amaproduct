@@ -233,7 +233,7 @@ export function ContentPlanGrid({
                     )}
 
                     {phaseName && (
-                      <Badge className="text-[10px] shrink-0 hidden md:flex">{phaseName}</Badge>
+                      <Badge className="text-[10px] shrink-0 whitespace-nowrap hidden md:flex">{phaseName}</Badge>
                     )}
                   </div>
 
