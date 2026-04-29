@@ -1,6 +1,53 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+export async function GET(request: Request) {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const { searchParams } = new URL(request.url)
+    const excludeProjectId = searchParams.get('excludeProject')
+
+    // Get all user's projects (except current)
+    let projectsQuery = supabase
+      .from('projects')
+      .select('id, name')
+      .eq('owner_id', user.id)
+    if (excludeProjectId) {
+      projectsQuery = projectsQuery.neq('id', excludeProjectId)
+    }
+    const { data: projects } = await projectsQuery
+
+    if (!projects || projects.length === 0) {
+      return NextResponse.json({ projects: [] })
+    }
+
+    const projectIds = projects.map(p => p.id)
+
+    // Get materials from those projects
+    const { data: materials } = await supabase
+      .from('project_materials')
+      .select('id, project_id, material_type, title, processing_status, created_at')
+      .in('project_id', projectIds)
+      .eq('processing_status', 'ready')
+      .order('created_at', { ascending: false })
+
+    // Group by project
+    const grouped = projects.map(p => ({
+      id: p.id,
+      name: p.name,
+      materials: (materials || []).filter(m => m.project_id === p.id),
+    })).filter(p => p.materials.length > 0)
+
+    return NextResponse.json({ projects: grouped })
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ error: msg }, { status: 500 })
+  }
+}
+
 export async function DELETE(request: Request) {
   try {
     const supabase = await createClient()

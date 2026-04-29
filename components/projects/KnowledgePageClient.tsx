@@ -1,19 +1,20 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ProgressIndicator } from '@/components/shared/ProgressIndicator'
 import { UnpackingInterview } from '@/components/projects/UnpackingInterview'
 import { toast } from 'sonner'
 import {
   CheckCircle2, Circle, Loader, AlertCircle, Upload, BookOpen,
   X, File, Loader2, Plus, FileText, Mic, ChevronDown, ChevronUp,
-  Info, MessageSquare, Sparkles, Trash2,
+  Info, MessageSquare, Sparkles, Trash2, Copy, Check,
 } from 'lucide-react'
 
 interface Material {
@@ -361,10 +362,158 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
   )
 }
 
+// ── Import from other project dialog ─────────────────────────────────────────
+interface OtherProject {
+  id: string
+  name: string
+  materials: { id: string; material_type: string; title: string; processing_status: string }[]
+}
+
+function ImportMaterialsDialog({
+  projectId,
+  open,
+  onClose,
+  onSuccess,
+}: {
+  projectId: string
+  open: boolean
+  onClose: () => void
+  onSuccess: (materials: Material[]) => void
+}) {
+  const [projects, setProjects] = useState<OtherProject[]>([])
+  const [loadingProjects, setLoadingProjects] = useState(false)
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [importing, setImporting] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setLoadingProjects(true)
+    fetch(`/api/materials?excludeProject=${projectId}`)
+      .then(r => r.json())
+      .then(d => setProjects(d.projects || []))
+      .catch(() => toast.error('Не удалось загрузить проекты'))
+      .finally(() => setLoadingProjects(false))
+  }, [open, projectId])
+
+  const selectedProject = projects.find(p => p.id === selectedProjectId)
+
+  const toggleMaterial = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const handleImport = async () => {
+    if (!selectedIds.size) return
+    setImporting(true)
+    try {
+      const res = await fetch('/api/materials/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ materialIds: [...selectedIds], targetProjectId: projectId }),
+      })
+      const data = await res.json() as { imported: number; errors: number; materials: Material[] }
+      if (!res.ok) throw new Error((data as unknown as { error?: string }).error || 'Ошибка')
+      toast.success(`Импортировано: ${data.imported}${data.errors ? `, ошибок: ${data.errors}` : ''}`)
+      onSuccess(data.materials)
+      onClose()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Ошибка импорта')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v && !importing) onClose() }}>
+      <DialogContent className="sm:max-w-lg border-border bg-card max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Импортировать материалы из другого проекта</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 mt-1">
+          <p className="text-xs text-muted-foreground">
+            Некоторые материалы (аудитория, тон-оф-войс, конкуренты) часто одинаковые для разных продуктов. Выбери проект и импортируй нужные файлы.
+          </p>
+
+          {loadingProjects ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : projects.length === 0 ? (
+            <div className="text-center py-8 text-sm text-muted-foreground">
+              Нет других проектов с загруженными материалами
+            </div>
+          ) : (
+            <>
+              <Select value={selectedProjectId} onValueChange={id => { setSelectedProjectId(id ?? ''); setSelectedIds(new Set()) }}>
+                <SelectTrigger className="border-border">
+                  <SelectValue placeholder="Выбери проект" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map(p => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {selectedProject && (
+                <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                  <p className="text-xs text-muted-foreground">Выбери материалы для импорта:</p>
+                  {selectedProject.materials.map(m => {
+                    const isSelected = selectedIds.has(m.id)
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => toggleMaterial(m.id)}
+                        className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border text-left text-sm transition-all ${
+                          isSelected ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/40'
+                        }`}
+                      >
+                        <div className={`h-4 w-4 rounded border-2 shrink-0 flex items-center justify-center ${
+                          isSelected ? 'border-primary bg-primary' : 'border-muted-foreground'
+                        }`}>
+                          {isSelected && <Check className="h-2.5 w-2.5 text-white" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{m.title}</p>
+                          <p className="text-xs text-muted-foreground">{TYPE_META[m.material_type]?.label || m.material_type}</p>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={onClose} disabled={importing}>Отмена</Button>
+            <Button
+              className="flex-1 gradient-accent text-white hover:opacity-90"
+              onClick={handleImport}
+              disabled={importing || selectedIds.size === 0}
+            >
+              {importing
+                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Импортируем...</>
+                : <><Copy className="mr-2 h-4 w-4" />Импортировать ({selectedIds.size})</>
+              }
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export function KnowledgePageClient({ projectId, completenessScore, initialMaterials, userName }: Props) {
   const [uploadFor, setUploadFor] = useState<string | null>(null)
   const [showInterview, setShowInterview] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [score] = useState(completenessScore)
   const [materials, setMaterials] = useState(initialMaterials)
   const [showHint, setShowHint] = useState<string | null>(null)
@@ -410,6 +559,18 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
           </p>
           <ProgressIndicator score={score} loadedTypes={materials.map(m => m.material_type)} />
         </div>
+      </div>
+
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant="outline"
+          className="text-xs h-8 border-border gap-1.5"
+          onClick={() => setShowImport(true)}
+        >
+          <Copy className="h-3 w-3" />
+          Использовать материалы из другого проекта
+        </Button>
       </div>
 
       {/* Categories */}
@@ -551,6 +712,16 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
         open={showInterview}
         onClose={() => setShowInterview(false)}
         onSuccess={() => window.location.reload()}
+      />
+
+      <ImportMaterialsDialog
+        projectId={projectId}
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        onSuccess={(newMaterials) => {
+          handleUploaded(newMaterials)
+          setShowImport(false)
+        }}
       />
     </>
   )
