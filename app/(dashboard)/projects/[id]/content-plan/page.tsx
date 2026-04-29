@@ -52,10 +52,11 @@ function buildDaysFromWarmupPlan(planData: WarmupPlanData, weekNumber: number, s
     date.setDate(date.getDate() + d.day - 1)
     const dd = String(date.getDate()).padStart(2, '0')
     const mm = String(date.getMonth() + 1).padStart(2, '0')
+    const yyyy = date.getFullYear()
 
     return {
       day: d.day,
-      date: `${dd}.${mm}`,
+      date: `${dd}.${mm}.${yyyy}`,
       dayOfWeek: DAYS_OF_WEEK[(absDay - 1) % 7],
       items: [],
       plannedTypes: d.format,
@@ -77,9 +78,14 @@ function buildFallbackDays(weekNumber: number, totalDays: number): DayData[] {
     const dayNum = weekStart + i
     if (dayNum > totalDays) return null
     const phaseIndex = Math.floor(((dayNum - 1) / totalDays) * 4)
+    const d = new Date()
+    d.setDate(d.getDate() + dayNum - 1)
+    const dd = String(d.getDate()).padStart(2, '0')
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const yyyy = d.getFullYear()
     return {
       day: dayNum,
-      date: `${String(dayNum).padStart(2, '0')}.`,
+      date: `${dd}.${mm}.${yyyy}`,
       dayOfWeek: DAYS_OF_WEEK[i],
       items: [],
       plannedTypes: types[i % 7] as ContentType[],

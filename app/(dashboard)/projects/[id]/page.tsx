@@ -56,8 +56,8 @@ export default async function ProjectPage({ params }: Props) {
   // Step completion state
   const hasMaterials = (materialsCount ?? 0) > 0
   const hasWarmupPlan = warmupPlans?.some(p => ['approved', 'active'].includes(p.status)) ?? false
-  const hasContentPlan = hasWarmupPlan // content plan depends on warmup plan
   const hasContent = (recentContent?.length ?? 0) > 0
+  const hasContentPlan = hasContent // content plan is considered done when first content item exists
   const allStepsDone = hasMaterials && hasWarmupPlan && hasContent
 
   const socials = [

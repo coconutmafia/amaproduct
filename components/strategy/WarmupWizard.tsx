@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -65,6 +66,7 @@ const PHASE_COLORS: Record<string, string> = {
 
 function PlanPreview({ planData, productName, duration }: { planData: AIPlanData; productName: string; duration: number }) {
   const [expandedPhase, setExpandedPhase] = useState<string | null>(null)
+  const phaseRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   // Guard against incomplete/truncated AI output
   if (!planData?.phases?.length) {
@@ -78,15 +80,14 @@ function PlanPreview({ planData, productName, duration }: { planData: AIPlanData
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <Sparkles className="h-4 w-4 text-primary" />
+      <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary shrink-0" />
           <span className="text-sm font-semibold text-foreground">
             ПЛАН ПРОГРЕВА: {productName} | {duration} дней
           </span>
-          <Badge className="ml-auto text-[10px] bg-green-500/15 text-green-400 border-green-500/25">AI</Badge>
+          <Badge className="ml-auto shrink-0 text-[10px] bg-green-500/15 text-green-400 border-green-500/25">AI</Badge>
         </div>
-        <p className="text-xs text-muted-foreground leading-relaxed">{planData.strategy_summary}</p>
       </div>
 
       {/* Phases */}
@@ -97,17 +98,29 @@ function PlanPreview({ planData, productName, duration }: { planData: AIPlanData
           const icon = PHASE_ICONS[phase.phase] || '📌'
 
           return (
-            <div key={phase.phase} className={`rounded-xl border overflow-hidden ${colorClass}`}>
+            <div
+              key={phase.phase}
+              ref={el => { phaseRefs.current[phase.phase] = el }}
+              className={`rounded-xl border overflow-hidden ${colorClass}`}
+            >
               {/* Phase header — clickable to expand */}
               <button
                 className="w-full flex items-center justify-between p-3 text-left"
-                onClick={() => setExpandedPhase(isOpen ? null : phase.phase)}
+                onClick={() => {
+                  const opening = expandedPhase !== phase.phase
+                  setExpandedPhase(opening ? phase.phase : null)
+                  if (opening) {
+                    setTimeout(() => {
+                      phaseRefs.current[phase.phase]?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+                    }, 0)
+                  }
+                }}
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-base">{icon}</span>
+                  <span className="text-base shrink-0">{icon}</span>
                   <div>
-                    <span className="text-xs font-bold tracking-wide">{phase.label}</span>
-                    <span className="ml-2 text-[10px] opacity-60">{phase.days_count} дней</span>
+                    <div className="text-xs font-bold tracking-wide">{phase.label}</div>
+                    <div className="text-[10px] opacity-60">{phase.days_count} дней</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -201,6 +214,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   const [generatingSeconds, setGeneratingSeconds] = useState(0)
   const [aiPlanData, setAiPlanData] = useState<AIPlanData | null>(null)
   const [planApproved, setPlanApproved] = useState(false)
+  const [planSaved, setPlanSaved] = useState(false)
 
   // Wizard state
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
@@ -514,6 +528,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       setDraftSavedAt(null)
       toast.success('План прогрева создан!')
       router.refresh()
+      setPlanSaved(true)
       onComplete?.(planId)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Ошибка создания плана')
@@ -1075,9 +1090,14 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           )}
 
           {/* Plan generated */}
-          {aiPlanData && !generatingSummary && (
+          {aiPlanData && !generatingSummary && !planSaved && (
             <>
-              <div className="max-h-[55vh] overflow-y-auto rounded-xl border border-border bg-card">
+              {/* Task 10: instructional text at the top */}
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Это твой план прогрева — смыслы, которые нужно транслировать в контенте, чтобы даже самую холодную аудиторию довести до продаж. Одобри план и переходи к составлению контент-плана.
+              </p>
+
+              <div className="max-h-[50vh] overflow-y-auto rounded-xl border border-border bg-card">
                 <PlanPreview
                   planData={aiPlanData}
                   productName={selectedProduct?.name || 'Продукт'}
@@ -1085,24 +1105,32 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                 />
               </div>
 
+              {/* Task 7: stacked buttons, Approve first */}
               {!planApproved && (
                 <div className="flex flex-col gap-2">
                   <Button
-                    variant="outline"
-                    className="w-full border-border text-xs h-9"
-                    onClick={generatePlan}
-                    disabled={generatingSummary}
+                    className="w-full gradient-accent text-white hover:opacity-90"
+                    onClick={() => setPlanApproved(true)}
                   >
-                    <RefreshCw className="mr-2 h-3.5 w-3.5" />
-                    Перегенерировать
+                    <Check className="mr-2 h-4 w-4" />
+                    Одобрить план
                   </Button>
                   <div className="flex gap-2">
-                    <Button variant="outline" className="flex-1 border-border" onClick={() => { setAiPlanData(null); setPlanApproved(false) }}>
-                      Изменить настройки
+                    <Button
+                      variant="outline"
+                      className="flex-1 border-border text-xs h-9"
+                      onClick={generatePlan}
+                      disabled={generatingSummary}
+                    >
+                      <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                      Перегенерировать
                     </Button>
-                    <Button className="flex-1 gradient-accent text-white hover:opacity-90" onClick={() => setPlanApproved(true)}>
-                      <Check className="mr-2 h-4 w-4" />
-                      Одобрить план
+                    <Button
+                      variant="outline"
+                      className="flex-1 border-border text-xs h-9"
+                      onClick={() => { setAiPlanData(null); setPlanApproved(false) }}
+                    >
+                      Изменить настройки
                     </Button>
                   </div>
                 </div>
@@ -1117,6 +1145,24 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                 </Button>
               )}
             </>
+          )}
+
+          {/* Task 9: congratulations after plan is saved */}
+          {planSaved && (
+            <div className="flex flex-col items-center text-center gap-4 py-8">
+              <div className="text-5xl">🎉</div>
+              <div className="space-y-1.5">
+                <p className="text-base font-bold text-foreground">Поздравляю!</p>
+                <p className="text-sm text-muted-foreground leading-relaxed max-w-[320px] mx-auto">
+                  План прогрева сформирован. Переходи в раздел «контент-план» и начинай создавать посты для каждого дня!
+                </p>
+              </div>
+              <Button asChild className="gradient-accent text-white hover:opacity-90 w-full max-w-xs">
+                <Link href={`/projects/${projectId}/content-plan`}>
+                  Перейти в контент-план →
+                </Link>
+              </Button>
+            </div>
           )}
         </div>
       )}
