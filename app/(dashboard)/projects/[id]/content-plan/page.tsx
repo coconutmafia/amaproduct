@@ -130,9 +130,13 @@ export default function ContentPlanPage() {
         setPlanName(warmupPlan.name)
         setHasPlan(true)
 
-        // Extract start date from plan name ("... (старт 2026-05-15)")
-        const startDateMatch = warmupPlan.name?.match(/старт (\d{4}-\d{2}-\d{2})/)
-        const planBaseDate = startDateMatch ? new Date(startDateMatch[1] + 'T00:00:00') : undefined
+        // Extract start date: from plan_data.meta.start_date first, then from name as fallback
+        const metaStartDate = (warmupPlan.plan_data as Record<string, unknown> | null)
+          ?.meta as Record<string, string> | undefined
+        const startDateStr = metaStartDate?.start_date
+          || warmupPlan.name?.match(/старт (\d{4}-\d{2}-\d{2})/)?.[1]
+          || null
+        const planBaseDate = startDateStr ? new Date(startDateStr + 'T00:00:00') : undefined
 
         if (warmupPlan.plan_data) {
           const planData = warmupPlan.plan_data as WarmupPlanData

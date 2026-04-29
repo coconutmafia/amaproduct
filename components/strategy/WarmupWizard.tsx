@@ -512,7 +512,10 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
             strategic_summary: aiPlanData.strategy_summary,
             summary_approved: true,
             status: 'approved',
-            plan_data: { warmup_plan: { phases: planPhases } },
+            plan_data: {
+              warmup_plan: { phases: planPhases },
+              meta: { start_date: startDate || null },
+            },
           },
         }),
       })

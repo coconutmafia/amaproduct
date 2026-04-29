@@ -126,18 +126,25 @@ export function ContentPlanGrid({
           <Button
             variant="outline"
             size="sm"
-            className="border-border text-xs h-8"
+            className="border-border text-xs h-8 px-2.5"
             onClick={handleGenerateWeekBriefClick}
             disabled={loading || generatingWeekBrief}
+            title="Составить план недели"
           >
             {generatingWeekBrief
-              ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" /> Составляю план...</>
-              : <><Sparkles className="mr-1 h-3 w-3" /> Составить план недели</>
+              ? <><Loader2 className="h-3 w-3 animate-spin shrink-0" /><span className="hidden sm:inline ml-1">Составляю...</span></>
+              : <><Sparkles className="h-3 w-3 shrink-0" /><span className="hidden sm:inline ml-1">Составить план</span></>
             }
           </Button>
-          <Button variant="outline" size="sm" className="border-border text-xs h-8" onClick={onExport}>
-            <Download className="mr-1 h-3 w-3" />
-            Скачать
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-border text-xs h-8 px-2.5"
+            onClick={onExport}
+            title="Скачать контент-план"
+          >
+            <Download className="h-3 w-3 shrink-0" />
+            <span className="hidden sm:inline ml-1">Скачать</span>
           </Button>
         </div>
       </div>
