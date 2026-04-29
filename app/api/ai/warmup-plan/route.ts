@@ -11,11 +11,11 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const {
-      projectId, productName, duration, startDate, endDate, launchDate, warmupType,
+      projectId, productName, duration, startDate, endDate, salesOpenDate, productStartDate, warmupType,
       funnelDesc, warmTypes, useCases, hooks, hookTexts, extraHooks, competitors,
     }: {
       projectId: string; productName: string; duration: number
-      startDate?: string; endDate?: string; launchDate?: string
+      startDate?: string; endDate?: string; salesOpenDate?: string; productStartDate?: string
       warmupType?: 'launch' | 'evergreen'
       funnelDesc: string; warmTypes: string[]
       useCases: boolean; hooks: string[]
@@ -93,16 +93,30 @@ export async function POST(request: Request) {
           .join('\n')
       : ''
 
-    // Вычисляем, на какие дни приходится запуск продукта (для триггеров)
+    // Вычисляем, на какие дни приходятся открытие продаж и старт продукта (для триггеров)
     const isEvergreen = warmupType === 'evergreen'
     let launchDayInfo = ''
-    if (!isEvergreen && launchDate && startDate) {
-      const launchDay = Math.round((new Date(launchDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1
-      if (launchDay > 0 && launchDay <= duration) {
-        launchDayInfo = `\nДата запуска продукта: ${launchDate} (это день ${launchDay} из ${duration}).
-За 3–5 дней ДО (дни ${Math.max(1, launchDay - 5)}–${launchDay - 1}): усиль триггер АЖИОТАЖА — сколько мест занято, как участники уже записываются, что происходит за кулисами.
-В день запуска и 2–3 дня ПОСЛЕ (дни ${launchDay}–${Math.min(duration, launchDay + 3)}): триггер ОГРАНИЧЕННОСТИ — «осталось X мест», «продажи закроются через Y часов / дней», «ещё можно успеть».`
+    if (!isEvergreen && startDate) {
+      const parts: string[] = []
+
+      if (salesOpenDate) {
+        const salesDay = Math.round((new Date(salesOpenDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1
+        if (salesDay > 0 && salesDay <= duration) {
+          parts.push(`Дата открытия продаж: ${salesOpenDate} (день ${salesDay} из ${duration}).
+В день открытия продаж (день ${salesDay}): специальный контент — «продажи открыты», призыв к действию, как записаться.`)
+        }
       }
+
+      if (productStartDate) {
+        const productDay = Math.round((new Date(productStartDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1
+        if (productDay > 0 && productDay <= duration) {
+          parts.push(`Дата запуска продукта: ${productStartDate} (день ${productDay} из ${duration}).
+За 3–5 дней ДО (дни ${Math.max(1, productDay - 5)}–${productDay - 1}): усиль триггер АЖИОТАЖА — сколько мест занято, как участники уже записываются, что происходит за кулисами.
+В день запуска и 2–3 дня ПОСЛЕ (дни ${productDay}–${Math.min(duration, productDay + 3)}): триггер ОГРАНИЧЕННОСТИ — «осталось X мест», «продажи закроются через Y часов / дней», «ещё можно успеть».`)
+        }
+      }
+
+      if (parts.length > 0) launchDayInfo = '\n' + parts.join('\n\n')
     }
 
     const prompt = `Ты — AI-продюсер запусков, работающий по методологии конкретного эксперта-маркетолога.
@@ -123,7 +137,7 @@ ${systemKnowledgeText}
 Описание: ${project.description || 'не указано'}
 Целевая аудитория: ${project.target_audience || 'не указана'}
 Тип прогрева: ${isEvergreen ? 'Вечнозелёный (постоянный, без дедлайна — консультации/услуги)' : 'Под запуск (разовый, с датами)'}
-Длительность прогрева: ${duration} дней${startDate ? ` (старт: ${startDate}` : ''}${endDate && !isEvergreen ? `, окончание: ${endDate}` : ''}${startDate ? ')' : ''}${launchDayInfo}
+Длительность прогрева: ${duration} дней${startDate ? ` (старт: ${startDate}` : ''}${endDate && !isEvergreen ? `, окончание: ${endDate}` : ''}${startDate ? ')' : ''}${salesOpenDate && !isEvergreen ? `\nОткрытие продаж: ${salesOpenDate}` : ''}${productStartDate && !isEvergreen ? `\nСтарт продукта: ${productStartDate}` : ''}${launchDayInfo}
 Воронка продаж: ${funnelDesc}
 Механики прогрева: ${warmTypes.join(', ')}
 Кейсы клиентов: ${useCases ? 'есть, использовать' : 'нет'}

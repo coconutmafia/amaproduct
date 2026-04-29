@@ -208,7 +208,8 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   const [warmupType, setWarmupType] = useState<'launch' | 'evergreen'>('launch')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
-  const [launchDate, setLaunchDate] = useState('') // дата старта продаж (≠ конец прогрева)
+  const [salesOpenDate, setSalesOpenDate] = useState('')  // когда открываются продажи (ажиотаж/ограниченность)
+  const [productStartDate, setProductStartDate] = useState('') // когда стартует сам продукт
   const [evergreenDays, setEvergreenDays] = useState<14 | 21 | 30>(30)
   const [coldFunnelId, setColdFunnelId] = useState<string | null>(null)
   const [coldFunnelCustom, setColdFunnelCustom] = useState('')
@@ -271,7 +272,8 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     warmupType,
     startDate,
     endDate,
-    launchDate,
+    salesOpenDate,
+    productStartDate,
     evergreenDays,
     coldFunnelId,
     coldFunnelCustom,
@@ -291,7 +293,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     competitorNotes,
     extraCompetitors,
   }), [
-    step, selectedProductId, warmupType, startDate, endDate, launchDate, evergreenDays,
+    step, selectedProductId, warmupType, startDate, endDate, salesOpenDate, productStartDate, evergreenDays,
     coldFunnelId, coldFunnelCustom, coldAudienceType,
     warmAudienceTypes, freeEventName, freeEventDate, freeEventTypes,
     paidEventName, paidEventDate, paidEventTypes,
@@ -325,7 +327,8 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       if (d.warmupType) setWarmupType(d.warmupType)
       if (d.startDate !== undefined) setStartDate(d.startDate)
       if (d.endDate !== undefined) setEndDate(d.endDate)
-      if (d.launchDate !== undefined) setLaunchDate(d.launchDate)
+      if (d.salesOpenDate !== undefined) setSalesOpenDate(d.salesOpenDate)
+      if (d.productStartDate !== undefined) setProductStartDate(d.productStartDate)
       if (d.evergreenDays) setEvergreenDays(d.evergreenDays)
       if (d.coldFunnelId !== undefined) setColdFunnelId(d.coldFunnelId)
       if (d.coldFunnelCustom !== undefined) setColdFunnelCustom(d.coldFunnelCustom)
@@ -396,7 +399,8 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           duration: computedDuration,
           startDate: startDate || undefined,
           endDate: endDate || undefined,
-          launchDate: launchDate || undefined,
+          salesOpenDate: salesOpenDate || undefined,
+          productStartDate: productStartDate || undefined,
           warmupType,
           funnelDesc: getFunnelDesc(),
           warmTypes: warmAudienceTypes,
@@ -671,11 +675,19 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                     className="bg-input border-border h-10 text-sm w-full" />
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium">Дата запуска продукта <span className="text-muted-foreground font-normal">(открытие продаж)</span></Label>
-                <p className="text-xs text-muted-foreground">AI усилит контент триггерами ажиотажа и ограниченности за несколько дней до и после этой даты</p>
-                <Input type="date" value={launchDate} onChange={e => setLaunchDate(e.target.value)}
-                  className="bg-input border-border h-10 text-sm w-full max-w-xs" />
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Дата открытия продаж</Label>
+                  <p className="text-xs text-muted-foreground">Когда открывается продажа — AI сделает специальный контент в этот день</p>
+                  <Input type="date" value={salesOpenDate} onChange={e => setSalesOpenDate(e.target.value)}
+                    className="bg-input border-border h-10 text-sm w-full" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Дата запуска продукта</Label>
+                  <p className="text-xs text-muted-foreground">AI усилит контент триггерами ажиотажа и ограниченности за несколько дней до и после этой даты</p>
+                  <Input type="date" value={productStartDate} onChange={e => setProductStartDate(e.target.value)}
+                    className="bg-input border-border h-10 text-sm w-full" />
+                </div>
               </div>
               {startDate && endDate && (
                 <p className="text-xs text-primary font-medium">
@@ -899,15 +911,17 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
               </div>
             </button>
           ))}
-          <div className="rounded-xl border border-border bg-secondary/20 p-4 space-y-3">
+          <div className="rounded-xl border border-border bg-secondary/20 px-4 pt-4 pb-5 space-y-3">
             <p className="text-sm font-medium text-foreground">Добавить дополнительные кейсы</p>
-            <VoiceTextarea
-              placeholder="Опишите кейсы текстом — результаты клиентов, трансформации, цифры..."
-              value={extraCasesText}
-              onChange={setExtraCasesText}
-              rows={3}
-              className="bg-input border-border resize-none text-sm"
-            />
+            <div className="pb-1">
+              <VoiceTextarea
+                placeholder="Опишите кейсы текстом — результаты клиентов, трансформации, цифры..."
+                value={extraCasesText}
+                onChange={setExtraCasesText}
+                rows={3}
+                className="bg-input border-border resize-none text-sm"
+              />
+            </div>
             <div>
               <label className="flex items-center gap-2 cursor-pointer text-xs text-primary hover:text-primary/80 transition-colors">
                 <Upload className="h-3.5 w-3.5" />

@@ -20,7 +20,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
   return (
     <Link href={`/projects/${project.id}`}>
-      <Card className="group border-border bg-card hover:bg-card/80 hover:border-primary/40 transition-all duration-200 cursor-pointer">
+      <Card className="group border-border bg-card hover:bg-card/80 hover:border-primary/40 transition-all duration-200 cursor-pointer overflow-visible">
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">

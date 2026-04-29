@@ -408,7 +408,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
           <p className="text-sm font-medium mb-2">
             Чем больше материалов — тем точнее и персональнее контент!
           </p>
-          <ProgressIndicator score={score} />
+          <ProgressIndicator score={score} loadedTypes={materials.map(m => m.material_type)} />
         </div>
       </div>
 

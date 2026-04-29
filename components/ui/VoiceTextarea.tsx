@@ -18,13 +18,23 @@ export function VoiceTextarea({ value, onChange, placeholder, rows = 3, classNam
   const [interim, setInterim] = useState('')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
-  // tracks committed value (without interim) so we can append finals incrementally
   const committedRef = useRef(value)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // Flag to suppress restart after manual stop
+  const manualStopRef = useRef(false)
 
   // keep committedRef in sync whenever voice is not active
   useEffect(() => {
     if (!listening) committedRef.current = value
   }, [value, listening])
+
+  // Auto-scroll textarea to bottom when new text arrives during dictation
+  useEffect(() => {
+    if (listening && textareaRef.current) {
+      const el = textareaRef.current
+      el.scrollTop = el.scrollHeight
+    }
+  }, [interim, value, listening])
 
   // what to display in the textarea — shows live interim text as user speaks
   const displayValue = listening && interim
@@ -38,6 +48,10 @@ export function VoiceTextarea({ value, onChange, placeholder, rows = 3, classNam
       alert('Голосовой ввод недоступен. Используйте Chrome или Safari.')
       return
     }
+
+    manualStopRef.current = false
+    committedRef.current = value
+
     const recognition = new SR()
     recognition.lang = 'ru-RU'
     recognition.continuous = true      // не останавливаться после паузы
@@ -63,24 +77,42 @@ export function VoiceTextarea({ value, onChange, placeholder, rows = 3, classNam
       }
     }
 
-    recognition.onend = () => { setListening(false); setInterim('') }
-    recognition.onerror = () => { setListening(false); setInterim('') }
+    recognition.onend = () => {
+      // Auto-restart if user didn't manually stop — browser often stops after silence
+      if (!manualStopRef.current && recognitionRef.current === recognition) {
+        try { recognition.start() } catch { /* already started */ }
+        return
+      }
+      setListening(false)
+      setInterim('')
+    }
 
-    // sync committed before starting
-    committedRef.current = value
+    recognition.onerror = () => {
+      // On error restart too (unless manually stopped)
+      if (!manualStopRef.current) {
+        try { recognition.start() } catch { /* ignore */ }
+      } else {
+        setListening(false)
+        setInterim('')
+      }
+    }
+
     recognition.start()
     recognitionRef.current = recognition
     setListening(true)
   }
 
   function stopListening() {
+    manualStopRef.current = true
     recognitionRef.current?.stop()
-    // onend will flip setListening(false)
+    setListening(false)
+    setInterim('')
   }
 
   return (
     <div className="space-y-1.5">
       <Textarea
+        ref={textareaRef}
         value={displayValue}
         onChange={e => {
           // manual edits override voice

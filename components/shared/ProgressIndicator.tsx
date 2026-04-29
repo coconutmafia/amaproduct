@@ -7,16 +7,37 @@ interface ProgressIndicatorProps {
   score: number
   showLabel?: boolean
   className?: string
+  loadedTypes?: string[] // actual material types already uploaded
 }
 
-export function ProgressIndicator({ score, showLabel = true, className }: ProgressIndicatorProps) {
+export function ProgressIndicator({ score, showLabel = true, className, loadedTypes }: ProgressIndicatorProps) {
   const color = score >= 80 ? 'text-green-400' : score >= 50 ? 'text-yellow-400' : 'text-red-400'
 
   const getMissingMessage = (score: number) => {
-    if (score >= 90) return 'База знаний отлична!'
-    if (score >= 70) return 'Загрузите Tone of Voice для персонального контента'
-    if (score >= 50) return 'Добавьте маркетинговую стратегию и исследование аудитории'
-    if (score >= 25) return 'Добавьте кейсы и описание продукта'
+    if (score >= 90) return 'База знаний отличная!'
+
+    const loaded = new Set(loadedTypes ?? [])
+
+    if (score >= 70) {
+      if (!loaded.has('tone_of_voice')) return 'Загрузите Tone of Voice для персонального контента'
+      return 'Загрузите Tone of Voice или маркетинговую стратегию'
+    }
+    if (score >= 50) {
+      const missing: string[] = []
+      if (!loaded.has('marketing_strategy')) missing.push('маркетинговую стратегию')
+      if (!loaded.has('audience_research') && !loaded.has('audience_survey') && !loaded.has('interview_transcript')) {
+        missing.push('исследование аудитории')
+      }
+      if (missing.length === 0) return 'Загрузите Tone of Voice для улучшения результатов'
+      return `Добавьте ${missing.join(' и ')}`
+    }
+    if (score >= 25) {
+      const missing: string[] = []
+      if (!loaded.has('cases_reviews')) missing.push('кейсы')
+      if (!loaded.has('product_description')) missing.push('описание продукта')
+      if (missing.length === 0) return 'Добавьте маркетинговую стратегию'
+      return `Добавьте ${missing.join(' и ')}`
+    }
     return 'Загрузите материалы для начала работы с AI'
   }
 
