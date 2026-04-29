@@ -21,9 +21,10 @@ interface DayData {
   plannedTypes: ContentType[]
   phase: WarmupPhase
   theme?: string
+  dayBriefs?: Record<string, string>
 }
 
-function buildDaysFromWarmupPlan(planData: WarmupPlanData, weekNumber: number, startDay: number): DayData[] {
+function buildDaysFromWarmupPlan(planData: WarmupPlanData, weekNumber: number, startDay: number, baseDate?: Date): DayData[] {
   // Flatten all daily_plan entries from all phases
   const allDays: Array<{ day: number; phase: WarmupPhase; format: ContentType[]; theme: string }> = []
 
@@ -48,8 +49,9 @@ function buildDaysFromWarmupPlan(planData: WarmupPlanData, weekNumber: number, s
 
   return weekDays.map((d, i) => {
     const absDay = startDay + d.day - 1
-    const date = new Date()
-    date.setDate(date.getDate() + d.day - 1)
+    const base = baseDate ? new Date(baseDate) : new Date()
+    base.setDate(base.getDate() + d.day - 1)
+    const date = base
     const dd = String(date.getDate()).padStart(2, '0')
     const mm = String(date.getMonth() + 1).padStart(2, '0')
     const yyyy = date.getFullYear()
@@ -66,7 +68,7 @@ function buildDaysFromWarmupPlan(planData: WarmupPlanData, weekNumber: number, s
   })
 }
 
-function buildFallbackDays(weekNumber: number, totalDays: number): DayData[] {
+function buildFallbackDays(weekNumber: number, totalDays: number, baseDate?: Date): DayData[] {
   const phases: WarmupPhase[] = ['awareness', 'trust', 'desire', 'close']
   const types: ContentType[][] = [
     ['reels', 'stories'], ['post'], ['carousel', 'stories'],
@@ -78,7 +80,7 @@ function buildFallbackDays(weekNumber: number, totalDays: number): DayData[] {
     const dayNum = weekStart + i
     if (dayNum > totalDays) return null
     const phaseIndex = Math.floor(((dayNum - 1) / totalDays) * 4)
-    const d = new Date()
+    const d = baseDate ? new Date(baseDate) : new Date()
     d.setDate(d.getDate() + dayNum - 1)
     const dd = String(d.getDate()).padStart(2, '0')
     const mm = String(d.getMonth() + 1).padStart(2, '0')
@@ -128,10 +130,14 @@ export default function ContentPlanPage() {
         setPlanName(warmupPlan.name)
         setHasPlan(true)
 
+        // Extract start date from plan name ("... (старт 2026-05-15)")
+        const startDateMatch = warmupPlan.name?.match(/старт (\d{4}-\d{2}-\d{2})/)
+        const planBaseDate = startDateMatch ? new Date(startDateMatch[1] + 'T00:00:00') : undefined
+
         if (warmupPlan.plan_data) {
           const planData = warmupPlan.plan_data as WarmupPlanData
           if (planData?.warmup_plan?.phases?.length > 0) {
-            const builtDays = buildDaysFromWarmupPlan(planData, weekNum, 1)
+            const builtDays = buildDaysFromWarmupPlan(planData, weekNum, 1, planBaseDate)
             if (builtDays.length > 0) {
               // Fetch existing generated content for these days
               const dayNumbers = builtDays.map((d) => d.day)
@@ -151,7 +157,7 @@ export default function ContentPlanPage() {
           }
         }
         // Plan exists but no structured plan_data yet — use fallback with correct duration
-        setDays(buildFallbackDays(weekNum, duration))
+        setDays(buildFallbackDays(weekNum, duration, planBaseDate))
       } else {
         // No approved plan — check for any draft
         const { data: draftPlan } = await supabase
@@ -168,11 +174,11 @@ export default function ContentPlanPage() {
           setPlanName(draftPlan.name)
         }
         setHasPlan(false)
-        setDays(buildFallbackDays(weekNum, draftPlan?.duration_days || 45))
+        setDays(buildFallbackDays(weekNum, draftPlan?.duration_days || 45, undefined))
       }
     } catch (err) {
       console.error('Error loading plan data:', err)
-      setDays(buildFallbackDays(weekNum, 45))
+      setDays(buildFallbackDays(weekNum, 45, undefined))
     } finally {
       setLoading(false)
     }
@@ -182,7 +188,7 @@ export default function ContentPlanPage() {
     loadPlanData(week)
   }, [week, loadPlanData])
 
-  const handleGenerate = useCallback(async (day: number, contentType: ContentType, phase: WarmupPhase) => {
+  const handleGenerate = useCallback(async (day: number, contentType: ContentType, phase: WarmupPhase, theme?: string) => {
     try {
       const res = await fetch('/api/ai/generate', {
         method: 'POST',
@@ -193,6 +199,7 @@ export default function ContentPlanPage() {
           dayNumber: day,
           totalDays,
           phase,
+          dayMeaning: theme || undefined,
         }),
       })
       if (!res.ok) {
@@ -236,6 +243,56 @@ export default function ContentPlanPage() {
       toast.error(e instanceof Error ? e.message : 'Ошибка создания контента')
     }
   }, [id, totalDays])
+
+  const handleRemoveType = useCallback((dayNum: number, type: ContentType) => {
+    setDays(prev => prev.map(d =>
+      d.day === dayNum ? { ...d, plannedTypes: (d.plannedTypes || []).filter(t => t !== type) } : d
+    ))
+  }, [])
+
+  const handleAddType = useCallback((dayNum: number, type: ContentType) => {
+    setDays(prev => prev.map(d =>
+      d.day === dayNum && !(d.plannedTypes || []).includes(type)
+        ? { ...d, plannedTypes: [...(d.plannedTypes || []), type] }
+        : d
+    ))
+  }, [])
+
+  const handleGenerateWeekBrief = useCallback(async () => {
+    const briefDays = days.filter(d => d.phase).map(d => ({
+      day: d.day,
+      date: d.date,
+      phase: d.phase,
+      meaning: d.theme || '',
+    }))
+    if (!briefDays.length) {
+      toast.error('Нет данных плана прогрева для этой недели')
+      return
+    }
+    try {
+      const res = await fetch('/api/ai/generate-week-brief', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: id, days: briefDays }),
+      })
+      if (!res.ok) throw new Error('Ошибка генерации плана')
+      const data = await res.json() as { days: Array<{ day: number; brief: Record<string, string> }> }
+      // Update themes in days state
+      setDays(prev => prev.map(d => {
+        const briefDay = data.days.find(b => b.day === d.day)
+        if (!briefDay) return d
+        // Merge: set theme to main brief text, add types if missing
+        const newTheme = Object.values(briefDay.brief).join(' · ')
+        const addTypes = Object.keys(briefDay.brief) as ContentType[]
+        const existingTypes = d.plannedTypes || []
+        const mergedTypes = [...new Set([...existingTypes, ...addTypes])]
+        return { ...d, theme: newTheme, plannedTypes: mergedTypes, dayBriefs: briefDay.brief }
+      }))
+      toast.success('План недели готов! Кликай на тип контента чтобы сгенерировать')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Ошибка')
+    }
+  }, [id, days])
 
   const handleExport = useCallback(async () => {
     toast.info('Экспорт контент-плана в разработке...')
@@ -366,8 +423,14 @@ export default function ContentPlanPage() {
           weekNumber={week}
           days={days}
           onWeekChange={handleWeekChange}
-          onGenerate={handleGenerate}
+          onGenerate={(day, contentType, phase) => {
+            const dayData = days.find(d => d.day === day)
+            return handleGenerate(day, contentType, phase, dayData?.theme)
+          }}
+          onGenerateWeekBrief={handleGenerateWeekBrief}
           onExport={handleExport}
+          onRemoveType={handleRemoveType}
+          onAddType={handleAddType}
           loading={false}
         />
       )}

@@ -4,6 +4,7 @@ import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt, buildValidatorUserPrompt } from '@/lib/ai/prompts/system'
 import { checkAndConsumeGeneration } from '@/lib/generations'
 import { NextResponse } from 'next/server'
+import type { WarmupPhase } from '@/types'
 
 export const maxDuration = 60
 
@@ -182,6 +183,15 @@ ${contentType === 'post' ? 'Напиши текст поста (без JSON). Н
 
         const versionNumber = (count || 0) + 1
 
+        // Map new-style phases to DB-allowed values
+        const PHASE_DB_MAP: Record<string, string> = {
+          niche: 'awareness',
+          expert: 'trust',
+          product: 'desire',
+          objections: 'close',
+        }
+        const dbPhase = (PHASE_DB_MAP[phase] || phase) as WarmupPhase
+
         const { data: contentItem, error } = await supabase
           .from('content_items')
           .insert({
@@ -189,7 +199,7 @@ ${contentType === 'post' ? 'Напиши текст поста (без JSON). Н
             content_type: contentType,
             title,
             day_number: dayNumber,
-            warmup_phase: phase,
+            warmup_phase: dbPhase,
             body_text: bodyText,
             structured_data: structuredData,
             hashtags: hashtags.length > 0 ? hashtags : null,
