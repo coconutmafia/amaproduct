@@ -192,7 +192,7 @@ export default function ContentPlanPage() {
     loadPlanData(week)
   }, [week, loadPlanData])
 
-  const handleGenerate = useCallback(async (day: number, contentType: ContentType, phase: WarmupPhase, theme?: string) => {
+  const handleGenerate = useCallback(async (day: number, contentType: ContentType, phase: WarmupPhase, theme?: string, additionalInstructions?: string) => {
     try {
       const res = await fetch('/api/ai/generate', {
         method: 'POST',
@@ -204,6 +204,7 @@ export default function ContentPlanPage() {
           totalDays,
           phase,
           dayMeaning: theme || undefined,
+          additionalInstructions: additionalInstructions || undefined,
         }),
       })
       if (!res.ok) {
@@ -452,9 +453,9 @@ export default function ContentPlanPage() {
           weekNumber={week}
           days={days}
           onWeekChange={handleWeekChange}
-          onGenerate={(day, contentType, phase) => {
+          onGenerate={(day, contentType, phase, theme, additionalInstructions) => {
             const dayData = days.find(d => d.day === day)
-            return handleGenerate(day, contentType, phase, dayData?.theme)
+            return handleGenerate(day, contentType, phase, theme || dayData?.theme, additionalInstructions)
           }}
           onGenerateWeekBrief={handleGenerateWeekBrief}
           onExport={handleExport}

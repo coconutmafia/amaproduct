@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import {
   Sparkles, ChevronLeft, ChevronRight, Download, Loader2,
   Plus, X, Eye, EyeOff, RefreshCw, Check,
@@ -27,7 +28,7 @@ interface ContentPlanGridProps {
   weekNumber: number
   days: DayContent[]
   onWeekChange: (delta: number) => void
-  onGenerate: (day: number, contentType: ContentType, phase: WarmupPhase, theme?: string) => void
+  onGenerate: (day: number, contentType: ContentType, phase: WarmupPhase, theme?: string, additionalInstructions?: string) => void
   onGenerateWeekBrief?: () => Promise<void>
   onExport: () => void
   onRemoveType?: (dayNum: number, type: ContentType) => void
@@ -205,19 +206,41 @@ export function ContentPlanGrid({
   const [addingToDay, setAddingToDay] = useState<number | null>(null)
   // key = "dayNum-contentType" — which content is expanded for viewing
   const [viewingKey, setViewingKey] = useState<string | null>(null)
+  // pending badge = clicked empty badge waiting for extra context input
+  const [pendingBadge, setPendingBadge] = useState<{ day: number; type: ContentType; phase: WarmupPhase; theme?: string } | null>(null)
+  const [extraContext, setExtraContext] = useState('')
 
   void projectId
   void warmupPlanId
   void toast
 
-  async function handleGenerate(day: DayContent, contentType: ContentType) {
+  async function handleGenerate(day: DayContent, contentType: ContentType, additionalInstructions?: string) {
     const key = `${day.day}-${contentType}`
     setGeneratingDay(key)
     setViewingKey(null) // close any viewer while generating
+    setPendingBadge(null)
+    setExtraContext('')
     try {
       const theme = day.dayBriefs?.[contentType] || day.theme
-      await onGenerate(day.day, contentType, day.phase || 'awareness', theme)
+      await onGenerate(day.day, contentType, day.phase || 'awareness', theme, additionalInstructions || undefined)
       // Auto-open the viewer after generation
+      setViewingKey(key)
+    } finally {
+      setGeneratingDay(null)
+    }
+  }
+
+  async function handlePendingGenerate() {
+    if (!pendingBadge) return
+    const key = `${pendingBadge.day}-${pendingBadge.type}`
+    setGeneratingDay(key)
+    setViewingKey(null)
+    const { day: dayNum, type, phase, theme } = pendingBadge
+    setPendingBadge(null)
+    const extra = extraContext.trim()
+    setExtraContext('')
+    try {
+      await onGenerate(dayNum, type, phase, theme, extra || undefined)
       setViewingKey(key)
     } finally {
       setGeneratingDay(null)
@@ -308,6 +331,8 @@ export function ContentPlanGrid({
                       const isViewing = viewingKey === genKey
                       const briefText = day.dayBriefs?.[type]
 
+                      const isPending = pendingBadge?.day === day.day && pendingBadge?.type === type
+
                       return (
                         <div key={type} className="flex items-center gap-0.5">
                           <button
@@ -318,7 +343,15 @@ export function ContentPlanGrid({
                                 setViewingKey(isViewing ? null : genKey)
                                 setAddingToDay(null)
                               } else {
-                                handleGenerate(day, type)
+                                // toggle pending panel
+                                if (isPending) {
+                                  setPendingBadge(null)
+                                  setExtraContext('')
+                                } else {
+                                  setPendingBadge({ day: day.day, type, phase: day.phase || 'awareness', theme: day.dayBriefs?.[type] || day.theme })
+                                  setViewingKey(null)
+                                  setAddingToDay(null)
+                                }
                               }
                             }}
                             title={existingItem ? 'Нажми чтобы прочитать контент' : (briefText || `Сгенерировать ${config.label}`)}
@@ -327,7 +360,9 @@ export function ContentPlanGrid({
                                 ? isViewing
                                   ? `${config.doneColor} ring-1 ring-current cursor-pointer`
                                   : `${config.doneColor} hover:opacity-90 cursor-pointer`
-                                : `${config.color} hover:opacity-80 cursor-pointer`
+                                : isPending
+                                  ? `${config.color} ring-1 ring-current cursor-pointer`
+                                  : `${config.color} hover:opacity-80 cursor-pointer`
                             }`}
                           >
                             {isGenerating ? (
@@ -394,6 +429,52 @@ export function ContentPlanGrid({
                   )}
                 </div>
               </div>
+
+              {/* ── Pending generate panel ─────────────────────────────── */}
+              {pendingBadge && pendingBadge.day === day.day && (() => {
+                const config = CONTENT_TYPE_CONFIG[pendingBadge.type]
+                if (!config) return null
+                return (
+                  <div className="border-t border-border bg-secondary/10 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${config.color}`}>
+                        {config.label} · День {day.day}
+                      </span>
+                      <button
+                        onClick={() => { setPendingBadge(null); setExtraContext('') }}
+                        className="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <VoiceTextarea
+                      value={extraContext}
+                      onChange={setExtraContext}
+                      placeholder="Добавь детали: кейс, продукт, что хочешь упомянуть..."
+                      rows={2}
+                    />
+                    <div className="flex items-center gap-3">
+                      <Button
+                        size="sm"
+                        className="gradient-accent text-white hover:opacity-90 gap-1.5"
+                        onClick={handlePendingGenerate}
+                        disabled={!!generatingDay}
+                      >
+                        {generatingDay === `${pendingBadge.day}-${pendingBadge.type}`
+                          ? <><Loader2 className="h-3 w-3 animate-spin" /> Создаю...</>
+                          : <><Sparkles className="h-3 w-3" /> Создать</>
+                        }
+                      </Button>
+                      <button
+                        onClick={() => { setPendingBadge(null); setExtraContext('') }}
+                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                )
+              })()}
 
               {/* ── Inline content viewer ───────────────────────────────── */}
               {viewingKey && viewingKey.startsWith(`${day.day}-`) && (() => {
