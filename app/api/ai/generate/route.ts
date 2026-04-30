@@ -169,10 +169,16 @@ ${contentType === 'email' ? `Напиши письмо для email-рассыл
             if (jsonMatch) {
               structuredData = JSON.parse(jsonMatch[0])
               if (structuredData?.reels?.hashtags) hashtags = structuredData.reels.hashtags as unknown as string[]
+            } else {
+              // AI returned plain text (not JSON) — save as body text
+              bodyText = generatedText
             }
           } catch {
+            // JSON parse failed — save raw text
             bodyText = generatedText
           }
+          // Ensure at least body_text is set if structured_data is empty
+          if (!structuredData && !bodyText) bodyText = generatedText
         }
 
         const title = contentType === 'post'
@@ -189,14 +195,22 @@ ${contentType === 'email' ? `Напиши письмо для email-рассыл
 
         const versionNumber = (count || 0) + 1
 
-        // Map new-style phases to DB-allowed values
+        // Map any phase name → DB-allowed value
+        // DB constraint only allows: awareness, trust, desire, close, activation
+        const VALID_DB_PHASES = new Set(['awareness', 'trust', 'desire', 'close', 'activation'])
         const PHASE_DB_MAP: Record<string, string> = {
           niche: 'awareness',
           expert: 'trust',
           product: 'desire',
           objections: 'close',
+          phase_1: 'awareness',
+          phase_2: 'trust',
+          phase_3: 'desire',
+          phase_4: 'close',
         }
-        const dbPhase = (PHASE_DB_MAP[phase] || phase) as WarmupPhase
+        const dbPhase = (
+          PHASE_DB_MAP[phase] ?? (VALID_DB_PHASES.has(phase) ? phase : 'awareness')
+        ) as WarmupPhase
 
         const { data: contentItem, error } = await supabase
           .from('content_items')
