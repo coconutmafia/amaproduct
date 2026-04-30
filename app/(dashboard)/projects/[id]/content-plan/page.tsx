@@ -287,9 +287,11 @@ export default function ContentPlanPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId: id, days: briefDays }),
       })
+      const rawText = await res.text()
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({})) as { error?: string; hint?: string }
-        const msg = errData.error || 'Ошибка генерации плана'
+        let errData: { error?: string; hint?: string } = {}
+        try { errData = JSON.parse(rawText) } catch { /* ignore */ }
+        const msg = errData.error || `Ошибка ${res.status}`
         if (errData.hint) {
           toast.error(msg, { description: errData.hint, duration: 6000 })
         } else {
@@ -297,7 +299,13 @@ export default function ContentPlanPage() {
         }
         return
       }
-      const data = await res.json() as { days: Array<{ day: number; brief: Record<string, string> }> }
+      let data: { days: Array<{ day: number; brief: Record<string, string> }> }
+      try {
+        data = JSON.parse(rawText)
+      } catch {
+        toast.error('AI вернул некорректный ответ, попробуй ещё раз')
+        return
+      }
       // Update themes in days state
       setDays(prev => prev.map(d => {
         const briefDay = data.days.find(b => b.day === d.day)

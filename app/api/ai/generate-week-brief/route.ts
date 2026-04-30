@@ -1,10 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
-import { checkAndConsumeGeneration } from '@/lib/generations'
 import { NextResponse } from 'next/server'
 
-export const maxDuration = 60
+export const maxDuration = 90
 
 interface BriefDay {
   day: number
@@ -17,14 +16,6 @@ export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const genCheck = await checkAndConsumeGeneration(user.id)
-  if (!genCheck.allowed) {
-    return NextResponse.json({
-      error: 'Лимит запросов исчерпан',
-      hint: 'Пригласи друга (+10 запросов) или перейди на платный тариф',
-    }, { status: 429 })
-  }
 
   const { projectId, days } = await request.json() as { projectId: string; days: BriefDay[] }
 
@@ -48,32 +39,20 @@ export async function POST(request: Request) {
     `День ${d.day} (${d.date}) — фаза: ${d.phase}, смысл: ${d.meaning || 'не задан'}`
   ).join('\n')
 
-  const prompt = `Ты — эксперт по контент-маркетингу. Составь конкретный план контента на неделю для блогера.
+  const prompt = `Составь план контента на неделю для блогера. Верни ТОЛЬКО JSON, без markdown, без пояснений.
 
 ПРОЕКТ: ${project.name}
 НИША: ${project.niche || 'не указана'}
-ОПИСАНИЕ: ${project.description || ''}
+${project.description ? `ОПИСАНИЕ: ${project.description}` : ''}
+${ragSummary ? `КОНТЕКСТ: ${ragSummary.slice(0, 500)}` : ''}
 
-${ragSummary ? `МАТЕРИАЛЫ ИЗ БАЗЫ ЗНАНИЙ:\n${ragSummary}\n` : ''}
-
-ДНИ ПРОГРЕВА НА ЭТУ НЕДЕЛЮ:
+ДНИ:
 ${daysText}
 
-Для каждого дня предложи КОНКРЕТНЫЕ темы для контента. Каждая тема — одно-два предложения с конкретикой (не «расскажи о продукте», а конкретный угол подачи, факт, история).
+Для каждого дня — конкретная тема (1 предложение с деталями, не общие слова).
 
-Верни строго JSON без markdown:
-{
-  "days": [
-    {
-      "day": 1,
-      "brief": {
-        "post": "конкретная тема поста",
-        "stories": "конкретная тема сториз",
-        "reels": "конкретная тема рилса"
-      }
-    }
-  ]
-}`
+JSON формат (строго):
+{"days":[{"day":1,"brief":{"post":"тема","stories":"тема","reels":"тема"}}]}`
 
   try {
     const response = await anthropic.messages.create({
