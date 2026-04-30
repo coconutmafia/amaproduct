@@ -15,6 +15,7 @@ import {
   Sparkles,
   Gift,
   Zap,
+  Users,
 } from 'lucide-react'
 import { useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -200,7 +201,27 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
           </Link>
         )}
 
-        {/* Admin promo codes */}
+        {/* Admin: Users management */}
+        {isAdmin && (
+          <Link
+            href="/admin/users"
+            onClick={() => onNavigate?.()}
+            className={cn(
+              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+              pathname === '/admin/users'
+                ? 'bg-primary/20 text-primary font-medium'
+                : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+            )}
+          >
+            <Users className="h-4 w-4 shrink-0" />
+            Пользователи
+            <span className="ml-auto text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full">
+              Admin
+            </span>
+          </Link>
+        )}
+
+        {/* Admin: promo codes */}
         {isAdmin && (
           <Link
             href="/admin/promo"
