@@ -287,7 +287,16 @@ export default function ContentPlanPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId: id, days: briefDays }),
       })
-      if (!res.ok) throw new Error('Ошибка генерации плана')
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({})) as { error?: string; hint?: string }
+        const msg = errData.error || 'Ошибка генерации плана'
+        if (errData.hint) {
+          toast.error(msg, { description: errData.hint, duration: 6000 })
+        } else {
+          toast.error(msg)
+        }
+        return
+      }
       const data = await res.json() as { days: Array<{ day: number; brief: Record<string, string> }> }
       // Update themes in days state
       setDays(prev => prev.map(d => {

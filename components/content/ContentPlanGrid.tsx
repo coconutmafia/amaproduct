@@ -129,11 +129,11 @@ export function ContentPlanGrid({
             className="border-border text-xs h-8 px-2.5"
             onClick={handleGenerateWeekBriefClick}
             disabled={loading || generatingWeekBrief}
-            title="AI пропишет темы и смыслы для каждого дня этой недели на основе плана прогрева"
+            title="AI пропишет темы для каждого дня на основе плана прогрева — затем нажимай на каждый тип контента чтобы сгенерировать текст"
           >
             {generatingWeekBrief
-              ? <><Loader2 className="h-3 w-3 animate-spin shrink-0" /><span className="ml-1">Генерирую темы...</span></>
-              : <><Sparkles className="h-3 w-3 shrink-0" /><span className="ml-1">Темы на неделю</span></>
+              ? <><Loader2 className="h-3 w-3 animate-spin shrink-0" /><span className="ml-1">Составляю план...</span></>
+              : <><Sparkles className="h-3 w-3 shrink-0" /><span className="ml-1">Создать контент-план</span></>
             }
           </Button>
           <Button

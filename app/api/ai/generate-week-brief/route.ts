@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
+import { checkAndConsumeGeneration } from '@/lib/generations'
 import { NextResponse } from 'next/server'
 
 export const maxDuration = 60
@@ -16,6 +17,14 @@ export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const genCheck = await checkAndConsumeGeneration(user.id)
+  if (!genCheck.allowed) {
+    return NextResponse.json({
+      error: 'Лимит запросов исчерпан',
+      hint: 'Пригласи друга (+10 запросов) или перейди на платный тариф',
+    }, { status: 429 })
+  }
 
   const { projectId, days } = await request.json() as { projectId: string; days: BriefDay[] }
 
