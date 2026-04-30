@@ -89,12 +89,33 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
   }
 
-  // Upsert — creates profile row if it doesn't exist yet
-  const { data, error } = await ctx.db
+  // Check if profile exists
+  const { data: existing } = await ctx.db
     .from('profiles')
-    .upsert({ id: userId, ...updates }, { onConflict: 'id' })
-    .select('id, role, subscription_tier, generations_used, bonus_generations')
+    .select('id')
+    .eq('id', userId)
     .single()
+
+  let data, error
+  if (existing) {
+    // Profile exists — just update
+    ;({ data, error } = await ctx.db
+      .from('profiles')
+      .update(updates)
+      .eq('id', userId)
+      .select('id, role, subscription_tier, generations_used, bonus_generations')
+      .single())
+  } else {
+    // Profile missing — get email from Auth, then insert
+    const { data: authUser } = await ctx.db.auth.admin.getUserById(userId)
+    const email = authUser?.user?.email
+    if (!email) return NextResponse.json({ error: 'User not found in auth' }, { status: 404 })
+    ;({ data, error } = await ctx.db
+      .from('profiles')
+      .insert({ id: userId, email, role: 'client', ...updates })
+      .select('id, role, subscription_tier, generations_used, bonus_generations')
+      .single())
+  }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
