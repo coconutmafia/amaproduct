@@ -78,7 +78,7 @@ ${daysText}
   try {
     const response = await anthropic.messages.create({
       model: MODEL,
-      max_tokens: 2000,
+      max_tokens: 4096,
       messages: [{ role: 'user', content: prompt }],
     })
 

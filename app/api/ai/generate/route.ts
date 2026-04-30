@@ -114,9 +114,11 @@ ${contentType === 'email' ? `Напиши письмо для email-рассыл
         // ── Step 2: Generate ────────────────────────────────────────────────
         send({ type: 'status', message: 'Генерирую контент...' })
 
+        // JSON-based types need more tokens than plain text posts
+        const isJsonType = ['reels', 'carousel', 'stories', 'live', 'email'].includes(contentType)
         const genResponse = await anthropic.messages.create({
           model: MODEL,
-          max_tokens: 1500,
+          max_tokens: isJsonType ? 4096 : 2000,
           system: systemPrompt,
           messages: [{ role: 'user', content: userPrompt }],
         })
