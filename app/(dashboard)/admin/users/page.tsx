@@ -53,11 +53,13 @@ export default function AdminUsersPage() {
     setLoading(true)
     const url = q ? `/api/admin/users?search=${encodeURIComponent(q)}` : '/api/admin/users'
     const res = await fetch(url)
+    const data = await res.json()
     if (res.ok) {
-      const data = await res.json()
       setUsers(data.users)
     } else if (res.status === 403) {
       toast.error('Доступ только для администратора')
+    } else {
+      toast.error(`Ошибка: ${data.error || res.status}`)
     }
     setLoading(false)
   }, [])
