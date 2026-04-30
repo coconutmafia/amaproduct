@@ -726,6 +726,25 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                 ))}
               </div>
               <p className="text-xs text-muted-foreground">По завершении цикла можно перезапустить с новыми смыслами.</p>
+
+              {/* Optional launch dates for evergreen too */}
+              <div className="pt-1 border-t border-border/50 space-y-3">
+                <p className="text-xs font-medium text-foreground">Даты (необязательно)</p>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-medium">Дата открытия продаж</Label>
+                    <p className="text-xs text-muted-foreground">AI сделает специальный контент в этот день</p>
+                    <Input type="date" value={salesOpenDate} onChange={e => setSalesOpenDate(e.target.value)}
+                      className="h-10 text-sm border border-border bg-background" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-medium">Дата запуска продукта</Label>
+                    <p className="text-xs text-muted-foreground">AI усилит контент триггерами ажиотажа и ограниченности за несколько дней до и после этой даты</p>
+                    <Input type="date" value={productStartDate} onChange={e => setProductStartDate(e.target.value)}
+                      className="h-10 text-sm border border-border bg-background" />
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -937,7 +956,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                 value={extraCasesText}
                 onChange={setExtraCasesText}
                 rows={3}
-                className="bg-input border-border resize-none text-sm"
+                className="bg-background border border-border text-sm min-h-[80px]"
               />
             </div>
             <div>

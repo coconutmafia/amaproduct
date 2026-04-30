@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -514,8 +514,21 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
   const [uploadFor, setUploadFor] = useState<string | null>(null)
   const [showInterview, setShowInterview] = useState(false)
   const [showImport, setShowImport] = useState(false)
-  const [score] = useState(completenessScore)
   const [materials, setMaterials] = useState(initialMaterials)
+  // Recalculate score dynamically as materials change (same weights as upload API)
+  const score = useMemo(() => {
+    const types = new Set(materials.map(m => m.material_type))
+    let s = 0
+    if (types.has('tone_of_voice'))       s += 25
+    if (types.has('unpacking_map'))       s += 15
+    if (types.has('cases_reviews'))       s += 15
+    if (types.has('marketing_strategy'))  s += 15
+    if (types.has('funnel_description'))  s += 10
+    if (types.has('audience_research'))   s += 10
+    if (types.has('competitors'))         s += 5
+    if (types.has('product_description')) s += 5
+    return Math.min(100, Math.max(s, completenessScore))
+  }, [materials, completenessScore])
   const [showHint, setShowHint] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 

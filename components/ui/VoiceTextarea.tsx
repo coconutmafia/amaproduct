@@ -32,7 +32,13 @@ export function VoiceTextarea({ value, onChange, placeholder, rows = 3, classNam
   useEffect(() => {
     if (listening && textareaRef.current) {
       const el = textareaRef.current
-      el.scrollTop = el.scrollHeight
+      // Use rAF so the DOM has finished painting the new text before we scroll
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight
+        // Also try to grow the textarea visually if content overflows
+        el.style.height = 'auto'
+        el.style.height = `${Math.min(el.scrollHeight, 280)}px`
+      })
     }
   }, [interim, value, listening])
 
@@ -79,18 +85,36 @@ export function VoiceTextarea({ value, onChange, placeholder, rows = 3, classNam
 
     recognition.onend = () => {
       // Auto-restart if user didn't manually stop — browser often stops after silence
+      // Use setTimeout to give the browser a moment before restarting (iOS needs this)
       if (!manualStopRef.current && recognitionRef.current === recognition) {
-        try { recognition.start() } catch { /* already started */ }
+        setTimeout(() => {
+          if (!manualStopRef.current && recognitionRef.current === recognition) {
+            try { recognition.start() } catch { /* already started or permission issue */ }
+          }
+        }, 150)
         return
       }
       setListening(false)
       setInterim('')
     }
 
-    recognition.onerror = () => {
-      // On error restart too (unless manually stopped)
+    recognition.onerror = (e: Event & { error?: string }) => {
+      const err = (e as { error?: string }).error
+      // not-allowed = microphone blocked, abort = manually aborted
+      if (err === 'not-allowed' || err === 'aborted') {
+        manualStopRef.current = true
+        setListening(false)
+        setInterim('')
+        if (err === 'not-allowed') alert('Нет доступа к микрофону. Разреши в настройках браузера.')
+        return
+      }
+      // For other errors (no-speech, network, etc.) — restart if still active
       if (!manualStopRef.current) {
-        try { recognition.start() } catch { /* ignore */ }
+        setTimeout(() => {
+          if (!manualStopRef.current && recognitionRef.current === recognition) {
+            try { recognition.start() } catch { /* ignore */ }
+          }
+        }, 300)
       } else {
         setListening(false)
         setInterim('')
