@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
+// Verify the calling user is admin — uses regular client (respects RLS for own profile)
 async function requireAdmin() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -8,7 +10,8 @@ async function requireAdmin() {
   const { data: profile } = await supabase
     .from('profiles').select('role').eq('id', user.id).single()
   if (profile?.role !== 'admin') return null
-  return { supabase, user }
+  // Return admin client that bypasses RLS for all subsequent queries
+  return { db: createAdminClient(), userId: user.id }
 }
 
 // GET — list users (with optional ?search=email)
@@ -19,11 +22,11 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const search = searchParams.get('search')?.trim()
 
-  let query = ctx.supabase
+  let query = ctx.db
     .from('profiles')
     .select('id, email, full_name, role, subscription_tier, generations_used, bonus_generations, generations_reset_at, created_at')
     .order('created_at', { ascending: false })
-    .limit(50)
+    .limit(100)
 
   if (search) {
     query = query.ilike('email', `%${search}%`)
@@ -55,7 +58,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
   }
 
-  const { data, error } = await ctx.supabase
+  const { data, error } = await ctx.db
     .from('profiles')
     .update(updates)
     .eq('id', userId)
@@ -76,7 +79,7 @@ export async function POST(request: Request) {
   const { userId } = await request.json()
   if (!userId) return NextResponse.json({ error: 'userId required' }, { status: 400 })
 
-  const { error } = await ctx.supabase
+  const { error } = await ctx.db
     .from('profiles')
     .update({ generations_used: 0, generations_reset_at: new Date().toISOString() })
     .eq('id', userId)
