@@ -129,11 +129,11 @@ export function ContentPlanGrid({
             className="border-border text-xs h-8 px-2.5"
             onClick={handleGenerateWeekBriefClick}
             disabled={loading || generatingWeekBrief}
-            title="Составить план недели"
+            title="AI пропишет темы и смыслы для каждого дня этой недели на основе плана прогрева"
           >
             {generatingWeekBrief
-              ? <><Loader2 className="h-3 w-3 animate-spin shrink-0" /><span className="hidden sm:inline ml-1">Составляю...</span></>
-              : <><Sparkles className="h-3 w-3 shrink-0" /><span className="hidden sm:inline ml-1">Составить план</span></>
+              ? <><Loader2 className="h-3 w-3 animate-spin shrink-0" /><span className="ml-1">Генерирую темы...</span></>
+              : <><Sparkles className="h-3 w-3 shrink-0" /><span className="ml-1">Темы на неделю</span></>
             }
           </Button>
           <Button
@@ -166,8 +166,8 @@ export function ContentPlanGrid({
               <div className="flex items-start gap-3 p-3">
                 {/* Day name + date */}
                 <div className="w-14 shrink-0 pt-0.5">
-                  <p className="text-sm font-bold text-foreground">{day.dayOfWeek}</p>
-                  <p className="text-xs text-muted-foreground">{day.date}</p>
+                  <p className="text-sm font-bold text-foreground leading-tight">{day.dayOfWeek}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1 leading-none">{day.date}</p>
                 </div>
 
                 {/* Content area */}
@@ -207,11 +207,11 @@ export function ContentPlanGrid({
                             {config.label}
                             {existingItem?.is_approved && ' ✓'}
                           </button>
-                          {/* Remove button — only if no generated content */}
+                          {/* Remove button — always visible so mobile users can tap it */}
                           {onRemoveType && !existingItem && !isGenerating && (
                             <button
                               onClick={(e) => { e.stopPropagation(); onRemoveType(day.day, type) }}
-                              className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full opacity-0 group-hover/badge:opacity-100 hover:bg-red-500/20 hover:text-red-400 text-muted-foreground transition-all"
+                              className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/50 hover:bg-red-500/20 hover:text-red-400 active:bg-red-500/20 active:text-red-400 transition-all"
                               title="Убрать"
                             >
                               <X className="h-2.5 w-2.5" />

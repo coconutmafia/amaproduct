@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 import { WarmupWizard } from '@/components/strategy/WarmupWizard'
-import { WarmupTimeline } from '@/components/strategy/WarmupTimeline'
 import { DeletePlanButton } from '@/components/strategy/DeletePlanButton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -72,15 +71,25 @@ export default async function StrategyPage({ params }: Props) {
                   <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{plan.strategic_summary}</p>
                 )}
 
-                {plan.plan_data && (
-                  <div className="mt-4">
-                    <WarmupTimeline
-                      planData={plan.plan_data as WarmupPlanData}
-                      projectId={id}
-                      warmupPlanId={plan.id}
-                    />
-                  </div>
-                )}
+                {/* Phase summary — compact, no day-level bubbles */}
+                {plan.plan_data && (() => {
+                  const phases = (plan.plan_data as WarmupPlanData)?.warmup_plan?.phases
+                  const PHASE_LABELS: Record<string, string> = {
+                    niche: 'На нишу', expert: 'На эксперта', product: 'На продукт', objections: 'Возражения',
+                    awareness: 'Знакомство', trust: 'Доверие', desire: 'Желание', close: 'Закрытие', activation: 'Активация',
+                  }
+                  if (!phases?.length) return null
+                  return (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {phases.map((p) => (
+                        <span key={p.phase} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-secondary text-xs text-muted-foreground border border-border">
+                          {PHASE_LABELS[p.phase] || p.label || p.phase}
+                          <span className="opacity-50">· {p.daily_plan?.length ?? 0} дн.</span>
+                        </span>
+                      ))}
+                    </div>
+                  )
+                })()}
               </CardContent>
             </Card>
           ))}

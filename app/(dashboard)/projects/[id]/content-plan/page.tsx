@@ -244,7 +244,15 @@ export default function ContentPlanPage() {
         if (done) break
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка создания контента')
+      const msg = e instanceof Error ? e.message : 'Ошибка создания контента'
+      if (msg.includes('Лимит')) {
+        toast.error(msg, {
+          description: 'Пригласи друга (+10 запросов) или перейди на платный тариф',
+          duration: 6000,
+        })
+      } else {
+        toast.error(msg)
+      }
     }
   }, [id, totalDays])
 

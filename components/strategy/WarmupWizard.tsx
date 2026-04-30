@@ -1137,22 +1137,24 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                     <Check className="mr-2 h-4 w-4" />
                     Одобрить план
                   </Button>
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <Button
                       variant="outline"
-                      className="flex-1 border-border text-xs h-9"
+                      size="sm"
+                      className="border-border text-xs h-9 px-2"
                       onClick={generatePlan}
                       disabled={generatingSummary}
                     >
-                      <RefreshCw className="mr-2 h-3.5 w-3.5" />
-                      Перегенерировать
+                      <RefreshCw className="mr-1.5 h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">Перегенерировать</span>
                     </Button>
                     <Button
                       variant="outline"
-                      className="flex-1 border-border text-xs h-9"
+                      size="sm"
+                      className="border-border text-xs h-9 px-2"
                       onClick={() => { setAiPlanData(null); setPlanApproved(false) }}
                     >
-                      Изменить настройки
+                      <span className="truncate">Изменить настройки</span>
                     </Button>
                   </div>
                 </div>
@@ -1196,7 +1198,11 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
             variant="outline"
             onClick={() => {
               setStep(Math.max(1, step - 1))
-              setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50)
+              setTimeout(() => {
+                window.scrollTo(0, 0)
+                document.body.scrollTop = 0
+                document.documentElement.scrollTop = 0
+              }, 50)
             }}
             disabled={step === 1}
             className="border-border"
@@ -1210,7 +1216,11 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
               if (step === 7) generatePlan()
               else {
                 setStep(step + 1)
-                setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50)
+                setTimeout(() => {
+                window.scrollTo(0, 0)
+                document.body.scrollTop = 0
+                document.documentElement.scrollTop = 0
+              }, 50)
               }
             }}
             className="gradient-accent text-white hover:opacity-90"

@@ -67,6 +67,8 @@ export async function POST(request: Request) {
           carousel: 'пост-карусель',
           reels: 'сценарий рилса с раскадровкой в формате JSON',
           stories: 'серию сториз (5 штук) в формате JSON',
+          live: 'сценарий прямого эфира (структура, тезисы, интерактив)',
+          email: 'письмо для email-рассылки (тема, прехедер, тело письма)',
         }
 
         const phaseLabel: Record<string, string> = {
@@ -103,7 +105,11 @@ ${contentType === 'carousel' ? `Верни JSON в формате:
 ${contentType === 'stories' ? `Верни JSON в формате:
 {"stories_series":{"total_stories":5,"goal":"...","stories":[{"story_number":1,"type":"opener","layout":"центр","visual":{"background":"...","main_element":"..."},"text":{"main_text":"..."},"interactive":{"type":"poll","question":"...","options":["Да","Нет"]},"cta":"..."}]}}` : ''}
 
-${contentType === 'post' ? 'Напиши текст поста (без JSON). Начни с крючка. Включи переход к CTA. Добавь 5-7 хештегов в конце.' : ''}`
+${contentType === 'post' ? 'Напиши текст поста (без JSON). Начни с крючка. Включи переход к CTA. Добавь 5-7 хештегов в конце.' : ''}
+${contentType === 'live' ? `Верни JSON в формате:
+{"live":{"title":"...","duration_min":60,"goal":"...","structure":[{"block":"Вступление","duration_min":5,"content":"...","interactive":"..."},{"block":"Основная тема","duration_min":30,"content":"...","interactive":"..."},{"block":"Ответы на вопросы","duration_min":15,"content":"...","interactive":"..."},{"block":"Закрытие/оффер","duration_min":10,"content":"...","interactive":"..."}],"promo_text":"..."}}` : ''}
+${contentType === 'email' ? `Напиши письмо для email-рассылки. Верни JSON в формате:
+{"email":{"subject":"...","preheader":"...","body":"...","cta_text":"...","cta_url":"[ВСТАВИТЬ_ССЫЛКУ]","ps":"..."}}` : ''}`
 
         // ── Step 2: Generate ────────────────────────────────────────────────
         send({ type: 'status', message: 'Генерирую контент...' })
