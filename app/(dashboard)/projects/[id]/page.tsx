@@ -58,7 +58,8 @@ export default async function ProjectPage({ params }: Props) {
   const hasWarmupPlan = warmupPlans?.some(p => ['approved', 'active'].includes(p.status)) ?? false
   const hasContent = (recentContent?.length ?? 0) > 0
   const hasContentPlan = hasContent // content plan is considered done when first content item exists
-  const allStepsDone = hasMaterials && hasWarmupPlan && hasContent
+  // Show quick-action tiles once user has a warmup plan — they don't need hand-holding after that
+  const allStepsDone = hasWarmupPlan
 
   const socials = [
     { icon: Instagram, url: project.instagram_url, label: 'Instagram' },
