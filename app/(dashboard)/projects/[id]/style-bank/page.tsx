@@ -20,8 +20,11 @@ import {
   BookMarked,
   TrendingUp,
   ChevronDown,
+  Plus,
+  X,
 } from 'lucide-react'
 import type { StyleExample, ContentType } from '@/types'
+import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 
 const CONTENT_TYPE_CONFIG: Record<ContentType, { label: string; icon: React.ElementType; color: string }> = {
   post: { label: 'Пост', icon: FileText, color: 'text-blue-400' },
@@ -50,6 +53,26 @@ const SCORE_STARS = (score: number) => {
   return Array.from({ length: 5 }, (_, i) => i < stars)
 }
 
+const IMPORT_PHASES = [
+  { value: 'awareness', label: 'Осознание' },
+  { value: 'trust', label: 'Доверие' },
+  { value: 'desire', label: 'Желание' },
+  { value: 'close', label: 'Закрытие' },
+  { value: 'expert', label: 'Прогрев на эксперта' },
+  { value: 'niche', label: 'Прогрев на нишу' },
+  { value: 'product', label: 'Прогрев на продукт' },
+  { value: 'objections', label: 'Возражения' },
+]
+
+const IMPORT_TYPES: { value: ContentType; label: string }[] = [
+  { value: 'post', label: 'Пост' },
+  { value: 'carousel', label: 'Карусель' },
+  { value: 'reels', label: 'Рилс' },
+  { value: 'stories', label: 'Сториз' },
+  { value: 'live', label: 'Прямой эфир' },
+  { value: 'email', label: 'Email' },
+]
+
 export default function StyleBankPage() {
   const params = useParams()
   const id = params.id as string
@@ -60,6 +83,13 @@ export default function StyleBankPage() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [tipOpen, setTipOpen] = useState(true)
   const [tipInitialized, setTipInitialized] = useState(false)
+
+  // Import dialog state
+  const [importOpen, setImportOpen] = useState(false)
+  const [importText, setImportText] = useState('')
+  const [importType, setImportType] = useState<ContentType>('post')
+  const [importPhase, setImportPhase] = useState('awareness')
+  const [importSaving, setImportSaving] = useState(false)
 
   const fetchExamples = useCallback(async () => {
     try {
@@ -109,6 +139,41 @@ export default function StyleBankPage() {
     }
   }
 
+  const handleImport = async () => {
+    if (!importText.trim()) {
+      toast.error('Вставь текст поста')
+      return
+    }
+    setImportSaving(true)
+    try {
+      const res = await fetch('/api/style-bank', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: id,
+          contentType: importType,
+          warmupPhase: importPhase,
+          bodyText: importText.trim(),
+          title: importText.trim().split('\n')[0].substring(0, 80),
+          performanceScore: 100, // real posts get top score by default
+          tags: ['real_post'],
+        }),
+      })
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setExamples((prev) => [data.example, ...prev])
+      setImportText('')
+      setImportType('post')
+      setImportPhase('awareness')
+      setImportOpen(false)
+      toast.success('Пост добавлен в банк стиля ✓')
+    } catch {
+      toast.error('Ошибка сохранения')
+    } finally {
+      setImportSaving(false)
+    }
+  }
+
   const filtered = activeFilter === 'all'
     ? examples
     : examples.filter((e) => e.content_type === activeFilter)
@@ -141,12 +206,23 @@ export default function StyleBankPage() {
               : `${examples.length} пример${examples.length === 1 ? '' : examples.length < 5 ? 'а' : 'ов'} · AI учится на них при создании контента`}
           </p>
         </div>
-        <Link href={`/projects/${id}/generator`}>
-          <Button size="sm" className="gradient-accent text-white hover:opacity-90">
-            <Sparkles className="mr-2 h-4 w-4" />
-            Генерировать
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setImportOpen(true)}
+            className="border-primary/30 text-primary hover:bg-primary/10"
+          >
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            Добавить свой пост
           </Button>
-        </Link>
+          <Link href={`/projects/${id}/generator`}>
+            <Button size="sm" className="gradient-accent text-white hover:opacity-90">
+              <Sparkles className="mr-2 h-4 w-4" />
+              Генерировать
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Always-visible tip card */}
@@ -164,15 +240,19 @@ export default function StyleBankPage() {
         {tipOpen && (
           <CardContent className="pt-0 pb-4 px-4">
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Здесь хранятся примеры контента, которые ты одобрил(а) в генераторе. AI изучает их, чтобы понять твой уникальный стиль — как ты пишешь, какие слова используешь, какова структура твоих постов.
-              Чем больше одобренных примеров — тем точнее AI пишет под тебя.
+              Здесь хранятся примеры контента, по которым AI учится твоему стилю — словарный запас, ритм предложений, структура постов. Чем больше примеров — тем точнее AI пишет под тебя.
             </p>
-            <p className="text-xs text-primary font-medium mt-2">
-              💡 Одобри 5–7 постов в генераторе — и качество контента резко вырастет
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Чтобы добавить примеры: перейди в Генератор → создай пост → нажми «Одобрить стиль»
-            </p>
+            <div className="mt-3 space-y-1.5">
+              <p className="text-xs text-primary font-medium">
+                💡 Способ 1 (быстрый старт): Вставь свои реальные посты из Instagram / VK / Telegram — нажми «Добавить свой пост»
+              </p>
+              <p className="text-xs text-muted-foreground">
+                💡 Способ 2: Одобряй лучшие результаты в Генераторе — кнопка «Одобрить стиль»
+              </p>
+              <p className="text-xs text-muted-foreground font-medium mt-1">
+                5–7 примеров достаточно, чтобы AI начал писать по-настоящему в твоём стиле
+              </p>
+            </div>
           </CardContent>
         )}
       </Card>
@@ -208,6 +288,106 @@ export default function StyleBankPage() {
               </button>
             )
           })}
+        </div>
+      )}
+
+      {/* Import dialog */}
+      {importOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setImportOpen(false)} />
+          <div className="relative z-10 w-full sm:max-w-lg bg-card border border-border rounded-t-2xl sm:rounded-2xl shadow-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+            {/* Dialog header */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-foreground">Добавить свой пост</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Вставь реальный пост из Instagram / VK / Telegram — AI научится твоему голосу
+                </p>
+              </div>
+              <button
+                onClick={() => setImportOpen(false)}
+                className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Type selector */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Тип контента</label>
+              <div className="flex flex-wrap gap-2">
+                {IMPORT_TYPES.map((t) => (
+                  <button
+                    key={t.value}
+                    onClick={() => setImportType(t.value)}
+                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                      importType === t.value
+                        ? 'border-primary bg-primary/20 text-primary'
+                        : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Phase selector */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Фаза прогрева</label>
+              <div className="flex flex-wrap gap-2">
+                {IMPORT_PHASES.map((p) => (
+                  <button
+                    key={p.value}
+                    onClick={() => setImportPhase(p.value)}
+                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                      importPhase === p.value
+                        ? 'border-primary bg-primary/20 text-primary'
+                        : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Text input */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Текст поста
+              </label>
+              <VoiceTextarea
+                value={importText}
+                onChange={setImportText}
+                placeholder="Вставь текст своего поста из Instagram / VK / Telegram, или надиктуй его..."
+                rows={8}
+              />
+              {importText.trim().length > 0 && (
+                <p className="text-[10px] text-muted-foreground">{importText.trim().length} символов</p>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2 pt-1">
+              <Button
+                variant="outline"
+                onClick={() => setImportOpen(false)}
+                className="flex-1"
+                size="sm"
+              >
+                Отмена
+              </Button>
+              <Button
+                onClick={handleImport}
+                disabled={importSaving || !importText.trim()}
+                className="flex-1 gradient-accent text-white hover:opacity-90"
+                size="sm"
+              >
+                {importSaving ? 'Сохраняю...' : 'Добавить в банк стиля'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -305,17 +485,32 @@ export default function StyleBankPage() {
           <CardContent className="flex flex-col items-center justify-center py-12 gap-3 text-center">
             <BookMarked className="h-10 w-10 text-muted-foreground opacity-40" />
             <p className="text-sm font-medium text-foreground">
-              {activeFilter === 'all' ? 'Мой стиль пуст — добавь первый пример' : `Нет примеров типа «${CONTENT_TYPE_CONFIG[activeFilter as ContentType]?.label}»`}
+              {activeFilter === 'all' ? 'Банк стиля пуст — добавь первый пример' : `Нет примеров типа «${CONTENT_TYPE_CONFIG[activeFilter as ContentType]?.label}»`}
             </p>
-            <p className="text-xs text-muted-foreground">
-              Генерируй контент и нажимай «Одобрить стиль» — примеры появятся здесь
-            </p>
-            <Link href={`/projects/${id}/generator`}>
-              <Button size="sm" className="gradient-accent text-white hover:opacity-90 mt-2">
-                <Sparkles className="mr-2 h-4 w-4" />
-                Перейти в генератор
-              </Button>
-            </Link>
+            {activeFilter === 'all' && (
+              <>
+                <p className="text-xs text-muted-foreground max-w-xs">
+                  Вставь реальные посты из соцсетей или одобряй лучшие результаты в генераторе
+                </p>
+                <div className="flex flex-col sm:flex-row gap-2 mt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setImportOpen(true)}
+                    className="border-primary/30 text-primary hover:bg-primary/10"
+                  >
+                    <Plus className="mr-1.5 h-3.5 w-3.5" />
+                    Вставить свой пост
+                  </Button>
+                  <Link href={`/projects/${id}/generator`}>
+                    <Button size="sm" className="gradient-accent text-white hover:opacity-90 w-full sm:w-auto">
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Перейти в генератор
+                    </Button>
+                  </Link>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       )}

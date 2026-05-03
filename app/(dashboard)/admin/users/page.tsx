@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
+import Link from 'next/link'
 import {
   Search, Loader2, RefreshCw, Zap, Crown, Shield,
-  RotateCcw, Plus, Minus, ChevronDown, ChevronUp,
+  RotateCcw, Plus, Minus, ChevronDown, ChevronUp, BookMarked,
 } from 'lucide-react'
 
 interface UserProfile {
@@ -173,9 +174,16 @@ export default function AdminUsersPage() {
             Управление лимитами и тарифами
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => load(search)}>
-          <RefreshCw className="h-4 w-4 mr-2" /> Обновить
-        </Button>
+        <div className="flex items-center gap-2">
+          <Link href="/admin/style-examples">
+            <Button variant="outline" size="sm" className="border-primary/30 text-primary hover:bg-primary/10">
+              <BookMarked className="h-4 w-4 mr-2" /> Примеры стиля
+            </Button>
+          </Link>
+          <Button variant="outline" size="sm" onClick={() => load(search)}>
+            <RefreshCw className="h-4 w-4 mr-2" /> Обновить
+          </Button>
+        </div>
       </div>
 
       {/* Search */}

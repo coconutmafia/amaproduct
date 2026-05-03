@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 // GET /api/style-bank?projectId=xxx&contentType=post
+// GET /api/style-bank?system=true  — list system examples (admin only)
 export async function GET(request: Request) {
   try {
     const supabase = await createClient()
@@ -11,6 +13,27 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const projectId = searchParams.get('projectId')
     const contentType = searchParams.get('contentType')
+    const isSystem = searchParams.get('system') === 'true'
+
+    if (isSystem) {
+      // Admin-only: fetch system style examples
+      const { data: profile } = await supabase
+        .from('profiles').select('role').eq('id', user.id).single()
+      if (profile?.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+      const db = createAdminClient()
+      let query = db
+        .from('style_examples')
+        .select('*')
+        .eq('is_system', true)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+
+      if (contentType) query = query.eq('content_type', contentType)
+      const { data, error } = await query
+      if (error) throw error
+      return NextResponse.json({ examples: data || [] })
+    }
 
     if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
 
@@ -46,6 +69,7 @@ export async function GET(request: Request) {
 }
 
 // POST /api/style-bank — save a new style example
+// isSystem: true → admin saves to system bank (no projectId needed)
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
@@ -53,10 +77,41 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await request.json()
-    const { projectId, contentType, title, bodyText, warmupPhase, tags, sourceContentItemId, performanceScore } = body
+    const { projectId, contentType, title, bodyText, warmupPhase, tags, sourceContentItemId, performanceScore, isSystem } = body
 
-    if (!projectId || !bodyText || !contentType) {
-      return NextResponse.json({ error: 'projectId, contentType and bodyText required' }, { status: 400 })
+    if (!bodyText || !contentType) {
+      return NextResponse.json({ error: 'contentType and bodyText required' }, { status: 400 })
+    }
+
+    if (isSystem) {
+      // Admin only: save as system-level example
+      const { data: profile } = await supabase
+        .from('profiles').select('role').eq('id', user.id).single()
+      if (profile?.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+      const db = createAdminClient()
+      const { data, error } = await db
+        .from('style_examples')
+        .insert({
+          project_id: null,
+          is_system: true,
+          content_type: contentType,
+          title: title || null,
+          body_text: bodyText,
+          warmup_phase: warmupPhase || null,
+          tags: tags || null,
+          performance_score: performanceScore ?? 100,
+          is_active: true,
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      return NextResponse.json({ example: data })
+    }
+
+    if (!projectId) {
+      return NextResponse.json({ error: 'projectId required' }, { status: 400 })
     }
 
     // Verify project ownership

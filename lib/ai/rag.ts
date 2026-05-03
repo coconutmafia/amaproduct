@@ -124,9 +124,10 @@ export async function buildRAGContext(
   }
 
   // ── Style examples (approved content for few-shot learning) ──────────────
+  // Priority: project personal examples → system examples as fallback
   let styleExamples: StyleExample[] = []
   try {
-    const styleQuery = supabase
+    const personalQuery = supabase
       .from('style_examples')
       .select('*')
       .eq('project_id', projectId)
@@ -135,11 +136,31 @@ export async function buildRAGContext(
       .limit(5)
 
     if (contentType) {
-      styleQuery.eq('content_type', contentType)
+      personalQuery.eq('content_type', contentType)
     }
 
-    const { data } = await styleQuery
-    styleExamples = (data as StyleExample[]) || []
+    const { data: personalData } = await personalQuery
+    styleExamples = (personalData as StyleExample[]) || []
+
+    // If fewer than 3 personal examples, supplement with system-level examples
+    if (styleExamples.length < 3) {
+      const needed = 5 - styleExamples.length
+      const systemQuery = supabase
+        .from('style_examples')
+        .select('*')
+        .eq('is_system', true)
+        .eq('is_active', true)
+        .order('performance_score', { ascending: false })
+        .limit(needed)
+
+      if (contentType) {
+        systemQuery.eq('content_type', contentType)
+      }
+
+      const { data: systemData } = await systemQuery
+      const systemExamples = (systemData as StyleExample[]) || []
+      styleExamples = [...styleExamples, ...systemExamples]
+    }
   } catch {
     // Style examples unavailable
   }
