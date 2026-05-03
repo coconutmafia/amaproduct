@@ -434,6 +434,8 @@ export function ContentPlanGrid({
               {pendingBadge && pendingBadge.day === day.day && (() => {
                 const config = CONTENT_TYPE_CONFIG[pendingBadge.type]
                 if (!config) return null
+                // Type-specific brief from "Создать контент-план"
+                const typeBrief = day.dayBriefs?.[pendingBadge.type]
                 return (
                   <div className="border-t border-border bg-secondary/10 p-4 space-y-3">
                     <div className="flex items-center justify-between gap-2">
@@ -447,10 +449,21 @@ export function ContentPlanGrid({
                         <X className="h-3.5 w-3.5" />
                       </button>
                     </div>
+
+                    {/* Show type-specific brief if available */}
+                    {typeBrief && (
+                      <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-1">
+                        <p className="text-[10px] font-semibold text-primary/70 uppercase tracking-wide">Тема для {config.label.toLowerCase()}</p>
+                        <p className="text-sm text-foreground leading-snug">{typeBrief}</p>
+                      </div>
+                    )}
+
                     <VoiceTextarea
                       value={extraContext}
                       onChange={setExtraContext}
-                      placeholder="Добавь детали: кейс, продукт, что хочешь упомянуть..."
+                      placeholder={typeBrief
+                        ? "Добавь детали от себя: конкретный кейс, имя клиента, своя история..."
+                        : "Добавь детали: кейс, продукт, что хочешь упомянуть..."}
                       rows={2}
                     />
                     <div className="flex items-center gap-3">
