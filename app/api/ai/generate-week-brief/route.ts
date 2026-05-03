@@ -28,15 +28,33 @@ export async function POST(request: Request) {
 
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
-  // Get RAG context — extract blog lines and other materials separately
-  let projectSummary = ''
+  // 1. Direct query for blog_lines — bypass RAG chunking (blog_lines live in project_materials, not chunks)
   let blogLinesSummary = ''
   try {
-    const rag = await buildRAGContext('контент-план прогрев темы постов рилс сториз линии блога', projectId, 'post')
-    const blogLineChunks = rag.projectContext.filter(c => c.material_type === 'blog_lines')
+    const { data: blogMaterials } = await supabase
+      .from('project_materials')
+      .select('raw_content, title')
+      .eq('project_id', projectId)
+      .eq('material_type', 'blog_lines')
+      .limit(5)
+
+    if (blogMaterials && blogMaterials.length > 0) {
+      blogLinesSummary = blogMaterials
+        .filter(m => m.raw_content)
+        .map(m => m.raw_content as string)
+        .join('\n\n')
+        .slice(0, 2000)
+    }
+  } catch { /* ignore */ }
+
+  // 2. RAG for project context (TOV, cases, product) + system knowledge (methodology)
+  let projectSummary = ''
+  let systemKnowledge = ''
+  try {
+    const rag = await buildRAGContext('контент-план прогрев темы постов рилс сториз', projectId, 'post')
     const otherChunks = rag.projectContext.filter(c => c.material_type !== 'blog_lines')
     projectSummary = otherChunks.slice(0, 4).map(c => c.chunk_text).join('\n\n').slice(0, 800)
-    blogLinesSummary = blogLineChunks.map(c => c.chunk_text).join('\n\n').slice(0, 1200)
+    systemKnowledge = rag.systemKnowledge.slice(0, 3).map(c => c.chunk_text).join('\n\n').slice(0, 1000)
   } catch { /* ignore */ }
 
   const daysText = days.map(d =>
@@ -59,7 +77,8 @@ ${blogLinesSummary}
 ПРОЕКТ: ${project.name}
 НИША: ${project.niche || 'не указана'}
 ${project.description ? `ОПИСАНИЕ: ${project.description}` : ''}
-${projectSummary ? `МАТЕРИАЛЫ ПРОЕКТА:\n${projectSummary}` : ''}
+${systemKnowledge ? `МЕТОДОЛОГИЯ ПРОГРЕВОВ (используй при планировании):\n${systemKnowledge}\n` : ''}
+${projectSummary ? `МАТЕРИАЛЫ ПРОЕКТА (кейсы, продукт, TOV):\n${projectSummary}\n` : ''}
 ${blogLinesInstruction}
 ДНИ НЕДЕЛИ:
 ${daysText}
