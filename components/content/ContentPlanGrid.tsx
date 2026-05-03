@@ -316,9 +316,35 @@ export function ContentPlanGrid({
 
                 {/* Content area */}
                 <div className="flex-1 min-w-0 space-y-2">
-                  {day.theme && (
+                  {day.theme && !day.dayBriefs && (
                     <p className="text-xs text-muted-foreground leading-relaxed">{day.theme}</p>
                   )}
+
+                  {/* Per-type briefs — shown when content plan is generated */}
+                  {day.dayBriefs && Object.keys(day.dayBriefs).length > 0 && (() => {
+                    const types = (day.plannedTypes && day.plannedTypes.length > 0)
+                      ? day.plannedTypes
+                      : (['post', 'stories', 'reels'] as ContentType[])
+                    const briefEntries = types.filter(t => day.dayBriefs?.[t])
+                    if (briefEntries.length === 0) return null
+                    return (
+                      <div className="space-y-1.5">
+                        {briefEntries.map(type => {
+                          const brief = day.dayBriefs![type]
+                          const cfg = CONTENT_TYPE_CONFIG[type]
+                          if (!cfg) return null
+                          return (
+                            <div key={type} className="flex items-start gap-1.5">
+                              <span className={`text-[9px] font-bold shrink-0 px-1.5 py-0.5 rounded border leading-tight mt-0.5 ${cfg.color}`}>
+                                {cfg.label.toUpperCase()}
+                              </span>
+                              <p className="text-xs text-muted-foreground leading-snug">{brief}</p>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
 
                   {/* Badges */}
                   <div className="flex flex-wrap gap-1.5 items-center">

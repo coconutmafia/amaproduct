@@ -28,11 +28,15 @@ export async function POST(request: Request) {
 
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
-  // Get RAG context
-  let ragSummary = ''
+  // Get RAG context — extract blog lines and other materials separately
+  let projectSummary = ''
+  let blogLinesSummary = ''
   try {
-    const rag = await buildRAGContext('контент-план прогрев темы постов рилс сториз', projectId, 'post')
-    ragSummary = rag.projectContext.slice(0, 3).map(c => c.chunk_text).join('\n\n')
+    const rag = await buildRAGContext('контент-план прогрев темы постов рилс сториз линии блога', projectId, 'post')
+    const blogLineChunks = rag.projectContext.filter(c => c.material_type === 'blog_lines')
+    const otherChunks = rag.projectContext.filter(c => c.material_type !== 'blog_lines')
+    projectSummary = otherChunks.slice(0, 4).map(c => c.chunk_text).join('\n\n').slice(0, 800)
+    blogLinesSummary = blogLineChunks.map(c => c.chunk_text).join('\n\n').slice(0, 1200)
   } catch { /* ignore */ }
 
   const daysText = days.map(d =>
@@ -44,15 +48,16 @@ export async function POST(request: Request) {
 ПРОЕКТ: ${project.name}
 НИША: ${project.niche || 'не указана'}
 ${project.description ? `ОПИСАНИЕ: ${project.description}` : ''}
-${ragSummary ? `КОНТЕКСТ: ${ragSummary.slice(0, 500)}` : ''}
+${projectSummary ? `МАТЕРИАЛЫ ПРОЕКТА:\n${projectSummary}` : ''}
+${blogLinesSummary ? `\nЛИНИИ БЛОГА (личные истории и нарративы блогера — вплетай их в темы постов):\n${blogLinesSummary}\n\nВАЖНО: не менее 2 единиц контента в неделю должны опираться на личные линии блога — это делает контент живым и нативным, не рекламным.` : ''}
 
-ДНИ:
+ДНИ НЕДЕЛИ:
 ${daysText}
 
-Для каждого дня — конкретная тема (1 предложение с деталями, не общие слова).
+ЗАДАЧА: для каждого дня пропиши конкретную тему каждой единицы контента (1–2 предложения с реальными деталями, не общие слова). Темы должны логично раскрывать фазу прогрева и при этом звучать живо, не как реклама.
 
 JSON формат (строго):
-{"days":[{"day":1,"brief":{"post":"тема","stories":"тема","reels":"тема"}}]}`
+{"days":[{"day":1,"brief":{"post":"конкретная тема поста","stories":"конкретная тема сториз","reels":"конкретная тема рилса"}}]}`
 
   try {
     const response = await anthropic.messages.create({
