@@ -460,13 +460,13 @@ export function ContentPlanGrid({
               {pendingBadge && pendingBadge.day === day.day && (() => {
                 const config = CONTENT_TYPE_CONFIG[pendingBadge.type]
                 if (!config) return null
-                // Type-specific brief from "Создать контент-план"
                 const typeBrief = day.dayBriefs?.[pendingBadge.type]
+                const isRegen = day.items.some(i => i.content_type === pendingBadge.type)
                 return (
                   <div className="border-t border-border bg-secondary/10 p-4 space-y-3">
                     <div className="flex items-center justify-between gap-2">
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${config.color}`}>
-                        {config.label} · День {day.day}
+                        {isRegen ? `Обновить ${config.label}` : config.label} · День {day.day}
                       </span>
                       <button
                         onClick={() => { setPendingBadge(null); setExtraContext('') }}
@@ -476,7 +476,7 @@ export function ContentPlanGrid({
                       </button>
                     </div>
 
-                    {/* Show type-specific brief if available */}
+                    {/* Type-specific brief */}
                     {typeBrief && (
                       <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-1">
                         <p className="text-[10px] font-semibold text-primary/70 uppercase tracking-wide">Тема для {config.label.toLowerCase()}</p>
@@ -488,25 +488,27 @@ export function ContentPlanGrid({
                       value={extraContext}
                       onChange={setExtraContext}
                       placeholder={typeBrief
-                        ? "Добавь детали от себя: конкретный кейс, имя клиента, своя история..."
-                        : "Добавь детали: кейс, продукт, что хочешь упомянуть..."}
+                        ? "Надиктуй детали: свою историю, кейс, имя клиента — AI вплетёт в контент..."
+                        : "Надиктуй детали: кейс, продукт, что хочешь упомянуть..."}
                       rows={2}
                     />
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
                       <Button
                         size="sm"
-                        className="gradient-accent text-white hover:opacity-90 gap-1.5"
+                        className="gradient-accent text-white hover:opacity-90 gap-1.5 flex-1"
                         onClick={handlePendingGenerate}
                         disabled={!!generatingDay}
                       >
                         {generatingDay === `${pendingBadge.day}-${pendingBadge.type}`
                           ? <><Loader2 className="h-3 w-3 animate-spin" /> Создаю...</>
-                          : <><Sparkles className="h-3 w-3" /> Создать</>
+                          : isRegen
+                            ? <><RefreshCw className="h-3 w-3" /> Обновить</>
+                            : <><Sparkles className="h-3 w-3" /> Создать</>
                         }
                       </Button>
                       <button
                         onClick={() => { setPendingBadge(null); setExtraContext('') }}
-                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        className="text-xs text-muted-foreground hover:text-foreground transition-colors px-2"
                       >
                         Отмена
                       </button>
@@ -534,13 +536,20 @@ export function ContentPlanGrid({
                           size="sm" variant="outline"
                           className="h-7 text-xs border-border px-2 gap-1"
                           disabled={isRegenerating}
-                          onClick={() => handleGenerate(day, type)}
-                          title="Перегенерировать"
+                          onClick={() => {
+                            // Open pending panel so user can add context before regenerating
+                            setViewingKey(null)
+                            setPendingBadge({
+                              day: day.day,
+                              type,
+                              phase: day.phase || 'awareness',
+                              theme: day.dayBriefs?.[type] || day.theme,
+                            })
+                            setExtraContext('')
+                          }}
+                          title="Перегенерировать с новым контекстом"
                         >
-                          {isRegenerating
-                            ? <Loader2 className="h-3 w-3 animate-spin" />
-                            : <RefreshCw className="h-3 w-3" />
-                          }
+                          <RefreshCw className="h-3 w-3" />
                           <span className="hidden sm:inline">Обновить</span>
                         </Button>
                         <button onClick={() => setViewingKey(null)} className="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground transition-colors">
