@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ProgressIndicator } from '@/components/shared/ProgressIndicator'
 import { UnpackingInterview } from '@/components/projects/UnpackingInterview'
+import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { toast } from 'sonner'
 import {
   CheckCircle2, Circle, Loader, AlertCircle, Upload, BookOpen,
@@ -92,6 +93,11 @@ const TYPE_META: Record<string, { label: string; hint: string; category: string 
     hint: 'Скрипты, сценарии, тексты или описание чат-ботов Telegram/Instagram, если они есть.',
     category: 'МАРКЕТИНГ',
   },
+  blog_lines: {
+    label: 'Линии блога',
+    hint: 'Нарративные линии твоего блога — профессиональная и личные. Создают сериальность и нативный прогрев.',
+    category: 'ЛИЧНОСТЬ',
+  },
 }
 
 const CATEGORIES = [
@@ -99,6 +105,7 @@ const CATEGORIES = [
   { key: 'СТРАТЕГИЯ', title: 'СТРАТЕГИЯ', types: ['unpacking_map', 'meanings_map', 'competitors', 'tone_of_voice'] },
   { key: 'СОЦИАЛЬНЫЕ ДОКАЗАТЕЛЬСТВА', title: 'СОЦИАЛЬНЫЕ ДОКАЗАТЕЛЬСТВА', types: ['cases_reviews'] },
   { key: 'МАРКЕТИНГ', title: 'МАРКЕТИНГ', types: ['marketing_strategy', 'marketing_tactics', 'funnel_description', 'chatbot_description'] },
+  { key: 'ЛИЧНОСТЬ', title: 'ЛИЧНОСТЬ', types: ['blog_lines'] },
 ]
 
 function StatusIcon({ status }: { status: string }) {
@@ -509,9 +516,256 @@ function ImportMaterialsDialog({
   )
 }
 
+// ── Blog Lines Dialog ─────────────────────────────────────────────────────────
+interface BlogLinesDialogProps {
+  projectId: string
+  open: boolean
+  onClose: () => void
+  onSuccess: (newMaterials: Material[]) => void
+}
+
+interface NarrativeLine {
+  name: string
+  past: string
+  present: string
+  future: string
+}
+
+function BlogLinesDialog({ projectId, open, onClose, onSuccess }: BlogLinesDialogProps) {
+  const [profPast, setProfPast] = useState('')
+  const [profPresent, setProfPresent] = useState('')
+  const [profFuture, setProfFuture] = useState('')
+
+  const [personal1, setPersonal1] = useState<NarrativeLine>({ name: '', past: '', present: '', future: '' })
+  const [personal2, setPersonal2] = useState<NarrativeLine>({ name: '', past: '', present: '', future: '' })
+  const [showPersonal2, setShowPersonal2] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    const lines: string[] = []
+
+    lines.push('ПРОФЕССИОНАЛЬНАЯ ЛИНИЯ')
+    lines.push(`Прошлое: ${profPast.trim() || '—'}`)
+    lines.push(`Настоящее: ${profPresent.trim() || '—'}`)
+    lines.push(`Будущее: ${profFuture.trim() || '—'}`)
+
+    if (personal1.name.trim() || personal1.past.trim() || personal1.present.trim() || personal1.future.trim()) {
+      lines.push('')
+      lines.push(`ЛИЧНАЯ ЛИНИЯ 1 — ${personal1.name.trim() || 'Без названия'}`)
+      lines.push(`Прошлое: ${personal1.past.trim() || '—'}`)
+      lines.push(`Настоящее: ${personal1.present.trim() || '—'}`)
+      lines.push(`Будущее: ${personal1.future.trim() || '—'}`)
+    }
+
+    if (showPersonal2 && (personal2.name.trim() || personal2.past.trim() || personal2.present.trim() || personal2.future.trim())) {
+      lines.push('')
+      lines.push(`ЛИЧНАЯ ЛИНИЯ 2 — ${personal2.name.trim() || 'Без названия'}`)
+      lines.push(`Прошлое: ${personal2.past.trim() || '—'}`)
+      lines.push(`Настоящее: ${personal2.present.trim() || '—'}`)
+      lines.push(`Будущее: ${personal2.future.trim() || '—'}`)
+    }
+
+    const textContent = lines.join('\n')
+
+    setSaving(true)
+    try {
+      const fd = new FormData()
+      fd.append('projectId', projectId)
+      fd.append('title', 'Линии блога')
+      fd.append('materialType', 'blog_lines')
+      fd.append('isSystemVault', 'false')
+      fd.append('textContent', textContent)
+
+      const res = await fetch('/api/upload', { method: 'POST', body: fd })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error((d as { error?: string }).error || `Ошибка ${res.status}`)
+      }
+      const { materialId, processingStatus } = await res.json() as { materialId: string; processingStatus: string }
+      toast.success('Линии блога сохранены')
+      onSuccess([{ id: materialId, material_type: 'blog_lines', title: 'Линии блога', processing_status: processingStatus }])
+      onClose()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Ошибка сохранения')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!saving && !v) onClose() }}>
+      <DialogContent className="sm:max-w-lg border-border bg-card max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="text-base">Линии блога</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-6 mt-1">
+          <div className="flex gap-2 p-3 rounded-lg bg-primary/5 border border-primary/15 text-xs text-muted-foreground">
+            <Info className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+            <span>{TYPE_META['blog_lines']!.hint}</span>
+          </div>
+
+          {/* Professional line */}
+          <div className="space-y-3">
+            <p className="text-sm font-semibold">Профессиональная линия</p>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Прошлое</Label>
+                <VoiceTextarea
+                  value={profPast}
+                  onChange={setProfPast}
+                  placeholder="Что было в прошлом? Откуда ты пришёл(ла) в профессию..."
+                  className="bg-background border border-border text-sm min-h-[80px]"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Настоящее</Label>
+                <VoiceTextarea
+                  value={profPresent}
+                  onChange={setProfPresent}
+                  placeholder="Где ты сейчас? Чем занимаешься, что делаешь..."
+                  className="bg-background border border-border text-sm min-h-[80px]"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Будущее</Label>
+                <VoiceTextarea
+                  value={profFuture}
+                  onChange={setProfFuture}
+                  placeholder="Куда движешься? Цели, планы, вектор развития..."
+                  className="bg-background border border-border text-sm min-h-[80px]"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Personal line 1 */}
+          <div className="space-y-3 border-t border-border pt-4">
+            <p className="text-sm font-semibold">Личная линия 1 <span className="text-xs text-muted-foreground font-normal">(необязательно)</span></p>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Название линии</Label>
+              <Input
+                placeholder="Например: Переезд, Материнство, Здоровье..."
+                value={personal1.name}
+                onChange={(e) => setPersonal1(p => ({ ...p, name: e.target.value }))}
+                className="text-sm"
+              />
+            </div>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Прошлое</Label>
+                <VoiceTextarea
+                  value={personal1.past}
+                  onChange={(v) => setPersonal1(p => ({ ...p, past: v }))}
+                  placeholder="Как это начиналось..."
+                  className="bg-background border border-border text-sm min-h-[80px]"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Настоящее</Label>
+                <VoiceTextarea
+                  value={personal1.present}
+                  onChange={(v) => setPersonal1(p => ({ ...p, present: v }))}
+                  placeholder="Где ты сейчас в этой теме..."
+                  className="bg-background border border-border text-sm min-h-[80px]"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Будущее</Label>
+                <VoiceTextarea
+                  value={personal1.future}
+                  onChange={(v) => setPersonal1(p => ({ ...p, future: v }))}
+                  placeholder="К чему стремишься..."
+                  className="bg-background border border-border text-sm min-h-[80px]"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Personal line 2 */}
+          {!showPersonal2 ? (
+            <button
+              type="button"
+              onClick={() => setShowPersonal2(true)}
+              className="w-full flex items-center justify-center gap-2 rounded-lg border border-dashed border-border py-3 text-xs text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Добавить ещё линию
+            </button>
+          ) : (
+            <div className="space-y-3 border-t border-border pt-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">Личная линия 2 <span className="text-xs text-muted-foreground font-normal">(необязательно)</span></p>
+                <button
+                  type="button"
+                  onClick={() => { setShowPersonal2(false); setPersonal2({ name: '', past: '', present: '', future: '' }) }}
+                  className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+                >
+                  Убрать
+                </button>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Название линии</Label>
+                <Input
+                  placeholder="Например: Спорт, Творчество, Отношения..."
+                  value={personal2.name}
+                  onChange={(e) => setPersonal2(p => ({ ...p, name: e.target.value }))}
+                  className="text-sm"
+                />
+              </div>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Прошлое</Label>
+                  <VoiceTextarea
+                    value={personal2.past}
+                    onChange={(v) => setPersonal2(p => ({ ...p, past: v }))}
+                    placeholder="Как это начиналось..."
+                    className="bg-background border border-border text-sm min-h-[80px]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Настоящее</Label>
+                  <VoiceTextarea
+                    value={personal2.present}
+                    onChange={(v) => setPersonal2(p => ({ ...p, present: v }))}
+                    placeholder="Где ты сейчас в этой теме..."
+                    className="bg-background border border-border text-sm min-h-[80px]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Будущее</Label>
+                  <VoiceTextarea
+                    value={personal2.future}
+                    onChange={(v) => setPersonal2(p => ({ ...p, future: v }))}
+                    placeholder="К чему стремишься..."
+                    className="bg-background border border-border text-sm min-h-[80px]"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={onClose} disabled={saving}>Отмена</Button>
+            <Button
+              className="flex-1 gradient-accent text-white hover:opacity-90"
+              onClick={handleSave}
+              disabled={saving}
+            >
+              {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Сохраняем...</> : 'Сохранить'}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export function KnowledgePageClient({ projectId, completenessScore, initialMaterials, userName }: Props) {
   const [uploadFor, setUploadFor] = useState<string | null>(null)
+  const [showBlogLines, setShowBlogLines] = useState(false)
   const [showInterview, setShowInterview] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [materials, setMaterials] = useState(initialMaterials)
@@ -527,6 +781,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
     if (types.has('audience_research'))   s += 10
     if (types.has('competitors'))         s += 5
     if (types.has('product_description')) s += 5
+    if (types.has('blog_lines'))          s += 10
     return Math.min(100, Math.max(s, completenessScore))
   }, [materials, completenessScore])
   const [showHint, setShowHint] = useState<string | null>(null)
@@ -672,7 +927,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                           size="sm"
                           variant={hasItems ? 'outline' : 'default'}
                           className={`text-xs h-8 px-4 ${hasItems ? 'border-border' : 'gradient-accent text-white hover:opacity-90 border-0'}`}
-                          onClick={() => setUploadFor(type)}
+                          onClick={() => type === 'blog_lines' ? setShowBlogLines(true) : setUploadFor(type)}
                         >
                           <Upload className="h-3 w-3 mr-1.5" />
                           {hasItems ? 'Добавить ещё' : 'Загрузить'}
@@ -703,6 +958,17 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
           Создать план прогрева
         </a>
       </div>
+
+      {/* Blog Lines dialog */}
+      <BlogLinesDialog
+        projectId={projectId}
+        open={showBlogLines}
+        onClose={() => setShowBlogLines(false)}
+        onSuccess={(newMaterials) => {
+          handleUploaded(newMaterials)
+          setShowBlogLines(false)
+        }}
+      />
 
       {/* Upload dialog */}
       {uploadFor && (
