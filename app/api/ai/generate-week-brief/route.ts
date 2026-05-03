@@ -28,6 +28,10 @@ export async function POST(request: Request) {
 
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
+  // Helper: strip characters that break JSON strings when AI mirrors them back
+  const sanitizeForPrompt = (text: string) =>
+    text.replace(/"/g, "'").replace(/\\/g, '/').replace(/[\x00-\x1F\x7F]/g, ' ')
+
   // 1. Direct query for blog_lines — bypass RAG chunking (blog_lines live in project_materials, not chunks)
   let blogLinesSummary = ''
   try {
@@ -41,7 +45,7 @@ export async function POST(request: Request) {
     if (blogMaterials && blogMaterials.length > 0) {
       blogLinesSummary = blogMaterials
         .filter(m => m.raw_content)
-        .map(m => m.raw_content as string)
+        .map(m => sanitizeForPrompt(m.raw_content as string))
         .join('\n\n')
         .slice(0, 2000)
     }
@@ -96,10 +100,33 @@ JSON формат (строго):
     })
 
     const text = response.content[0].type === 'text' ? response.content[0].text : ''
+
+    // Extract JSON block
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) throw new Error('AI не вернул JSON')
 
-    const data = JSON.parse(jsonMatch[0])
+    let jsonStr = jsonMatch[0]
+
+    // Repair: replace unescaped double-quotes inside string values
+    // Strategy: parse → if fails, try replacing inner quotes with curly quotes
+    let data: Record<string, unknown>
+    try {
+      data = JSON.parse(jsonStr)
+    } catch {
+      // Replace any " that appear inside string values (between : " ... ") with «»
+      jsonStr = jsonStr.replace(/:\s*"([\s\S]*?)"/g, (_match, inner: string) => {
+        const fixed = inner.replace(/(?<!\\)"/g, '\\"')
+        return `: "${fixed}"`
+      })
+      try {
+        data = JSON.parse(jsonStr)
+      } catch {
+        // Last resort: strip all non-ASCII-safe chars and retry
+        const safe = jsonStr.replace(/[^\x20-\x7EЀ-ӿ\n\r\t]/g, '')
+        data = JSON.parse(safe)
+      }
+    }
+
     return NextResponse.json(data)
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Ошибка AI'
