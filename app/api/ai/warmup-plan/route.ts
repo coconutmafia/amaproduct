@@ -87,14 +87,18 @@ export async function POST(request: Request) {
         .eq('material_type', 'blog_lines')
         .limit(5)
 
+      console.log(`[warmup-plan] blog_lines records found: ${blogMaterials?.length ?? 0}`)
       if (blogMaterials && blogMaterials.length > 0) {
         blogLinesText = blogMaterials
           .filter(m => m.raw_content)
           .map(m => (m.raw_content as string).replace(/"/g, "'"))
           .join('\n\n')
           .slice(0, 2000)
+        console.log(`[warmup-plan] blogLinesText length: ${blogLinesText.length}, preview: ${blogLinesText.slice(0, 200)}`)
       }
-    } catch { /* ignore */ }
+    } catch (e) {
+      console.error('[warmup-plan] blog_lines query error:', e)
+    }
 
     // ── Count personal lines from blog_lines text ────────────────────────────
     const personalLineNames: string[] = []
