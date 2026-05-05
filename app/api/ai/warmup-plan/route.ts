@@ -205,36 +205,50 @@ ${blogLinesText ? (() => {
       // If no named lines extracted, create fallback list
       if (personalLineNames.length === 0) personalLineNames.push('Личная линия');
       const nPersonal = personalLineNames.length
-      // Distribution model: for launch warmup personal lines taper off toward close
-      // For evergreen: equal split across all lines
-      let distInstruction = ''
+
+      // ── Distribution model ──────────────────────────────────────────────────
+      let distBlock = ''
       if (isEvergreen) {
         const totalLines = nPersonal + 1 // personal + professional
         const daysEach = Math.round(duration / totalLines)
-        distInstruction = `ВЕЧНОЗЕЛЁНЫЙ ПРОГРЕВ — равное распределение:
+        distBlock = `ВЕЧНОЗЕЛЁНЫЙ ПРОГРЕВ — равное распределение:
 Каждая линия получает примерно ${daysEach} дней из ${duration}.
 ${personalLineNames.map(n => `• [ЛИНИЯ: ${n}]: ~${daysEach} дней`).join('\n')}
-• Профессиональный контент (прогрев): ~${daysEach} дней`
+• Профессиональный прогрев: ~${daysEach} дней`
       } else {
-        // Launch: personal lines ~30% in phase1, tapering to ~5% in phase4
-        // p1=нише, p2=эксперт, p3=продукт, p4=возражения
-        const perPersonalP1 = Math.max(1, Math.round(p1 * 0.30 / nPersonal))
-        const perPersonalP2 = Math.max(1, Math.round(p2 * 0.20 / nPersonal))
-        const perPersonalP3 = Math.max(1, Math.round(p3 * 0.10 / nPersonal))
+        const perPersonalP1 = Math.round(p1 * 0.30 / nPersonal)
+        const perPersonalP2 = Math.round(p2 * 0.20 / nPersonal)
+        const perPersonalP3 = Math.round(p3 * 0.10 / nPersonal)
         const perPersonalP4 = Math.max(0, Math.round(p4 * 0.05 / nPersonal))
-        distInstruction = `ЗАПУСК — распределение по фазам (личные линии убывают, профессиональный прогрев нарастает):
 
-ФАЗА 1 — Прогрев на нишу (${p1} дней): каждая личная линия получает ~${perPersonalP1} дня
-${personalLineNames.map(n => `  • [ЛИНИЯ: ${n}]: ${perPersonalP1} дня`).join('\n')}
+        // Content type breakdown per personal line (лайф 70%, сторителлинг 30%)
+        const totalPerLine = perPersonalP1 + perPersonalP2 + perPersonalP3 + perPersonalP4
+        const lifeTypeDays = Math.round(totalPerLine * 0.7)
+        const storyTypeDays = totalPerLine - lifeTypeDays
 
-ФАЗА 2 — Прогрев на эксперта (${p2} дней): каждая личная линия получает ~${perPersonalP2} дня
-${personalLineNames.map(n => `  • [ЛИНИЯ: ${n}]: ${perPersonalP2} дня`).join('\n')}
+        distBlock = `РАСПРЕДЕЛЕНИЕ ПО ФАЗАМ:
 
-ФАЗА 3 — Прогрев на продукт (${p3} дней): каждая личная линия получает ~${perPersonalP3} дней
+ФАЗА 1 (дни 1–${p1}, ${p1} дней):
+${personalLineNames.map(n => `  • [ЛИНИЯ: ${n}]: ${perPersonalP1} дней`).join('\n')}
+  • Профессиональный прогрев: остальные дни
+
+ФАЗА 2 (дни ${p1 + 1}–${p1 + p2}, ${p2} дней):
+${personalLineNames.map(n => `  • [ЛИНИЯ: ${n}]: ${perPersonalP2} дней`).join('\n')}
+  • Профессиональный прогрев: остальные дни
+
+ФАЗА 3 (дни ${p1 + p2 + 1}–${p1 + p2 + p3}, ${p3} дней):
 ${personalLineNames.map(n => `  • [ЛИНИЯ: ${n}]: ${perPersonalP3} дней`).join('\n')}
+  • Профессиональный прогрев: остальные дни
 
-ФАЗА 4 — Возражения/закрытие (${p4} дней): личные линии минимальны ~${perPersonalP4} дней каждая
-${perPersonalP4 > 0 ? personalLineNames.map(n => `  • [ЛИНИЯ: ${n}]: ${perPersonalP4} дней`).join('\n') : personalLineNames.map(n => `  • [ЛИНИЯ: ${n}]: 0 — только профессиональный контент`).join('\n')}`
+ФАЗА 4 (дни ${p1 + p2 + p3 + 1}–${duration}, ${p4} дней):
+${perPersonalP4 > 0
+  ? personalLineNames.map(n => `  • [ЛИНИЯ: ${n}]: ${perPersonalP4} дней`).join('\n')
+  : personalLineNames.map(n => `  • [ЛИНИЯ: ${n}]: 0 — только профессиональный прогрев`).join('\n')}
+  • Профессиональный прогрев: остальные дни
+
+Итого на каждую личную линию: ${totalPerLine} дней
+  — из них [лайф]: ${lifeTypeDays} дней (70%)
+  — из них [сторителлинг]: ${storyTypeDays} дней (30%)`
       }
 
       return `═══════════════════════════════
@@ -242,15 +256,28 @@ ${perPersonalP4 > 0 ? personalLineNames.map(n => `  • [ЛИНИЯ: ${n}]: ${pe
 ═══════════════════════════════
 ${blogLinesText}
 
-ПРАВИЛО — СЮЖЕТНЫЕ АРКИ:
-Каждая личная линия — НАРРАТИВНАЯ АРКА (сюжетная нить) со своей дугой: прошлое → настоящее → будущее.
+ЛИНИИ БЛОГА — СТРУКТУРА И РАСПРЕДЕЛЕНИЕ:
 
-${distInstruction}
+Блогер ведёт ${nPersonal + 1} линий: профессиональную + ${personalLineNames.join(', ')}.
 
-КАК ОФОРМЛЯТЬ: дни с личными линиями должны иметь meaning вида:
-[ЛИНИЯ: название] Конкретный эпизод из истории этой линии, который органично подводит к профессиональному смыслу фазы.
+${distBlock}
 
-ВАЖНО: эпизоды одной линии нарастают по дуге — прошлое в начале прогрева, настоящее в середине, будущее ближе к концу.`
+ТИПЫ КОНТЕНТА ДЛЯ ЛИЧНЫХ ЛИНИЙ:
+Дни личных линий делятся на 2 типа:
+
+[ЛИНИЯ: name | лайф] — 70% дней личной линии
+Что сейчас происходит в этой теме жизни. НЕТ связи с продуктом.
+Раскрывает блогера как человека через текущие события.
+Пример meaning: "[ЛИНИЯ: Переезд | лайф] Рассказываю как обустраиваем квартиру в Барселоне — Мила выбирает цвет комнаты, я понимаю что наконец-то чувствую себя дома."
+
+[ЛИНИЯ: name | сторителлинг] — 30% дней личной линии
+История из прошлого ИЛИ цель/мечта будущего. Мягко связана с профессиональным смыслом.
+Пример meaning: "[ЛИНИЯ: Переезд | сторителлинг] Рассказываю как решилась на переезд без денег и языка — именно этот момент научил меня что системный доход важнее разовых заработков."
+
+ПОМЕТКА ДЛЯ ПРОФЕССИОНАЛЬНЫХ ДНЕЙ:
+Дни профессионального прогрева (не личные линии) НЕ получают метку [ЛИНИЯ:]. Они остаются без метки.
+
+ОБЯЗАТЕЛЬНО: назначь КАЖДОЙ личной линии ровно столько дней сколько указано в распределении выше, равномерно распределив их по фазе. 70% этих дней — лайф, 30% — сторителлинг.`
     })() : ''}
 
 ═══════════════════════════════

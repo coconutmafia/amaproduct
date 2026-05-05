@@ -15,7 +15,7 @@ import { toast } from 'sonner'
 import {
   CheckCircle2, Circle, Loader, AlertCircle, Upload, BookOpen,
   X, File, Loader2, Plus, FileText, Mic, ChevronDown, ChevronUp,
-  Info, MessageSquare, Sparkles, Trash2, Copy, Check,
+  Info, MessageSquare, Sparkles, Trash2, Copy, Check, Pencil,
 } from 'lucide-react'
 
 interface Material {
@@ -522,6 +522,8 @@ interface BlogLinesDialogProps {
   open: boolean
   onClose: () => void
   onSuccess: (newMaterials: Material[]) => void
+  initialContent?: string
+  editingId?: string
 }
 
 interface NarrativeLine {
@@ -531,7 +533,66 @@ interface NarrativeLine {
   future: string
 }
 
-function BlogLinesDialog({ projectId, open, onClose, onSuccess }: BlogLinesDialogProps) {
+function parseBlogLinesContent(content: string) {
+  const result = {
+    profPast: '', profPresent: '', profFuture: '',
+    personal1: { name: '', past: '', present: '', future: '' } as NarrativeLine,
+    personal2: { name: '', past: '', present: '', future: '' } as NarrativeLine,
+    showPersonal2: false,
+  }
+
+  // Split into sections by blank lines or section headers
+  const lines = content.split('\n')
+  let currentSection: 'prof' | 'p1' | 'p2' | null = null
+
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) continue
+
+    if (/^ПРОФЕССИОНАЛЬНАЯ ЛИНИЯ/i.test(line)) {
+      currentSection = 'prof'
+      continue
+    }
+    if (/^ЛИЧНАЯ ЛИНИЯ\s*1\s*[—:\-]/i.test(line)) {
+      currentSection = 'p1'
+      const name = line.replace(/^ЛИЧНАЯ ЛИНИЯ\s*1\s*[—:\-]\s*/i, '').trim()
+      result.personal1.name = name && name.toLowerCase() !== 'без названия' ? name : ''
+      continue
+    }
+    if (/^ЛИЧНАЯ ЛИНИЯ\s*2\s*[—:\-]/i.test(line)) {
+      currentSection = 'p2'
+      result.showPersonal2 = true
+      const name = line.replace(/^ЛИЧНАЯ ЛИНИЯ\s*2\s*[—:\-]\s*/i, '').trim()
+      result.personal2.name = name && name.toLowerCase() !== 'без названия' ? name : ''
+      continue
+    }
+
+    const pastMatch = line.match(/^Прошлое:\s*(.*)/i)
+    const presentMatch = line.match(/^Настоящее:\s*(.*)/i)
+    const futureMatch = line.match(/^Будущее:\s*(.*)/i)
+
+    if (pastMatch) {
+      const val = pastMatch[1]?.trim() === '—' ? '' : pastMatch[1]?.trim() ?? ''
+      if (currentSection === 'prof') result.profPast = val
+      else if (currentSection === 'p1') result.personal1.past = val
+      else if (currentSection === 'p2') result.personal2.past = val
+    } else if (presentMatch) {
+      const val = presentMatch[1]?.trim() === '—' ? '' : presentMatch[1]?.trim() ?? ''
+      if (currentSection === 'prof') result.profPresent = val
+      else if (currentSection === 'p1') result.personal1.present = val
+      else if (currentSection === 'p2') result.personal2.present = val
+    } else if (futureMatch) {
+      const val = futureMatch[1]?.trim() === '—' ? '' : futureMatch[1]?.trim() ?? ''
+      if (currentSection === 'prof') result.profFuture = val
+      else if (currentSection === 'p1') result.personal1.future = val
+      else if (currentSection === 'p2') result.personal2.future = val
+    }
+  }
+
+  return result
+}
+
+function BlogLinesDialog({ projectId, open, onClose, onSuccess, initialContent, editingId }: BlogLinesDialogProps) {
   const [profPast, setProfPast] = useState('')
   const [profPresent, setProfPresent] = useState('')
   const [profFuture, setProfFuture] = useState('')
@@ -540,6 +601,27 @@ function BlogLinesDialog({ projectId, open, onClose, onSuccess }: BlogLinesDialo
   const [personal2, setPersonal2] = useState<NarrativeLine>({ name: '', past: '', present: '', future: '' })
   const [showPersonal2, setShowPersonal2] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  // Pre-fill fields when initialContent is provided
+  useEffect(() => {
+    if (open && initialContent) {
+      const parsed = parseBlogLinesContent(initialContent)
+      setProfPast(parsed.profPast)
+      setProfPresent(parsed.profPresent)
+      setProfFuture(parsed.profFuture)
+      setPersonal1(parsed.personal1)
+      setPersonal2(parsed.personal2)
+      setShowPersonal2(parsed.showPersonal2)
+    } else if (open && !initialContent) {
+      // Reset when opening fresh
+      setProfPast('')
+      setProfPresent('')
+      setProfFuture('')
+      setPersonal1({ name: '', past: '', present: '', future: '' })
+      setPersonal2({ name: '', past: '', present: '', future: '' })
+      setShowPersonal2(false)
+    }
+  }, [open, initialContent])
 
   const handleSave = async () => {
     const lines: string[] = []
@@ -569,21 +651,38 @@ function BlogLinesDialog({ projectId, open, onClose, onSuccess }: BlogLinesDialo
 
     setSaving(true)
     try {
-      const fd = new FormData()
-      fd.append('projectId', projectId)
-      fd.append('title', 'Линии блога')
-      fd.append('materialType', 'blog_lines')
-      fd.append('isSystemVault', 'false')
-      fd.append('textContent', textContent)
+      if (editingId) {
+        // PATCH — update existing material
+        const res = await fetch(`/api/materials/${editingId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ raw_content: textContent }),
+        })
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}))
+          throw new Error((d as { error?: string }).error || `Ошибка ${res.status}`)
+        }
+        toast.success('Линии блога обновлены')
+        // Return the existing material (no change to list, just updated content)
+        onSuccess([{ id: editingId, material_type: 'blog_lines', title: 'Линии блога', processing_status: 'ready' }])
+      } else {
+        // POST — create new material
+        const fd = new FormData()
+        fd.append('projectId', projectId)
+        fd.append('title', 'Линии блога')
+        fd.append('materialType', 'blog_lines')
+        fd.append('isSystemVault', 'false')
+        fd.append('textContent', textContent)
 
-      const res = await fetch('/api/upload', { method: 'POST', body: fd })
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}))
-        throw new Error((d as { error?: string }).error || `Ошибка ${res.status}`)
+        const res = await fetch('/api/upload', { method: 'POST', body: fd })
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}))
+          throw new Error((d as { error?: string }).error || `Ошибка ${res.status}`)
+        }
+        const { materialId, processingStatus } = await res.json() as { materialId: string; processingStatus: string }
+        toast.success('Линии блога сохранены')
+        onSuccess([{ id: materialId, material_type: 'blog_lines', title: 'Линии блога', processing_status: processingStatus }])
       }
-      const { materialId, processingStatus } = await res.json() as { materialId: string; processingStatus: string }
-      toast.success('Линии блога сохранены')
-      onSuccess([{ id: materialId, material_type: 'blog_lines', title: 'Линии блога', processing_status: processingStatus }])
       onClose()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Ошибка сохранения')
@@ -769,6 +868,8 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
   const [showInterview, setShowInterview] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [materials, setMaterials] = useState(initialMaterials)
+  const [editingBlogLines, setEditingBlogLines] = useState<{ id: string; content: string } | null>(null)
+  const [loadingEditId, setLoadingEditId] = useState<string | null>(null)
   // Recalculate score dynamically as materials change (same weights as upload API)
   const score = useMemo(() => {
     const types = new Set(materials.map(m => m.material_type))
@@ -796,6 +897,21 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
   // Called after upload — add new materials to state instantly (no page refresh)
   const handleUploaded = (newMaterials: Material[]) => {
     setMaterials(prev => [...newMaterials, ...prev])
+  }
+
+  const handleEditBlogLines = async (id: string) => {
+    setLoadingEditId(id)
+    try {
+      const res = await fetch(`/api/materials/${id}`)
+      if (!res.ok) throw new Error('Ошибка загрузки')
+      const data = await res.json() as { raw_content: string }
+      setEditingBlogLines({ id, content: data.raw_content || '' })
+      setShowBlogLines(true)
+    } catch {
+      toast.error('Не удалось загрузить содержимое')
+    } finally {
+      setLoadingEditId(null)
+    }
   }
 
   const handleDelete = async (id: string) => {
@@ -894,6 +1010,19 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                             <div key={item.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-background/60 border border-border/60 text-xs min-w-0">
                               <StatusIcon status={item.processing_status} />
                               <span className="flex-1 min-w-0 truncate text-foreground/80">{item.title}</span>
+                              {type === 'blog_lines' && (
+                                <button
+                                  onClick={() => handleEditBlogLines(item.id)}
+                                  disabled={loadingEditId === item.id}
+                                  className="p-0.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors shrink-0"
+                                  title="Редактировать"
+                                >
+                                  {loadingEditId === item.id
+                                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                                    : <Pencil className="h-3 w-3" />
+                                  }
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleDelete(item.id)}
                                 disabled={deletingId === item.id}
@@ -927,7 +1056,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                           size="sm"
                           variant={hasItems ? 'outline' : 'default'}
                           className={`text-xs h-8 px-4 ${hasItems ? 'border-border' : 'gradient-accent text-white hover:opacity-90 border-0'}`}
-                          onClick={() => type === 'blog_lines' ? setShowBlogLines(true) : setUploadFor(type)}
+                          onClick={() => type === 'blog_lines' ? (setEditingBlogLines(null), setShowBlogLines(true)) : setUploadFor(type)}
                         >
                           <Upload className="h-3 w-3 mr-1.5" />
                           {hasItems ? 'Добавить ещё' : 'Загрузить'}
@@ -963,11 +1092,16 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
       <BlogLinesDialog
         projectId={projectId}
         open={showBlogLines}
-        onClose={() => setShowBlogLines(false)}
+        onClose={() => { setShowBlogLines(false); setEditingBlogLines(null) }}
         onSuccess={(newMaterials) => {
-          handleUploaded(newMaterials)
+          if (!editingBlogLines) {
+            handleUploaded(newMaterials)
+          }
           setShowBlogLines(false)
+          setEditingBlogLines(null)
         }}
+        initialContent={editingBlogLines?.content}
+        editingId={editingBlogLines?.id}
       />
 
       {/* Upload dialog */}
