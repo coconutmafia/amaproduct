@@ -109,7 +109,7 @@ export async function POST(request: Request) {
           // Strip "ЛИЧНАЯ ЛИНИЯ N" prefix, then strip any leading dash/colon separator
           const name = line
             .replace(/ЛИЧНАЯ ЛИНИЯ\s*\d+\s*/i, '')   // remove "ЛИЧНАЯ ЛИНИЯ 1 "
-            .replace(/^[—–-\-:]+\s*/, '') // strip em-dash, en-dash, hyphen, colon
+            .replace(/^[—–\-:]+\s*/, '') // strip em-dash, en-dash, hyphen, colon
             .trim()
           if (name && name.toLowerCase() !== 'без названия' && name.length > 1) {
             personalLineNames.push(name)
