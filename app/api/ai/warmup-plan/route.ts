@@ -79,6 +79,7 @@ export async function POST(request: Request) {
 
     // ── Load blog lines separately (always from project_materials, never chunked) ──
     let blogLinesText = ''
+    const personalLineNames: string[] = []
     try {
       const { data: blogMaterials } = await supabase
         .from('project_materials')
@@ -89,39 +90,37 @@ export async function POST(request: Request) {
 
       console.log(`[warmup-plan] blog_lines records found: ${blogMaterials?.length ?? 0}`)
       if (blogMaterials && blogMaterials.length > 0) {
-        blogLinesText = blogMaterials
+        // Build FULL content (no slice yet) so we can extract ALL line names
+        const fullBlogContent = blogMaterials
           .filter(m => m.raw_content)
           .map(m => (m.raw_content as string).replace(/"/g, "'"))
           .join('\n\n')
-          .slice(0, 2000)
+
+        // ── Extract personal line names from FULL content (before any slicing) ──
+        for (const line of fullBlogContent.split('\n')) {
+          if (/ЛИЧНАЯ ЛИНИЯ/i.test(line)) {
+            const name = line
+              .replace(/ЛИЧНАЯ ЛИНИЯ\s*\d+\s*/i, '')  // remove "ЛИЧНАЯ ЛИНИЯ 1 "
+              .replace(/^[—–\-:]+\s*/, '')             // strip leading dash/colon
+              .trim()
+            if (name && name.toLowerCase() !== 'без названия' && name.length > 1) {
+              personalLineNames.push(name)
+            } else {
+              personalLineNames.push(`Личная линия ${personalLineNames.length + 1}`)
+            }
+          }
+        }
+        if (personalLineNames.length === 0 && fullBlogContent.trim().length > 20) {
+          personalLineNames.push('Личная линия')
+        }
+
+        // Slice for prompt (after names are extracted)
+        blogLinesText = fullBlogContent.slice(0, 3500)
+        console.log(`[warmup-plan] personalLineNames: ${personalLineNames.join(', ')}`)
         console.log(`[warmup-plan] blogLinesText length: ${blogLinesText.length}, preview: ${blogLinesText.slice(0, 200)}`)
       }
     } catch (e) {
       console.error('[warmup-plan] blog_lines query error:', e)
-    }
-
-    // ── Count personal lines from blog_lines text ────────────────────────────
-    const personalLineNames: string[] = []
-    if (blogLinesText) {
-      // Parse line-by-line: look for lines starting with ЛИЧНАЯ ЛИНИЯ
-      for (const line of blogLinesText.split('\n')) {
-        if (/ЛИЧНАЯ ЛИНИЯ/i.test(line)) {
-          // Strip "ЛИЧНАЯ ЛИНИЯ N" prefix, then strip any leading dash/colon separator
-          const name = line
-            .replace(/ЛИЧНАЯ ЛИНИЯ\s*\d+\s*/i, '')   // remove "ЛИЧНАЯ ЛИНИЯ 1 "
-            .replace(/^[—–\-:]+\s*/, '') // strip em-dash, en-dash, hyphen, colon
-            .trim()
-          if (name && name.toLowerCase() !== 'без названия' && name.length > 1) {
-            personalLineNames.push(name)
-          } else {
-            personalLineNames.push(`Личная линия ${personalLineNames.length + 1}`)
-          }
-        }
-      }
-      // Fallback if no ЛИЧНАЯ ЛИНИЯ markers found at all
-      if (personalLineNames.length === 0 && blogLinesText.trim().length > 20) {
-        personalLineNames.push('Личная линия')
-      }
     }
 
     const { data: materials } = await supabase
