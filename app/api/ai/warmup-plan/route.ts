@@ -211,48 +211,48 @@ ${blogLinesText ? (() => {
       const nPersonal = personalLineNames.length
 
       // ── Distribution model ──────────────────────────────────────────────────
+      const nTotal = nPersonal + 1 // personal lines + professional
       let distBlock = ''
+
       if (isEvergreen) {
-        const totalLines = nPersonal + 1 // personal + professional
-        const daysEach = Math.round(duration / totalLines)
-        distBlock = `ВЕЧНОЗЕЛЁНЫЙ ПРОГРЕВ — равное распределение:
-Каждая линия получает примерно ${daysEach} дней из ${duration}.
-${personalLineNames.map(n => `• [ЛИНИЯ: ${n}]: ~${daysEach} дней`).join('\n')}
-• Профессиональный прогрев: ~${daysEach} дней`
+        // Evergreen: equal split throughout all phases
+        const phases = [p1, p2, p3, p4]
+        const phaseStart = [1, p1+1, p1+p2+1, p1+p2+p3+1]
+        const phaseEnd   = [p1, p1+p2, p1+p2+p3, duration]
+        distBlock = phases.map((pd, i) => {
+          const profD = Math.round(pd / nTotal)
+          const perPersonalD = Math.round(pd / nTotal)
+          const lifeD = Math.round(perPersonalD * 0.7)
+          const storyD = perPersonalD - lifeD
+          return `ФАЗА ${i+1} (дни ${phaseStart[i]}–${phaseEnd[i]}, ${pd} дней):
+  [ЛИНИЯ: Профессиональная]: ${profD} дней
+${personalLineNames.map(n => `  [ЛИНИЯ: ${n}]: ${perPersonalD} дней (лайф ${lifeD} + сторителлинг ${storyD})`).join('\n')}`
+        }).join('\n\n')
       } else {
-        const perPersonalP1 = Math.round(p1 * 0.30 / nPersonal)
-        const perPersonalP2 = Math.round(p2 * 0.20 / nPersonal)
-        const perPersonalP3 = Math.round(p3 * 0.10 / nPersonal)
-        const perPersonalP4 = Math.max(0, Math.round(p4 * 0.05 / nPersonal))
+        // Launch: phase 1 equal → phase 4: 60% prof / (40%/N) each personal
+        const profPctP1 = 1 / nTotal
+        const profPctP4 = 0.60
+        const persPctP1 = 1 / nTotal
+        const persPctP4 = nPersonal > 0 ? 0.40 / nPersonal : 0
 
-        // Content type breakdown per personal line (лайф 70%, сторителлинг 30%)
-        const totalPerLine = perPersonalP1 + perPersonalP2 + perPersonalP3 + perPersonalP4
-        const lifeTypeDays = Math.round(totalPerLine * 0.7)
-        const storyTypeDays = totalPerLine - lifeTypeDays
+        const profPct  = [profPctP1, profPctP1+(profPctP4-profPctP1)*1/3, profPctP1+(profPctP4-profPctP1)*2/3, profPctP4]
+        const persPct  = [persPctP1, persPctP1+(persPctP4-persPctP1)*1/3, persPctP1+(persPctP4-persPctP1)*2/3, persPctP4]
 
-        distBlock = `РАСПРЕДЕЛЕНИЕ ПО ФАЗАМ:
+        const phases = [p1, p2, p3, p4]
+        const phaseStart = [1, p1+1, p1+p2+1, p1+p2+p3+1]
+        const phaseEnd   = [p1, p1+p2, p1+p2+p3, duration]
+        const phasePct   = [33, 42, 51, 60] // approx prof% for display
 
-ФАЗА 1 (дни 1–${p1}, ${p1} дней):
-${personalLineNames.map(n => `  • [ЛИНИЯ: ${n}]: ${perPersonalP1} дней`).join('\n')}
-  • Профессиональный прогрев: остальные дни
-
-ФАЗА 2 (дни ${p1 + 1}–${p1 + p2}, ${p2} дней):
-${personalLineNames.map(n => `  • [ЛИНИЯ: ${n}]: ${perPersonalP2} дней`).join('\n')}
-  • Профессиональный прогрев: остальные дни
-
-ФАЗА 3 (дни ${p1 + p2 + 1}–${p1 + p2 + p3}, ${p3} дней):
-${personalLineNames.map(n => `  • [ЛИНИЯ: ${n}]: ${perPersonalP3} дней`).join('\n')}
-  • Профессиональный прогрев: остальные дни
-
-ФАЗА 4 (дни ${p1 + p2 + p3 + 1}–${duration}, ${p4} дней):
-${perPersonalP4 > 0
-  ? personalLineNames.map(n => `  • [ЛИНИЯ: ${n}]: ${perPersonalP4} дней`).join('\n')
-  : personalLineNames.map(n => `  • [ЛИНИЯ: ${n}]: 0 — только профессиональный прогрев`).join('\n')}
-  • Профессиональный прогрев: остальные дни
-
-Итого на каждую личную линию: ${totalPerLine} дней
-  — из них [лайф]: ${lifeTypeDays} дней (70%)
-  — из них [сторителлинг]: ${storyTypeDays} дней (30%)`
+        distBlock = phases.map((pd, i) => {
+          const profD = Math.round(pd * profPct[i])
+          const perD  = Math.round(pd * persPct[i])
+          const lifeD = Math.round(perD * 0.7)
+          const storyD = perD - lifeD
+          const remainingForProf = pd - (perD * nPersonal)
+          return `ФАЗА ${i+1} (дни ${phaseStart[i]}–${phaseEnd[i]}, ${pd} дней) — проф. ~${phasePct[i]}%:
+  [ЛИНИЯ: Профессиональная]: ${remainingForProf} дней
+${personalLineNames.map(n => `  [ЛИНИЯ: ${n}]: ${perD} дней (лайф ${lifeD} + сторителлинг ${storyD})`).join('\n')}`
+        }).join('\n\n')
       }
 
       return `═══════════════════════════════
@@ -260,36 +260,30 @@ ${perPersonalP4 > 0
 ═══════════════════════════════
 ${blogLinesText}
 
-ЛИНИИ БЛОГА — СТРУКТУРА И РАСПРЕДЕЛЕНИЕ:
+ЛИНИИ БЛОГА — ТОЧНОЕ РАСПРЕДЕЛЕНИЕ ПО ДНЯМ:
 
-Блогер ведёт ${nPersonal + 1} линий: профессиональную + ${personalLineNames.join(', ')}.
+Блогер ведёт ${nTotal} линий: Профессиональная + ${personalLineNames.join(' + ')}.
 
 ${distBlock}
 
-ТИПЫ КОНТЕНТА ДЛЯ ЛИЧНЫХ ЛИНИЙ:
-Дни личных линий делятся на 2 типа:
+ПРАВИЛА МАРКИРОВКИ — КАЖДЫЙ ДЕНЬ ПОЛУЧАЕТ МЕТКУ СВОЕЙ ЛИНИИ:
 
-[ЛИНИЯ: name | лайф] — 70% дней личной линии
-ЧТО ПРОИСХОДИТ СЕЙЧАС в этой сфере жизни. Просто жизнь, просто человек.
-НИ СЛОВА о работе, продукте, профессиональных выводах — даже намёком.
-Пример: "[ЛИНИЯ: Переезд | лайф] Обустраиваем квартиру в Барселоне — Мила уже выбрала цвет комнаты, я нашла кофейню под домом где можно работать. Начинаю чувствовать себя здесь дома."
+Профессиональные дни: [ЛИНИЯ: Профессиональная] Тема дня...
+Личные лайф-дни:      [ЛИНИЯ: Название линии | лайф] Тема дня...
+Личные сторителлинг-дни: [ЛИНИЯ: Название линии | сторителлинг] Тема дня...
 
-[ЛИНИЯ: name | сторителлинг] — 30% дней личной линии
-История из ПРОШЛОГО или мечта/цель БУДУЩЕГО. Тоже только личное — никаких профессиональных выводов.
-Если профессиональный смысл возникает сам — это нормально, но НИКОГДА не формулируй его явно.
-Пример: "[ЛИНИЯ: Переезд | сторителлинг] Рассказываю как три года назад решилась уехать с ребёнком без денег, без языка и без плана — помню то ощущение когда паковала чемодан и думала: назад дороги нет."
+НИ ОДИН ДЕНЬ не остаётся без метки [ЛИНИЯ:].
 
-⚠️ СТОП-ПРАВИЛО ДЛЯ ВСЕХ ЛИЧНЫХ ЛИНИЙ:
-НИКОГДА не добавляй профессиональный вывод в конец личного дня.
+ПРАВИЛО ДЛЯ ЛИЧНЫХ ЛИНИЙ:
+[лайф] — что происходит СЕЙЧАС в этой сфере жизни. Никакой связи с работой, продуктом или профессией.
+[сторителлинг] — история из прошлого или цель/мечта будущего. Только личное, без профессиональных выводов.
+
+⚠️ СТОП: НИКОГДА не добавляй в конец личного дня профессиональный вывод.
 НЕЛЬЗЯ: "...и именно тогда я поняла что системный доход важнее найма"
 НЕЛЬЗЯ: "...этот опыт научил меня выстраивать системы"
-НЕЛЬЗЯ: "...именно поэтому я занимаюсь [профессия]"
 НУЖНО: просто жизнь, просто история, просто человек.
 
-ПОМЕТКА ДЛЯ ПРОФЕССИОНАЛЬНЫХ ДНЕЙ:
-Дни профессионального прогрева (не личные линии) НЕ получают метку [ЛИНИЯ:]. Они остаются без метки.
-
-ОБЯЗАТЕЛЬНО: назначь КАЖДОЙ личной линии ровно столько дней сколько указано в распределении выше, равномерно распределив их по фазе. 70% этих дней — лайф, 30% — сторителлинг.`
+ОБЯЗАТЕЛЬНО: соблюдай ТОЧНОЕ количество дней по каждой линии из таблицы выше. Распредели дни равномерно по всей фазе (не всё в начало или конец).`
     })() : ''}
 
 ═══════════════════════════════
