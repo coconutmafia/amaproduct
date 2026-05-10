@@ -173,16 +173,16 @@
 
 /* Gradient utilities */
 .gradient-accent {
-  background: linear-gradient(135deg, #7C3AED 0%, #A855F7 50%, #EC4899 100%);
+  background: linear-gradient(135deg, #F5A84A 0%, #E86BA0 55%, #D44E7E 100%);
 }
 .gradient-text {
-  background: linear-gradient(135deg, #A855F7, #EC4899);
+  background: linear-gradient(135deg, #F5A84A 0%, #E86BA0 55%, #D44E7E 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 .gradient-border {
-  border-image: linear-gradient(135deg, #7C3AED, #A855F7) 1;
+  border-image: linear-gradient(135deg, #F5A84A, #E86BA0) 1;
 }
 
 /* Phase indicator colors */
