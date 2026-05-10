@@ -106,7 +106,7 @@ function GradientButton({
   return (
     <Link
       href={href}
-      className={`inline-flex items-center gap-2 px-7 h-12 rounded-[50px] gradient-accent text-white font-bold uppercase text-sm tracking-wide hover:opacity-90 transition-opacity ${className}`}
+      className={`inline-flex items-center gap-2 px-8 h-14 rounded-[50px] gradient-accent text-white font-bold uppercase text-sm tracking-wide hover:opacity-90 transition-opacity shadow-lg hover:shadow-xl ${className}`}
     >
       {children}
       <ChevronRight className="h-4 w-4" />
@@ -117,14 +117,12 @@ function GradientButton({
 // ── Компонент лейбла секции ───────────────────────────────────────────────────
 function SectionLabel({ children }: { children: string }) {
   return (
-    <div className="flex items-center justify-center gap-3 mb-4">
-      <div className="h-px w-8" style={{ background: 'linear-gradient(135deg, #F5A84A, #E86BA0)' }} />
-      <span
-        className="text-[11px] font-semibold tracking-[0.15em] uppercase gradient-text"
-      >
+    <div className="flex items-center justify-center gap-3 mb-5">
+      <div className="h-px w-10" style={{ background: 'linear-gradient(135deg, #F5A84A, #E86BA0)' }} />
+      <span className="text-[11px] font-semibold tracking-[0.18em] uppercase gradient-text">
         {children}
       </span>
-      <div className="h-px w-8" style={{ background: 'linear-gradient(135deg, #F5A84A, #E86BA0)' }} />
+      <div className="h-px w-10" style={{ background: 'linear-gradient(135deg, #F5A84A, #E86BA0)' }} />
     </div>
   )
 }
@@ -134,7 +132,7 @@ function Navbar() {
   const [open, setOpen] = useState(false)
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 border-b border-[#EBEBEB] bg-white">
+    <header className="fixed top-0 left-0 right-0 z-50 border-b border-[#EBEBEB] bg-white/95 backdrop-blur-sm">
       <div className="max-w-6xl mx-auto px-5 h-14 flex items-center justify-between">
         {/* Logo */}
         <span className="text-lg font-black text-[#1A1A1A] tracking-tight">AMA</span>
@@ -193,36 +191,44 @@ function Navbar() {
 // ── Hero ──────────────────────────────────────────────────────────────────────
 function HeroSection() {
   return (
-    <section className="relative pt-32 pb-20 px-5 text-center overflow-hidden bg-white">
-      <div className="relative max-w-3xl mx-auto space-y-6">
+    <section className="relative pt-36 pb-28 px-5 text-center overflow-hidden bg-white">
+      {/* Decorative gradient blobs */}
+      <div
+        className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full opacity-20 blur-3xl pointer-events-none"
+        style={{ background: 'radial-gradient(circle, #F5A84A 0%, transparent 70%)' }}
+      />
+      <div
+        className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full opacity-15 blur-3xl pointer-events-none"
+        style={{ background: 'radial-gradient(circle, #D44E7E 0%, transparent 70%)' }}
+      />
+
+      <div className="relative max-w-4xl mx-auto space-y-7">
         {/* Badge */}
-        <div
-          className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wide text-white gradient-accent"
-        >
-          <Sparkles className="h-3 w-3" />
+        <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full text-xs font-bold uppercase tracking-widest text-white gradient-accent shadow-lg">
+          <Sparkles className="h-3.5 w-3.5" />
           AI-ассистент для запусков
         </div>
 
         {/* Headline */}
-        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-[#1A1A1A] leading-[1.1] tracking-tight uppercase">
+        <h1 className="text-6xl sm:text-7xl lg:text-[5.5rem] font-black text-[#1A1A1A] leading-[1.05] tracking-tight uppercase">
           Твой личный{' '}
           <span className="gradient-text">AI SMM-щик</span>
           ,<br />который пишет как ты
         </h1>
 
         {/* Sub */}
-        <p className="text-[#444444] text-lg max-w-xl mx-auto leading-relaxed">
+        <p className="text-xl sm:text-2xl text-[#444444] max-w-2xl mx-auto leading-relaxed">
           AMA изучает твой голос, нишу и аудиторию — и создаёт контент, который звучит именно как ты. План прогрева за 8 минут. Посты, рилсы, сториз — одним кликом.
         </p>
 
         {/* CTAs */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-3">
           <GradientButton href="/register" className="w-full sm:w-auto justify-center">
             Попробовать бесплатно
           </GradientButton>
           <a
             href="#features"
-            className="h-12 px-7 w-full sm:w-auto justify-center rounded-[50px] font-semibold text-[#444444] border border-[#EBEBEB] hover:border-[#C5CBA5] hover:text-[#1A1A1A] transition-all flex items-center gap-2 text-sm"
+            className="h-14 px-8 w-full sm:w-auto justify-center rounded-[50px] font-semibold text-[#444444] border border-[#EBEBEB] hover:border-[#C5CBA5] hover:text-[#1A1A1A] transition-all flex items-center gap-2 text-sm"
           >
             Смотреть демо
           </a>
@@ -242,14 +248,14 @@ function SocialProofBar() {
     { l: 'К' },
   ]
   return (
-    <div className="border-y border-[#EBEBEB] py-4 px-5 bg-white">
+    <div className="border-y border-[#C5CBA5] py-5 px-5 bg-[#FAFAF8]">
       <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-5 sm:gap-8">
         <div className="flex items-center gap-2">
           <div className="flex -space-x-2">
             {AVATARS.map((a, i) => (
               <div
                 key={i}
-                className="w-8 h-8 rounded-full gradient-accent flex items-center justify-center text-[11px] font-bold text-white ring-2 ring-white"
+                className="w-9 h-9 rounded-full gradient-accent flex items-center justify-center text-[11px] font-bold text-white ring-2 ring-white"
               >
                 {a.l}
               </div>
@@ -259,7 +265,7 @@ function SocialProofBar() {
             Уже используют <span className="text-[#1A1A1A] font-semibold">2 847</span> экспертов
           </span>
         </div>
-        <div className="h-px w-px sm:h-4 sm:w-px bg-[#EBEBEB] hidden sm:block" />
+        <div className="h-px w-px sm:h-4 sm:w-px bg-[#C5CBA5] hidden sm:block" />
         <div className="flex items-center gap-1.5">
           {[...Array(5)].map((_, i) => (
             <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
@@ -268,6 +274,29 @@ function SocialProofBar() {
         </div>
       </div>
     </div>
+  )
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+function StatsSection() {
+  const STATS = [
+    { value: '2 847', label: 'экспертов уже используют', suffix: '+' },
+    { value: '8', label: 'минут на первый план прогрева', suffix: '' },
+    { value: '47', label: 'минут экономится каждый день', suffix: '' },
+  ]
+  return (
+    <section className="py-20 px-5 bg-[#FAFAF8] border-y border-[#C5CBA5]">
+      <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[#C5CBA5]">
+        {STATS.map((s, i) => (
+          <div key={i} className="py-10 sm:py-0 px-8 text-center first:pt-0 last:pb-0">
+            <div className="text-6xl sm:text-7xl font-black gradient-text leading-none">
+              {s.value}{s.suffix}
+            </div>
+            <div className="text-sm text-[#888888] mt-3 max-w-[180px] mx-auto">{s.label}</div>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -280,15 +309,15 @@ function ProblemSection() {
   ]
 
   return (
-    <section className="py-20 px-5 bg-white">
+    <section className="py-28 px-5 bg-white">
       <div className="max-w-2xl mx-auto">
         <SectionLabel>Проблема</SectionLabel>
-        <h2 className="text-3xl sm:text-4xl font-black text-[#1A1A1A] text-center mb-10 uppercase">Знакомо?</h2>
-        <div className="space-y-3">
+        <h2 className="text-4xl sm:text-5xl font-black text-[#1A1A1A] text-center mb-12 uppercase">Знакомо?</h2>
+        <div className="space-y-4">
           {PAINS.map((p, i) => (
-            <div key={i} className="flex items-center gap-4 p-5 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5]">
-              <span className="text-2xl shrink-0">{p.emoji}</span>
-              <p className="text-sm font-medium text-[#444444]">{p.text}</p>
+            <div key={i} className="flex items-center gap-5 p-6 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all">
+              <span className="text-3xl shrink-0">{p.emoji}</span>
+              <p className="text-base font-medium text-[#444444]">{p.text}</p>
             </div>
           ))}
         </div>
@@ -299,53 +328,37 @@ function ProblemSection() {
 
 // ── Solution ──────────────────────────────────────────────────────────────────
 function SolutionSection() {
-  const STATS = [
-    { value: '2 847', label: 'активных экспертов' },
-    { value: '47 мин', label: 'экономит в день' },
-    { value: '8 мин', label: 'первый план прогрева' },
-  ]
-
   return (
-    <section className="py-20 px-5 bg-white">
+    <section className="py-28 px-5 bg-white border-t border-[#C5CBA5]">
       <div className="max-w-4xl mx-auto">
         <SectionLabel>Решение</SectionLabel>
-        <h2 className="text-3xl sm:text-4xl font-black text-[#1A1A1A] text-center mb-3 leading-tight uppercase">
+        <h2 className="text-4xl sm:text-5xl lg:text-6xl font-black text-[#1A1A1A] text-center mb-3 leading-tight uppercase">
           AMA знает твою нишу, твою аудиторию, твой стиль.
         </h2>
-        <p className="text-xl sm:text-2xl font-bold text-center gradient-text mb-12">
+        <p className="text-xl sm:text-2xl font-bold text-center gradient-text mb-14">
           И пишет контент, который звучит именно как ты.
         </p>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          {STATS.map((s, i) => (
-            <div key={i} className="text-center">
-              <div className="text-2xl sm:text-4xl font-black gradient-text">{s.value}</div>
-              <div className="text-xs text-[#888888] mt-1">{s.label}</div>
-            </div>
-          ))}
-        </div>
-
         {/* Comparison */}
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div className="p-5 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-3 shadow-sm">
+        <div className="grid sm:grid-cols-2 gap-5">
+          <div className="p-7 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-4 shadow-lg h-full">
             <p className="text-xs font-bold text-red-500 uppercase tracking-wider flex items-center gap-1.5">
               <X className="h-3.5 w-3.5" /> Без AMA
             </p>
             {['Часами смотришь в пустой экран', 'Контент-план теряется в заметках', 'Нейросеть пишет "не своим голосом"', 'Каждый запуск — стресс с нуля'].map((t, i) => (
               <div key={i} className="flex items-start gap-2">
-                <Minus className="h-3.5 w-3.5 text-[#C5CBA5] mt-0.5 shrink-0" />
+                <Minus className="h-4 w-4 text-[#C5CBA5] mt-0.5 shrink-0" />
                 <span className="text-sm text-[#888888]">{t}</span>
               </div>
             ))}
           </div>
-          <div className="p-5 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-3 shadow-sm">
+          <div className="p-7 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-4 shadow-lg h-full">
             <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1.5">
               <Check className="h-3.5 w-3.5" /> С AMA
             </p>
             {['Контент за 20 минут в твоём голосе', 'Чёткий план по 4 фазам прогрева', 'AI помнит всё о тебе и твоей аудитории', 'Каждый запуск — система, а не хаос'].map((t, i) => (
               <div key={i} className="flex items-start gap-2">
-                <Check className="h-3.5 w-3.5 text-emerald-500 mt-0.5 shrink-0" />
+                <Check className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
                 <span className="text-sm text-[#444444]">{t}</span>
               </div>
             ))}
@@ -378,24 +391,24 @@ function FeaturesSection() {
   ]
 
   return (
-    <section id="features" className="py-20 px-5 bg-white">
+    <section id="features" className="py-28 px-5 bg-white border-t border-[#C5CBA5]">
       <div className="max-w-5xl mx-auto">
         <SectionLabel>Возможности</SectionLabel>
-        <h2 className="text-3xl sm:text-4xl font-black text-[#1A1A1A] text-center mb-12 uppercase">
+        <h2 className="text-4xl sm:text-5xl font-black text-[#1A1A1A] text-center mb-14 uppercase">
           Всё для запуска —<br />в{' '}
           <span className="gradient-text">одном месте</span>
         </h2>
 
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className="grid sm:grid-cols-2 gap-5">
           {/* Мастер прогрева */}
-          <div className="p-5 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-4 shadow-sm">
+          <div className="p-7 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-5 shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-2 gradient-text">
-                <Zap className="h-3 w-3" /> Мастер прогрева
+              <p className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 mb-2 gradient-text">
+                <Zap className="h-3.5 w-3.5" /> Мастер прогрева
               </p>
-              <p className="text-base font-bold text-[#1A1A1A]">План прогрева за 8 минут</p>
+              <p className="text-lg font-black text-[#1A1A1A]">План прогрева за 8 минут</p>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {PHASES.map((p) => (
                 <div key={p.label} className="flex items-center gap-2">
                   <span className="text-xs w-20 shrink-0 text-[#444444]">{p.label}</span>
@@ -412,18 +425,18 @@ function FeaturesSection() {
           </div>
 
           {/* Голос */}
-          <div className="p-5 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-4 shadow-sm">
+          <div className="p-7 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-5 shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-2 gradient-text">
-                <Mic2 className="h-3 w-3" /> Голос
+              <p className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 mb-2 gradient-text">
+                <Mic2 className="h-3.5 w-3.5" /> Голос
               </p>
-              <p className="text-base font-bold text-[#1A1A1A]">Пишет в твоём голосе</p>
+              <p className="text-lg font-black text-[#1A1A1A]">Пишет в твоём голосе</p>
             </div>
             <div className="flex items-start gap-3">
               <div className="flex-1 px-3 py-2 rounded-xl bg-white border border-[#EBEBEB] text-xs text-[#888888]">
                 Хочу рассказать про осознанность и как она помогает...
               </div>
-              <ArrowRight className="h-4 w-4 mt-2 shrink-0 gradient-text" style={{ color: '#E86BA0' }} />
+              <ArrowRight className="h-4 w-4 mt-2 shrink-0" style={{ color: '#E86BA0' }} />
               <div className="flex-1 px-3 py-2 rounded-xl bg-white border border-[#C5CBA5] text-xs text-[#444444]">
                 Год назад я выгорела настолько, что не могла открыть ноутбук. Именно тогда я поняла...
               </div>
@@ -432,12 +445,12 @@ function FeaturesSection() {
           </div>
 
           {/* Контент-план */}
-          <div className="p-5 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-4 shadow-sm">
+          <div className="p-7 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-5 shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-2 gradient-text">
-                <Calendar className="h-3 w-3" /> Планирование
+              <p className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 mb-2 gradient-text">
+                <Calendar className="h-3.5 w-3.5" /> Планирование
               </p>
-              <p className="text-base font-bold text-[#1A1A1A]">Контент-план на каждый день</p>
+              <p className="text-lg font-black text-[#1A1A1A]">Контент-план на каждый день</p>
             </div>
             <div className="grid grid-cols-7 gap-1">
               {CALENDAR_COLORS.map((c, i) => (
@@ -454,23 +467,23 @@ function FeaturesSection() {
           </div>
 
           {/* База знаний */}
-          <div className="p-5 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-4 shadow-sm">
+          <div className="p-7 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-5 shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 mb-2 gradient-text">
-                <BookOpen className="h-3 w-3" /> База знаний
+              <p className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 mb-2 gradient-text">
+                <BookOpen className="h-3.5 w-3.5" /> База знаний
               </p>
-              <p className="text-base font-bold text-[#1A1A1A]">База знаний проекта</p>
+              <p className="text-lg font-black text-[#1A1A1A]">База знаний проекта</p>
             </div>
             <div className="space-y-2">
               {FILES.map((f, i) => (
-                <div key={i} className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-white border border-[#EBEBEB]">
+                <div key={i} className="flex items-center justify-between px-3 py-3 rounded-xl bg-white border border-[#EBEBEB]">
                   <div className="flex items-center gap-2.5">
                     <span className="text-base">{f.emoji}</span>
                     <span className="text-sm text-[#444444]">{f.name}</span>
                   </div>
                   {f.done
                     ? <Check className="h-4 w-4 text-emerald-500" />
-                    : <div className="h-2 w-2 rounded-full gradient-accent" style={{ background: 'linear-gradient(135deg, #F5A84A, #E86BA0)' }} />
+                    : <div className="h-2 w-2 rounded-full" style={{ background: 'linear-gradient(135deg, #F5A84A, #E86BA0)' }} />
                   }
                 </div>
               ))}
@@ -510,26 +523,33 @@ function ProcessSection() {
   ]
 
   return (
-    <section id="process" className="py-20 px-5 bg-white">
+    <section id="process" className="py-28 px-5 bg-white border-t border-[#C5CBA5]">
       <div className="max-w-3xl mx-auto">
         <SectionLabel>Процесс</SectionLabel>
-        <h2 className="text-3xl sm:text-4xl font-black text-[#1A1A1A] text-center mb-12 uppercase">
+        <h2 className="text-4xl sm:text-5xl font-black text-[#1A1A1A] text-center mb-14 uppercase">
           Запуск за <span className="gradient-text">3 шага</span>
         </h2>
-        <div className="space-y-4">
+        <div className="space-y-5">
           {STEPS.map((s, i) => (
-            <div key={i} className="flex gap-5 p-5 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] shadow-sm">
+            <div key={i} className="relative flex gap-6 p-7 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all">
               <div className="shrink-0 flex flex-col items-center gap-1">
                 {/* Gradient number badge */}
                 <div
-                  className="w-10 h-10 rounded-full gradient-accent flex items-center justify-center text-white text-xs font-black"
+                  className="w-14 h-14 rounded-full gradient-accent flex items-center justify-center text-white text-lg font-black shadow-lg"
                 >
                   {s.num}
                 </div>
-                <span className="text-[10px] font-bold text-[#888888]">{s.label}</span>
+                <span className="text-[10px] font-bold text-[#888888] mt-1">{s.label}</span>
+                {/* Connecting dotted line */}
+                {i < STEPS.length - 1 && (
+                  <div
+                    className="absolute left-[2.75rem] top-[5.5rem] w-px border-l-2 border-dashed border-[#C5CBA5]"
+                    style={{ height: 'calc(100% - 1rem)' }}
+                  />
+                )}
               </div>
-              <div>
-                <h3 className="font-bold text-[#1A1A1A] mb-1">{s.title}</h3>
+              <div className="pt-2">
+                <h3 className="text-lg font-black text-[#1A1A1A] mb-2">{s.title}</h3>
                 <p className="text-sm text-[#888888] leading-relaxed">{s.desc}</p>
               </div>
             </div>
@@ -543,23 +563,25 @@ function ProcessSection() {
 // ── Reviews ───────────────────────────────────────────────────────────────────
 function ReviewsSection() {
   return (
-    <section className="py-20 px-5 bg-white">
+    <section className="py-28 px-5 bg-[#F5F6EF] border-y border-[#C5CBA5]">
       <div className="max-w-5xl mx-auto">
         <SectionLabel>Отзывы</SectionLabel>
-        <h2 className="text-3xl sm:text-4xl font-black text-[#1A1A1A] text-center mb-12 uppercase">
+        <h2 className="text-4xl sm:text-5xl font-black text-[#1A1A1A] text-center mb-14 uppercase">
           Что говорят <span className="gradient-text">эксперты</span>
         </h2>
-        <div className="grid sm:grid-cols-3 gap-4">
+        <div className="grid sm:grid-cols-3 gap-5">
           {REVIEWS.map((r, i) => (
-            <div key={i} className="p-5 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-4 shadow-sm">
-              <div className="flex items-center gap-1">
+            <div key={i} className="p-7 rounded-2xl bg-white border border-[#C5CBA5] space-y-4 shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all relative">
+              {/* Decorative quote mark */}
+              <div className="text-5xl font-black gradient-text leading-none select-none" aria-hidden="true">&ldquo;</div>
+              <div className="flex items-center gap-1 -mt-2">
                 {[...Array(r.stars)].map((_, j) => (
-                  <Star key={j} className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                  <Star key={j} className="h-4 w-4 fill-amber-400 text-amber-400" />
                 ))}
               </div>
               <p className="text-sm text-[#444444] leading-relaxed">{r.text}</p>
-              <div className="flex items-center gap-3 pt-1">
-                <div className="w-8 h-8 rounded-full gradient-accent flex items-center justify-center text-xs font-bold text-white">
+              <div className="flex items-center gap-3 pt-2">
+                <div className="w-10 h-10 rounded-full gradient-accent flex items-center justify-center text-sm font-bold text-white">
                   {r.avatar}
                 </div>
                 <div>
@@ -581,15 +603,15 @@ function PricingSection() {
   const { symbol, prices } = CURRENCY_CONFIG[currency]
 
   return (
-    <section id="pricing" className="py-20 px-5 bg-white">
+    <section id="pricing" className="py-28 px-5 bg-white border-t border-[#C5CBA5]">
       <div className="max-w-4xl mx-auto">
         <SectionLabel>Тарифы</SectionLabel>
-        <h2 className="text-3xl sm:text-4xl font-black text-[#1A1A1A] text-center mb-6 uppercase">
+        <h2 className="text-4xl sm:text-5xl font-black text-[#1A1A1A] text-center mb-6 uppercase">
           Прозрачные <span className="gradient-text">цены</span>
         </h2>
 
         {/* Currency switcher */}
-        <div className="flex items-center justify-center gap-1 mb-10">
+        <div className="flex items-center justify-center gap-1 mb-12">
           {(['RUB', 'USD', 'EUR'] as Currency[]).map((c) => (
             <button
               key={c}
@@ -605,19 +627,15 @@ function PricingSection() {
           ))}
         </div>
 
-        <div className="grid sm:grid-cols-3 gap-4">
+        <div className="grid sm:grid-cols-3 gap-5">
           {PLANS.map((plan, i) => (
             <div
               key={plan.name}
-              className={`relative p-5 rounded-2xl border space-y-5 shadow-sm ${
-                plan.popular
-                  ? 'bg-[#FAFAF8] border-[#C5CBA5]'
-                  : 'bg-[#FAFAF8] border-[#C5CBA5]'
-              }`}
+              className="relative p-6 rounded-2xl border border-[#C5CBA5] bg-[#FAFAF8] space-y-5 shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all"
             >
               {plan.popular && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <span className="px-3 py-1 rounded-full text-[10px] font-bold text-white gradient-accent uppercase">
+                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
+                  <span className="px-4 py-1 rounded-full text-[10px] font-bold text-white gradient-accent uppercase shadow-lg">
                     ПОПУЛЯРНЫЙ
                   </span>
                 </div>
@@ -625,7 +643,7 @@ function PricingSection() {
 
               {/* Price */}
               <div>
-                <p className="text-sm font-bold text-[#1A1A1A] mb-2 uppercase tracking-wide">{plan.name}</p>
+                <p className="text-sm font-black text-[#1A1A1A] mb-2 uppercase tracking-wide">{plan.name}</p>
                 <div className="flex items-end gap-1">
                   <span className="text-xl font-bold text-[#888888]">{symbol}</span>
                   <span className="text-4xl font-black text-[#1A1A1A]">{prices[i].toLocaleString('ru-RU')}</span>
@@ -633,7 +651,7 @@ function PricingSection() {
                 <p className="text-xs text-[#888888] mt-1">{plan.period}</p>
               </div>
 
-              <hr className="border-[#EBEBEB]" />
+              <hr className="border-[#C5CBA5]" />
 
               {/* Features */}
               <ul className="space-y-2.5">
@@ -652,14 +670,14 @@ function PricingSection() {
               {plan.gradient ? (
                 <Link
                   href={plan.href}
-                  className="w-full h-11 rounded-[50px] flex items-center justify-center text-sm font-bold uppercase text-white gradient-accent hover:opacity-90 transition-opacity gap-1"
+                  className="w-full h-12 rounded-[50px] flex items-center justify-center text-sm font-bold uppercase text-white gradient-accent hover:opacity-90 transition-opacity gap-1 shadow-md"
                 >
                   {plan.cta} <ChevronRight className="h-4 w-4" />
                 </Link>
               ) : (
                 <Link
                   href={plan.href}
-                  className="w-full h-11 rounded-[50px] flex items-center justify-center text-sm font-bold uppercase text-[#444444] bg-white border border-[#C5CBA5] hover:border-[#E86BA0] hover:text-[#1A1A1A] transition-all gap-1"
+                  className="w-full h-12 rounded-[50px] flex items-center justify-center text-sm font-bold uppercase text-[#444444] bg-white border border-[#C5CBA5] hover:border-[#E86BA0] hover:text-[#1A1A1A] transition-all gap-1"
                 >
                   {plan.cta} <ChevronRight className="h-4 w-4" />
                 </Link>
@@ -675,19 +693,29 @@ function PricingSection() {
 // ── Final CTA ─────────────────────────────────────────────────────────────────
 function CtaSection() {
   return (
-    <section className="py-24 px-5 text-center bg-[#FAFAF8] border-t border-[#EBEBEB]">
-      <div className="max-w-2xl mx-auto space-y-5">
+    <section className="py-32 px-5 text-center bg-[#1A1A1A] relative overflow-hidden">
+      {/* Decorative blobs */}
+      <div
+        className="absolute top-0 right-0 w-[500px] h-[500px] rounded-full opacity-10 blur-3xl pointer-events-none"
+        style={{ background: 'radial-gradient(circle, #F5A84A 0%, transparent 70%)' }}
+      />
+      <div
+        className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full opacity-10 blur-3xl pointer-events-none"
+        style={{ background: 'radial-gradient(circle, #D44E7E 0%, transparent 70%)' }}
+      />
+      <div className="relative max-w-2xl mx-auto space-y-6">
         <SectionLabel>Начни сейчас</SectionLabel>
-        <h2 className="text-3xl sm:text-5xl font-black text-[#1A1A1A] leading-tight uppercase">
-          Начни свой первый прогрев <span className="gradient-text">сегодня</span>
+        <h2 className="text-4xl sm:text-5xl lg:text-6xl font-black leading-tight uppercase">
+          <span className="text-white">Начни свой первый прогрев </span>
+          <span className="gradient-text">сегодня</span>
         </h2>
-        <p className="text-[#888888]">Бесплатно. Без карты. Первый план за 8 минут.</p>
-        <div className="pt-2 flex justify-center">
+        <p className="text-gray-400 text-lg">Бесплатно. Без карты. Первый план за 8 минут.</p>
+        <div className="pt-3 flex justify-center">
           <GradientButton href="/register">
             Попробовать бесплатно
           </GradientButton>
         </div>
-        <div className="flex items-center justify-center gap-4 text-xs text-[#888888] pt-1">
+        <div className="flex items-center justify-center gap-4 text-xs text-gray-500 pt-1">
           <span>🔒 Данные защищены</span>
           <span>·</span>
           <span>✓ Отмена в любой момент</span>
@@ -733,6 +761,7 @@ export default function LandingPage() {
       <main>
         <HeroSection />
         <SocialProofBar />
+        <StatsSection />
         <ProblemSection />
         <SolutionSection />
         <FeaturesSection />

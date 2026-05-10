@@ -186,6 +186,14 @@
 .gradient-border {
   border-image: linear-gradient(135deg, #F5A84A, #E86BA0) 1;
 }
+.text-outline {
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: 2px #D44E7E;
+}
+.text-outline-lg {
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: 3px #D44E7E;
+}
 
 /* Phase indicator colors */
 .phase-awareness { color: #60A5FA; }
