@@ -14,7 +14,6 @@ import Link from 'next/link'
 
 export default function ResetPasswordPage() {
   const router = useRouter()
-  const supabase = createClient()
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [showPwd, setShowPwd] = useState(false)
@@ -23,17 +22,19 @@ export default function ResetPasswordPage() {
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
+    const supabase = createClient()
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') setReady(true)
     })
     return () => subscription.unsubscribe()
-  }, [supabase.auth])
+  }, [])
 
   async function handleReset(e: React.FormEvent) {
     e.preventDefault()
     if (password.length < 6) { toast.error('Пароль должен быть не менее 6 символов'); return }
     if (password !== confirm) { toast.error('Пароли не совпадают'); return }
     setLoading(true)
+    const supabase = createClient()
     const { error } = await supabase.auth.updateUser({ password })
     if (error) {
       toast.error(error.message)

@@ -15,7 +15,6 @@ import { REFERRAL_REWARDS } from '@/lib/generations-config'
 function RegisterForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const supabase = createClient()
 
   const [fullName, setFullName] = useState('')
   const [email, setEmail]       = useState('')
@@ -36,6 +35,7 @@ function RegisterForm() {
     if (!fullName.trim()) { toast.error('Введите ваше имя'); return }
     setLoading(true)
 
+    const supabase = createClient()
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -72,6 +72,7 @@ function RegisterForm() {
     const cb = refCode
       ? `${base}/auth/callback?ref=${refCode}`
       : `${base}/auth/callback`
+    const supabase = createClient()
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: cb },
