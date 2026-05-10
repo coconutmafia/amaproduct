@@ -105,7 +105,7 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
             className={cn(
               'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
               pathname === item.href
-                ? 'bg-primary/20 text-primary font-medium'
+                ? 'bg-[#F5A84A]/15 text-[#D44E7E] font-medium'
                 : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
             )}
           >
@@ -136,7 +136,7 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
                   className={cn(
                     'flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors',
                     pathname.startsWith(`/projects/${project.id}`)
-                      ? 'bg-primary/15 text-primary font-medium'
+                      ? 'bg-[#F5A84A]/15 text-[#D44E7E] font-medium'
                       : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
                   )}
                 >
@@ -159,7 +159,7 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
                         className={cn(
                           'block rounded px-2 py-1 text-[10px] transition-colors',
                           pathname === sub.href
-                            ? 'text-primary font-medium'
+                            ? 'text-[#D44E7E] font-medium'
                             : 'text-muted-foreground hover:text-foreground'
                         )}
                       >
@@ -173,7 +173,7 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
             <Link
               href="/projects/new"
               onClick={() => onNavigate?.()}
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:text-primary transition-colors"
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:text-[#D44E7E] transition-colors"
             >
               <Plus className="h-3 w-3" />
               Новый проект
@@ -195,7 +195,7 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
           >
             <BookOpen className="h-4 w-4 shrink-0" />
             База знаний
-            <span className="ml-auto text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full">
+            <span className="ml-auto text-[10px] bg-[#F5A84A]/20 text-[#D44E7E] px-1.5 py-0.5 rounded-full">
               Admin
             </span>
           </Link>
@@ -215,7 +215,7 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
           >
             <Users className="h-4 w-4 shrink-0" />
             Пользователи
-            <span className="ml-auto text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full">
+            <span className="ml-auto text-[10px] bg-[#F5A84A]/20 text-[#D44E7E] px-1.5 py-0.5 rounded-full">
               Admin
             </span>
           </Link>
@@ -235,7 +235,7 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
           >
             <Zap className="h-4 w-4 shrink-0" />
             Промо-коды
-            <span className="ml-auto text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full">
+            <span className="ml-auto text-[10px] bg-[#F5A84A]/20 text-[#D44E7E] px-1.5 py-0.5 rounded-full">
               Admin
             </span>
           </Link>
@@ -272,7 +272,7 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
           <div className="flex items-center gap-3 rounded-lg px-2 py-2">
             <Avatar className="h-8 w-8">
               <AvatarImage src={user.avatar} />
-              <AvatarFallback className="bg-primary/20 text-primary text-xs font-bold">
+              <AvatarFallback className="bg-[#F5A84A]/20 text-[#D44E7E] text-xs font-bold">
                 {user.name?.charAt(0)?.toUpperCase() || 'U'}
               </AvatarFallback>
             </Avatar>

@@ -82,31 +82,31 @@ function RegisterForm() {
   // ── AFTER SUBMIT: "Check your email" screen ──────────────────────
   if (sent) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="min-h-screen flex items-center justify-center bg-[#FAFAF8] p-4">
         <div className="w-full max-w-md text-center space-y-6">
           <div className="flex justify-center">
-            <div className="flex h-20 w-20 items-center justify-center rounded-3xl gradient-accent shadow-xl shadow-primary/30">
+            <div className="flex h-20 w-20 items-center justify-center rounded-3xl gradient-accent shadow-xl">
               <Mail className="h-10 w-10 text-white" />
             </div>
           </div>
           <div className="space-y-3">
-            <h1 className="text-2xl font-bold">Проверь почту!</h1>
-            <p className="text-muted-foreground">
-              Мы отправили письмо на <span className="font-medium text-foreground">{email}</span>
+            <h1 className="text-2xl font-black uppercase text-[#1A1A1A]">Проверь почту!</h1>
+            <p className="text-[#888888]">
+              Мы отправили письмо на <span className="font-medium text-[#1A1A1A]">{email}</span>
             </p>
-            <p className="text-sm text-muted-foreground">
-              Перейди по ссылке в письме — и твой AI SMM-щик уже ждёт тебя 🚀
+            <p className="text-sm text-[#888888]">
+              Перейди по ссылке в письме — и твой AI SMM-щик уже ждёт тебя
             </p>
           </div>
-          <div className="rounded-xl border border-border bg-secondary/30 p-4 text-sm text-muted-foreground text-left space-y-2">
-            <p className="font-medium text-foreground">Не пришло письмо?</p>
+          <div className="rounded-xl border border-[#C5CBA5] bg-white p-4 text-sm text-[#888888] text-left space-y-2">
+            <p className="font-semibold text-[#1A1A1A]">Не пришло письмо?</p>
             <ul className="space-y-1 text-xs">
               <li>• Проверь папку «Спам» или «Промоакции»</li>
               <li>• Подожди 1–2 минуты</li>
               <li>• Убедись что email написан правильно</li>
             </ul>
           </div>
-          <Button variant="outline" className="w-full" onClick={() => setSent(false)}>
+          <Button variant="outline" className="w-full rounded-full border-[#C5CBA5]" onClick={() => setSent(false)}>
             Ввести другой email
           </Button>
         </div>
@@ -116,20 +116,20 @@ function RegisterForm() {
 
   // ── REGISTER FORM ────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex bg-background">
+    <div className="min-h-screen flex bg-[#FAFAF8]">
       {/* Left: form */}
       <div className="flex flex-1 flex-col items-center justify-center p-6">
         <div className="w-full max-w-md space-y-6">
 
           {/* Logo — кликабельный, ведёт на главную */}
           <Link href="/" className="block text-center space-y-2 hover:opacity-80 transition-opacity">
-            <div className="flex items-center justify-center gap-3 mb-4">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl gradient-accent shadow-xl shadow-primary/30">
+            <div className="flex items-center justify-center mb-4">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl gradient-accent shadow-xl">
                 <Sparkles className="h-7 w-7 text-white" />
               </div>
             </div>
-            <h1 className="text-3xl font-bold">AMAproduct</h1>
-            <p className="text-muted-foreground">Твой личный AI SMM-щик для запусков</p>
+            <h1 className="text-2xl font-black uppercase text-[#1A1A1A] tracking-tight">AMAproduct</h1>
+            <p className="text-[#888888] text-sm">Твой личный AI SMM-щик для запусков</p>
           </Link>
 
           {/* Referral banner */}
@@ -146,23 +146,30 @@ function RegisterForm() {
             </div>
           )}
 
+          {/* Form card */}
+          <div className="bg-white border border-[#C5CBA5] rounded-2xl shadow-sm p-8 space-y-5">
+            <div className="space-y-1">
+              <h2 className="text-2xl font-black uppercase text-[#1A1A1A]">Регистрация</h2>
+              <p className="text-sm text-[#888888]">Создай аккаунт — это бесплатно</p>
+            </div>
+
           {/* Google */}
-          <Button variant="outline" className="w-full h-12 text-base" onClick={handleGoogle}>
+          <Button variant="outline" className="w-full h-12 text-base border-[#C5CBA5] rounded-xl hover:bg-[#FAFAF8]" onClick={handleGoogle}>
             <Globe className="mr-2 h-5 w-5" />
             Зарегистрироваться через Google
           </Button>
 
           <div className="relative">
-            <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div>
+            <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-[#C5CBA5]" /></div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground">или заполни форму</span>
+              <span className="bg-white px-2 text-[#888888]">или заполни форму</span>
             </div>
           </div>
 
           {/* Form */}
           <form onSubmit={handleRegister} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="name" className="text-sm font-medium">Как тебя зовут?</Label>
+              <Label htmlFor="name" className="text-sm font-medium text-[#1A1A1A]">Как тебя зовут?</Label>
               <Input
                 id="name"
                 type="text"
@@ -170,11 +177,11 @@ function RegisterForm() {
                 value={fullName}
                 onChange={e => setFullName(e.target.value)}
                 required
-                className="h-12 text-base"
+                className="h-12 text-base border-[#C5CBA5] rounded-xl bg-white focus-visible:ring-[#F5A84A]/30"
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-sm font-medium">Email</Label>
+              <Label htmlFor="email" className="text-sm font-medium text-[#1A1A1A]">Email</Label>
               <Input
                 id="email"
                 type="email"
@@ -182,11 +189,11 @@ function RegisterForm() {
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
-                className="h-12 text-base"
+                className="h-12 text-base border-[#C5CBA5] rounded-xl bg-white focus-visible:ring-[#F5A84A]/30"
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="password" className="text-sm font-medium">Пароль</Label>
+              <Label htmlFor="password" className="text-sm font-medium text-[#1A1A1A]">Пароль</Label>
               <Input
                 id="password"
                 type="password"
@@ -195,12 +202,12 @@ function RegisterForm() {
                 onChange={e => setPassword(e.target.value)}
                 required
                 minLength={8}
-                className="h-12 text-base"
+                className="h-12 text-base border-[#C5CBA5] rounded-xl bg-white focus-visible:ring-[#F5A84A]/30"
               />
             </div>
             <Button
               type="submit"
-              className="w-full h-12 text-base gradient-accent text-white font-semibold hover:opacity-90 transition-opacity"
+              className="w-full h-12 text-base rounded-full bg-gradient-to-r from-[#F5A84A] to-[#D44E7E] text-white font-bold uppercase tracking-wide hover:opacity-90 transition-opacity border-0"
               disabled={loading}
             >
               {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Sparkles className="mr-2 h-5 w-5" />}
@@ -208,18 +215,19 @@ function RegisterForm() {
             </Button>
           </form>
 
-          <p className="text-center text-sm text-muted-foreground">
+          <p className="text-center text-sm text-[#888888]">
             Уже есть аккаунт?{' '}
-            <Link href="/login" className="text-primary font-medium hover:underline">Войти</Link>
+            <Link href="/login" className="text-[#D44E7E] font-medium hover:underline">Войти</Link>
           </p>
+          </div>
         </div>
       </div>
 
       {/* Right: benefits panel (hidden on mobile) */}
-      <div className="hidden lg:flex flex-col justify-center w-96 bg-primary/5 border-l border-border p-10 space-y-8">
+      <div className="hidden lg:flex flex-col justify-center w-96 bg-[#FAFAF8] border-l border-[#C5CBA5] p-10 space-y-8">
         <div>
-          <h2 className="text-xl font-bold mb-2">Что тебя ждёт</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="text-xl font-black uppercase text-[#1A1A1A] mb-2">Что тебя ждёт</h2>
+          <p className="text-sm text-[#888888]">
             AI SMM-щик, который знает твою аудиторию, продукт и стиль — и пишет контент за тебя
           </p>
         </div>
@@ -246,12 +254,12 @@ function RegisterForm() {
           },
         ].map(({ icon: Icon, title, desc }) => (
           <div key={title} className="flex gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-              <Icon className="h-4 w-4 text-primary" />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#F5A84A]/10">
+              <Icon className="h-4 w-4 text-[#D44E7E]" />
             </div>
             <div>
-              <p className="text-sm font-semibold">{title}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+              <p className="text-sm font-semibold text-[#1A1A1A]">{title}</p>
+              <p className="text-xs text-[#888888] mt-0.5">{desc}</p>
             </div>
           </div>
         ))}
