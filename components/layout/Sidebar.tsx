@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard,
@@ -83,12 +84,21 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
   ]
 
   return (
-    <aside className="flex h-full w-64 flex-col border-r border-border bg-sidebar">
+    <motion.aside
+      initial={{ x: -20, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+      className="flex h-full w-64 flex-col border-r border-border bg-sidebar"
+    >
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-sidebar-border">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl gradient-accent shadow-lg">
+        <motion.div
+          whileHover={{ rotate: [0, -10, 10, 0], scale: 1.05 }}
+          transition={{ duration: 0.4 }}
+          className="flex h-9 w-9 items-center justify-center rounded-xl gradient-accent shadow-lg cursor-default"
+        >
           <Sparkles className="h-5 w-5 text-white" />
-        </div>
+        </motion.div>
         <div>
           <p className="text-sm font-bold text-sidebar-foreground tracking-wide">AMAproduct</p>
           <p className="text-xs text-muted-foreground">AI-Продюсер</p>
@@ -103,14 +113,21 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
             href={item.href}
             onClick={() => onNavigate?.()}
             className={cn(
-              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+              'relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
               pathname === item.href
-                ? 'bg-[#F5A84A]/15 text-[#D44E7E] font-medium'
+                ? 'text-[#D44E7E] font-medium'
                 : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
             )}
           >
-            <item.icon className="h-4 w-4 shrink-0" />
-            {item.label}
+            {pathname === item.href && (
+              <motion.div
+                layoutId="sidebar-active"
+                className="absolute inset-0 rounded-lg bg-[#F5A84A]/15"
+                transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+              />
+            )}
+            <item.icon className="h-4 w-4 shrink-0 relative z-10" />
+            <span className="relative z-10">{item.label}</span>
           </Link>
         ))}
 
@@ -282,15 +299,17 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
             </div>
           </div>
           {/* Prominent logout button */}
-          <button
+          <motion.button
+            whileHover={{ x: 3 }}
+            whileTap={{ scale: 0.97 }}
             onClick={handleLogout}
             className="flex items-center gap-2 w-full rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors text-left"
           >
             <LogOut className="h-4 w-4 shrink-0" />
             Выйти из аккаунта
-          </button>
+          </motion.button>
         </div>
       )}
-    </aside>
+    </motion.aside>
   )
 }

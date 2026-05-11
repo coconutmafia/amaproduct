@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
 import { ProjectCard } from './ProjectCard'
 import { Button } from '@/components/ui/button'
 import {
@@ -49,18 +50,21 @@ export function ProjectsListClient({ projects: initial }: { projects: Project[] 
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {projects.map((project) => (
+        {projects.map((project, i) => (
           <div key={project.id} className="relative group">
-            <ProjectCard project={project as never} />
+            <ProjectCard project={project as never} index={i} />
             {/* Delete button — appears on hover */}
-            <button
+            <motion.button
+              initial={{ opacity: 0 }}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmId(project.id) }}
               disabled={deletingId === project.id}
               className="absolute bottom-3 right-3 z-10 flex h-7 w-7 items-center justify-center rounded-lg bg-background/80 backdrop-blur-sm border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-all opacity-0 group-hover:opacity-100"
               title="Удалить проект"
             >
               <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            </motion.button>
           </div>
         ))}
         <Link href="/projects/new">

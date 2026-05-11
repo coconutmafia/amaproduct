@@ -283,6 +283,42 @@
   will-change: transform;
 }
 
+/* ── Dashboard micro-interactions ────────────────────────────────────────── */
+/* All interactive elements get smooth press feedback */
+button:not([disabled]), [role="button"]:not([disabled]) {
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+button:not([disabled]):active, [role="button"]:not([disabled]):active {
+  transform: scale(0.97);
+}
+
+/* Card hover lift */
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -4px rgba(0,0,0,0.08);
+}
+
+/* Link hover underline grow */
+.link-underline {
+  position: relative;
+}
+.link-underline::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: linear-gradient(135deg, #F5A84A, #D44E7E);
+  transition: width 0.25s ease;
+}
+.link-underline:hover::after {
+  width: 100%;
+}
+
 /* Phase indicator colors */
 .phase-awareness { color: #60A5FA; }
 .phase-trust { color: #34D399; }
