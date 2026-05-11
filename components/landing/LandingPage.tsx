@@ -342,11 +342,18 @@ function HeroSection() {
       onMouseMove={handleMouseMove}
     >
       {/* Dot grid background */}
-      <div className="absolute inset-0 dot-grid opacity-40 pointer-events-none" />
+      <div className="absolute inset-0 dot-grid opacity-30 pointer-events-none" />
 
-      {/* Palm trees */}
-      <PalmLeft className="absolute left-[-30px] bottom-0 w-48 h-[400px] opacity-[0.13] pointer-events-none select-none" />
-      <PalmLeft className="absolute right-[-30px] bottom-0 w-48 h-[400px] opacity-[0.13] pointer-events-none select-none" style={{ transform: 'scaleX(-1)' }} />
+      {/* Palm photo background — real leaves against white */}
+      <div
+        className="absolute inset-0 pointer-events-none select-none"
+        style={{
+          backgroundImage: 'url(/palm-leaves-bg.jpg)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          opacity: 0.18,
+        }}
+      />
 
       {/* Floating blobs */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -968,15 +975,22 @@ function PricingSection() {
 function CtaSection() {
   return (
     <section className="relative py-32 px-5 text-center overflow-hidden bg-[#1A1A1A]">
-      {/* Blobs */}
+      {/* Palm silhouette photo background */}
+      <div
+        className="absolute inset-0 pointer-events-none select-none"
+        style={{
+          backgroundImage: 'url(/palm-bg.jpg)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center top',
+          opacity: 0.15,
+        }}
+      />
+      {/* Colour blobs */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full animate-float opacity-20"
+        <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full animate-float opacity-15"
           style={{ background: 'radial-gradient(circle, #F5A84A 0%, transparent 70%)' }} />
-        <div className="absolute -bottom-40 -left-40 w-[400px] h-[400px] rounded-full animate-float-reverse opacity-20"
-          style={{ background: 'radial-gradient(circle, #D44E7E 0%, transparent 70%)' }} />
-        {/* Palms in CTA */}
-        <PalmLeft className="absolute left-0 bottom-0 w-44 h-[360px] opacity-[0.07] pointer-events-none select-none" />
-        <PalmLeft className="absolute right-0 bottom-0 w-44 h-[360px] opacity-[0.07] pointer-events-none select-none" style={{ transform: 'scaleX(-1)' }} />
+        <div className="absolute -bottom-40 -left-40 w-[400px] h-[400px] rounded-full animate-float-reverse opacity-15"
+          style={{ background: 'radial-gradient(circle, #3A9A50 0%, transparent 70%)' }} />
       </div>
       <div className="absolute inset-0 dot-grid opacity-10 pointer-events-none" />
 
