@@ -350,8 +350,8 @@ function HeroSection() {
         style={{
           backgroundImage: 'url(/palm-leaves-bg.jpg)',
           backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          opacity: 0.18,
+          backgroundPosition: 'center center',
+          opacity: 0.22,
         }}
       />
 
@@ -500,7 +500,7 @@ function StatsSection() {
   ]
 
   return (
-    <section className="py-24 px-5 bg-white border-b border-[#C5CBA5]/50">
+    <section className="py-14 sm:py-24 px-5 bg-white border-b border-[#C5CBA5]/50">
       <RevealSection className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[#C5CBA5]/50">
         {STATS.map((s, i) => (
           <motion.div key={i} variants={fadeUp} custom={i} className="py-12 sm:py-0 px-10 text-center first:pt-0 last:pb-0">
@@ -524,7 +524,7 @@ function ProblemSection() {
   ]
 
   return (
-    <section className="py-28 px-5 bg-[#F7F7F7] border-b border-[#C5CBA5]/50">
+    <section className="py-16 sm:py-28 px-5 bg-[#F7F7F7] border-b border-[#C5CBA5]/50">
       <div className="max-w-2xl mx-auto">
         <RevealSection>
           <SectionLabel>Проблема</SectionLabel>
@@ -554,7 +554,7 @@ function ProblemSection() {
 // ── Solution ──────────────────────────────────────────────────────────────────
 function SolutionSection() {
   return (
-    <section className="py-28 px-5 bg-white border-b border-[#C5CBA5]/50">
+    <section className="py-16 sm:py-28 px-5 bg-white border-b border-[#C5CBA5]/50">
       <div className="max-w-4xl mx-auto">
         <RevealSection>
           <SectionLabel>Решение</SectionLabel>
@@ -623,7 +623,7 @@ function FeaturesSection() {
   ]
 
   return (
-    <section id="features" className="py-28 px-5 bg-[#F7F7F7] border-b border-[#C5CBA5]/50">
+    <section id="features" className="py-16 sm:py-28 px-5 bg-[#F7F7F7] border-b border-[#C5CBA5]/50">
       <div className="max-w-5xl mx-auto">
         <RevealSection>
           <SectionLabel>Возможности</SectionLabel>
@@ -776,7 +776,7 @@ function ProcessSection() {
   ]
 
   return (
-    <section id="process" className="py-28 px-5 bg-white border-b border-[#C5CBA5]/50">
+    <section id="process" className="py-16 sm:py-28 px-5 bg-white border-b border-[#C5CBA5]/50">
       <div className="max-w-3xl mx-auto">
         <RevealSection>
           <SectionLabel>Процесс</SectionLabel>
@@ -828,7 +828,7 @@ function ProcessSection() {
 // ── Reviews ───────────────────────────────────────────────────────────────────
 function ReviewsSection() {
   return (
-    <section className="py-28 px-5 bg-[#F5F5F5] border-b border-[#C5CBA5]/50">
+    <section className="py-16 sm:py-28 px-5 bg-[#F5F5F5] border-b border-[#C5CBA5]/50">
       <div className="max-w-5xl mx-auto">
         <RevealSection>
           <SectionLabel>Отзывы</SectionLabel>
@@ -878,7 +878,7 @@ function PricingSection() {
   const { symbol, prices } = CURRENCY_CONFIG[currency]
 
   return (
-    <section id="pricing" className="py-28 px-5 bg-white border-b border-[#C5CBA5]/50">
+    <section id="pricing" className="py-16 sm:py-28 px-5 bg-white border-b border-[#C5CBA5]/50">
       <div className="max-w-4xl mx-auto">
         <RevealSection>
           <SectionLabel>Тарифы</SectionLabel>
@@ -974,15 +974,15 @@ function PricingSection() {
 // ── Final CTA ─────────────────────────────────────────────────────────────────
 function CtaSection() {
   return (
-    <section className="relative py-32 px-5 text-center overflow-hidden bg-[#1A1A1A]">
+    <section className="relative py-20 sm:py-32 px-5 text-center overflow-hidden bg-[#1A1A1A]">
       {/* Palm silhouette photo background */}
       <div
         className="absolute inset-0 pointer-events-none select-none"
         style={{
           backgroundImage: 'url(/palm-bg.jpg)',
           backgroundSize: 'cover',
-          backgroundPosition: 'center top',
-          opacity: 0.15,
+          backgroundPosition: 'center 30%',
+          opacity: 0.20,
         }}
       />
       {/* Colour blobs */}
