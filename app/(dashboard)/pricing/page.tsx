@@ -18,7 +18,7 @@ export default async function PricingPage() {
   const currentPlan = (profile?.subscription_tier ?? 'free') as SubscriptionPlan
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="p-4 md:p-6 max-w-5xl mx-auto">
       <div className="text-center mb-10">
         <h1 className="text-3xl font-bold mb-2">Тарифные планы</h1>
         <p className="text-muted-foreground max-w-xl mx-auto">

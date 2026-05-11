@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 
 export default function NewProjectPage() {
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-6">
+    <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" asChild className="h-8 w-8">
           <Link href="/projects">

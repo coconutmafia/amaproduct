@@ -360,7 +360,7 @@ export default function ContentPlanPage() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" asChild className="h-8 w-8">
           <Link href={`/projects/${id}`}><ArrowLeft className="h-4 w-4" /></Link>
