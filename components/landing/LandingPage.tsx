@@ -459,12 +459,12 @@ function HeroSection() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 1.5 }}
-          className="flex items-center justify-center gap-6 text-xs text-[#888] pt-2"
+          className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-[#888] pt-2"
         >
           <span className="flex items-center gap-1.5">✓ Бесплатно</span>
-          <span className="w-px h-4 bg-[#E0E0E0]" />
+          <span className="hidden sm:block w-px h-4 bg-[#E0E0E0]" />
           <span className="flex items-center gap-1.5">✓ Без карты</span>
-          <span className="w-px h-4 bg-[#E0E0E0]" />
+          <span className="hidden sm:block w-px h-4 bg-[#E0E0E0]" />
           <span className="flex items-center gap-1.5">✓ Первый план за 8 мин</span>
         </motion.div>
       </div>
@@ -503,7 +503,7 @@ function StatsSection() {
     <section className="py-14 sm:py-24 px-5 bg-white border-b border-[#C5CBA5]/50">
       <RevealSection className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[#C5CBA5]/50">
         {STATS.map((s, i) => (
-          <motion.div key={i} variants={fadeUp} custom={i} className="py-12 sm:py-0 px-10 text-center first:pt-0 last:pb-0">
+          <motion.div key={i} variants={fadeUp} custom={i} className="py-10 sm:py-0 px-4 sm:px-10 text-center first:pt-0 last:pb-0">
             <div className="text-6xl sm:text-7xl font-black gradient-text leading-none mb-3">
               <AnimatedCounter value={s.value} suffix={s.suffix} />
             </div>
@@ -537,7 +537,7 @@ function ProblemSection() {
                 <motion.div
                   variants={fadeUp}
                   custom={i}
-                  className="flex items-center gap-5 p-7 rounded-2xl bg-white border border-[#C5CBA5] shadow-md cursor-default"
+                  className="flex items-center gap-4 p-5 sm:p-7 rounded-2xl bg-white border border-[#C5CBA5] shadow-md cursor-default"
                 >
                   <span className="text-4xl shrink-0">{p.emoji}</span>
                   <p className="text-base font-medium text-[#444]">{p.text}</p>
@@ -567,7 +567,7 @@ function SolutionSection() {
 
           <div className="grid sm:grid-cols-2 gap-5">
             <TiltCard>
-              <motion.div variants={fadeUp} className="p-8 rounded-2xl bg-[#F7F7F7] border border-[#C5CBA5] h-full shadow-md">
+              <motion.div variants={fadeUp} className="p-5 sm:p-8 rounded-2xl bg-[#F7F7F7] border border-[#C5CBA5] h-full shadow-md">
                 <p className="text-xs font-bold text-red-400 uppercase tracking-widest flex items-center gap-2 mb-5">
                   <X className="h-3.5 w-3.5" /> Без AMA
                 </p>
@@ -636,7 +636,7 @@ function FeaturesSection() {
           <div className="grid sm:grid-cols-2 gap-5">
             {/* Прогрев */}
             <TiltCard>
-              <motion.div variants={fadeUp} className="p-8 rounded-2xl bg-white border border-[#C5CBA5] space-y-5 shadow-md h-full">
+              <motion.div variants={fadeUp} className="p-5 sm:p-8 rounded-2xl bg-white border border-[#C5CBA5] space-y-5 shadow-md h-full">
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 mb-2 gradient-text">
                     <Zap className="h-3 w-3" /> Мастер прогрева
@@ -672,12 +672,12 @@ function FeaturesSection() {
                   </p>
                   <p className="text-lg font-black text-[#1A1A1A]">Пишет в твоём голосе</p>
                 </div>
-                <div className="flex items-start gap-3">
-                  <div className="flex-1 px-4 py-3 rounded-xl bg-[#F7F7F7] border border-[#E0E0E0] text-xs text-[#888]">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-2 sm:gap-3">
+                  <div className="flex-1 px-3 py-3 rounded-xl bg-[#F7F7F7] border border-[#E0E0E0] text-xs text-[#888]">
                     Хочу рассказать про осознанность и как она помогает...
                   </div>
-                  <ArrowRight className="h-5 w-5 mt-3 shrink-0" style={{ color: '#3A9A50' }} />
-                  <div className="flex-1 px-4 py-3 rounded-xl bg-white border border-[#C5CBA5] text-xs text-[#444]">
+                  <ArrowRight className="h-5 w-5 mx-auto sm:mt-3 sm:mx-0 shrink-0 rotate-90 sm:rotate-0" style={{ color: '#3A9A50' }} />
+                  <div className="flex-1 px-3 py-3 rounded-xl bg-white border border-[#C5CBA5] text-xs text-[#444]">
                     Год назад я выгорела настолько, что не могла открыть ноутбук. Именно тогда я поняла...
                   </div>
                 </div>
@@ -790,7 +790,7 @@ function ProcessSection() {
               whileInView={{ scaleY: 1 }}
               viewport={{ once: true }}
               transition={{ duration: 1.2, ease: 'easeInOut' }}
-              className="absolute left-7 top-7 bottom-7 w-px origin-top"
+              className="absolute left-5 sm:left-7 top-7 bottom-7 w-px origin-top"
               style={{ background: 'linear-gradient(180deg, #3A9A50, #F5A84A, #E86BA0)' }}
             />
             <div className="space-y-5">
@@ -799,7 +799,7 @@ function ProcessSection() {
                   <motion.div
                     variants={fadeUp}
                     custom={i}
-                    className="flex gap-6 p-7 rounded-2xl bg-[#F7F7F7] border border-[#C5CBA5] shadow-md relative"
+                    className="flex gap-4 sm:gap-6 p-5 sm:p-7 rounded-2xl bg-[#F7F7F7] border border-[#C5CBA5] shadow-md relative"
                   >
                     <div className="shrink-0 z-10">
                       <motion.div
@@ -841,7 +841,7 @@ function ReviewsSection() {
                 <motion.div
                   variants={fadeUp}
                   custom={i}
-                  className="p-7 rounded-2xl bg-white border border-[#C5CBA5] space-y-5 shadow-md h-full relative overflow-hidden"
+                  className="p-5 sm:p-7 rounded-2xl bg-white border border-[#C5CBA5] space-y-5 shadow-md h-full relative overflow-hidden"
                 >
                   {/* Decorative quote */}
                   <div className="absolute -top-2 -right-1 text-[80px] font-black leading-none gradient-text opacity-10 pointer-events-none select-none">
@@ -910,7 +910,7 @@ function PricingSection() {
                 <motion.div
                   variants={fadeUp}
                   custom={i}
-                  className={`relative p-7 rounded-2xl border space-y-6 h-full ${
+                  className={`relative p-5 sm:p-7 rounded-2xl border space-y-6 h-full ${
                     plan.popular
                       ? 'bg-[#F7F7F7] border-[#3A9A50]/50 shadow-xl shadow-[#3A9A50]/10'
                       : 'bg-[#F7F7F7] border-[#C5CBA5] shadow-md'
@@ -932,7 +932,7 @@ function PricingSection() {
                     <p className="text-sm font-black text-[#1A1A1A] mb-2 uppercase tracking-wider">{plan.name}</p>
                     <div className="flex items-end gap-1">
                       <span className="text-lg font-bold text-[#888]">{symbol}</span>
-                      <span className="text-5xl font-black text-[#1A1A1A]">{prices[i].toLocaleString('ru-RU')}</span>
+                      <span className="text-4xl sm:text-5xl font-black text-[#1A1A1A]">{prices[i].toLocaleString('ru-RU')}</span>
                     </div>
                     <p className="text-xs text-[#888] mt-1">{plan.period}</p>
                   </div>
@@ -1012,11 +1012,11 @@ function CtaSection() {
               Попробовать бесплатно
             </GradientButton>
           </motion.div>
-          <motion.div variants={fadeUp} className="flex items-center justify-center gap-5 text-xs text-gray-500 pt-2">
+          <motion.div variants={fadeUp} className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-gray-500 pt-2">
             <span>🔒 Данные защищены</span>
-            <span className="w-px h-4 bg-white/10" />
+            <span className="hidden sm:block w-px h-4 bg-white/10" />
             <span>✓ Отмена в любой момент</span>
-            <span className="w-px h-4 bg-white/10" />
+            <span className="hidden sm:block w-px h-4 bg-white/10" />
             <span>→ Без кредитной карты</span>
           </motion.div>
         </RevealSection>
