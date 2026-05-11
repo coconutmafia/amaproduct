@@ -131,10 +131,10 @@ export default function LoginPage() {
           </form>
 
           <div className="flex justify-between text-sm">
-            <Link href="/register" className="text-[#D44E7E] hover:underline transition-colors">
+            <Link href="/register" className="text-[#3A8A48] hover:underline transition-colors">
               Создать аккаунт
             </Link>
-            <Link href="/forgot-password" className="text-[#D44E7E] hover:underline transition-colors">
+            <Link href="/forgot-password" className="text-[#3A8A48] hover:underline transition-colors">
               Забыли пароль?
             </Link>
           </div>

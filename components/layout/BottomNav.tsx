@@ -70,7 +70,7 @@ export function BottomNav() {
                   >
                     <Icon className="h-6 w-6 text-white" />
                   </div>
-                  <span className="text-[10px] font-semibold text-[#D44E7E]">{tab.label}</span>
+                  <span className="text-[10px] font-semibold text-[#3A8A48]">{tab.label}</span>
                 </motion.div>
               </Link>
             )
@@ -84,19 +84,19 @@ export function BottomNav() {
               >
                 <Icon
                   className="h-[22px] w-[22px] transition-colors"
-                  style={{ color: active ? '#D44E7E' : '#B0B0B0' }}
+                  style={{ color: active ? '#3A8A48' : '#B0B0B0' }}
                   strokeWidth={active ? 2.2 : 1.8}
                 />
                 <span
                   className="text-[10px] font-medium transition-colors"
-                  style={{ color: active ? '#D44E7E' : '#B0B0B0' }}
+                  style={{ color: active ? '#3A8A48' : '#B0B0B0' }}
                 >
                   {tab.label}
                 </span>
                 {active && (
                   <motion.div
                     layoutId="bottom-nav-dot"
-                    className="absolute -top-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#D44E7E]"
+                    className="absolute -top-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#3A8A48]"
                     transition={{ type: 'spring', stiffness: 500, damping: 40 }}
                   />
                 )}

@@ -227,9 +227,9 @@ function GradientButton({ href, children, className = '', large = false }: {
 function SectionLabel({ children }: { children: string }) {
   return (
     <motion.div variants={fadeUp} className="flex items-center justify-center gap-3 mb-5">
-      <div className="h-px w-10" style={{ background: 'linear-gradient(135deg, #F5A84A, #E86BA0)' }} />
+      <div className="h-px w-10" style={{ background: 'linear-gradient(135deg, #3A9A50, #F5A84A)' }} />
       <span className="text-[11px] font-bold tracking-[0.18em] uppercase gradient-text">{children}</span>
-      <div className="h-px w-10" style={{ background: 'linear-gradient(135deg, #F5A84A, #E86BA0)' }} />
+      <div className="h-px w-10" style={{ background: 'linear-gradient(135deg, #3A9A50, #F5A84A)' }} />
     </motion.div>
   )
 }
@@ -360,12 +360,12 @@ function HeroSection() {
         <motion.div
           className="absolute -bottom-32 -left-32 w-[500px] h-[500px] rounded-full animate-float-reverse"
           style={{
-            background: 'radial-gradient(circle at center, #D44E7E35 0%, #E86BA015 50%, transparent 70%)',
+            background: 'radial-gradient(circle at center, #3A9A5030 0%, #5CB86015 50%, transparent 70%)',
           }}
         />
         {/* Spinning ring */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[900px] rounded-full border border-[#C5CBA5]/20 animate-spin-slow pointer-events-none" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full border border-[#E86BA0]/10 animate-spin-slow pointer-events-none" style={{ animationDirection: 'reverse', animationDuration: '30s' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full border border-[#3A9A50]/10 animate-spin-slow pointer-events-none" style={{ animationDirection: 'reverse', animationDuration: '30s' }} />
       </div>
 
       <div className="relative max-w-4xl mx-auto space-y-8">
@@ -669,7 +669,7 @@ function FeaturesSection() {
                   <div className="flex-1 px-4 py-3 rounded-xl bg-[#F7F7F7] border border-[#E0E0E0] text-xs text-[#888]">
                     Хочу рассказать про осознанность и как она помогает...
                   </div>
-                  <ArrowRight className="h-5 w-5 mt-3 shrink-0" style={{ color: '#E86BA0' }} />
+                  <ArrowRight className="h-5 w-5 mt-3 shrink-0" style={{ color: '#3A9A50' }} />
                   <div className="flex-1 px-4 py-3 rounded-xl bg-white border border-[#C5CBA5] text-xs text-[#444]">
                     Год назад я выгорела настолько, что не могла открыть ноутбук. Именно тогда я поняла...
                   </div>
@@ -731,7 +731,7 @@ function FeaturesSection() {
                       </div>
                       {f.done
                         ? <Check className="h-4 w-4 text-emerald-500" />
-                        : <div className="h-2.5 w-2.5 rounded-full animate-pulse" style={{ background: 'linear-gradient(135deg, #F5A84A, #E86BA0)' }} />}
+                        : <div className="h-2.5 w-2.5 rounded-full animate-pulse" style={{ background: 'linear-gradient(135deg, #3A9A50, #F5A84A)' }} />}
                     </motion.div>
                   ))}
                 </div>
@@ -784,7 +784,7 @@ function ProcessSection() {
               viewport={{ once: true }}
               transition={{ duration: 1.2, ease: 'easeInOut' }}
               className="absolute left-7 top-7 bottom-7 w-px origin-top"
-              style={{ background: 'linear-gradient(180deg, #F5A84A, #E86BA0, #D44E7E)' }}
+              style={{ background: 'linear-gradient(180deg, #3A9A50, #F5A84A, #E86BA0)' }}
             />
             <div className="space-y-5">
               {STEPS.map((s, i) => (
@@ -905,7 +905,7 @@ function PricingSection() {
                   custom={i}
                   className={`relative p-7 rounded-2xl border space-y-6 h-full ${
                     plan.popular
-                      ? 'bg-[#F7F7F7] border-[#E86BA0]/50 shadow-xl shadow-[#E86BA0]/10'
+                      ? 'bg-[#F7F7F7] border-[#3A9A50]/50 shadow-xl shadow-[#3A9A50]/10'
                       : 'bg-[#F7F7F7] border-[#C5CBA5] shadow-md'
                   }`}
                 >
@@ -949,7 +949,7 @@ function PricingSection() {
                         {plan.cta} <ChevronRight className="h-4 w-4" />
                       </Link>
                     ) : (
-                      <Link href={plan.href} className="w-full h-12 rounded-[50px] flex items-center justify-center text-sm font-bold uppercase text-[#444] bg-white border-2 border-[#C5CBA5] hover:border-[#E86BA0] hover:text-[#1A1A1A] transition-all gap-1.5">
+                      <Link href={plan.href} className="w-full h-12 rounded-[50px] flex items-center justify-center text-sm font-bold uppercase text-[#444] bg-white border-2 border-[#C5CBA5] hover:border-[#3A9A50] hover:text-[#1A1A1A] transition-all gap-1.5">
                         {plan.cta} <ChevronRight className="h-4 w-4" />
                       </Link>
                     )}

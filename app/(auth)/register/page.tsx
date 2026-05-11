@@ -218,7 +218,7 @@ function RegisterForm() {
 
           <p className="text-center text-sm text-[#888888]">
             Уже есть аккаунт?{' '}
-            <Link href="/login" className="text-[#D44E7E] font-medium hover:underline">Войти</Link>
+            <Link href="/login" className="text-[#3A8A48] font-medium hover:underline">Войти</Link>
           </p>
           </div>
         </div>
@@ -256,7 +256,7 @@ function RegisterForm() {
         ].map(({ icon: Icon, title, desc }) => (
           <div key={title} className="flex gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#F5A84A]/10">
-              <Icon className="h-4 w-4 text-[#D44E7E]" />
+              <Icon className="h-4 w-4 text-[#3A8A48]" />
             </div>
             <div>
               <p className="text-sm font-semibold text-[#1A1A1A]">{title}</p>
