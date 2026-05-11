@@ -1,41 +1,48 @@
 'use client'
 
-import { PalmDecor } from './PalmDecor'
-
 /**
- * Full-tree palm silhouette background for the dashboard.
- * Multiple trees at different scales create a tropical grove feel.
+ * Real palm photo backgrounds for the dashboard.
+ * Uses the same photos as the landing page.
  */
 export function DashboardPalms() {
   return (
     <div className="pointer-events-none fixed inset-0 overflow-hidden z-0" aria-hidden="true">
-      {/* Bottom-left — large main tree */}
-      <PalmDecor
-        className="absolute bottom-0 left-[-30px] w-80 h-auto"
-        style={{ opacity: 0.18 }}
+      {/* Bottom-left — tall palms photo */}
+      <div
+        className="absolute bottom-0 left-0 w-72 h-96"
+        style={{
+          backgroundImage: 'url(/palm-bg.jpg)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center bottom',
+          opacity: 0.12,
+          maskImage: 'linear-gradient(to top right, rgba(0,0,0,1) 30%, transparent 100%)',
+          WebkitMaskImage: 'linear-gradient(to top right, rgba(0,0,0,1) 30%, transparent 100%)',
+        }}
       />
-      {/* Bottom-right — large, mirrored */}
-      <PalmDecor
-        flipped
-        className="absolute bottom-0 right-[-30px] w-80 h-auto"
-        style={{ opacity: 0.18 }}
+      {/* Bottom-right — mirrored tall palms */}
+      <div
+        className="absolute bottom-0 right-0 w-72 h-96"
+        style={{
+          backgroundImage: 'url(/palm-bg.jpg)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center bottom',
+          opacity: 0.12,
+          transform: 'scaleX(-1)',
+          maskImage: 'linear-gradient(to top left, rgba(0,0,0,1) 30%, transparent 100%)',
+          WebkitMaskImage: 'linear-gradient(to top left, rgba(0,0,0,1) 30%, transparent 100%)',
+        }}
       />
-      {/* Bottom-center-right — medium, slightly behind */}
-      <PalmDecor
-        className="absolute bottom-0 right-[15%] w-56 h-auto"
-        style={{ opacity: 0.08, transform: 'rotate(6deg)', transformOrigin: 'bottom center' }}
-      />
-      {/* Bottom-center-left — medium, angled */}
-      <PalmDecor
-        flipped
-        className="absolute bottom-0 left-[12%] w-56 h-auto"
-        style={{ opacity: 0.08, transform: 'scaleX(-1) rotate(4deg)', transformOrigin: 'bottom center' }}
-      />
-      {/* Mid-right edge — peeking from right, leaning */}
-      <PalmDecor
-        flipped
-        className="absolute bottom-[5%] right-[-70px] w-48 h-auto"
-        style={{ opacity: 0.10, transform: 'scaleX(-1) rotate(-12deg)', transformOrigin: 'bottom right' }}
+      {/* Top-right corner — palm leaves */}
+      <div
+        className="absolute top-0 right-0 w-64 h-64"
+        style={{
+          backgroundImage: 'url(/palm-leaves-bg.jpg)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center center',
+          opacity: 0.08,
+          maskImage: 'linear-gradient(to bottom left, rgba(0,0,0,1) 20%, transparent 80%)',
+          WebkitMaskImage: 'linear-gradient(to bottom left, rgba(0,0,0,1) 20%, transparent 80%)',
+        }}
       />
     </div>
   )
