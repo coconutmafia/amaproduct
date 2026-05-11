@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, Sparkles, AlertCircle, Zap } from 'lucide-react'
 import { ContentPlanGrid } from '@/components/content/ContentPlanGrid'
+import { AiEditChat } from '@/components/ai/AiEditChat'
 import { toast } from 'sonner'
 import type { ContentItem, ContentType, WarmupPhase, WarmupPlanData, WarmupPhaseData } from '@/types'
 
@@ -106,6 +107,7 @@ export default function ContentPlanPage() {
   const [totalDays, setTotalDays] = useState(45)
   const [totalWeeks, setTotalWeeks] = useState(7)
   const [planName, setPlanName] = useState<string | null>(null)
+  const [warmupPlanId, setWarmupPlanId] = useState<string | null>(null)
   const [hasPlan, setHasPlan] = useState(false)
   const [loading, setLoading] = useState(true)
   const [generatingQuickPlan, setGeneratingQuickPlan] = useState(false)
@@ -128,6 +130,7 @@ export default function ContentPlanPage() {
         setTotalDays(duration)
         setTotalWeeks(Math.ceil(duration / 7))
         setPlanName(warmupPlan.name)
+        setWarmupPlanId(warmupPlan.id)
         setHasPlan(true)
 
         // Extract start date: from plan_data.meta.start_date first, then from name as fallback
@@ -462,6 +465,20 @@ export default function ContentPlanPage() {
           onRemoveType={handleRemoveType}
           onAddType={handleAddType}
           loading={false}
+        />
+      )}
+
+      {/* AI Edit Chat — edit day themes in the warmup plan */}
+      {hasPlan && warmupPlanId && (
+        <AiEditChat
+          projectId={id}
+          contextType="warmup_plan"
+          contextId={warmupPlanId}
+          contextLabel={planName ?? 'Контент-план'}
+          onPlanUpdate={() => {
+            // Reload the current week to reflect updated day themes
+            loadPlanData(week)
+          }}
         />
       )}
     </div>

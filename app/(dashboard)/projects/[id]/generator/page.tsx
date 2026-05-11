@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { ContentEditor } from '@/components/content/ContentEditor'
 import { ExportPanel } from '@/components/content/ExportPanel'
+import { AiEditChat } from '@/components/ai/AiEditChat'
 import { toast } from 'sonner'
 import {
   ArrowLeft, Sparkles, Loader2, RefreshCw, CheckCircle, Clock,
@@ -482,6 +483,20 @@ export default function GeneratorPage() {
 
         </div>
       </div>
+
+      {/* AI Edit Chat — appears after content is generated */}
+      {generated && (
+        <AiEditChat
+          projectId={id}
+          contextType="content_item"
+          contextId={generated.item.id}
+          contextLabel={generated.item.title || `${contentType} · День ${generated.item.day_number}`}
+          onContentUpdate={(updatedText) => {
+            setEditedText(updatedText)
+            setApproved(false)
+          }}
+        />
+      )}
     </div>
   )
 }

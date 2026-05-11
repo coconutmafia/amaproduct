@@ -4,10 +4,8 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 import { WarmupWizard } from '@/components/strategy/WarmupWizard'
-import { DeletePlanButton } from '@/components/strategy/DeletePlanButton'
+import { WarmupPlanList } from '@/components/strategy/WarmupPlanList'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import type { WarmupPlanData } from '@/types'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -29,8 +27,6 @@ export default async function StrategyPage({ params }: Props) {
     supabase.from('warmup_plans').select('*').eq('project_id', id).order('created_at', { ascending: false }),
   ])
 
-  const activeplan = warmupPlans?.find((p) => p.status === 'active' || p.status === 'approved')
-
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
@@ -43,57 +39,9 @@ export default async function StrategyPage({ params }: Props) {
         </div>
       </div>
 
-      {/* Existing plans */}
+      {/* Existing plans — client component with AI edit */}
       {warmupPlans && warmupPlans.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-foreground">Планы прогрева</h2>
-          {warmupPlans.map((plan) => (
-            <Card key={plan.id} className="border-border bg-card">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-medium text-foreground truncate">{plan.name}</p>
-                    <p className="text-xs text-muted-foreground">{plan.duration_days} дней</p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Badge className={`text-xs ${
-                      plan.status === 'active' ? 'bg-green-500/15 text-green-400 border-green-500/25' :
-                      plan.status === 'approved' ? 'bg-blue-500/15 text-blue-400 border-blue-500/25' :
-                      'bg-secondary text-muted-foreground border-border'
-                    }`}>
-                      {plan.status}
-                    </Badge>
-                    <DeletePlanButton planId={plan.id} projectId={id} />
-                  </div>
-                </div>
-
-                {plan.strategic_summary && (
-                  <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{plan.strategic_summary}</p>
-                )}
-
-                {/* Phase summary — compact, no day-level bubbles */}
-                {plan.plan_data && (() => {
-                  const phases = (plan.plan_data as WarmupPlanData)?.warmup_plan?.phases
-                  const PHASE_LABELS: Record<string, string> = {
-                    niche: 'На нишу', expert: 'На эксперта', product: 'На продукт', objections: 'Возражения',
-                    awareness: 'Знакомство', trust: 'Доверие', desire: 'Желание', close: 'Закрытие', activation: 'Активация',
-                  }
-                  if (!phases?.length) return null
-                  return (
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {phases.map((p) => (
-                        <span key={p.phase} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-secondary text-xs text-muted-foreground border border-border">
-                          {PHASE_LABELS[p.phase] || p.label || p.phase}
-                          <span className="opacity-50">· {p.daily_plan?.length ?? 0} дн.</span>
-                        </span>
-                      ))}
-                    </div>
-                  )
-                })()}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <WarmupPlanList initialPlans={warmupPlans} projectId={id} />
       )}
 
       {/* Create new plan */}
