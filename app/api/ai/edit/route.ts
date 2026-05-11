@@ -7,6 +7,20 @@ import type { WarmupPlanData } from '@/types'
 
 export const maxDuration = 60
 
+// ── Banned phrases (same as main generator) ───────────────────────────────────
+const BANNED_PHRASES = `
+АБСОЛЮТНО ЗАПРЕЩЁННЫЕ ФРАЗЫ И ПАТТЕРНЫ:
+❌ "уникальная возможность" / "уникальный шанс"
+❌ "незабываемый опыт" / "трансформирующий опыт"
+❌ "революционный подход" / "инновационный метод"
+❌ "я рада/рад поделиться" / "хочу рассказать вам о..."
+❌ "в современном мире" / "в наше время"
+❌ "не упустите свой шанс" / "действуй прямо сейчас"
+❌ Абстрактные обещания без цифр и реальных примеров
+❌ Использование слова "эксперт" для описания самого блогера
+❌ Любые формулировки которые звучат как реклама, а не как разговор
+`.trim()
+
 export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -66,6 +80,60 @@ export async function POST(request: Request) {
         let systemPrompt = ''
         let chatMessages: Array<{ role: 'user' | 'assistant'; content: string }> = []
 
+        // ── Build RAG context (always — for both warmup_plan and content_item) ─
+        send({ type: 'status', message: 'Изучаю материалы проекта...' })
+
+        let ragContext: Awaited<ReturnType<typeof buildRAGContext>> = {
+          systemKnowledge: [],
+          projectContext: [],
+          styleExamples: [],
+        }
+        try {
+          ragContext = await buildRAGContext(instruction, projectId, 'post')
+        } catch { /* continue without RAG */ }
+
+        // Extract sections from RAG context
+        const tovChunks = ragContext.projectContext.filter(
+          (c) => c.material_type === 'tone_of_voice' || c.material_type === 'tov'
+        )
+        const blogLineChunks = ragContext.projectContext.filter(
+          (c) => c.material_type === 'blog_lines'
+        )
+        const casesChunks = ragContext.projectContext.filter(
+          (c) => c.material_type === 'cases_reviews' || c.material_type === 'product_description'
+        )
+        const otherChunks = ragContext.projectContext.filter(
+          (c) =>
+            !['tone_of_voice', 'tov', 'blog_lines', 'cases_reviews', 'product_description'].includes(
+              c.material_type || ''
+            )
+        )
+        const methodologyChunks = ragContext.systemKnowledge
+
+        // Build expert knowledge block (used in both modes)
+        const expertKnowledge = [
+          tovChunks.length > 0
+            ? `═══ ГОЛОС ЭКСПЕРТА (Tone of Voice) ═══\n${tovChunks.map((c) => c.chunk_text).join('\n\n')}`
+            : '',
+          blogLineChunks.length > 0
+            ? `═══ ЛИНИИ БЛОГА (личные истории и темы) ═══\n${blogLineChunks.map((c) => c.chunk_text).join('\n\n')}`
+            : '',
+          casesChunks.length > 0
+            ? `═══ ПРОДУКТ И КЕЙСЫ ═══\n${casesChunks.map((c) => c.chunk_text).join('\n\n')}`
+            : '',
+          otherChunks.length > 0
+            ? `═══ КОНТЕКСТ ПРОЕКТА ═══\n${otherChunks.map((c) => c.chunk_text).join('\n\n')}`
+            : '',
+          methodologyChunks.length > 0
+            ? `═══ МЕТОДОЛОГИЯ ПРОГРЕВА ═══\n${methodologyChunks.map((c) => c.chunk_text).join('\n\n')}`
+            : '',
+          ragContext.styleExamples.length > 0
+            ? `═══ ПРИМЕРЫ ОДОБРЕННОГО КОНТЕНТА (эталоны голоса) ═══\n${ragContext.styleExamples.map((ex, i) => `[Пример ${i + 1} · ${ex.content_type}]\n${ex.body_text}`).join('\n\n')}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+
         // ── Warmup plan editing ──────────────────────────────────────────────
         if (contextType === 'warmup_plan') {
           const planData = contextData.plan_data as WarmupPlanData
@@ -76,7 +144,7 @@ export async function POST(request: Request) {
             desire: 'Желание', close: 'Закрытие', activation: 'Активация',
           }
 
-          // Format plan as readable lines
+          // Format plan as readable lines grouped by phase
           const planLines: string[] = []
           for (const phase of planData.warmup_plan.phases) {
             const phaseLabel = PHASE_LABELS[phase.phase] || phase.label || phase.phase
@@ -87,21 +155,34 @@ export async function POST(request: Request) {
             }
           }
 
-          systemPrompt = `Ты — AI-редактор плана прогрева. Вносишь точечные правки по запросу.
+          systemPrompt = `Ты — AI-редактор плана прогрева. Ты досконально знаешь этого эксперта — его голос, его истории, его продукт — и вносишь правки, опираясь на реальные материалы, а не выдумывая.
 
-ПРОЕКТ: ${project.name}${contextData.strategic_summary ? `\nСТРАТЕГИЯ: ${contextData.strategic_summary}` : ''}
-НАЗВАНИЕ ПЛАНА: ${contextData.name}
-ДЛИТЕЛЬНОСТЬ: ${contextData.duration_days} дней
+${BANNED_PHRASES}
 
-ТЕКУЩИЙ ПЛАН:
+${expertKnowledge ? `═══════════════════════════════════════
+ЧТО ТЫ ЗНАЕШЬ ОБ ЭКСПЕРТЕ
+═══════════════════════════════════════
+${expertKnowledge}` : ''}
+
+═══════════════════════════════════════
+РЕДАКТИРУЕМЫЙ ПЛАН
+═══════════════════════════════════════
+ПРОЕКТ: ${project.name}
+${contextData.strategic_summary ? `СТРАТЕГИЯ: ${contextData.strategic_summary}\n` : ''}ПЛАН «${contextData.name}» (${contextData.duration_days} дней):
+
 ${planLines.join('\n')}
 
-ИНСТРУКЦИИ:
-1. Ответь по-русски. Кратко (1-2 предложения) объясни что меняешь.
-2. Затем верни изменённые дни СТРОГО в этом формате (без переноса строк внутри тегов):
-<changes>{"days":[{"day":N,"meaning":"новая тема"}]}</changes>
-3. Тема дня — конкретная, образная, 1-2 предложения. Сохраняй стратегическую логику фазы.
-4. Если пользователь не просит конкретных изменений (просто спрашивает) — отвечай без блока <changes>.`
+═══════════════════════════════════════
+ПРАВИЛА РЕДАКТИРОВАНИЯ
+═══════════════════════════════════════
+1. Предлагай темы из РЕАЛЬНЫХ материалов эксперта: его кейсы, истории из линий блога, конкретные цифры, реальные ситуации клиентов — не выдуманные примеры.
+2. Каждая тема дня должна быть конкретной: "Кейс Анны: -12 кг за 8 недель без голодовки" лучше, чем "Результат клиента".
+3. Соблюдай логику фазы: в фазе "на нишу" — продаём идею темы, в "на эксперта" — история и путь, в "на продукт" — механизм и результат, в "возражения" — снимаем страхи.
+4. Голос в теме дня должен отражать голос эксперта (из TOV выше) — живой, не рекламный.
+5. Ответь по-русски. Кратко (1-2 предложения) объясни что меняешь и ПОЧЕМУ это лучше.
+6. Верни изменённые дни СТРОГО в этом формате (одна строка, без переносов внутри тегов):
+<changes>{"days":[{"day":N,"meaning":"новая тема дня"}]}</changes>
+7. Если пользователь просто спрашивает или обсуждает — отвечай без блока <changes>.`
 
           chatMessages = [
             ...messages.map((m: { role: string; content: string }) => ({
@@ -113,28 +194,39 @@ ${planLines.join('\n')}
 
         // ── Content item editing ─────────────────────────────────────────────
         } else if (contextType === 'content_item') {
-          send({ type: 'status', message: 'Загружаю контекст проекта...' })
-
-          let ragContext: Awaited<ReturnType<typeof buildRAGContext>> = { systemKnowledge: [], projectContext: [], styleExamples: [] }
-          try {
-            ragContext = await buildRAGContext(instruction, projectId, contextData.content_type as string)
-          } catch { /* continue without RAG */ }
-
+          // Use full system prompt (voice + methodology + examples)
           const voicePrompt = buildSystemPrompt(ragContext, project)
-          const currentContent = (contextData.body_text as string) ||
-            (contextData.structured_data ? JSON.stringify(contextData.structured_data, null, 2) : '')
+
+          const currentContent =
+            (contextData.body_text as string) ||
+            (contextData.structured_data
+              ? JSON.stringify(contextData.structured_data, null, 2)
+              : '')
+
+          // Infer what phase/day this content belongs to for context
+          const phaseCtx = contextData.warmup_phase
+            ? `Этап: ${contextData.warmup_phase}${contextData.day_number ? ` · День ${contextData.day_number}` : ''}`
+            : ''
 
           systemPrompt = `${voicePrompt}
 
----
-ТЕКУЩИЙ КОНТЕНТ ДЛЯ РЕДАКТИРОВАНИЯ:
+═══════════════════════════════════════
+РЕЖИМ: РЕДАКТИРОВАНИЕ СУЩЕСТВУЮЩЕГО КОНТЕНТА
+═══════════════════════════════════════
+${phaseCtx}
+
+ТЕКУЩИЙ ТЕКСТ:
 ${currentContent}
 
-ЗАДАЧА РЕДАКТОРА:
-1. Одним предложением скажи что меняешь (по-русски).
-2. Верни ПОЛНЫЙ обновлённый текст в блоке:
+ЗАДАЧА:
+1. Одним коротким предложением скажи что именно меняешь и почему это улучшит текст.
+2. Верни ПОЛНЫЙ обновлённый текст (не только изменённую часть) в блоке:
 <content>полный обновлённый текст здесь</content>
-Сохраняй голос автора, стиль и структуру. Меняй только то, что просит пользователь.`
+
+КРИТИЧНО:
+- Меняй ТОЛЬКО то, что просит пользователь. Всё остальное — сохраняй дословно.
+- Голос автора неприкосновенен — не «улучшай» стиль, который не просили трогать.
+- Если текст содержит хештеги — сохрани их в конце.`
 
           chatMessages = [
             ...messages.map((m: { role: string; content: string }) => ({
@@ -146,6 +238,8 @@ ${currentContent}
         }
 
         // ── Stream Claude response ───────────────────────────────────────────
+        send({ type: 'status', message: 'Думаю над правкой...' })
+
         const response = await anthropic.messages.create({
           model: MODEL,
           max_tokens: 2048,
@@ -168,7 +262,9 @@ ${currentContent}
           const changesMatch = fullText.match(/<changes>([\s\S]*?)<\/changes>/)
           if (changesMatch) {
             try {
-              const changes = JSON.parse(changesMatch[1].trim()) as { days: Array<{ day: number; meaning: string }> }
+              const changes = JSON.parse(changesMatch[1].trim()) as {
+                days: Array<{ day: number; meaning: string }>
+              }
               const planData = contextData.plan_data as WarmupPlanData
 
               for (const change of changes.days) {
@@ -194,7 +290,6 @@ ${currentContent}
               send({ type: 'done', updatedData: contextData, changedDays: [] })
             }
           } else {
-            // No changes block — just a conversational reply
             send({ type: 'done', updatedData: contextData, changedDays: [] })
           }
 
@@ -208,7 +303,7 @@ ${currentContent}
               .eq('id', contextId)
               .select()
               .single()
-            send({ type: 'done', updatedData: updatedItem, updatedText })
+            send({ type: 'done', updatedData: updatedItem ?? {}, updatedText })
           } else {
             send({ type: 'done', updatedData: contextData, updatedText: null })
           }
