@@ -9,553 +9,267 @@ interface PalmDecorProps {
 }
 
 export function PalmDecor({ className, style, flipped }: PalmDecorProps) {
-  const id = useId().replace(/:/g, '-')
+  const raw = useId()
+  const id = raw.replace(/:/g, '-')
 
-  const trunkGradId = `palm-trunk-${id}`
-  const trunkHighlightId = `palm-trunk-hi-${id}`
-  const frondGradId = `palm-frond-${id}`
-  const frondMidId = `palm-frond-mid-${id}`
-  const frondLightId = `palm-frond-light-${id}`
-  const rootGradId = `palm-root-${id}`
-  const coconutGradId = `palm-coconut-${id}`
+  const tG  = `pt-${id}`   // trunk gradient
+  const tH  = `th-${id}`   // trunk highlight
+  const fA  = `fa-${id}`   // frond dark
+  const fB  = `fb-${id}`   // frond mid
+  const fC  = `fc-${id}`   // frond light
+  const cG  = `cg-${id}`   // coconut
+
+  // Crown is at (140, 158). All frond paths are M 140 158 Q c1 tip Q c2 140 158 Z
+  // Trunk runs from crown (140,158) down to (140,480) with S-curve fill.
+
+  const fronds: Array<{
+    path: string
+    rib: string
+    leaflets: string[]
+    grad: string
+    opacity: number
+  }> = [
+    // 1 — Far-left drooping
+    {
+      path: 'M 140 158 Q 62 196 5 260 Q 83 225 140 158 Z',
+      rib:  'M 140 158 Q 72 210 5 260',
+      leaflets: [
+        'M 120 175 L 108 163', 'M 120 175 L 112 188',
+        'M 100 191 L 86 178', 'M 100 191 L 93 205',
+        'M 79 208 L 65 195', 'M 79 208 L 73 222',
+        'M 58 224 L 47 211', 'M 58 224 L 52 238',
+      ],
+      grad: fA,
+      opacity: 0.92,
+    },
+    // 2 — Left horizontal
+    {
+      path: 'M 140 158 Q 77 147 15 165 Q 78 178 140 158 Z',
+      rib:  'M 140 158 Q 78 162 15 165',
+      leaflets: [
+        'M 118 154 L 110 145', 'M 118 154 L 115 164',
+        'M 97 159 L 88 150', 'M 97 159 L 93 169',
+        'M 76 162 L 67 154', 'M 76 162 L 72 172',
+        'M 55 164 L 46 157', 'M 55 164 L 51 173',
+      ],
+      grad: fB,
+      opacity: 0.88,
+    },
+    // 3 — Upper-left
+    {
+      path: 'M 140 158 Q 92 92 20 50 Q 68 118 140 158 Z',
+      rib:  'M 140 158 Q 80 104 20 50',
+      leaflets: [
+        'M 124 143 L 118 132', 'M 124 143 L 131 138',
+        'M 107 128 L 100 117', 'M 107 128 L 115 123',
+        'M 89 112 L 82 102', 'M 89 112 L 97 108',
+        'M 72 97 L 65 87',  'M 72 97 L 80 93',
+        'M 54 81 L 48 72',  'M 54 81 L 62 77',
+      ],
+      grad: fB,
+      opacity: 0.90,
+    },
+    // 4 — Straight up
+    {
+      path: 'M 140 158 Q 156 82 135 5 Q 120 83 140 158 Z',
+      rib:  'M 140 158 Q 138 82 135 5',
+      leaflets: [
+        'M 149 137 L 160 130', 'M 149 137 L 136 130',
+        'M 145 115 L 157 107', 'M 145 115 L 131 108',
+        'M 141 92 L 153 84',  'M 141 92 L 127 85',
+        'M 138 68 L 150 62',  'M 138 68 L 124 61',
+        'M 136 44 L 146 38',  'M 136 44 L 123 37',
+      ],
+      grad: fC,
+      opacity: 0.92,
+    },
+    // 5 — Upper-right
+    {
+      path: 'M 140 158 Q 210 121 255 55 Q 185 94 140 158 Z',
+      rib:  'M 140 158 Q 198 108 255 55',
+      leaflets: [
+        'M 156 143 L 165 131', 'M 156 143 L 149 132',
+        'M 173 128 L 182 116', 'M 173 128 L 165 118',
+        'M 190 112 L 200 100', 'M 190 112 L 182 102',
+        'M 208 96 L 218 84',  'M 208 96 L 200 86',
+        'M 227 79 L 236 68',  'M 227 79 L 218 70',
+      ],
+      grad: fB,
+      opacity: 0.90,
+    },
+    // 6 — Right horizontal
+    {
+      path: 'M 140 158 Q 207 179 275 165 Q 208 147 140 158 Z',
+      rib:  'M 140 158 Q 208 162 275 165',
+      leaflets: [
+        'M 162 162 L 166 172', 'M 162 162 L 160 151',
+        'M 183 165 L 188 176', 'M 183 165 L 180 154',
+        'M 205 166 L 211 177', 'M 205 166 L 202 155',
+        'M 228 166 L 233 176', 'M 228 166 L 224 155',
+        'M 250 165 L 255 175', 'M 250 165 L 247 154',
+      ],
+      grad: fA,
+      opacity: 0.88,
+    },
+    // 7 — Far-right drooping
+    {
+      path: 'M 140 158 Q 194 226 270 265 Q 216 199 140 158 Z',
+      rib:  'M 140 158 Q 205 212 270 265',
+      leaflets: [
+        'M 160 174 L 150 182', 'M 160 174 L 166 167',
+        'M 180 191 L 169 199', 'M 180 191 L 186 184',
+        'M 200 208 L 189 217', 'M 200 208 L 207 202',
+        'M 222 224 L 211 233', 'M 222 224 L 228 217',
+        'M 244 241 L 234 250', 'M 244 241 L 250 234',
+      ],
+      grad: fA,
+      opacity: 0.88,
+    },
+    // 8 — Lower-left
+    {
+      path: 'M 140 158 Q 67 200 15 265 Q 88 225 140 158 Z',
+      rib:  'M 140 158 Q 78 212 15 265',
+      leaflets: [
+        'M 119 172 L 109 166', 'M 119 172 L 117 184',
+        'M 99 187 L 88 181',  'M 99 187 L 97 199',
+        'M 78 202 L 67 197',  'M 78 202 L 76 214',
+        'M 57 218 L 47 213',  'M 57 218 L 56 230',
+      ],
+      grad: fB,
+      opacity: 0.84,
+    },
+  ]
+
+  // Sub-leaflet rib points helper — 6 points along each frond rib
+  const barkRings = [
+    { y: 430, xl: 131, xr: 150 },
+    { y: 405, xl: 130, xr: 150 },
+    { y: 378, xl: 130, xr: 151 },
+    { y: 350, xl: 130, xr: 151 },
+    { y: 322, xl: 131, xr: 151 },
+    { y: 294, xl: 131, xr: 150 },
+    { y: 266, xl: 132, xr: 149 },
+    { y: 238, xl: 132, xr: 149 },
+    { y: 210, xl: 133, xr: 148 },
+    { y: 183, xl: 134, xr: 147 },
+  ]
 
   return (
     <svg
-      viewBox="0 0 220 440"
+      viewBox="0 0 280 480"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
-      style={{
-        ...style,
-        transform: flipped ? 'scaleX(-1)' : undefined,
-      }}
+      style={{ transform: flipped ? 'scaleX(-1)' : undefined, ...style }}
       aria-hidden="true"
     >
       <defs>
-        {/* Trunk gradient - warm brown with depth */}
-        <linearGradient id={trunkGradId} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#5C3A1E" />
-          <stop offset="30%" stopColor="#8B5E2E" />
-          <stop offset="60%" stopColor="#A67C45" />
-          <stop offset="100%" stopColor="#6B4520" />
+        {/* Trunk */}
+        <linearGradient id={tG} x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%"   stopColor="#4A2E0E" />
+          <stop offset="30%"  stopColor="#7A5020" />
+          <stop offset="65%"  stopColor="#9E6D30" />
+          <stop offset="100%" stopColor="#5A3815" />
         </linearGradient>
-        {/* Trunk highlight strip */}
-        <linearGradient id={trunkHighlightId} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#C49A5A" stopOpacity="0" />
-          <stop offset="50%" stopColor="#D4AA6A" stopOpacity="0.5" />
-          <stop offset="100%" stopColor="#C49A5A" stopOpacity="0" />
+        <linearGradient id={tH} x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%"   stopColor="#C8935A" stopOpacity="0" />
+          <stop offset="45%"  stopColor="#DCA86A" stopOpacity="0.4" />
+          <stop offset="100%" stopColor="#C8935A" stopOpacity="0" />
         </linearGradient>
-        {/* Dark base frond gradient */}
-        <linearGradient id={frondGradId} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="hsl(112, 60%, 22%)" />
-          <stop offset="50%" stopColor="hsl(118, 62%, 32%)" />
-          <stop offset="100%" stopColor="hsl(125, 58%, 44%)" />
+        {/* Frond greens — dark → mid → light */}
+        <linearGradient id={fA} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%"   stopColor="#1F5C14" />
+          <stop offset="50%"  stopColor="#2E8020" />
+          <stop offset="100%" stopColor="#3DA030" />
         </linearGradient>
-        {/* Mid frond gradient */}
-        <linearGradient id={frondMidId} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="hsl(115, 58%, 28%)" />
-          <stop offset="50%" stopColor="hsl(122, 60%, 38%)" />
-          <stop offset="100%" stopColor="hsl(130, 56%, 52%)" />
+        <linearGradient id={fB} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%"   stopColor="#2B7020" />
+          <stop offset="50%"  stopColor="#3D9430" />
+          <stop offset="100%" stopColor="#55B845" />
         </linearGradient>
-        {/* Light tip frond gradient */}
-        <linearGradient id={frondLightId} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="hsl(118, 55%, 35%)" />
-          <stop offset="100%" stopColor="hsl(135, 52%, 60%)" />
+        <linearGradient id={fC} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%"   stopColor="#378228" />
+          <stop offset="50%"  stopColor="#4EAA3A" />
+          <stop offset="100%" stopColor="#72CC58" />
         </linearGradient>
-        {/* Root gradient */}
-        <linearGradient id={rootGradId} x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#7A5030" />
-          <stop offset="100%" stopColor="#4A2E10" />
-        </linearGradient>
-        {/* Coconut gradient */}
-        <linearGradient id={coconutGradId} x1="20%" y1="20%" x2="80%" y2="80%">
-          <stop offset="0%" stopColor="#C8955A" />
-          <stop offset="50%" stopColor="#9B6535" />
-          <stop offset="100%" stopColor="#7A4820" />
-        </linearGradient>
+        {/* Coconut */}
+        <radialGradient id={cG} cx="35%" cy="35%" r="55%">
+          <stop offset="0%"   stopColor="#C89558" />
+          <stop offset="50%"  stopColor="#9A6030" />
+          <stop offset="100%" stopColor="#6A3E18" />
+        </radialGradient>
       </defs>
 
-      {/* === ROOTS (subtle, at base) === */}
-      <g opacity="0.85">
-        {/* Left root */}
-        <path
-          d="M 100 418 Q 75 428 55 435 Q 65 425 85 415 Z"
-          fill={`url(#${rootGradId})`}
-          opacity="0.7"
-        />
-        {/* Right root */}
-        <path
-          d="M 110 418 Q 138 426 158 430 Q 142 422 122 414 Z"
-          fill={`url(#${rootGradId})`}
-          opacity="0.7"
-        />
-        {/* Center root spread */}
-        <path
-          d="M 96 422 Q 88 435 70 440 Q 88 432 100 422 Z"
-          fill={`url(#${rootGradId})`}
-          opacity="0.5"
-        />
-        <path
-          d="M 114 422 Q 124 433 145 438 Q 128 430 112 420 Z"
-          fill={`url(#${rootGradId})`}
-          opacity="0.5"
-        />
-      </g>
+      {/* ─── ROOTS ─── */}
+      <path d="M 132 468 Q 108 472 88 478 Q 106 470 128 462 Z" fill="#5A3815" opacity="0.55" />
+      <path d="M 148 468 Q 172 472 192 478 Q 174 470 152 462 Z" fill="#5A3815" opacity="0.55" />
+      <path d="M 130 472 Q 116 478 98 480 Q 114 474 128 466 Z" fill="#4A2E0E" opacity="0.35" />
+      <path d="M 150 472 Q 164 478 182 480 Q 166 474 152 466 Z" fill="#4A2E0E" opacity="0.35" />
 
-      {/* === TRUNK (S-curved, tapered, bark texture) === */}
-      {/* Main trunk body — S-curve from wide base to narrow crown */}
-      {/* Base ~105,425 wide 28px; crown ~108,155 wide 12px */}
+      {/* ─── TRUNK (filled S-curve shape) ─── */}
       <path
-        d={[
-          'M 91 425',       // base left
-          'C 78 380 82 330 88 280',  // left edge curving
-          'C 92 230 84 190 96 155',  // left edge upper — crown left
-          'L 104 150',              // crown top left
-          'C 110 160 116 175 118 200', // right edge upper
-          'C 122 240 118 295 122 340',
-          'C 126 385 120 405 119 425', // base right
-          'Z'
-        ].join(' ')}
-        fill={`url(#${trunkGradId})`}
+        d="M 133 162
+           C 127 230 137 295 131 360
+           C 125 410 127 445 128 468
+           L 152 468
+           C 151 445 150 410 149 360
+           C 143 295 153 230 147 162
+           Z"
+        fill={`url(#${tG})`}
       />
-      {/* Trunk highlight */}
+      {/* Highlight */}
       <path
-        d={[
-          'M 97 420',
-          'C 90 375 93 325 96 275',
-          'C 98 230 92 190 100 158',
-          'L 104 156',
-          'C 108 175 108 220 108 270',
-          'C 108 320 110 375 112 420',
-          'Z'
-        ].join(' ')}
-        fill={`url(#${trunkHighlightId})`}
-        opacity="0.6"
+        d="M 138 165
+           C 135 230 140 295 138 360
+           C 136 410 138 445 139 468
+           L 142 468
+           C 143 445 142 410 141 360
+           C 141 295 145 230 142 165
+           Z"
+        fill={`url(#${tH})`}
       />
-      {/* Bark texture rings — horizontal lines across trunk at intervals */}
-      {[
-        { y: 390, xl: 93, xr: 118 },
-        { y: 365, xl: 92, xr: 117 },
-        { y: 338, xl: 91, xr: 117 },
-        { y: 312, xl: 91, xr: 118 },
-        { y: 285, xl: 90, xr: 118 },
-        { y: 260, xl: 90, xr: 118 },
-        { y: 235, xl: 90, xr: 117 },
-        { y: 210, xl: 91, xr: 116 },
-        { y: 186, xl: 93, xr: 114 },
-        { y: 164, xl: 96, xr: 111 },
-      ].map((ring, i) => (
+      {/* Bark rings */}
+      {barkRings.map((r, i) => (
         <path
           key={i}
-          d={`M ${ring.xl} ${ring.y} Q ${(ring.xl + ring.xr) / 2} ${ring.y + 3} ${ring.xr} ${ring.y}`}
-          stroke="#4A2E10"
-          strokeWidth="0.8"
+          d={`M ${r.xl} ${r.y} Q ${(r.xl + r.xr) / 2} ${r.y + 4} ${r.xr} ${r.y}`}
+          stroke="#3A1E08"
+          strokeWidth="0.9"
           fill="none"
-          opacity="0.35"
+          opacity="0.28"
         />
       ))}
 
-      {/* === FRONDS === */}
-      {/* Crown junction point: approximately (102, 152) */}
+      {/* ─── FRONDS ─── */}
+      {fronds.map((fr, fi) => (
+        <g key={fi} opacity={fr.opacity}>
+          {/* Filled leaf body */}
+          <path d={fr.path} fill={`url(#${fr.grad})`} />
+          {/* Central rib */}
+          <path d={fr.rib} stroke="#1A4810" strokeWidth="1.2" fill="none" opacity="0.55" />
+          {/* Sub-leaflets */}
+          {fr.leaflets.map((l, li) => (
+            <path
+              key={li}
+              d={l}
+              stroke={`url(#${fr.grad})`}
+              strokeWidth="1.3"
+              strokeLinecap="round"
+              fill="none"
+              opacity={0.7 - li * 0.03}
+            />
+          ))}
+        </g>
+      ))}
 
-      {/* --- Frond 1: Far left, drooping down-left --- */}
-      <g>
-        {/* Main rib */}
-        <path
-          d="M 102 152 Q 70 140 28 175 Q 15 188 8 205"
-          stroke="hsl(112,60%,22%)"
-          strokeWidth="1.5"
-          fill="none"
-        />
-        {/* Leaflets along left-drooping frond */}
-        {[
-          // [cx, cy, angle, w, h] — placed along the rib
-          [85, 146, -30, 18, 7],
-          [70, 148, -20, 20, 7],
-          [55, 154, -10, 22, 7],
-          [40, 163, 5, 22, 7],
-          [28, 174, 15, 20, 7],
-          [18, 185, 25, 18, 6],
-          [10, 197, 35, 15, 6],
-        ].map(([cx, cy, angle, w, h], i) => (
-          <ellipse
-            key={i}
-            cx={cx}
-            cy={cy}
-            rx={w / 2}
-            ry={h / 2}
-            transform={`rotate(${angle}, ${cx}, ${cy})`}
-            fill={`url(#${frondGradId})`}
-            opacity={0.9 - i * 0.05}
-          />
-        ))}
-        {/* Leaflets opposite side */}
-        {[
-          [82, 152, -50, 14, 5],
-          [67, 157, -40, 16, 5],
-          [52, 167, -25, 16, 5],
-          [38, 178, -10, 15, 5],
-          [25, 189, 5, 14, 5],
-        ].map(([cx, cy, angle, w, h], i) => (
-          <ellipse
-            key={i}
-            cx={cx}
-            cy={cy}
-            rx={w / 2}
-            ry={h / 2}
-            transform={`rotate(${angle}, ${cx}, ${cy})`}
-            fill={`url(#${frondMidId})`}
-            opacity={0.8 - i * 0.05}
-          />
-        ))}
-      </g>
-
-      {/* --- Frond 2: Upper-left, sweeping up and left --- */}
-      <g>
-        <path
-          d="M 102 152 Q 72 118 40 88 Q 22 72 12 52"
-          stroke="hsl(115,60%,24%)"
-          strokeWidth="1.5"
-          fill="none"
-        />
-        {[
-          [88, 139, -55, 20, 7],
-          [74, 126, -48, 22, 7],
-          [60, 113, -42, 22, 7],
-          [46, 100, -38, 20, 7],
-          [32, 86, -35, 18, 6],
-          [20, 72, -30, 16, 6],
-          [14, 60, -28, 14, 5],
-        ].map(([cx, cy, angle, w, h], i) => (
-          <ellipse
-            key={i}
-            cx={cx}
-            cy={cy}
-            rx={w / 2}
-            ry={h / 2}
-            transform={`rotate(${angle}, ${cx}, ${cy})`}
-            fill={`url(#${frondMidId})`}
-            opacity={0.9 - i * 0.04}
-          />
-        ))}
-        {[
-          [83, 145, -75, 14, 5],
-          [69, 132, -68, 16, 5],
-          [55, 119, -62, 16, 5],
-          [41, 106, -58, 15, 5],
-          [28, 92, -52, 14, 5],
-        ].map(([cx, cy, angle, w, h], i) => (
-          <ellipse
-            key={i}
-            cx={cx}
-            cy={cy}
-            rx={w / 2}
-            ry={h / 2}
-            transform={`rotate(${angle}, ${cx}, ${cy})`}
-            fill={`url(#${frondLightId})`}
-            opacity={0.75 - i * 0.04}
-          />
-        ))}
-      </g>
-
-      {/* --- Frond 3: Left-center, sweeping up-left at ~330° --- */}
-      <g>
-        <path
-          d="M 102 152 Q 80 105 68 62 Q 62 40 60 18"
-          stroke="hsl(118,60%,26%)"
-          strokeWidth="1.5"
-          fill="none"
-        />
-        {[
-          [96, 135, -75, 20, 7],
-          [88, 117, -70, 22, 7],
-          [80, 98, -68, 22, 7],
-          [74, 79, -65, 20, 7],
-          [68, 60, -62, 18, 6],
-          [63, 40, -60, 16, 6],
-          [61, 26, -58, 13, 5],
-        ].map(([cx, cy, angle, w, h], i) => (
-          <ellipse
-            key={i}
-            cx={cx}
-            cy={cy}
-            rx={w / 2}
-            ry={h / 2}
-            transform={`rotate(${angle}, ${cx}, ${cy})`}
-            fill={`url(#${frondMidId})`}
-            opacity={0.9 - i * 0.04}
-          />
-        ))}
-        {[
-          [98, 128, -95, 14, 5],
-          [91, 110, -90, 15, 5],
-          [83, 91, -88, 15, 5],
-          [76, 72, -85, 14, 5],
-          [70, 54, -82, 13, 5],
-        ].map(([cx, cy, angle, w, h], i) => (
-          <ellipse
-            key={i}
-            cx={cx}
-            cy={cy}
-            rx={w / 2}
-            ry={h / 2}
-            transform={`rotate(${angle}, ${cx}, ${cy})`}
-            fill={`url(#${frondLightId})`}
-            opacity={0.75 - i * 0.04}
-          />
-        ))}
-      </g>
-
-      {/* --- Frond 4: Nearly straight up, slight left lean --- */}
-      <g>
-        <path
-          d="M 102 152 Q 98 105 100 62 Q 101 35 98 10"
-          stroke="hsl(120,62%,26%)"
-          strokeWidth="1.5"
-          fill="none"
-        />
-        {[
-          [109, 135, 80, 20, 7],
-          [106, 116, 82, 22, 7],
-          [103, 96, 84, 22, 7],
-          [101, 76, 85, 20, 7],
-          [100, 57, 86, 18, 6],
-          [99, 38, 87, 15, 6],
-          [98, 22, 88, 12, 5],
-        ].map(([cx, cy, angle, w, h], i) => (
-          <ellipse
-            key={i}
-            cx={cx}
-            cy={cy}
-            rx={w / 2}
-            ry={h / 2}
-            transform={`rotate(${angle}, ${cx}, ${cy})`}
-            fill={`url(#${frondMidId})`}
-            opacity={0.9 - i * 0.04}
-          />
-        ))}
-        {[
-          [95, 130, 60, 14, 5],
-          [92, 112, 62, 15, 5],
-          [93, 92, 64, 15, 5],
-          [94, 73, 65, 14, 5],
-          [95, 55, 66, 13, 5],
-        ].map(([cx, cy, angle, w, h], i) => (
-          <ellipse
-            key={i}
-            cx={cx}
-            cy={cy}
-            rx={w / 2}
-            ry={h / 2}
-            transform={`rotate(${angle}, ${cx}, ${cy})`}
-            fill={`url(#${frondLightId})`}
-            opacity={0.75 - i * 0.04}
-          />
-        ))}
-      </g>
-
-      {/* --- Frond 5: Upper-right, sweeping up and right --- */}
-      <g>
-        <path
-          d="M 102 152 Q 130 112 158 78 Q 174 58 186 38"
-          stroke="hsl(118,60%,26%)"
-          strokeWidth="1.5"
-          fill="none"
-        />
-        {[
-          [114, 139, 55, 20, 7],
-          [128, 126, 48, 22, 7],
-          [142, 112, 42, 22, 7],
-          [155, 97, 38, 20, 7],
-          [167, 80, 34, 18, 6],
-          [176, 64, 30, 16, 6],
-          [183, 48, 27, 14, 5],
-        ].map(([cx, cy, angle, w, h], i) => (
-          <ellipse
-            key={i}
-            cx={cx}
-            cy={cy}
-            rx={w / 2}
-            ry={h / 2}
-            transform={`rotate(${angle}, ${cx}, ${cy})`}
-            fill={`url(#${frondMidId})`}
-            opacity={0.9 - i * 0.04}
-          />
-        ))}
-        {[
-          [118, 145, 75, 14, 5],
-          [132, 132, 68, 16, 5],
-          [146, 118, 62, 16, 5],
-          [158, 103, 58, 15, 5],
-          [170, 87, 52, 14, 5],
-        ].map(([cx, cy, angle, w, h], i) => (
-          <ellipse
-            key={i}
-            cx={cx}
-            cy={cy}
-            rx={w / 2}
-            ry={h / 2}
-            transform={`rotate(${angle}, ${cx}, ${cy})`}
-            fill={`url(#${frondLightId})`}
-            opacity={0.75 - i * 0.04}
-          />
-        ))}
-      </g>
-
-      {/* --- Frond 6: Right, sweeping to the right --- */}
-      <g>
-        <path
-          d="M 102 152 Q 138 138 170 148 Q 192 156 210 162"
-          stroke="hsl(115,60%,24%)"
-          strokeWidth="1.5"
-          fill="none"
-        />
-        {[
-          [120, 145, 10, 18, 7],
-          [136, 142, 5, 20, 7],
-          [152, 143, 0, 20, 7],
-          [168, 147, -5, 18, 6],
-          [183, 153, -10, 16, 6],
-          [197, 159, -14, 14, 5],
-          [208, 164, -18, 12, 5],
-        ].map(([cx, cy, angle, w, h], i) => (
-          <ellipse
-            key={i}
-            cx={cx}
-            cy={cy}
-            rx={w / 2}
-            ry={h / 2}
-            transform={`rotate(${angle}, ${cx}, ${cy})`}
-            fill={`url(#${frondGradId})`}
-            opacity={0.9 - i * 0.05}
-          />
-        ))}
-        {[
-          [124, 150, -10, 14, 5],
-          [140, 149, -14, 15, 5],
-          [157, 150, -18, 15, 5],
-          [172, 154, -22, 14, 5],
-          [186, 160, -26, 12, 5],
-        ].map(([cx, cy, angle, w, h], i) => (
-          <ellipse
-            key={i}
-            cx={cx}
-            cy={cy}
-            rx={w / 2}
-            ry={h / 2}
-            transform={`rotate(${angle}, ${cx}, ${cy})`}
-            fill={`url(#${frondMidId})`}
-            opacity={0.75 - i * 0.04}
-          />
-        ))}
-      </g>
-
-      {/* --- Frond 7: Far right, drooping down-right --- */}
-      <g>
-        <path
-          d="M 102 152 Q 136 152 168 172 Q 192 186 208 210"
-          stroke="hsl(112,60%,22%)"
-          strokeWidth="1.5"
-          fill="none"
-        />
-        {[
-          [118, 150, 25, 18, 7],
-          [134, 154, 18, 20, 7],
-          [150, 160, 12, 20, 7],
-          [165, 169, 6, 18, 6],
-          [180, 181, -2, 16, 6],
-          [193, 193, -8, 14, 5],
-          [204, 207, -14, 12, 5],
-        ].map(([cx, cy, angle, w, h], i) => (
-          <ellipse
-            key={i}
-            cx={cx}
-            cy={cy}
-            rx={w / 2}
-            ry={h / 2}
-            transform={`rotate(${angle}, ${cx}, ${cy})`}
-            fill={`url(#${frondGradId})`}
-            opacity={0.9 - i * 0.05}
-          />
-        ))}
-        {[
-          [122, 156, 5, 14, 5],
-          [138, 162, -2, 15, 5],
-          [154, 170, -8, 15, 5],
-          [168, 180, -14, 14, 5],
-          [181, 192, -20, 12, 5],
-        ].map(([cx, cy, angle, w, h], i) => (
-          <ellipse
-            key={i}
-            cx={cx}
-            cy={cy}
-            rx={w / 2}
-            ry={h / 2}
-            transform={`rotate(${angle}, ${cx}, ${cy})`}
-            fill={`url(#${frondMidId})`}
-            opacity={0.75 - i * 0.04}
-          />
-        ))}
-      </g>
-
-      {/* --- Frond 8: Left side, drooping down-left at ~200° --- */}
-      <g>
-        <path
-          d="M 102 152 Q 78 162 52 182 Q 32 198 16 222"
-          stroke="hsl(112,58%,22%)"
-          strokeWidth="1.5"
-          fill="none"
-        />
-        {[
-          [88, 155, -20, 18, 7],
-          [74, 163, -12, 20, 7],
-          [59, 173, -5, 20, 6],
-          [45, 185, 3, 18, 6],
-          [32, 199, 10, 16, 6],
-          [21, 213, 16, 14, 5],
-        ].map(([cx, cy, angle, w, h], i) => (
-          <ellipse
-            key={i}
-            cx={cx}
-            cy={cy}
-            rx={w / 2}
-            ry={h / 2}
-            transform={`rotate(${angle}, ${cx}, ${cy})`}
-            fill={`url(#${frondGradId})`}
-            opacity={0.88 - i * 0.05}
-          />
-        ))}
-        {[
-          [84, 161, -38, 13, 5],
-          [70, 171, -30, 15, 5],
-          [55, 182, -22, 15, 5],
-          [41, 195, -14, 14, 5],
-          [28, 209, -6, 12, 5],
-        ].map(([cx, cy, angle, w, h], i) => (
-          <ellipse
-            key={i}
-            cx={cx}
-            cy={cy}
-            rx={w / 2}
-            ry={h / 2}
-            transform={`rotate(${angle}, ${cx}, ${cy})`}
-            fill={`url(#${frondMidId})`}
-            opacity={0.72 - i * 0.04}
-          />
-        ))}
-      </g>
-
-      {/* === COCONUTS (3 clusters near crown) === */}
-      {/* Cluster 1 */}
-      <circle cx="107" cy="163" r="6.5" fill={`url(#${coconutGradId})`} />
-      <circle cx="107" cy="163" r="6.5" fill="none" stroke="#5A3010" strokeWidth="0.8" opacity="0.4" />
-      {/* Cluster 2 */}
-      <circle cx="97" cy="165" r="6" fill={`url(#${coconutGradId})`} />
-      <circle cx="97" cy="165" r="6" fill="none" stroke="#5A3010" strokeWidth="0.8" opacity="0.4" />
-      {/* Cluster 3 */}
-      <circle cx="113" cy="170" r="5.5" fill={`url(#${coconutGradId})`} />
-      <circle cx="113" cy="170" r="5.5" fill="none" stroke="#5A3010" strokeWidth="0.8" opacity="0.4" />
-      {/* Crown base cap — overlaps coconuts to seat fronds */}
-      <ellipse cx="103" cy="155" rx="10" ry="6" fill="#7A5030" opacity="0.6" />
+      {/* ─── COCONUTS ─── */}
+      <circle cx="148" cy="170" r="7.5" fill={`url(#${cG})`} />
+      <circle cx="148" cy="170" r="7.5" fill="none" stroke="#3A1808" strokeWidth="1" opacity="0.35" />
+      <circle cx="136" cy="173" r="7"   fill={`url(#${cG})`} />
+      <circle cx="136" cy="173" r="7"   fill="none" stroke="#3A1808" strokeWidth="1" opacity="0.35" />
+      <circle cx="152" cy="180" r="6.5" fill={`url(#${cG})`} />
+      <circle cx="152" cy="180" r="6.5" fill="none" stroke="#3A1808" strokeWidth="1" opacity="0.35" />
+      {/* Crown base */}
+      <ellipse cx="140" cy="162" rx="12" ry="7" fill="#6A3E18" opacity="0.55" />
     </svg>
   )
 }
