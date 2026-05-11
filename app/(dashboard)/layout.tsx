@@ -3,6 +3,7 @@ import { Header } from '@/components/layout/Header'
 import { AuthRefresh } from '@/components/shared/AuthRefresh'
 import { PageTransition } from '@/components/shared/PageTransition'
 import { DashboardPalms } from '@/components/shared/DashboardPalms'
+import { BottomNav } from '@/components/layout/BottomNav'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
@@ -64,12 +65,16 @@ export default async function DashboardLayout({
           projects={projects || []}
           isAdmin={isAdmin}
         />
-        <main className="flex-1 overflow-y-auto relative">
+        {/* pb-24 on mobile = space for the BottomNav */}
+        <main className="flex-1 overflow-y-auto relative pb-24 lg:pb-0">
           <DashboardPalms />
           <AuthRefresh />
           <PageTransition>{children}</PageTransition>
         </main>
       </div>
+
+      {/* Bottom nav — mobile only */}
+      <BottomNav />
     </div>
   )
 }

@@ -214,7 +214,7 @@ function GradientButton({ href, children, className = '', large = false }: {
     <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
       <Link
         href={href}
-        className={`inline-flex items-center gap-2 ${large ? 'px-9 h-16 text-base' : 'px-8 h-14 text-sm'} rounded-[50px] gradient-accent text-white font-bold uppercase tracking-wide hover:opacity-95 transition-opacity shadow-lg shadow-[#E86BA0]/30 hover:shadow-xl hover:shadow-[#E86BA0]/40 ${className}`}
+        className={`inline-flex items-center justify-center gap-2 w-full sm:w-auto ${large ? 'px-9 h-16 text-base' : 'px-8 h-14 text-sm'} rounded-[50px] gradient-accent text-white font-bold uppercase tracking-wide hover:opacity-95 transition-opacity shadow-lg shadow-[#E86BA0]/30 hover:shadow-xl hover:shadow-[#E86BA0]/40 ${className}`}
       >
         {children}
         <ChevronRight className={large ? 'h-5 w-5' : 'h-4 w-4'} />
@@ -338,7 +338,7 @@ function HeroSection() {
 
   return (
     <section
-      className="relative pt-36 pb-28 px-5 text-center overflow-hidden bg-white"
+      className="relative pt-28 sm:pt-36 pb-20 sm:pb-28 px-5 text-center overflow-hidden bg-white"
       onMouseMove={handleMouseMove}
     >
       {/* Dot grid background */}
@@ -395,7 +395,7 @@ function HeroSection() {
                   hidden: { opacity: 0, y: 60, rotateX: -40 },
                   visible: { opacity: 1, y: 0, rotateX: 0, transition: { duration: 0.7, ease: EASE } },
                 }}
-                className={`text-6xl sm:text-7xl lg:text-[5.5rem] font-black uppercase leading-none tracking-tight ${
+                className={`text-[2.5rem] sm:text-6xl lg:text-[5.5rem] font-black uppercase leading-none tracking-tight ${
                   word === 'AI' ? 'gradient-text' : word === 'SMM-щик' ? 'text-outline-lg' : 'text-[#1A1A1A]'
                 }`}
                 style={{ display: 'inline-block', transformOrigin: 'bottom' }}
@@ -408,7 +408,7 @@ function HeroSection() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.9, duration: 0.7, ease: EASE }}
-            className="text-5xl sm:text-6xl lg:text-7xl font-black uppercase leading-none tracking-tight text-[#1A1A1A]"
+            className="text-[2rem] sm:text-5xl lg:text-7xl font-black uppercase leading-none tracking-tight text-[#1A1A1A]"
           >
             который пишет{' '}
             <span className="gradient-text">как ты</span>
@@ -432,7 +432,7 @@ function HeroSection() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 1.3, duration: 0.6 }}
-          className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2"
+          className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2 w-full sm:w-auto px-2 sm:px-0"
         >
           <GradientButton href="/register" large>
             Попробовать бесплатно
@@ -441,7 +441,7 @@ function HeroSection() {
             href="#features"
             whileHover={{ scale: 1.03, borderColor: '#C5CBA5' }}
             whileTap={{ scale: 0.97 }}
-            className="h-16 px-9 w-full sm:w-auto justify-center rounded-[50px] font-bold text-[#444] border-2 border-[#E8E8E8] hover:border-[#C5CBA5] hover:text-[#1A1A1A] transition-colors flex items-center gap-2 text-sm uppercase tracking-wide"
+            className="h-14 sm:h-16 px-9 w-full sm:w-auto justify-center rounded-[50px] font-bold text-[#444] border-2 border-[#E8E8E8] hover:border-[#C5CBA5] hover:text-[#1A1A1A] transition-colors flex items-center gap-2 text-sm uppercase tracking-wide"
           >
             Смотреть демо
           </motion.a>

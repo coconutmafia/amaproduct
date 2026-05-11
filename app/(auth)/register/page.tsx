@@ -83,7 +83,7 @@ function RegisterForm() {
   // ── AFTER SUBMIT: "Check your email" screen ──────────────────────
   if (sent) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FAFAF8] p-4">
+      <div className="min-h-screen flex items-center justify-center bg-[#F5F5F5] p-4">
         <div className="w-full max-w-md text-center space-y-6">
           <div className="flex justify-center">
             <div className="flex h-20 w-20 items-center justify-center rounded-3xl gradient-accent shadow-xl">
@@ -117,7 +117,7 @@ function RegisterForm() {
 
   // ── REGISTER FORM ────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex bg-[#FAFAF8]">
+    <div className="min-h-screen flex bg-[#F5F5F5]">
       {/* Left: form */}
       <div className="flex flex-1 flex-col items-center justify-center p-6">
         <div className="w-full max-w-md space-y-6">
@@ -155,7 +155,7 @@ function RegisterForm() {
             </div>
 
           {/* Google */}
-          <Button variant="outline" className="w-full h-12 text-base border-[#C5CBA5] rounded-xl hover:bg-[#FAFAF8]" onClick={handleGoogle}>
+          <Button variant="outline" className="w-full h-12 text-base border-[#C5CBA5] rounded-xl hover:bg-[#F5F5F5]" onClick={handleGoogle}>
             <Globe className="mr-2 h-5 w-5" />
             Зарегистрироваться через Google
           </Button>
@@ -225,7 +225,7 @@ function RegisterForm() {
       </div>
 
       {/* Right: benefits panel (hidden on mobile) */}
-      <div className="hidden lg:flex flex-col justify-center w-96 bg-[#FAFAF8] border-l border-[#C5CBA5] p-10 space-y-8">
+      <div className="hidden lg:flex flex-col justify-center w-96 bg-[#F5F5F5] border-l border-[#C5CBA5] p-10 space-y-8">
         <div>
           <h2 className="text-xl font-black uppercase text-[#1A1A1A] mb-2">Что тебя ждёт</h2>
           <p className="text-sm text-[#888888]">

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -217,7 +217,14 @@ export function ContentPlanGrid({
   onWeekChange, onGenerate, onGenerateWeekBrief, onExport,
   onRemoveType, onAddType, loading,
 }: ContentPlanGridProps) {
+  // Default to 'list' on mobile, 'week' on desktop — auto-detected client-side
   const [viewMode, setViewMode] = useState<'week' | 'list'>('week')
+  const [userChangedView, setUserChangedView] = useState(false)
+  useEffect(() => {
+    if (!userChangedView && typeof window !== 'undefined' && window.innerWidth < 640) {
+      setViewMode('list')
+    }
+  }, [userChangedView])
   const [generatingDay, setGeneratingDay] = useState<string | null>(null)
   const [generatingWeekBrief, setGeneratingWeekBrief] = useState(false)
   const [addingToDay, setAddingToDay] = useState<number | null>(null)
@@ -260,8 +267,8 @@ export function ContentPlanGrid({
   // ── Week grid view ──────────────────────────────────────────────────────────
   function WeekView() {
     return (
-      <div className="overflow-x-auto">
-        <div className="min-w-[680px]">
+      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+        <div className="min-w-[560px] sm:min-w-[680px]">
           {/* Day headers */}
           <div className="grid grid-cols-7 gap-2 mb-2">
             {days.map((day) => {
@@ -680,7 +687,7 @@ export function ContentPlanGrid({
             { mode: 'week' as const, icon: Calendar, label: 'Неделя' },
             { mode: 'list' as const, icon: List,     label: 'Список' },
           ]).map(({ mode, icon: Icon, label }) => (
-            <button key={mode} onClick={() => setViewMode(mode)}
+            <button key={mode} onClick={() => { setViewMode(mode); setUserChangedView(true) }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
               style={viewMode === mode
                 ? { backgroundColor: '#fff', color: '#333', border: '1px solid #E8E8E8', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }

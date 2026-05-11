@@ -33,7 +33,7 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#FAFAF8] p-4">
+    <div className="min-h-screen flex items-center justify-center bg-[#F5F5F5] p-4">
       <div className="w-full max-w-md space-y-6">
         {/* Logo */}
         <Link href="/" className="block text-center space-y-2 hover:opacity-80 transition-opacity">
