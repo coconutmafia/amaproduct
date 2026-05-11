@@ -348,10 +348,10 @@ function HeroSection() {
       <div
         className="absolute inset-0 pointer-events-none select-none"
         style={{
-          backgroundImage: 'url(/palm-leaves-bg.jpg)',
+          backgroundImage: 'url(/palm-bg.jpg)',
           backgroundSize: 'cover',
-          backgroundPosition: 'center center',
-          opacity: 0.22,
+          backgroundPosition: 'center bottom',
+          opacity: 0.18,
         }}
       />
 
@@ -979,10 +979,10 @@ function CtaSection() {
       <div
         className="absolute inset-0 pointer-events-none select-none"
         style={{
-          backgroundImage: 'url(/palm-bg.jpg)',
+          backgroundImage: 'url(/palm-leaves-bg.jpg)',
           backgroundSize: 'cover',
-          backgroundPosition: 'center 30%',
-          opacity: 0.20,
+          backgroundPosition: 'center center',
+          opacity: 0.15,
         }}
       />
       {/* Colour blobs */}

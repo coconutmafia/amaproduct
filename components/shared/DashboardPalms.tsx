@@ -11,7 +11,7 @@ export function DashboardPalms() {
       <div
         className="absolute bottom-0 left-0 w-72 h-96"
         style={{
-          backgroundImage: 'url(/palm-bg.jpg)',
+          backgroundImage: 'url(/palm-leaves-bg.jpg)',
           backgroundSize: 'cover',
           backgroundPosition: 'center bottom',
           opacity: 0.12,
@@ -23,7 +23,7 @@ export function DashboardPalms() {
       <div
         className="absolute bottom-0 right-0 w-72 h-96"
         style={{
-          backgroundImage: 'url(/palm-bg.jpg)',
+          backgroundImage: 'url(/palm-leaves-bg.jpg)',
           backgroundSize: 'cover',
           backgroundPosition: 'center bottom',
           opacity: 0.12,
@@ -39,7 +39,7 @@ export function DashboardPalms() {
           backgroundImage: 'url(/palm-leaves-bg.jpg)',
           backgroundSize: 'cover',
           backgroundPosition: 'center center',
-          opacity: 0.08,
+          opacity: 0.10,
           maskImage: 'linear-gradient(to bottom left, rgba(0,0,0,1) 20%, transparent 80%)',
           WebkitMaskImage: 'linear-gradient(to bottom left, rgba(0,0,0,1) 20%, transparent 80%)',
         }}
