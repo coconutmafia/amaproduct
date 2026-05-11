@@ -195,6 +195,94 @@
   -webkit-text-stroke: 3px #D44E7E;
 }
 
+/* ── Animation keyframes ──────────────────────────────────────────────────── */
+@keyframes float {
+  0%, 100% { transform: translateY(0px) scale(1); }
+  40% { transform: translateY(-22px) scale(1.02); }
+  70% { transform: translateY(12px) scale(0.98); }
+}
+@keyframes float-reverse {
+  0%, 100% { transform: translateY(0px) scale(1); }
+  35% { transform: translateY(18px) scale(0.98); }
+  65% { transform: translateY(-28px) scale(1.03); }
+}
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes pulse-ring {
+  0% { transform: scale(0.85); opacity: 0.8; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* Animation utility classes */
+.animate-float { animation: float 7s ease-in-out infinite; }
+.animate-float-reverse { animation: float-reverse 9s ease-in-out infinite; }
+.animate-float-slow { animation: float 12s ease-in-out infinite; }
+.animate-spin-slow { animation: spin-slow 20s linear infinite; }
+.animate-marquee { animation: marquee 20s linear infinite; }
+
+/* Animated gradient background */
+.gradient-animated {
+  background: linear-gradient(135deg, #F5A84A, #E86BA0, #D44E7E, #FF6B35, #F5A84A);
+  background-size: 400% 400%;
+  animation: gradient-shift 5s ease infinite;
+}
+
+/* Shimmer text */
+.shimmer-text {
+  background: linear-gradient(90deg, #F5A84A 0%, #E86BA0 30%, #ffffff 50%, #E86BA0 70%, #F5A84A 100%);
+  background-size: 250% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 4s linear infinite;
+}
+
+/* Noise texture overlay */
+.noise::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* Dot grid pattern */
+.dot-grid {
+  background-image: radial-gradient(circle, #C5CBA5 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* Glassmorphism card */
+.glass {
+  background: rgba(255,255,255,0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(197,203,165,0.5);
+}
+
+/* 3D card transition */
+.card-3d {
+  transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
 /* Phase indicator colors */
 .phase-awareness { color: #60A5FA; }
 .phase-trust { color: #34D399; }

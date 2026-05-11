@@ -1,15 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import {
-  ArrowRight, Check, Minus, Star, Sparkles, Zap,
-  BookOpen, Calendar, Mic2, ChevronRight, Menu, X,
+  Check, Minus, Star, Sparkles, Zap,
+  BookOpen, Calendar, Mic2, ChevronRight, Menu, X, ArrowRight,
 } from 'lucide-react'
+import {
+  motion, useInView, useMotionValue, useSpring,
+  useTransform, animate, AnimatePresence,
+} from 'framer-motion'
 
 // ── Валюты ───────────────────────────────────────────────────────────────────
 type Currency = 'RUB' | 'USD' | 'EUR'
-
 const CURRENCY_CONFIG: Record<Currency, { symbol: string; prices: [number, number, number] }> = {
   RUB: { symbol: '₽', prices: [0, 2990, 5990] },
   USD: { symbol: '$', prices: [0, 29, 59] },
@@ -68,7 +71,6 @@ const PLANS = [
   },
 ]
 
-// ── Отзывы ───────────────────────────────────────────────────────────────────
 const REVIEWS = [
   {
     name: 'Анна К.',
@@ -93,185 +95,359 @@ const REVIEWS = [
   },
 ]
 
-// ── Кнопка CTA ────────────────────────────────────────────────────────────────
-function GradientButton({
-  href,
-  children,
-  className = '',
-}: {
-  href: string
-  children: React.ReactNode
-  className?: string
-}) {
+// ── Утилиты анимаций ──────────────────────────────────────────────────────────
+const EASE = [0.22, 1, 0.36, 1] as [number, number, number, number]
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 40 },
+  visible: (i = 0) => ({
+    opacity: 1, y: 0,
+    transition: { delay: i * 0.1, duration: 0.6, ease: EASE },
+  }),
+}
+
+const stagger = {
+  visible: { transition: { staggerChildren: 0.08 } },
+}
+
+function RevealSection({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  const ref = useRef(null)
+  const inView = useInView(ref, { once: true, margin: '-80px' })
   return (
-    <Link
-      href={href}
-      className={`inline-flex items-center gap-2 px-8 h-14 rounded-[50px] gradient-accent text-white font-bold uppercase text-sm tracking-wide hover:opacity-90 transition-opacity shadow-lg hover:shadow-xl ${className}`}
+    <motion.div
+      ref={ref}
+      initial="hidden"
+      animate={inView ? 'visible' : 'hidden'}
+      variants={stagger}
+      className={className}
     >
       {children}
-      <ChevronRight className="h-4 w-4" />
-    </Link>
+    </motion.div>
   )
 }
 
-// ── Компонент лейбла секции ───────────────────────────────────────────────────
+// ── Анимированный счётчик ─────────────────────────────────────────────────────
+function AnimatedCounter({ value, suffix = '' }: { value: number; suffix?: string }) {
+  const ref = useRef(null)
+  const inView = useInView(ref, { once: true })
+  const motionVal = useMotionValue(0)
+  const [display, setDisplay] = useState('0')
+
+  useEffect(() => {
+    if (!inView) return
+    const controls = animate(motionVal, value, {
+      duration: 2.2,
+      ease: 'easeOut',
+      onUpdate: (v) => setDisplay(Math.round(v).toLocaleString('ru-RU')),
+    })
+    return controls.stop
+  }, [inView, value, motionVal])
+
+  return <span ref={ref}>{display}{suffix}</span>
+}
+
+// ── 3D-наклон карточки ────────────────────────────────────────────────────────
+function TiltCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const x = useMotionValue(0)
+  const y = useMotionValue(0)
+  const rotateX = useSpring(useTransform(y, [-0.5, 0.5], [6, -6]), { stiffness: 300, damping: 30 })
+  const rotateY = useSpring(useTransform(x, [-0.5, 0.5], [-6, 6]), { stiffness: 300, damping: 30 })
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!ref.current) return
+    const rect = ref.current.getBoundingClientRect()
+    x.set((e.clientX - rect.left) / rect.width - 0.5)
+    y.set((e.clientY - rect.top) / rect.height - 0.5)
+  }, [x, y])
+
+  const handleMouseLeave = useCallback(() => {
+    x.set(0); y.set(0)
+  }, [x, y])
+
+  return (
+    <motion.div
+      ref={ref}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      style={{ rotateX, rotateY, transformStyle: 'preserve-3d' }}
+      whileHover={{ scale: 1.02 }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  )
+}
+
+// ── Кнопка CTA ────────────────────────────────────────────────────────────────
+function GradientButton({ href, children, className = '', large = false }: {
+  href: string; children: React.ReactNode; className?: string; large?: boolean
+}) {
+  return (
+    <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
+      <Link
+        href={href}
+        className={`inline-flex items-center gap-2 ${large ? 'px-9 h-16 text-base' : 'px-8 h-14 text-sm'} rounded-[50px] gradient-accent text-white font-bold uppercase tracking-wide hover:opacity-95 transition-opacity shadow-lg shadow-[#E86BA0]/30 hover:shadow-xl hover:shadow-[#E86BA0]/40 ${className}`}
+      >
+        {children}
+        <ChevronRight className={large ? 'h-5 w-5' : 'h-4 w-4'} />
+      </Link>
+    </motion.div>
+  )
+}
+
+// ── Лейбл секции ─────────────────────────────────────────────────────────────
 function SectionLabel({ children }: { children: string }) {
   return (
-    <div className="flex items-center justify-center gap-3 mb-5">
+    <motion.div variants={fadeUp} className="flex items-center justify-center gap-3 mb-5">
       <div className="h-px w-10" style={{ background: 'linear-gradient(135deg, #F5A84A, #E86BA0)' }} />
-      <span className="text-[11px] font-semibold tracking-[0.18em] uppercase gradient-text">
-        {children}
-      </span>
+      <span className="text-[11px] font-bold tracking-[0.18em] uppercase gradient-text">{children}</span>
       <div className="h-px w-10" style={{ background: 'linear-gradient(135deg, #F5A84A, #E86BA0)' }} />
-    </div>
+    </motion.div>
   )
 }
 
 // ── Navbar ────────────────────────────────────────────────────────────────────
 function Navbar() {
   const [open, setOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 20)
+    window.addEventListener('scroll', onScroll)
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 border-b border-[#EBEBEB] bg-white/95 backdrop-blur-sm">
-      <div className="max-w-6xl mx-auto px-5 h-14 flex items-center justify-between">
-        {/* Logo */}
-        <span className="text-lg font-black text-[#1A1A1A] tracking-tight">AMA</span>
+    <motion.header
+      initial={{ y: -80, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ duration: 0.6, ease: EASE }}
+      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        scrolled
+          ? 'bg-white/85 backdrop-blur-xl border-b border-[#C5CBA5]/60 shadow-sm'
+          : 'bg-transparent'
+      }`}
+    >
+      <div className="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between">
+        <motion.span
+          whileHover={{ scale: 1.05 }}
+          className="text-xl font-black text-[#1A1A1A] tracking-tight cursor-default"
+        >
+          AMA<span className="gradient-text">product</span>
+        </motion.span>
 
-        {/* Desktop nav */}
-        <nav className="hidden md:flex items-center gap-7">
+        <nav className="hidden md:flex items-center gap-8">
           {[['Возможности', '#features'], ['Процесс', '#process'], ['Тарифы', '#pricing']].map(([label, href]) => (
-            <a key={href} href={href} className="text-sm text-[#444444] hover:text-[#1A1A1A] transition-colors">
+            <a key={href} href={href} className="text-sm text-[#555] hover:text-[#1A1A1A] transition-colors font-medium">
               {label}
             </a>
           ))}
         </nav>
 
-        {/* CTAs */}
         <div className="hidden md:flex items-center gap-3">
-          <Link href="/login" className="text-sm text-[#888888] hover:text-[#1A1A1A] transition-colors">
+          <Link href="/login" className="text-sm text-[#888] hover:text-[#1A1A1A] transition-colors font-medium">
             Войти
           </Link>
-          <Link
-            href="/register"
-            className="h-9 px-5 rounded-[50px] text-sm font-bold uppercase text-white gradient-accent hover:opacity-90 transition-opacity flex items-center gap-1"
-          >
-            Попробовать бесплатно <ChevronRight className="h-3.5 w-3.5" />
-          </Link>
-        </div>
-
-        {/* Mobile burger */}
-        <button className="md:hidden text-[#444444]" onClick={() => setOpen(!open)}>
-          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
-      </div>
-
-      {/* Mobile menu */}
-      {open && (
-        <div className="md:hidden border-t border-[#EBEBEB] bg-white px-5 py-4 space-y-3">
-          {[['Возможности', '#features'], ['Процесс', '#process'], ['Тарифы', '#pricing']].map(([label, href]) => (
-            <a key={href} href={href} className="block text-sm text-[#444444] py-1" onClick={() => setOpen(false)}>
-              {label}
-            </a>
-          ))}
-          <div className="pt-2 flex flex-col gap-2">
-            <Link href="/login" className="text-sm text-[#888888] py-1">Войти</Link>
+          <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
             <Link
               href="/register"
-              className="h-11 w-full rounded-[50px] text-sm font-bold uppercase text-white gradient-accent flex items-center justify-center gap-1"
+              className="h-10 px-5 rounded-[50px] text-sm font-bold uppercase text-white gradient-accent hover:opacity-90 transition-opacity flex items-center gap-1 shadow-md shadow-[#E86BA0]/25"
             >
               Попробовать бесплатно <ChevronRight className="h-3.5 w-3.5" />
             </Link>
-          </div>
+          </motion.div>
         </div>
-      )}
-    </header>
+
+        <motion.button
+          whileTap={{ scale: 0.9 }}
+          className="md:hidden text-[#444]"
+          onClick={() => setOpen(!open)}
+        >
+          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </motion.button>
+      </div>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="md:hidden border-t border-[#C5CBA5]/60 bg-white/95 backdrop-blur-xl px-5 py-4 space-y-3"
+          >
+            {[['Возможности', '#features'], ['Процесс', '#process'], ['Тарифы', '#pricing']].map(([label, href]) => (
+              <a key={href} href={href} className="block text-sm text-[#444] py-1" onClick={() => setOpen(false)}>
+                {label}
+              </a>
+            ))}
+            <div className="pt-2 flex flex-col gap-2">
+              <Link href="/login" className="text-sm text-[#888] py-1">Войти</Link>
+              <Link href="/register" className="h-12 w-full rounded-[50px] text-sm font-bold uppercase text-white gradient-accent flex items-center justify-center gap-1">
+                Попробовать бесплатно <ChevronRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.header>
   )
 }
 
 // ── Hero ──────────────────────────────────────────────────────────────────────
 function HeroSection() {
-  return (
-    <section className="relative pt-36 pb-28 px-5 text-center overflow-hidden bg-white">
-      {/* Decorative gradient blobs */}
-      <div
-        className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full opacity-20 blur-3xl pointer-events-none"
-        style={{ background: 'radial-gradient(circle, #F5A84A 0%, transparent 70%)' }}
-      />
-      <div
-        className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full opacity-15 blur-3xl pointer-events-none"
-        style={{ background: 'radial-gradient(circle, #D44E7E 0%, transparent 70%)' }}
-      />
+  const mouseX = useMotionValue(0.5)
+  const mouseY = useMotionValue(0.5)
+  const spotX = useSpring(useTransform(mouseX, [0, 1], ['-10%', '10%']), { stiffness: 50, damping: 20 })
+  const spotY = useSpring(useTransform(mouseY, [0, 1], ['-10%', '10%']), { stiffness: 50, damping: 20 })
 
-      <div className="relative max-w-4xl mx-auto space-y-7">
+  const handleMouseMove = (e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    mouseX.set(e.clientX / rect.width)
+    mouseY.set(e.clientY / rect.height)
+  }
+
+  const words = ['Твой', 'личный', 'AI', 'SMM-щик']
+
+  return (
+    <section
+      className="relative pt-36 pb-28 px-5 text-center overflow-hidden bg-white"
+      onMouseMove={handleMouseMove}
+    >
+      {/* Dot grid background */}
+      <div className="absolute inset-0 dot-grid opacity-40 pointer-events-none" />
+
+      {/* Floating blobs */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <motion.div
+          className="absolute -top-32 -right-32 w-[600px] h-[600px] rounded-full animate-float"
+          style={{
+            background: 'radial-gradient(circle at center, #F5A84A40 0%, #E86BA020 50%, transparent 70%)',
+            x: spotX, y: spotY,
+          }}
+        />
+        <motion.div
+          className="absolute -bottom-32 -left-32 w-[500px] h-[500px] rounded-full animate-float-reverse"
+          style={{
+            background: 'radial-gradient(circle at center, #D44E7E35 0%, #E86BA015 50%, transparent 70%)',
+          }}
+        />
+        {/* Spinning ring */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[900px] rounded-full border border-[#C5CBA5]/20 animate-spin-slow pointer-events-none" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full border border-[#E86BA0]/10 animate-spin-slow pointer-events-none" style={{ animationDirection: 'reverse', animationDuration: '30s' }} />
+      </div>
+
+      <div className="relative max-w-4xl mx-auto space-y-8">
         {/* Badge */}
-        <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full text-xs font-bold uppercase tracking-widest text-white gradient-accent shadow-lg">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.1, duration: 0.5, type: 'spring', stiffness: 200 }}
+          className="inline-flex items-center gap-2 px-5 py-2 rounded-full text-xs font-bold uppercase tracking-wider text-white gradient-animated shadow-lg shadow-[#E86BA0]/30"
+        >
           <Sparkles className="h-3.5 w-3.5" />
           AI-ассистент для запусков
-        </div>
+        </motion.div>
 
-        {/* Headline */}
-        <h1 className="text-6xl sm:text-7xl lg:text-[5.5rem] font-black text-[#1A1A1A] leading-[1.05] tracking-tight uppercase">
-          Твой личный{' '}
-          <span className="gradient-text">AI SMM-щик</span>
-          ,<br />который пишет как ты
-        </h1>
+        {/* Headline — word by word */}
+        <div className="space-y-2">
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            variants={{ visible: { transition: { staggerChildren: 0.12, delayChildren: 0.3 } } }}
+            className="flex flex-wrap justify-center gap-x-4 gap-y-1"
+          >
+            {words.map((word) => (
+              <motion.span
+                key={word}
+                variants={{
+                  hidden: { opacity: 0, y: 60, rotateX: -40 },
+                  visible: { opacity: 1, y: 0, rotateX: 0, transition: { duration: 0.7, ease: EASE } },
+                }}
+                className={`text-6xl sm:text-7xl lg:text-[5.5rem] font-black uppercase leading-none tracking-tight ${
+                  word === 'AI' ? 'gradient-text' : word === 'SMM-щик' ? 'text-outline-lg' : 'text-[#1A1A1A]'
+                }`}
+                style={{ display: 'inline-block', transformOrigin: 'bottom' }}
+              >
+                {word}
+              </motion.span>
+            ))}
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.9, duration: 0.7, ease: EASE }}
+            className="text-5xl sm:text-6xl lg:text-7xl font-black uppercase leading-none tracking-tight text-[#1A1A1A]"
+          >
+            который пишет{' '}
+            <span className="gradient-text">как ты</span>
+          </motion.div>
+        </div>
 
         {/* Sub */}
-        <p className="text-xl sm:text-2xl text-[#444444] max-w-2xl mx-auto leading-relaxed">
-          AMA изучает твой голос, нишу и аудиторию — и создаёт контент, который звучит именно как ты. План прогрева за 8 минут. Посты, рилсы, сториз — одним кликом.
-        </p>
+        <motion.p
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.1, duration: 0.6 }}
+          className="text-[#555] text-xl sm:text-2xl max-w-2xl mx-auto leading-relaxed"
+        >
+          AMA изучает твой голос, нишу и аудиторию — и создаёт контент,
+          который звучит именно как ты. Plan прогрева за{' '}
+          <span className="font-bold text-[#1A1A1A]">8 минут</span>.
+        </motion.p>
 
         {/* CTAs */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-3">
-          <GradientButton href="/register" className="w-full sm:w-auto justify-center">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.3, duration: 0.6 }}
+          className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2"
+        >
+          <GradientButton href="/register" large>
             Попробовать бесплатно
           </GradientButton>
-          <a
+          <motion.a
             href="#features"
-            className="h-14 px-8 w-full sm:w-auto justify-center rounded-[50px] font-semibold text-[#444444] border border-[#EBEBEB] hover:border-[#C5CBA5] hover:text-[#1A1A1A] transition-all flex items-center gap-2 text-sm"
+            whileHover={{ scale: 1.03, borderColor: '#C5CBA5' }}
+            whileTap={{ scale: 0.97 }}
+            className="h-16 px-9 w-full sm:w-auto justify-center rounded-[50px] font-bold text-[#444] border-2 border-[#E8E8E8] hover:border-[#C5CBA5] hover:text-[#1A1A1A] transition-colors flex items-center gap-2 text-sm uppercase tracking-wide"
           >
             Смотреть демо
-          </a>
-        </div>
+          </motion.a>
+        </motion.div>
+
+        {/* Trust strip */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1.5 }}
+          className="flex items-center justify-center gap-6 text-xs text-[#888] pt-2"
+        >
+          <span className="flex items-center gap-1.5">✓ Бесплатно</span>
+          <span className="w-px h-4 bg-[#E0E0E0]" />
+          <span className="flex items-center gap-1.5">✓ Без карты</span>
+          <span className="w-px h-4 bg-[#E0E0E0]" />
+          <span className="flex items-center gap-1.5">✓ Первый план за 8 мин</span>
+        </motion.div>
       </div>
     </section>
   )
 }
 
-// ── Social proof ──────────────────────────────────────────────────────────────
-function SocialProofBar() {
-  const AVATARS = [
-    { l: 'А' },
-    { l: 'М' },
-    { l: 'О' },
-    { l: 'Н' },
-    { l: 'К' },
-  ]
+// ── Бегущая строка ────────────────────────────────────────────────────────────
+function MarqueeBar() {
+  const items = ['AI SMM-щик', 'Контент-план', 'Прогрев', 'Рилсы', 'Сториз', 'Посты', 'Карусели', 'Голос бренда']
+  const repeated = [...items, ...items]
+
   return (
-    <div className="border-y border-[#C5CBA5] py-5 px-5 bg-[#FAFAF8]">
-      <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-5 sm:gap-8">
-        <div className="flex items-center gap-2">
-          <div className="flex -space-x-2">
-            {AVATARS.map((a, i) => (
-              <div
-                key={i}
-                className="w-9 h-9 rounded-full gradient-accent flex items-center justify-center text-[11px] font-bold text-white ring-2 ring-white"
-              >
-                {a.l}
-              </div>
-            ))}
-          </div>
-          <span className="text-sm text-[#888888]">
-            Уже используют <span className="text-[#1A1A1A] font-semibold">2 847</span> экспертов
+    <div className="border-y border-[#C5CBA5]/60 bg-[#FAFAF8] py-3 overflow-hidden">
+      <div className="flex gap-0 animate-marquee whitespace-nowrap" style={{ width: 'max-content' }}>
+        {repeated.map((item, i) => (
+          <span key={i} className="inline-flex items-center gap-3 px-6 text-sm font-semibold uppercase tracking-widest text-[#888]">
+            <span className="w-1.5 h-1.5 rounded-full gradient-accent inline-block" />
+            {item}
           </span>
-        </div>
-        <div className="h-px w-px sm:h-4 sm:w-px bg-[#C5CBA5] hidden sm:block" />
-        <div className="flex items-center gap-1.5">
-          {[...Array(5)].map((_, i) => (
-            <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
-          ))}
-          <span className="text-sm text-[#888888] ml-1">4.9 из 5 · 312 отзывов</span>
-        </div>
+        ))}
       </div>
     </div>
   )
@@ -280,22 +456,23 @@ function SocialProofBar() {
 // ── Stats ─────────────────────────────────────────────────────────────────────
 function StatsSection() {
   const STATS = [
-    { value: '2 847', label: 'экспертов уже используют', suffix: '+' },
-    { value: '8', label: 'минут на первый план прогрева', suffix: '' },
-    { value: '47', label: 'минут экономится каждый день', suffix: '' },
+    { value: 2847, suffix: '+', label: 'экспертов уже используют' },
+    { value: 8, suffix: '', label: 'минут на первый план прогрева' },
+    { value: 47, suffix: '', label: 'минут экономится каждый день' },
   ]
+
   return (
-    <section className="py-20 px-5 bg-[#FAFAF8] border-y border-[#C5CBA5]">
-      <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[#C5CBA5]">
+    <section className="py-24 px-5 bg-white border-b border-[#C5CBA5]/50">
+      <RevealSection className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[#C5CBA5]/50">
         {STATS.map((s, i) => (
-          <div key={i} className="py-10 sm:py-0 px-8 text-center first:pt-0 last:pb-0">
-            <div className="text-6xl sm:text-7xl font-black gradient-text leading-none">
-              {s.value}{s.suffix}
+          <motion.div key={i} variants={fadeUp} custom={i} className="py-12 sm:py-0 px-10 text-center first:pt-0 last:pb-0">
+            <div className="text-6xl sm:text-7xl font-black gradient-text leading-none mb-3">
+              <AnimatedCounter value={s.value} suffix={s.suffix} />
             </div>
-            <div className="text-sm text-[#888888] mt-3 max-w-[180px] mx-auto">{s.label}</div>
-          </div>
+            <div className="text-sm text-[#888] max-w-[200px] mx-auto leading-snug">{s.label}</div>
+          </motion.div>
         ))}
-      </div>
+      </RevealSection>
     </section>
   )
 }
@@ -309,18 +486,28 @@ function ProblemSection() {
   ]
 
   return (
-    <section className="py-28 px-5 bg-white">
+    <section className="py-28 px-5 bg-[#FAFAF8] border-b border-[#C5CBA5]/50">
       <div className="max-w-2xl mx-auto">
-        <SectionLabel>Проблема</SectionLabel>
-        <h2 className="text-4xl sm:text-5xl font-black text-[#1A1A1A] text-center mb-12 uppercase">Знакомо?</h2>
-        <div className="space-y-4">
-          {PAINS.map((p, i) => (
-            <div key={i} className="flex items-center gap-5 p-6 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all">
-              <span className="text-3xl shrink-0">{p.emoji}</span>
-              <p className="text-base font-medium text-[#444444]">{p.text}</p>
-            </div>
-          ))}
-        </div>
+        <RevealSection>
+          <SectionLabel>Проблема</SectionLabel>
+          <motion.h2 variants={fadeUp} className="text-4xl sm:text-5xl font-black text-[#1A1A1A] text-center mb-12 uppercase leading-tight">
+            Узнаёшь себя?
+          </motion.h2>
+          <div className="space-y-4">
+            {PAINS.map((p, i) => (
+              <TiltCard key={i}>
+                <motion.div
+                  variants={fadeUp}
+                  custom={i}
+                  className="flex items-center gap-5 p-7 rounded-2xl bg-white border border-[#C5CBA5] shadow-md cursor-default"
+                >
+                  <span className="text-4xl shrink-0">{p.emoji}</span>
+                  <p className="text-base font-medium text-[#444]">{p.text}</p>
+                </motion.div>
+              </TiltCard>
+            ))}
+          </div>
+        </RevealSection>
       </div>
     </section>
   )
@@ -329,41 +516,50 @@ function ProblemSection() {
 // ── Solution ──────────────────────────────────────────────────────────────────
 function SolutionSection() {
   return (
-    <section className="py-28 px-5 bg-white border-t border-[#C5CBA5]">
+    <section className="py-28 px-5 bg-white border-b border-[#C5CBA5]/50">
       <div className="max-w-4xl mx-auto">
-        <SectionLabel>Решение</SectionLabel>
-        <h2 className="text-4xl sm:text-5xl lg:text-6xl font-black text-[#1A1A1A] text-center mb-3 leading-tight uppercase">
-          AMA знает твою нишу, твою аудиторию, твой стиль.
-        </h2>
-        <p className="text-xl sm:text-2xl font-bold text-center gradient-text mb-14">
-          И пишет контент, который звучит именно как ты.
-        </p>
+        <RevealSection>
+          <SectionLabel>Решение</SectionLabel>
+          <motion.h2 variants={fadeUp} className="text-4xl sm:text-5xl lg:text-6xl font-black text-[#1A1A1A] text-center mb-4 leading-tight uppercase">
+            AMA знает твою нишу,<br />аудиторию, стиль.
+          </motion.h2>
+          <motion.p variants={fadeUp} className="text-2xl sm:text-3xl font-bold text-center gradient-text mb-14">
+            И пишет именно как ты.
+          </motion.p>
 
-        {/* Comparison */}
-        <div className="grid sm:grid-cols-2 gap-5">
-          <div className="p-7 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-4 shadow-lg h-full">
-            <p className="text-xs font-bold text-red-500 uppercase tracking-wider flex items-center gap-1.5">
-              <X className="h-3.5 w-3.5" /> Без AMA
-            </p>
-            {['Часами смотришь в пустой экран', 'Контент-план теряется в заметках', 'Нейросеть пишет "не своим голосом"', 'Каждый запуск — стресс с нуля'].map((t, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <Minus className="h-4 w-4 text-[#C5CBA5] mt-0.5 shrink-0" />
-                <span className="text-sm text-[#888888]">{t}</span>
-              </div>
-            ))}
+          <div className="grid sm:grid-cols-2 gap-5">
+            <TiltCard>
+              <motion.div variants={fadeUp} className="p-8 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] h-full shadow-md">
+                <p className="text-xs font-bold text-red-400 uppercase tracking-widest flex items-center gap-2 mb-5">
+                  <X className="h-3.5 w-3.5" /> Без AMA
+                </p>
+                <div className="space-y-3">
+                  {['Часами смотришь в пустой экран', 'Контент-план теряется в заметках', 'Нейросеть пишет не своим голосом', 'Каждый запуск — стресс с нуля'].map((t, i) => (
+                    <div key={i} className="flex items-start gap-3">
+                      <Minus className="h-4 w-4 text-[#C5CBA5] mt-0.5 shrink-0" />
+                      <span className="text-sm text-[#888]">{t}</span>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            </TiltCard>
+            <TiltCard>
+              <motion.div variants={fadeUp} custom={1} className="p-8 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] h-full shadow-md">
+                <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest flex items-center gap-2 mb-5">
+                  <Check className="h-3.5 w-3.5" /> С AMA
+                </p>
+                <div className="space-y-3">
+                  {['Контент за 20 минут в твоём голосе', 'Чёткий план по 4 фазам прогрева', 'AI помнит всё о тебе и аудитории', 'Каждый запуск — система, не хаос'].map((t, i) => (
+                    <div key={i} className="flex items-start gap-3">
+                      <Check className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
+                      <span className="text-sm text-[#444]">{t}</span>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            </TiltCard>
           </div>
-          <div className="p-7 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-4 shadow-lg h-full">
-            <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1.5">
-              <Check className="h-3.5 w-3.5" /> С AMA
-            </p>
-            {['Контент за 20 минут в твоём голосе', 'Чёткий план по 4 фазам прогрева', 'AI помнит всё о тебе и твоей аудитории', 'Каждый запуск — система, а не хаос'].map((t, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <Check className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
-                <span className="text-sm text-[#444444]">{t}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        </RevealSection>
       </div>
     </section>
   )
@@ -373,17 +569,15 @@ function SolutionSection() {
 function FeaturesSection() {
   const PHASES = [
     { label: 'Нишу', color: '#F5A84A', width: '65%' },
-    { label: 'Эксперта', color: '#E86BA0', width: '75%' },
+    { label: 'Эксперта', color: '#E86BA0', width: '78%' },
     { label: 'Продукт', color: '#D44E7E', width: '60%' },
     { label: 'Возражения', color: '#F5A84A', width: '45%' },
   ]
-
   const CALENDAR_COLORS = [
     '#FDE9CE', '#FDE9CE', '#FDE9CE', '#FADADF', '#FADADF', '#FADADF',
     '#FADADF', '#F9C8D8', '#F9C8D8', '#F9C8D8', '#F9C8D8', '#FDE9CE',
     '#FDE9CE', '#FDE9CE',
   ]
-
   const FILES = [
     { emoji: '🧠', name: 'Распаковка личности', done: true },
     { emoji: '🗂️', name: 'Карта смыслов', done: true },
@@ -391,106 +585,130 @@ function FeaturesSection() {
   ]
 
   return (
-    <section id="features" className="py-28 px-5 bg-white border-t border-[#C5CBA5]">
+    <section id="features" className="py-28 px-5 bg-[#FAFAF8] border-b border-[#C5CBA5]/50">
       <div className="max-w-5xl mx-auto">
-        <SectionLabel>Возможности</SectionLabel>
-        <h2 className="text-4xl sm:text-5xl font-black text-[#1A1A1A] text-center mb-14 uppercase">
-          Всё для запуска —<br />в{' '}
-          <span className="gradient-text">одном месте</span>
-        </h2>
+        <RevealSection>
+          <SectionLabel>Возможности</SectionLabel>
+          <motion.h2 variants={fadeUp} className="text-4xl sm:text-5xl font-black text-[#1A1A1A] text-center mb-14 uppercase">
+            Всё для запуска —<br className="hidden sm:block" />
+            в{' '}
+            <span className="gradient-text">одном месте</span>
+          </motion.h2>
 
-        <div className="grid sm:grid-cols-2 gap-5">
-          {/* Мастер прогрева */}
-          <div className="p-7 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-5 shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 mb-2 gradient-text">
-                <Zap className="h-3.5 w-3.5" /> Мастер прогрева
-              </p>
-              <p className="text-lg font-black text-[#1A1A1A]">План прогрева за 8 минут</p>
-            </div>
-            <div className="space-y-2.5">
-              {PHASES.map((p) => (
-                <div key={p.label} className="flex items-center gap-2">
-                  <span className="text-xs w-20 shrink-0 text-[#444444]">{p.label}</span>
-                  <div className="flex-1 h-2 rounded-full bg-[#EBEBEB]">
-                    <div
-                      className="h-full rounded-full gradient-accent"
-                      style={{ width: p.width }}
-                    />
+          <div className="grid sm:grid-cols-2 gap-5">
+            {/* Прогрев */}
+            <TiltCard>
+              <motion.div variants={fadeUp} className="p-8 rounded-2xl bg-white border border-[#C5CBA5] space-y-5 shadow-md h-full">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 mb-2 gradient-text">
+                    <Zap className="h-3 w-3" /> Мастер прогрева
+                  </p>
+                  <p className="text-lg font-black text-[#1A1A1A]">План прогрева за 8 минут</p>
+                </div>
+                <div className="space-y-2.5">
+                  {PHASES.map((p) => (
+                    <div key={p.label} className="flex items-center gap-3">
+                      <span className="text-xs w-24 shrink-0 text-[#555]">{p.label}</span>
+                      <div className="flex-1 h-2.5 rounded-full bg-[#F0F0F0]">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          whileInView={{ width: p.width }}
+                          viewport={{ once: true }}
+                          transition={{ duration: 1.2, ease: 'easeOut', delay: 0.3 }}
+                          className="h-full rounded-full gradient-accent"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-[#888]">AI собирает стратегию из твоих материалов, продукта и воронки.</p>
+              </motion.div>
+            </TiltCard>
+
+            {/* Голос */}
+            <TiltCard>
+              <motion.div variants={fadeUp} custom={1} className="p-8 rounded-2xl bg-white border border-[#C5CBA5] space-y-5 shadow-md h-full">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 mb-2 gradient-text">
+                    <Mic2 className="h-3 w-3" /> Голос
+                  </p>
+                  <p className="text-lg font-black text-[#1A1A1A]">Пишет в твоём голосе</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="flex-1 px-4 py-3 rounded-xl bg-[#FAFAF8] border border-[#E0E0E0] text-xs text-[#888]">
+                    Хочу рассказать про осознанность и как она помогает...
+                  </div>
+                  <ArrowRight className="h-5 w-5 mt-3 shrink-0" style={{ color: '#E86BA0' }} />
+                  <div className="flex-1 px-4 py-3 rounded-xl bg-white border border-[#C5CBA5] text-xs text-[#444]">
+                    Год назад я выгорела настолько, что не могла открыть ноутбук. Именно тогда я поняла...
                   </div>
                 </div>
-              ))}
-            </div>
-            <p className="text-xs text-[#888888]">AI собирает стратегию из твоих материалов, продукта и воронки.</p>
-          </div>
+                <p className="text-xs text-[#888]">Загружаешь распаковку, кейсы, Tone of Voice — AI запоминает как ты думаешь.</p>
+              </motion.div>
+            </TiltCard>
 
-          {/* Голос */}
-          <div className="p-7 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-5 shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 mb-2 gradient-text">
-                <Mic2 className="h-3.5 w-3.5" /> Голос
-              </p>
-              <p className="text-lg font-black text-[#1A1A1A]">Пишет в твоём голосе</p>
-            </div>
-            <div className="flex items-start gap-3">
-              <div className="flex-1 px-3 py-2 rounded-xl bg-white border border-[#EBEBEB] text-xs text-[#888888]">
-                Хочу рассказать про осознанность и как она помогает...
-              </div>
-              <ArrowRight className="h-4 w-4 mt-2 shrink-0" style={{ color: '#E86BA0' }} />
-              <div className="flex-1 px-3 py-2 rounded-xl bg-white border border-[#C5CBA5] text-xs text-[#444444]">
-                Год назад я выгорела настолько, что не могла открыть ноутбук. Именно тогда я поняла...
-              </div>
-            </div>
-            <p className="text-xs text-[#888888]">Загружаешь распаковку, кейсы, Tone of Voice — AI запоминает как ты думаешь.</p>
-          </div>
-
-          {/* Контент-план */}
-          <div className="p-7 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-5 shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 mb-2 gradient-text">
-                <Calendar className="h-3.5 w-3.5" /> Планирование
-              </p>
-              <p className="text-lg font-black text-[#1A1A1A]">Контент-план на каждый день</p>
-            </div>
-            <div className="grid grid-cols-7 gap-1">
-              {CALENDAR_COLORS.map((c, i) => (
-                <div
-                  key={i}
-                  className="aspect-square rounded-md flex items-center justify-center"
-                  style={{ backgroundColor: c }}
-                >
-                  <span className="text-[9px] font-bold text-[#888888]">{i + 2}</span>
+            {/* Контент-план */}
+            <TiltCard>
+              <motion.div variants={fadeUp} custom={2} className="p-8 rounded-2xl bg-white border border-[#C5CBA5] space-y-5 shadow-md h-full">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 mb-2 gradient-text">
+                    <Calendar className="h-3 w-3" /> Планирование
+                  </p>
+                  <p className="text-lg font-black text-[#1A1A1A]">Контент-план на каждый день</p>
                 </div>
-              ))}
-            </div>
-            <p className="text-xs text-[#888888]">Расписание по дням с конкретными смыслами. Нажми на день — получи готовый контент.</p>
-          </div>
-
-          {/* База знаний */}
-          <div className="p-7 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] space-y-5 shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 mb-2 gradient-text">
-                <BookOpen className="h-3.5 w-3.5" /> База знаний
-              </p>
-              <p className="text-lg font-black text-[#1A1A1A]">База знаний проекта</p>
-            </div>
-            <div className="space-y-2">
-              {FILES.map((f, i) => (
-                <div key={i} className="flex items-center justify-between px-3 py-3 rounded-xl bg-white border border-[#EBEBEB]">
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-base">{f.emoji}</span>
-                    <span className="text-sm text-[#444444]">{f.name}</span>
-                  </div>
-                  {f.done
-                    ? <Check className="h-4 w-4 text-emerald-500" />
-                    : <div className="h-2 w-2 rounded-full" style={{ background: 'linear-gradient(135deg, #F5A84A, #E86BA0)' }} />
-                  }
+                <div className="grid grid-cols-7 gap-1.5">
+                  {CALENDAR_COLORS.map((c, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ scale: 0, opacity: 0 }}
+                      whileInView={{ scale: 1, opacity: 1 }}
+                      viewport={{ once: true }}
+                      transition={{ delay: i * 0.04, type: 'spring', stiffness: 300 }}
+                      className="aspect-square rounded-lg flex items-center justify-center"
+                      style={{ backgroundColor: c }}
+                    >
+                      <span className="text-[9px] font-bold text-[#888]">{i + 2}</span>
+                    </motion.div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <p className="text-xs text-[#888888]">AI помнит всё. Обновляй материалы — качество текстов растёт автоматически.</p>
+                <p className="text-xs text-[#888]">Расписание по дням с конкретными смыслами.</p>
+              </motion.div>
+            </TiltCard>
+
+            {/* База знаний */}
+            <TiltCard>
+              <motion.div variants={fadeUp} custom={3} className="p-8 rounded-2xl bg-white border border-[#C5CBA5] space-y-5 shadow-md h-full">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 mb-2 gradient-text">
+                    <BookOpen className="h-3 w-3" /> База знаний
+                  </p>
+                  <p className="text-lg font-black text-[#1A1A1A]">Умная база проекта</p>
+                </div>
+                <div className="space-y-2.5">
+                  {FILES.map((f, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ x: -20, opacity: 0 }}
+                      whileInView={{ x: 0, opacity: 1 }}
+                      viewport={{ once: true }}
+                      transition={{ delay: i * 0.15 + 0.2 }}
+                      className="flex items-center justify-between px-4 py-3 rounded-xl bg-[#FAFAF8] border border-[#E8E8E8]"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl">{f.emoji}</span>
+                        <span className="text-sm text-[#444]">{f.name}</span>
+                      </div>
+                      {f.done
+                        ? <Check className="h-4 w-4 text-emerald-500" />
+                        : <div className="h-2.5 w-2.5 rounded-full animate-pulse" style={{ background: 'linear-gradient(135deg, #F5A84A, #E86BA0)' }} />}
+                    </motion.div>
+                  ))}
+                </div>
+                <p className="text-xs text-[#888]">AI помнит всё. Качество текстов растёт автоматически.</p>
+              </motion.div>
+            </TiltCard>
           </div>
-        </div>
+        </RevealSection>
       </div>
     </section>
   )
@@ -501,60 +719,69 @@ function ProcessSection() {
   const STEPS = [
     {
       num: '01',
-      label: 'Шаги 1–3',
       icon: '☁️',
       title: 'Загрузи себя',
       desc: 'Загрузи распаковку личности, материалы о нише, кейсы клиентов. AMA изучит тебя и запомнит навсегда.',
     },
     {
       num: '02',
-      label: 'Шаги 4–6',
       icon: '📅',
       title: 'Создай план',
-      desc: 'Пройди 8-шаговый мастер прогрева. AI выстроит стратегию по 4 фазам специально под твой продукт и аудиторию.',
+      desc: 'Пройди 8-шаговый мастер прогрева. AI выстроит стратегию по 4 фазам специально под твой продукт.',
     },
     {
       num: '03',
-      label: 'Шаги 7–8',
       icon: '✨',
       title: 'Генерируй контент',
-      desc: 'Один клик — и у тебя готовый пост, рилс или сториз. Редактируй, одобряй, публикуй. AI учится на твоих правках.',
+      desc: 'Один клик — готовый пост, рилс или сториз. Редактируй, одобряй, публикуй. AI учится на правках.',
     },
   ]
 
   return (
-    <section id="process" className="py-28 px-5 bg-white border-t border-[#C5CBA5]">
+    <section id="process" className="py-28 px-5 bg-white border-b border-[#C5CBA5]/50">
       <div className="max-w-3xl mx-auto">
-        <SectionLabel>Процесс</SectionLabel>
-        <h2 className="text-4xl sm:text-5xl font-black text-[#1A1A1A] text-center mb-14 uppercase">
-          Запуск за <span className="gradient-text">3 шага</span>
-        </h2>
-        <div className="space-y-5">
-          {STEPS.map((s, i) => (
-            <div key={i} className="relative flex gap-6 p-7 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all">
-              <div className="shrink-0 flex flex-col items-center gap-1">
-                {/* Gradient number badge */}
-                <div
-                  className="w-14 h-14 rounded-full gradient-accent flex items-center justify-center text-white text-lg font-black shadow-lg"
-                >
-                  {s.num}
-                </div>
-                <span className="text-[10px] font-bold text-[#888888] mt-1">{s.label}</span>
-                {/* Connecting dotted line */}
-                {i < STEPS.length - 1 && (
-                  <div
-                    className="absolute left-[2.75rem] top-[5.5rem] w-px border-l-2 border-dashed border-[#C5CBA5]"
-                    style={{ height: 'calc(100% - 1rem)' }}
-                  />
-                )}
-              </div>
-              <div className="pt-2">
-                <h3 className="text-lg font-black text-[#1A1A1A] mb-2">{s.title}</h3>
-                <p className="text-sm text-[#888888] leading-relaxed">{s.desc}</p>
-              </div>
+        <RevealSection>
+          <SectionLabel>Процесс</SectionLabel>
+          <motion.h2 variants={fadeUp} className="text-4xl sm:text-5xl font-black text-[#1A1A1A] text-center mb-14 uppercase">
+            Запуск за <span className="gradient-text">3 шага</span>
+          </motion.h2>
+          <div className="relative">
+            {/* Connecting line */}
+            <motion.div
+              initial={{ scaleY: 0 }}
+              whileInView={{ scaleY: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 1.2, ease: 'easeInOut' }}
+              className="absolute left-7 top-7 bottom-7 w-px origin-top"
+              style={{ background: 'linear-gradient(180deg, #F5A84A, #E86BA0, #D44E7E)' }}
+            />
+            <div className="space-y-5">
+              {STEPS.map((s, i) => (
+                <TiltCard key={i}>
+                  <motion.div
+                    variants={fadeUp}
+                    custom={i}
+                    className="flex gap-6 p-7 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] shadow-md relative"
+                  >
+                    <div className="shrink-0 z-10">
+                      <motion.div
+                        whileHover={{ rotate: [0, -10, 10, 0] }}
+                        transition={{ duration: 0.4 }}
+                        className="w-14 h-14 rounded-full gradient-accent flex items-center justify-center text-white text-sm font-black shadow-lg shadow-[#E86BA0]/30"
+                      >
+                        {s.num}
+                      </motion.div>
+                    </div>
+                    <div>
+                      <h3 className="font-black text-lg text-[#1A1A1A] mb-2">{s.title}</h3>
+                      <p className="text-sm text-[#888] leading-relaxed">{s.desc}</p>
+                    </div>
+                  </motion.div>
+                </TiltCard>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        </RevealSection>
       </div>
     </section>
   )
@@ -563,35 +790,45 @@ function ProcessSection() {
 // ── Reviews ───────────────────────────────────────────────────────────────────
 function ReviewsSection() {
   return (
-    <section className="py-28 px-5 bg-[#F5F6EF] border-y border-[#C5CBA5]">
+    <section className="py-28 px-5 bg-[#F4F5EE] border-b border-[#C5CBA5]/50">
       <div className="max-w-5xl mx-auto">
-        <SectionLabel>Отзывы</SectionLabel>
-        <h2 className="text-4xl sm:text-5xl font-black text-[#1A1A1A] text-center mb-14 uppercase">
-          Что говорят <span className="gradient-text">эксперты</span>
-        </h2>
-        <div className="grid sm:grid-cols-3 gap-5">
-          {REVIEWS.map((r, i) => (
-            <div key={i} className="p-7 rounded-2xl bg-white border border-[#C5CBA5] space-y-4 shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all relative">
-              {/* Decorative quote mark */}
-              <div className="text-5xl font-black gradient-text leading-none select-none" aria-hidden="true">&ldquo;</div>
-              <div className="flex items-center gap-1 -mt-2">
-                {[...Array(r.stars)].map((_, j) => (
-                  <Star key={j} className="h-4 w-4 fill-amber-400 text-amber-400" />
-                ))}
-              </div>
-              <p className="text-sm text-[#444444] leading-relaxed">{r.text}</p>
-              <div className="flex items-center gap-3 pt-2">
-                <div className="w-10 h-10 rounded-full gradient-accent flex items-center justify-center text-sm font-bold text-white">
-                  {r.avatar}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-[#1A1A1A]">{r.name}</p>
-                  <p className="text-[11px] text-[#888888]">{r.role}</p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+        <RevealSection>
+          <SectionLabel>Отзывы</SectionLabel>
+          <motion.h2 variants={fadeUp} className="text-4xl sm:text-5xl font-black text-[#1A1A1A] text-center mb-14 uppercase">
+            Что говорят <span className="gradient-text">эксперты</span>
+          </motion.h2>
+          <div className="grid sm:grid-cols-3 gap-5">
+            {REVIEWS.map((r, i) => (
+              <TiltCard key={i}>
+                <motion.div
+                  variants={fadeUp}
+                  custom={i}
+                  className="p-7 rounded-2xl bg-white border border-[#C5CBA5] space-y-5 shadow-md h-full relative overflow-hidden"
+                >
+                  {/* Decorative quote */}
+                  <div className="absolute -top-2 -right-1 text-[80px] font-black leading-none gradient-text opacity-10 pointer-events-none select-none">
+                    "
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {[...Array(r.stars)].map((_, j) => (
+                      <Star key={j} className="h-4 w-4 fill-amber-400 text-amber-400" />
+                    ))}
+                  </div>
+                  <p className="text-sm text-[#555] leading-relaxed relative z-10">{r.text}</p>
+                  <div className="flex items-center gap-3 pt-1">
+                    <div className="w-10 h-10 rounded-full gradient-accent flex items-center justify-center text-sm font-bold text-white shadow-md">
+                      {r.avatar}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-[#1A1A1A]">{r.name}</p>
+                      <p className="text-[11px] text-[#888]">{r.role}</p>
+                    </div>
+                  </div>
+                </motion.div>
+              </TiltCard>
+            ))}
+          </div>
+        </RevealSection>
       </div>
     </section>
   )
@@ -603,88 +840,94 @@ function PricingSection() {
   const { symbol, prices } = CURRENCY_CONFIG[currency]
 
   return (
-    <section id="pricing" className="py-28 px-5 bg-white border-t border-[#C5CBA5]">
+    <section id="pricing" className="py-28 px-5 bg-white border-b border-[#C5CBA5]/50">
       <div className="max-w-4xl mx-auto">
-        <SectionLabel>Тарифы</SectionLabel>
-        <h2 className="text-4xl sm:text-5xl font-black text-[#1A1A1A] text-center mb-6 uppercase">
-          Прозрачные <span className="gradient-text">цены</span>
-        </h2>
+        <RevealSection>
+          <SectionLabel>Тарифы</SectionLabel>
+          <motion.h2 variants={fadeUp} className="text-4xl sm:text-5xl font-black text-[#1A1A1A] text-center mb-6 uppercase">
+            Прозрачные <span className="gradient-text">цены</span>
+          </motion.h2>
 
-        {/* Currency switcher */}
-        <div className="flex items-center justify-center gap-1 mb-12">
-          {(['RUB', 'USD', 'EUR'] as Currency[]).map((c) => (
-            <button
-              key={c}
-              onClick={() => setCurrency(c)}
-              className={`px-4 py-1.5 rounded-[50px] text-xs font-semibold transition-all ${
-                currency === c
-                  ? 'gradient-accent text-white'
-                  : 'text-[#888888] hover:text-[#444444] bg-[#FAFAF8] border border-[#EBEBEB]'
-              }`}
-            >
-              {c}
-            </button>
-          ))}
-        </div>
+          <motion.div variants={fadeUp} className="flex items-center justify-center gap-1.5 mb-12">
+            {(['RUB', 'USD', 'EUR'] as Currency[]).map((c) => (
+              <motion.button
+                key={c}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setCurrency(c)}
+                className={`px-5 py-2 rounded-[50px] text-xs font-bold transition-all ${
+                  currency === c
+                    ? 'gradient-accent text-white shadow-md shadow-[#E86BA0]/25'
+                    : 'text-[#888] hover:text-[#444] bg-[#FAFAF8] border border-[#E0E0E0]'
+                }`}
+              >
+                {c}
+              </motion.button>
+            ))}
+          </motion.div>
 
-        <div className="grid sm:grid-cols-3 gap-5">
-          {PLANS.map((plan, i) => (
-            <div
-              key={plan.name}
-              className="relative p-6 rounded-2xl border border-[#C5CBA5] bg-[#FAFAF8] space-y-5 shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all"
-            >
-              {plan.popular && (
-                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-                  <span className="px-4 py-1 rounded-full text-[10px] font-bold text-white gradient-accent uppercase shadow-lg">
-                    ПОПУЛЯРНЫЙ
-                  </span>
-                </div>
-              )}
-
-              {/* Price */}
-              <div>
-                <p className="text-sm font-black text-[#1A1A1A] mb-2 uppercase tracking-wide">{plan.name}</p>
-                <div className="flex items-end gap-1">
-                  <span className="text-xl font-bold text-[#888888]">{symbol}</span>
-                  <span className="text-4xl font-black text-[#1A1A1A]">{prices[i].toLocaleString('ru-RU')}</span>
-                </div>
-                <p className="text-xs text-[#888888] mt-1">{plan.period}</p>
-              </div>
-
-              <hr className="border-[#C5CBA5]" />
-
-              {/* Features */}
-              <ul className="space-y-2.5">
-                {plan.features.map((f, j) => (
-                  <li key={j} className="flex items-center gap-2.5">
-                    {f.ok
-                      ? <Check className="h-4 w-4 text-emerald-500 shrink-0" />
-                      : <Minus className="h-4 w-4 text-[#C5CBA5] shrink-0" />
-                    }
-                    <span className={`text-sm ${f.ok ? 'text-[#444444]' : 'text-[#C5CBA5]'}`}>{f.text}</span>
-                  </li>
-                ))}
-              </ul>
-
-              {/* CTA */}
-              {plan.gradient ? (
-                <Link
-                  href={plan.href}
-                  className="w-full h-12 rounded-[50px] flex items-center justify-center text-sm font-bold uppercase text-white gradient-accent hover:opacity-90 transition-opacity gap-1 shadow-md"
+          <div className="grid sm:grid-cols-3 gap-5">
+            {PLANS.map((plan, i) => (
+              <TiltCard key={plan.name}>
+                <motion.div
+                  variants={fadeUp}
+                  custom={i}
+                  className={`relative p-7 rounded-2xl border space-y-6 h-full ${
+                    plan.popular
+                      ? 'bg-[#FAFAF8] border-[#E86BA0]/50 shadow-xl shadow-[#E86BA0]/10'
+                      : 'bg-[#FAFAF8] border-[#C5CBA5] shadow-md'
+                  }`}
                 >
-                  {plan.cta} <ChevronRight className="h-4 w-4" />
-                </Link>
-              ) : (
-                <Link
-                  href={plan.href}
-                  className="w-full h-12 rounded-[50px] flex items-center justify-center text-sm font-bold uppercase text-[#444444] bg-white border border-[#C5CBA5] hover:border-[#E86BA0] hover:text-[#1A1A1A] transition-all gap-1"
-                >
-                  {plan.cta} <ChevronRight className="h-4 w-4" />
-                </Link>
-              )}
-            </div>
-          ))}
-        </div>
+                  {plan.popular && (
+                    <motion.div
+                      initial={{ y: -10, opacity: 0 }}
+                      whileInView={{ y: 0, opacity: 1 }}
+                      className="absolute -top-3.5 left-1/2 -translate-x-1/2"
+                    >
+                      <span className="px-4 py-1.5 rounded-full text-[10px] font-black text-white gradient-animated uppercase tracking-wider shadow-lg">
+                        ✦ ПОПУЛЯРНЫЙ
+                      </span>
+                    </motion.div>
+                  )}
+
+                  <div>
+                    <p className="text-sm font-black text-[#1A1A1A] mb-2 uppercase tracking-wider">{plan.name}</p>
+                    <div className="flex items-end gap-1">
+                      <span className="text-lg font-bold text-[#888]">{symbol}</span>
+                      <span className="text-5xl font-black text-[#1A1A1A]">{prices[i].toLocaleString('ru-RU')}</span>
+                    </div>
+                    <p className="text-xs text-[#888] mt-1">{plan.period}</p>
+                  </div>
+
+                  <hr className="border-[#C5CBA5]/50" />
+
+                  <ul className="space-y-3">
+                    {plan.features.map((f, j) => (
+                      <li key={j} className="flex items-center gap-3">
+                        {f.ok
+                          ? <Check className="h-4 w-4 text-emerald-500 shrink-0" />
+                          : <Minus className="h-4 w-4 text-[#C5CBA5] shrink-0" />}
+                        <span className={`text-sm ${f.ok ? 'text-[#444]' : 'text-[#C5CBA5]'}`}>{f.text}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                    {plan.gradient ? (
+                      <Link href={plan.href} className="w-full h-12 rounded-[50px] flex items-center justify-center text-sm font-bold uppercase text-white gradient-accent hover:opacity-90 transition-opacity gap-1.5 shadow-md shadow-[#E86BA0]/25">
+                        {plan.cta} <ChevronRight className="h-4 w-4" />
+                      </Link>
+                    ) : (
+                      <Link href={plan.href} className="w-full h-12 rounded-[50px] flex items-center justify-center text-sm font-bold uppercase text-[#444] bg-white border-2 border-[#C5CBA5] hover:border-[#E86BA0] hover:text-[#1A1A1A] transition-all gap-1.5">
+                        {plan.cta} <ChevronRight className="h-4 w-4" />
+                      </Link>
+                    )}
+                  </motion.div>
+                </motion.div>
+              </TiltCard>
+            ))}
+          </div>
+        </RevealSection>
       </div>
     </section>
   )
@@ -693,35 +936,42 @@ function PricingSection() {
 // ── Final CTA ─────────────────────────────────────────────────────────────────
 function CtaSection() {
   return (
-    <section className="py-32 px-5 text-center bg-[#1A1A1A] relative overflow-hidden">
-      {/* Decorative blobs */}
-      <div
-        className="absolute top-0 right-0 w-[500px] h-[500px] rounded-full opacity-10 blur-3xl pointer-events-none"
-        style={{ background: 'radial-gradient(circle, #F5A84A 0%, transparent 70%)' }}
-      />
-      <div
-        className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full opacity-10 blur-3xl pointer-events-none"
-        style={{ background: 'radial-gradient(circle, #D44E7E 0%, transparent 70%)' }}
-      />
-      <div className="relative max-w-2xl mx-auto space-y-6">
-        <SectionLabel>Начни сейчас</SectionLabel>
-        <h2 className="text-4xl sm:text-5xl lg:text-6xl font-black leading-tight uppercase">
-          <span className="text-white">Начни свой первый прогрев </span>
-          <span className="gradient-text">сегодня</span>
-        </h2>
-        <p className="text-gray-400 text-lg">Бесплатно. Без карты. Первый план за 8 минут.</p>
-        <div className="pt-3 flex justify-center">
-          <GradientButton href="/register">
-            Попробовать бесплатно
-          </GradientButton>
-        </div>
-        <div className="flex items-center justify-center gap-4 text-xs text-gray-500 pt-1">
-          <span>🔒 Данные защищены</span>
-          <span>·</span>
-          <span>✓ Отмена в любой момент</span>
-          <span>·</span>
-          <span>→ Без кредитной карты</span>
-        </div>
+    <section className="relative py-32 px-5 text-center overflow-hidden bg-[#1A1A1A]">
+      {/* Blobs */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full animate-float opacity-20"
+          style={{ background: 'radial-gradient(circle, #F5A84A 0%, transparent 70%)' }} />
+        <div className="absolute -bottom-40 -left-40 w-[400px] h-[400px] rounded-full animate-float-reverse opacity-20"
+          style={{ background: 'radial-gradient(circle, #D44E7E 0%, transparent 70%)' }} />
+      </div>
+      <div className="absolute inset-0 dot-grid opacity-10 pointer-events-none" />
+
+      <div className="relative max-w-2xl mx-auto space-y-7">
+        <RevealSection>
+          <SectionLabel>Начни сейчас</SectionLabel>
+          <motion.h2 variants={fadeUp} className="text-4xl sm:text-5xl lg:text-6xl font-black leading-tight uppercase">
+            <span className="text-white">Начни свой</span>
+            <br />
+            <span className="gradient-text">первый прогрев</span>
+            <br />
+            <span className="text-white">сегодня</span>
+          </motion.h2>
+          <motion.p variants={fadeUp} className="text-gray-400 text-lg">
+            Бесплатно. Без карты. Первый план за 8 минут.
+          </motion.p>
+          <motion.div variants={fadeUp} className="pt-2 flex justify-center">
+            <GradientButton href="/register" large>
+              Попробовать бесплатно
+            </GradientButton>
+          </motion.div>
+          <motion.div variants={fadeUp} className="flex items-center justify-center gap-5 text-xs text-gray-500 pt-2">
+            <span>🔒 Данные защищены</span>
+            <span className="w-px h-4 bg-white/10" />
+            <span>✓ Отмена в любой момент</span>
+            <span className="w-px h-4 bg-white/10" />
+            <span>→ Без кредитной карты</span>
+          </motion.div>
+        </RevealSection>
       </div>
     </section>
   )
@@ -730,22 +980,24 @@ function CtaSection() {
 // ── Footer ────────────────────────────────────────────────────────────────────
 function Footer() {
   return (
-    <footer className="border-t border-[#EBEBEB] bg-white py-10 px-5">
+    <footer className="bg-[#111111] border-t border-white/10 py-12 px-5">
       <div className="max-w-6xl mx-auto grid sm:grid-cols-3 gap-8 text-sm">
         <div>
-          <span className="text-lg font-black text-[#1A1A1A] tracking-tight">AMA</span>
-          <p className="text-[#888888] text-xs mt-1.5">AI SMM-ассистент для экспертов</p>
+          <span className="text-xl font-black text-white tracking-tight">
+            AMA<span className="gradient-text">product</span>
+          </span>
+          <p className="text-gray-500 text-xs mt-2">AI SMM-ассистент для экспертов</p>
         </div>
         <div className="space-y-2">
-          <Link href="#" className="block text-[#888888] hover:text-[#1A1A1A] transition-colors text-xs">Политика конфиденциальности</Link>
-          <Link href="#" className="block text-[#888888] hover:text-[#1A1A1A] transition-colors text-xs">Условия использования</Link>
-          <Link href="#" className="block text-[#888888] hover:text-[#1A1A1A] transition-colors text-xs">Поддержка</Link>
-          <div className="flex gap-3 pt-1">
-            <Link href="#" className="text-[#888888] hover:text-[#1A1A1A] transition-colors text-xs">Instagram</Link>
-            <Link href="#" className="text-[#888888] hover:text-[#1A1A1A] transition-colors text-xs">Telegram</Link>
+          <Link href="#" className="block text-gray-500 hover:text-gray-300 transition-colors text-xs">Политика конфиденциальности</Link>
+          <Link href="#" className="block text-gray-500 hover:text-gray-300 transition-colors text-xs">Условия использования</Link>
+          <Link href="#" className="block text-gray-500 hover:text-gray-300 transition-colors text-xs">Поддержка</Link>
+          <div className="flex gap-4 pt-1">
+            <Link href="#" className="text-gray-500 hover:text-gray-300 transition-colors text-xs">Instagram</Link>
+            <Link href="#" className="text-gray-500 hover:text-gray-300 transition-colors text-xs">Telegram</Link>
           </div>
         </div>
-        <div className="text-[#888888] text-xs sm:text-right">
+        <div className="text-gray-600 text-xs sm:text-right">
           © 2025 AMA. Сделано с ❤️ для экспертов.
         </div>
       </div>
@@ -760,7 +1012,7 @@ export default function LandingPage() {
       <Navbar />
       <main>
         <HeroSection />
-        <SocialProofBar />
+        <MarqueeBar />
         <StatsSection />
         <ProblemSection />
         <SolutionSection />
