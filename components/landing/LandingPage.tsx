@@ -6,6 +6,33 @@ import {
   Check, Minus, Star, Sparkles, Zap,
   BookOpen, Calendar, Mic2, ChevronRight, Menu, X, ArrowRight,
 } from 'lucide-react'
+
+// ── Декоративная пальма ───────────────────────────────────────────────────────
+function PalmLeft({ className = '', style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg className={className} style={style} viewBox="0 0 260 520" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      {/* Trunk */}
+      <path d="M130 520 C127 480 133 420 128 340 C123 260 135 180 130 100" stroke="#B5C985" strokeWidth="10" strokeLinecap="round"/>
+      {/* Left fronds */}
+      <path d="M130 100 C110 75 75 60 20 72" stroke="#B5C985" strokeWidth="7" strokeLinecap="round"/>
+      <path d="M130 112 C100 105 58 120 10 148" stroke="#9DBB6E" strokeWidth="6" strokeLinecap="round"/>
+      <path d="M130 124 C108 148 80 178 52 218" stroke="#B5C985" strokeWidth="5" strokeLinecap="round"/>
+      <path d="M130 116 C95 128 55 155 18 195" stroke="#A8C278" strokeWidth="5" strokeLinecap="round"/>
+      {/* Right fronds */}
+      <path d="M130 100 C150 75 185 60 240 72" stroke="#B5C985" strokeWidth="7" strokeLinecap="round"/>
+      <path d="M130 112 C160 105 202 120 250 148" stroke="#9DBB6E" strokeWidth="6" strokeLinecap="round"/>
+      <path d="M130 124 C152 148 180 178 208 218" stroke="#B5C985" strokeWidth="5" strokeLinecap="round"/>
+      <path d="M130 116 C165 128 205 155 242 195" stroke="#A8C278" strokeWidth="5" strokeLinecap="round"/>
+      {/* Top frond */}
+      <path d="M130 100 C126 68 120 38 114 10" stroke="#B5C985" strokeWidth="6" strokeLinecap="round"/>
+      <path d="M130 100 C134 68 140 38 146 10" stroke="#9DBB6E" strokeWidth="5" strokeLinecap="round"/>
+      {/* Coconuts */}
+      <circle cx="130" cy="104" r="6" fill="#C8A96E" opacity="0.6"/>
+      <circle cx="122" cy="110" r="5" fill="#C8A96E" opacity="0.5"/>
+      <circle cx="138" cy="108" r="5" fill="#C8A96E" opacity="0.5"/>
+    </svg>
+  )
+}
 import {
   motion, useInView, useMotionValue, useSpring,
   useTransform, animate, AnimatePresence,
@@ -317,6 +344,10 @@ function HeroSection() {
       {/* Dot grid background */}
       <div className="absolute inset-0 dot-grid opacity-40 pointer-events-none" />
 
+      {/* Palm trees */}
+      <PalmLeft className="absolute left-[-30px] bottom-0 w-48 h-[400px] opacity-[0.13] pointer-events-none select-none" />
+      <PalmLeft className="absolute right-[-30px] bottom-0 w-48 h-[400px] opacity-[0.13] pointer-events-none select-none" style={{ transform: 'scaleX(-1)' }} />
+
       {/* Floating blobs */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <motion.div
@@ -440,7 +471,7 @@ function MarqueeBar() {
   const repeated = [...items, ...items]
 
   return (
-    <div className="border-y border-[#C5CBA5]/60 bg-[#FAFAF8] py-3 overflow-hidden">
+    <div className="border-y border-[#C5CBA5]/60 bg-[#F7F7F7] py-3 overflow-hidden">
       <div className="flex gap-0 animate-marquee whitespace-nowrap" style={{ width: 'max-content' }}>
         {repeated.map((item, i) => (
           <span key={i} className="inline-flex items-center gap-3 px-6 text-sm font-semibold uppercase tracking-widest text-[#888]">
@@ -486,7 +517,7 @@ function ProblemSection() {
   ]
 
   return (
-    <section className="py-28 px-5 bg-[#FAFAF8] border-b border-[#C5CBA5]/50">
+    <section className="py-28 px-5 bg-[#F7F7F7] border-b border-[#C5CBA5]/50">
       <div className="max-w-2xl mx-auto">
         <RevealSection>
           <SectionLabel>Проблема</SectionLabel>
@@ -529,7 +560,7 @@ function SolutionSection() {
 
           <div className="grid sm:grid-cols-2 gap-5">
             <TiltCard>
-              <motion.div variants={fadeUp} className="p-8 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] h-full shadow-md">
+              <motion.div variants={fadeUp} className="p-8 rounded-2xl bg-[#F7F7F7] border border-[#C5CBA5] h-full shadow-md">
                 <p className="text-xs font-bold text-red-400 uppercase tracking-widest flex items-center gap-2 mb-5">
                   <X className="h-3.5 w-3.5" /> Без AMA
                 </p>
@@ -544,7 +575,7 @@ function SolutionSection() {
               </motion.div>
             </TiltCard>
             <TiltCard>
-              <motion.div variants={fadeUp} custom={1} className="p-8 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] h-full shadow-md">
+              <motion.div variants={fadeUp} custom={1} className="p-8 rounded-2xl bg-[#F7F7F7] border border-[#C5CBA5] h-full shadow-md">
                 <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest flex items-center gap-2 mb-5">
                   <Check className="h-3.5 w-3.5" /> С AMA
                 </p>
@@ -585,7 +616,7 @@ function FeaturesSection() {
   ]
 
   return (
-    <section id="features" className="py-28 px-5 bg-[#FAFAF8] border-b border-[#C5CBA5]/50">
+    <section id="features" className="py-28 px-5 bg-[#F7F7F7] border-b border-[#C5CBA5]/50">
       <div className="max-w-5xl mx-auto">
         <RevealSection>
           <SectionLabel>Возможности</SectionLabel>
@@ -635,7 +666,7 @@ function FeaturesSection() {
                   <p className="text-lg font-black text-[#1A1A1A]">Пишет в твоём голосе</p>
                 </div>
                 <div className="flex items-start gap-3">
-                  <div className="flex-1 px-4 py-3 rounded-xl bg-[#FAFAF8] border border-[#E0E0E0] text-xs text-[#888]">
+                  <div className="flex-1 px-4 py-3 rounded-xl bg-[#F7F7F7] border border-[#E0E0E0] text-xs text-[#888]">
                     Хочу рассказать про осознанность и как она помогает...
                   </div>
                   <ArrowRight className="h-5 w-5 mt-3 shrink-0" style={{ color: '#E86BA0' }} />
@@ -692,7 +723,7 @@ function FeaturesSection() {
                       whileInView={{ x: 0, opacity: 1 }}
                       viewport={{ once: true }}
                       transition={{ delay: i * 0.15 + 0.2 }}
-                      className="flex items-center justify-between px-4 py-3 rounded-xl bg-[#FAFAF8] border border-[#E8E8E8]"
+                      className="flex items-center justify-between px-4 py-3 rounded-xl bg-[#F7F7F7] border border-[#E8E8E8]"
                     >
                       <div className="flex items-center gap-3">
                         <span className="text-xl">{f.emoji}</span>
@@ -761,7 +792,7 @@ function ProcessSection() {
                   <motion.div
                     variants={fadeUp}
                     custom={i}
-                    className="flex gap-6 p-7 rounded-2xl bg-[#FAFAF8] border border-[#C5CBA5] shadow-md relative"
+                    className="flex gap-6 p-7 rounded-2xl bg-[#F7F7F7] border border-[#C5CBA5] shadow-md relative"
                   >
                     <div className="shrink-0 z-10">
                       <motion.div
@@ -790,7 +821,7 @@ function ProcessSection() {
 // ── Reviews ───────────────────────────────────────────────────────────────────
 function ReviewsSection() {
   return (
-    <section className="py-28 px-5 bg-[#F4F5EE] border-b border-[#C5CBA5]/50">
+    <section className="py-28 px-5 bg-[#F5F5F5] border-b border-[#C5CBA5]/50">
       <div className="max-w-5xl mx-auto">
         <RevealSection>
           <SectionLabel>Отзывы</SectionLabel>
@@ -858,7 +889,7 @@ function PricingSection() {
                 className={`px-5 py-2 rounded-[50px] text-xs font-bold transition-all ${
                   currency === c
                     ? 'gradient-accent text-white shadow-md shadow-[#E86BA0]/25'
-                    : 'text-[#888] hover:text-[#444] bg-[#FAFAF8] border border-[#E0E0E0]'
+                    : 'text-[#888] hover:text-[#444] bg-[#F7F7F7] border border-[#E0E0E0]'
                 }`}
               >
                 {c}
@@ -874,8 +905,8 @@ function PricingSection() {
                   custom={i}
                   className={`relative p-7 rounded-2xl border space-y-6 h-full ${
                     plan.popular
-                      ? 'bg-[#FAFAF8] border-[#E86BA0]/50 shadow-xl shadow-[#E86BA0]/10'
-                      : 'bg-[#FAFAF8] border-[#C5CBA5] shadow-md'
+                      ? 'bg-[#F7F7F7] border-[#E86BA0]/50 shadow-xl shadow-[#E86BA0]/10'
+                      : 'bg-[#F7F7F7] border-[#C5CBA5] shadow-md'
                   }`}
                 >
                   {plan.popular && (
@@ -943,6 +974,9 @@ function CtaSection() {
           style={{ background: 'radial-gradient(circle, #F5A84A 0%, transparent 70%)' }} />
         <div className="absolute -bottom-40 -left-40 w-[400px] h-[400px] rounded-full animate-float-reverse opacity-20"
           style={{ background: 'radial-gradient(circle, #D44E7E 0%, transparent 70%)' }} />
+        {/* Palms in CTA */}
+        <PalmLeft className="absolute left-0 bottom-0 w-44 h-[360px] opacity-[0.07] pointer-events-none select-none" />
+        <PalmLeft className="absolute right-0 bottom-0 w-44 h-[360px] opacity-[0.07] pointer-events-none select-none" style={{ transform: 'scaleX(-1)' }} />
       </div>
       <div className="absolute inset-0 dot-grid opacity-10 pointer-events-none" />
 
