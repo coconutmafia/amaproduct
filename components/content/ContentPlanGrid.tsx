@@ -377,10 +377,12 @@ export function ContentPlanGrid({
 
           return (
             <div key={day.day} className="rounded-xl border border-[#ECECEC] bg-white overflow-hidden">
-              <div className="flex items-start gap-3 p-3">
-                <div className="w-14 shrink-0 pt-0.5">
+              <div className="p-3 space-y-3">
+                {/* Day header */}
+                <div className="flex items-center gap-2">
                   <p className="text-sm font-bold text-[#222]">{day.dayOfWeek}</p>
-                  <p className="text-[11px] text-[#999] mt-0.5">{day.date}</p>
+                  <p className="text-[11px] text-[#999]">{day.date}</p>
+                  {day.phase && <span className="ml-auto text-[10px] font-medium text-[#AAA]">{PHASE_NAMES[day.phase]}</span>}
                 </div>
                 <div className="flex-1 min-w-0 space-y-2">
                   {day.theme && !day.dayBriefs && <p className="text-xs text-[#888]">{day.theme}</p>}
@@ -389,17 +391,17 @@ export function ContentPlanGrid({
                     const entries = types.filter(t => day.dayBriefs?.[t])
                     if (!entries.length) return null
                     return (
-                      <div className="space-y-1.5">
+                      <div className="space-y-2.5">
                         {entries.map(type => {
                           const c = COLORS[type]
                           if (!c) return null
                           return (
-                            <div key={type} className="flex items-start gap-1.5">
-                              <span className="text-[9px] font-bold shrink-0 px-1.5 py-0.5 rounded-md mt-0.5"
+                            <div key={type} className="space-y-1">
+                              <span className="inline-flex text-[10px] font-bold px-2 py-0.5 rounded-md"
                                 style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
                                 {c.label.toUpperCase()}
                               </span>
-                              <p className="text-xs text-[#888] leading-snug">{day.dayBriefs![type]}</p>
+                              <p className="text-[13px] text-[#333] leading-snug">{day.dayBriefs![type]}</p>
                             </div>
                           )
                         })}
@@ -453,7 +455,6 @@ export function ContentPlanGrid({
                         <Plus className="h-3 w-3" />
                       </button>
                     )}
-                    {day.phase && <Badge className="text-[10px] shrink-0 hidden md:flex">{PHASE_NAMES[day.phase]}</Badge>}
                   </div>
                   {isAddOpen && available.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 pt-1 border-t border-[#F0F0F0]">
