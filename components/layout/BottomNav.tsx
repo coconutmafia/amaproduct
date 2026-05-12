@@ -57,25 +57,6 @@ export function BottomNav() {
           const active = tab.isActive(pathname)
           const Icon = tab.icon
 
-          if (tab.accent) {
-            return (
-              <Link key={tab.href} href={tab.href}>
-                <motion.div
-                  whileTap={{ scale: 0.9 }}
-                  className="flex flex-col items-center gap-1 -mt-5"
-                >
-                  <div
-                    className="flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg"
-                    style={{ background: '#3A8A48', boxShadow: '0 4px 20px rgba(58,138,72,0.45)' }}
-                  >
-                    <Icon className="h-6 w-6 text-white" />
-                  </div>
-                  <span className="text-[10px] font-semibold text-[#3A8A48]">{tab.label}</span>
-                </motion.div>
-              </Link>
-            )
-          }
-
           return (
             <Link key={tab.href} href={tab.href}>
               <motion.div
