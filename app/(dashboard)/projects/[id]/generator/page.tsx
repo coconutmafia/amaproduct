@@ -23,7 +23,7 @@ import type { ContentType, WarmupPhase, ContentItem } from '@/types'
 const CONTENT_TYPES: Array<{ value: ContentType; label: string; icon: React.ElementType; desc: string }> = [
   { value: 'post', label: 'Пост', icon: FileText, desc: 'Текстовый пост для соцсетей' },
   { value: 'carousel', label: 'Карусель', icon: Layers, desc: 'Пост-карусель из нескольких слайдов' },
-  { value: 'reels', label: 'Рилс', icon: Video, desc: 'Сценарий с раскадровкой' },
+  { value: 'reels', label: 'Рилз', icon: Video, desc: 'Сценарий с раскадровкой' },
   { value: 'stories', label: 'Сториз', icon: Image, desc: 'Серия сториз (3-5 штук)' },
 ]
 

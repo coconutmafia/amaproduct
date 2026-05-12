@@ -65,9 +65,10 @@ export function ProjectCard({ project, index = 0 }: ProjectCardProps) {
                     <p className="text-xs text-muted-foreground mt-0.5 truncate">{project.niche}</p>
                   )}
                 </div>
-                <Badge className={`text-xs border whitespace-nowrap shrink-0 ${statusColor}`}>
-                  {project.status === 'active' ? 'Актив' : project.status === 'draft' ? 'Черновик' : 'Архив'}
-                </Badge>
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border whitespace-nowrap shrink-0 ${statusColor}`}>
+                  {project.status === 'active' && <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />}
+                  {project.status === 'active' ? 'Активен' : project.status === 'draft' ? 'Черновик' : 'Архив'}
+                </span>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">

@@ -59,7 +59,7 @@ interface TypeColors {
 const COLORS: Record<ContentType, TypeColors> = {
   post:    { label: 'Пост',    bg: '#DBEAFE', bgDone: '#BFDBFE', border: '#93C5FD', borderDone: '#3B82F6', text: '#1E40AF', textDone: '#1D4ED8' },
   carousel:{ label: 'Карусель',bg: '#EDE9FE', bgDone: '#DDD6FE', border: '#C4B5FD', borderDone: '#7C3AED', text: '#4C1D95', textDone: '#5B21B6' },
-  reels:   { label: 'Видео',   bg: '#FCE7F3', bgDone: '#FBCFE8', border: '#F9A8D4', borderDone: '#DB2777', text: '#831843', textDone: '#9D174D' },
+  reels:   { label: 'Рилз',    bg: '#FCE7F3', bgDone: '#FBCFE8', border: '#F9A8D4', borderDone: '#DB2777', text: '#831843', textDone: '#9D174D' },
   stories: { label: 'Сторис',  bg: '#DCFCE7', bgDone: '#BBF7D0', border: '#86EFAC', borderDone: '#16A34A', text: '#14532D', textDone: '#15803D' },
   live:    { label: 'Эфир',    bg: '#FEE2E2', bgDone: '#FECACA', border: '#FCA5A5', borderDone: '#DC2626', text: '#7F1D1D', textDone: '#991B1B' },
   webinar: { label: 'Вебинар', bg: '#FFE4E6', bgDone: '#FECDD3', border: '#FDA4AF', borderDone: '#E11D48', text: '#881337', textDone: '#881337' },
@@ -191,7 +191,7 @@ function ContentCard({ type, day, isGenerating, isViewing, isGenerated, isPendin
             ? <EyeOff className="h-3 w-3" style={{ color: text }} />
             : <Check className="h-3 w-3 text-green-600" />
         ) : (
-          <Sparkles className="h-3 w-3 opacity-0 group-hover:opacity-70 transition-opacity" style={{ color: text }} />
+          <Sparkles className="h-3 w-3 opacity-50" style={{ color: text }} />
         )}
       </div>
       {shortTheme && (
