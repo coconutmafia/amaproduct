@@ -65,8 +65,8 @@ export function BottomNav() {
                   className="flex flex-col items-center gap-1 -mt-5"
                 >
                   <div
-                    className="flex h-14 w-14 items-center justify-center rounded-2xl gradient-accent shadow-lg"
-                    style={{ boxShadow: '0 4px 20px rgba(212,78,126,0.4)' }}
+                    className="flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg"
+                    style={{ background: '#3A8A48', boxShadow: '0 4px 20px rgba(58,138,72,0.45)' }}
                   >
                     <Icon className="h-6 w-6 text-white" />
                   </div>

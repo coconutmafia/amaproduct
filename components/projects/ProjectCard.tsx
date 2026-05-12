@@ -55,20 +55,18 @@ export function ProjectCard({ project, index = 0 }: ProjectCardProps) {
       >
         <Link href={`/projects/${project.id}`}>
           <Card className="group border-border bg-card hover:border-primary/40 hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-foreground truncate group-hover:text-primary transition-colors">
-                    {project.name}
-                  </h3>
-                  {project.niche && (
-                    <p className="text-xs text-muted-foreground mt-0.5 truncate">{project.niche}</p>
-                  )}
-                </div>
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border whitespace-nowrap shrink-0 ${statusColor}`}>
+            <CardHeader className="pb-2 px-4">
+              <h3 className="font-semibold text-foreground truncate group-hover:text-primary transition-colors pr-1">
+                {project.name}
+              </h3>
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border shrink-0 ${statusColor}`}>
                   {project.status === 'active' && <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />}
                   {project.status === 'active' ? 'Активен' : project.status === 'draft' ? 'Черновик' : 'Архив'}
                 </span>
+                {project.niche && (
+                  <p className="text-xs text-muted-foreground truncate">{project.niche}</p>
+                )}
               </div>
             </CardHeader>
             <CardContent className="space-y-3">

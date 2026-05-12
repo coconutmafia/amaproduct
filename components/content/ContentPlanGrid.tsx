@@ -217,14 +217,7 @@ export function ContentPlanGrid({
   onWeekChange, onGenerate, onGenerateWeekBrief, onExport,
   onRemoveType, onAddType, loading,
 }: ContentPlanGridProps) {
-  // Default to 'list' on mobile, 'week' on desktop — auto-detected client-side
-  const [viewMode, setViewMode] = useState<'week' | 'list'>('week')
-  const [userChangedView, setUserChangedView] = useState(false)
-  useEffect(() => {
-    if (!userChangedView && typeof window !== 'undefined' && window.innerWidth < 640) {
-      setViewMode('list')
-    }
-  }, [userChangedView])
+  const viewMode = 'list' as const
   const [generatingDay, setGeneratingDay] = useState<string | null>(null)
   const [generatingWeekBrief, setGeneratingWeekBrief] = useState(false)
   const [addingToDay, setAddingToDay] = useState<number | null>(null)
@@ -681,29 +674,13 @@ export function ContentPlanGrid({
           </button>
         </div>
 
-        {/* View toggle */}
-        <div className="flex items-center gap-1 bg-[#F7F7F7] rounded-xl p-1 border border-[#ECECEC]">
-          {([
-            { mode: 'week' as const, icon: Calendar, label: 'Неделя' },
-            { mode: 'list' as const, icon: List,     label: 'Список' },
-          ]).map(({ mode, icon: Icon, label }) => (
-            <button key={mode} onClick={() => { setViewMode(mode); setUserChangedView(true) }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-              style={viewMode === mode
-                ? { backgroundColor: '#fff', color: '#333', border: '1px solid #E8E8E8', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }
-                : { color: '#888' }}>
-              <Icon className="h-3.5 w-3.5" />{label}
-            </button>
-          ))}
-        </div>
-
         {/* Actions */}
         <div className="flex items-center gap-2">
           <button onClick={handleGenerateWeekBriefClick} disabled={loading || generatingWeekBrief}
-            className="flex items-center gap-1.5 h-9 px-4 rounded-xl text-xs font-semibold border border-[#E8E8E8] bg-white text-[#555] hover:border-[#D44E7E]/30 hover:text-[#D44E7E] transition-all disabled:opacity-50">
+            className="flex items-center gap-1.5 h-9 px-4 rounded-xl text-xs font-semibold border border-[#3A8A48]/30 bg-[#3A8A48]/8 text-[#3A8A48] hover:bg-[#3A8A48]/15 transition-all disabled:opacity-50">
             {generatingWeekBrief
               ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /><span className="ml-1">Создаю...</span></>
-              : <><Zap className="h-3.5 w-3.5" /><span className="ml-1 hidden sm:inline">Заполнить неделю</span></>}
+              : <><Sparkles className="h-3.5 w-3.5" /><span className="ml-1">Создать бриф</span></>}
           </button>
           <button onClick={onExport}
             className="flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium border border-[#E8E8E8] bg-white text-[#888] hover:text-[#555] transition-all">
@@ -713,18 +690,8 @@ export function ContentPlanGrid({
       </div>
 
       {/* Grid / list */}
-      <AnimatePresence mode="wait">
-        <motion.div key={viewMode} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }}>
-          {viewMode === 'week' ? <WeekView /> : <ListView />}
-        </motion.div>
-      </AnimatePresence>
+      <ListView />
 
-      {/* Active panel — calendar mode only */}
-      {viewMode === 'week' && (
-        <AnimatePresence mode="wait">
-          <ActivePanel key={viewingKey || (pendingBadge ? `p-${pendingBadge.day}-${pendingBadge.type}` : 'none')} />
-        </AnimatePresence>
-      )}
 
       {/* Legend */}
       <div className="flex flex-wrap gap-2 pt-1">
