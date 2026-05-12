@@ -4,12 +4,12 @@ import OpenAI from 'openai'
 
 export const maxDuration = 300
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-
 const SUPPORTED = ['audio/mpeg', 'audio/mp4', 'audio/m4a', 'audio/wav', 'audio/ogg',
   'audio/webm', 'video/mp4', 'audio/x-m4a', 'audio/aac', 'application/octet-stream']
 
 export async function POST(request: Request) {
+  // Lazy init — key is only available at runtime, not build time
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
