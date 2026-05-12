@@ -49,6 +49,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   const [table2, setTable2]           = useState<MeaningsMap | null>(null)
   const [expandedRespondent, setExpandedRespondent] = useState<string | null>(null)
   const [isDragging, setIsDragging]   = useState(false)
+  const [selectedFile, setSelectedFile] = useState<{ name: string; sizeMb: string; estMin: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ── Transcription ───────────────────────────────────────────────────────────
@@ -74,10 +75,22 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       toast.error('Поддерживаются: MP3, MP4, M4A, WAV, OGG, WEBM')
       return
     }
-    if (file.size > 25 * 1024 * 1024) {
-      toast.error('Максимальный размер файла — 25 МБ')
+    const MAX_MB = 25
+    const sizeMb = file.size / (1024 * 1024)
+    if (sizeMb > MAX_MB) {
+      toast.error(`Файл ${sizeMb.toFixed(1)} МБ — максимум ${MAX_MB} МБ (≈ 30 минут MP3/M4A)`)
       return
     }
+
+    // Estimate duration: MP3/M4A/AAC ≈ 1 min per MB at 128kbps; WAV ≈ 5× smaller duration
+    const isWav = file.name.toLowerCase().endsWith('.wav')
+    const estMin = isWav ? Math.max(1, Math.round(sizeMb / 10)) : Math.max(1, Math.round(sizeMb))
+    setSelectedFile({
+      name:   file.name,
+      sizeMb: sizeMb.toFixed(1),
+      estMin: estMin > 1 ? `≈ ${estMin} мин` : '< 1 мин',
+    })
+
     transcribeFile(file)
   }, [transcribeFile])
 
@@ -198,9 +211,16 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#3A8A48]/10">
                   <Loader2 className="h-7 w-7 text-[#3A8A48] animate-spin" />
                 </div>
-                <div>
+                <div className="space-y-1">
                   <p className="font-semibold text-foreground">Расшифровываю аудио...</p>
-                  <p className="text-sm text-muted-foreground mt-1">Whisper обрабатывает запись — обычно 30–90 сек</p>
+                  {selectedFile && (
+                    <p className="text-sm text-[#3A8A48] font-medium">{selectedFile.name} · {selectedFile.sizeMb} МБ · {selectedFile.estMin}</p>
+                  )}
+                  <p className="text-sm text-muted-foreground">
+                    {selectedFile && parseInt(selectedFile.estMin) >= 10
+                      ? 'Для длинных записей это может занять несколько минут — не закрывай страницу'
+                      : 'Обычно 1–3 минуты — не закрывай страницу'}
+                  </p>
                 </div>
               </>
             ) : (
@@ -208,10 +228,16 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#3A8A48]/10">
                   <Mic className="h-7 w-7 text-[#3A8A48]" />
                 </div>
-                <div>
+                <div className="space-y-1">
                   <p className="font-semibold text-foreground">Перетащи аудиозапись интервью</p>
-                  <p className="text-sm text-muted-foreground mt-1">или нажми чтобы выбрать файл</p>
-                  <p className="text-xs text-muted-foreground/60 mt-2">MP3, MP4, M4A, WAV, OGG · до 25 МБ</p>
+                  <p className="text-sm text-muted-foreground">или нажми чтобы выбрать файл</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">MP3, MP4, M4A, WAV, OGG, WEBM</p>
+                </div>
+                {/* Limit hint */}
+                <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium">
+                  <span>⏱ Максимум ~30 минут записи (до 25 МБ)</span>
+                  <span className="text-amber-400">·</span>
+                  <span>Запись длиннее — сохрани двумя файлами</span>
                 </div>
                 <Button variant="outline" size="sm" onClick={e => { e.stopPropagation(); fileInputRef.current?.click() }}>
                   <Upload className="h-3.5 w-3.5 mr-1.5" /> Выбрать файл

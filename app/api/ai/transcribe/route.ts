@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
-export const maxDuration = 120
+export const maxDuration = 300
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
