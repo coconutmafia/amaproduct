@@ -1,15 +1,22 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
-import OpenAI from 'openai'
 
+// Force dynamic — prevents Next.js from importing this module at build time
+// (OpenAI key is only available at runtime, not during static analysis)
+export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
 const SUPPORTED = ['audio/mpeg', 'audio/mp4', 'audio/m4a', 'audio/wav', 'audio/ogg',
   'audio/webm', 'video/mp4', 'audio/x-m4a', 'audio/aac', 'application/octet-stream']
 
 export async function POST(request: Request) {
-  // Lazy init — key is only available at runtime, not build time
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey) return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 })
+
+  // Dynamic import — avoids module-level SDK initialisation at build time
+  const { default: OpenAI } = await import('openai')
+  const openai = new OpenAI({ apiKey })
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -40,8 +47,8 @@ export async function POST(request: Request) {
   const mime = mimeMap[ext] ?? (SUPPORTED.includes(file.type) ? file.type : 'audio/mpeg')
 
   // Re-wrap so OpenAI SDK gets a properly-named File
-  const bytes  = await file.arrayBuffer()
-  const audio  = new File([bytes], `interview.${ext}`, { type: mime })
+  const bytes = await file.arrayBuffer()
+  const audio = new File([bytes], `interview.${ext}`, { type: mime })
 
   try {
     const transcription = await openai.audio.transcriptions.create({
