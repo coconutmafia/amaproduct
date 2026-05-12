@@ -654,20 +654,15 @@ export function ContentPlanGrid({
 
   return (
     <div className="space-y-5">
-      {/* Hint */}
-      <p className="text-xs text-[#888] bg-[#F7F7F7] rounded-xl px-4 py-2.5 border border-[#ECECEC]">
-        Нажми на карточку, чтобы сгенерировать. После создания — нажми ещё раз, чтобы прочитать.
-      </p>
-
       {/* Toolbar */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex items-center justify-between gap-3">
         {/* Week nav */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <button onClick={() => onWeekChange(-1)}
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8E8E8] text-[#888] hover:bg-[#F7F7F7] hover:text-[#333] transition-all">
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="text-sm font-semibold text-[#333] min-w-[90px] text-center">Неделя {weekNumber}</span>
+          <span className="text-sm font-semibold text-[#333] min-w-[72px] text-center">Неделя {weekNumber}</span>
           <button onClick={() => onWeekChange(1)}
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8E8E8] text-[#888] hover:bg-[#F7F7F7] hover:text-[#333] transition-all">
             <ChevronRight className="h-4 w-4" />
@@ -680,7 +675,7 @@ export function ContentPlanGrid({
             className="flex items-center gap-1.5 h-9 px-4 rounded-xl text-xs font-semibold border border-[#3A8A48]/30 bg-[#3A8A48]/8 text-[#3A8A48] hover:bg-[#3A8A48]/15 transition-all disabled:opacity-50">
             {generatingWeekBrief
               ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /><span className="ml-1">Создаю...</span></>
-              : <><Sparkles className="h-3.5 w-3.5" /><span className="ml-1">Создать бриф</span></>}
+              : <><Sparkles className="h-3.5 w-3.5" /><span className="ml-1">Создать</span></>}
           </button>
           <button onClick={onExport}
             className="flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium border border-[#E8E8E8] bg-white text-[#888] hover:text-[#555] transition-all">
