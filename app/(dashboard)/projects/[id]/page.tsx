@@ -22,6 +22,7 @@ import {
   BarChart2,
   CheckCircle2,
   ChevronRight,
+  Users,
 } from 'lucide-react'
 import { ProjectInfoSection } from '@/components/projects/ProjectInfoSection'
 
@@ -184,6 +185,7 @@ export default async function ProjectPage({ params }: Props) {
                 { href: `/projects/${id}/generator`, icon: Sparkles, label: 'Сделать контент', color: 'text-purple-400 bg-purple-400/10', desc: 'AI пишет пост / рилс' },
                 { href: `/projects/${id}/knowledge`, icon: BookOpen, label: 'Материалы', color: 'text-blue-400 bg-blue-400/10', desc: 'База знаний' },
                 { href: `/projects/${id}/strategy`, icon: Calendar, label: 'План прогрева', color: 'text-green-400 bg-green-400/10', desc: 'Стратегия запуска' },
+                { href: `/projects/${id}/research`, icon: Users, label: 'Исследование', color: 'text-teal-400 bg-teal-400/10', desc: 'Интервью → карта смыслов' },
                 { href: `/projects/${id}/account-analysis`, icon: BarChart2, label: 'Анализ Instagram', color: 'text-pink-400 bg-pink-400/10', desc: 'Статистика аккаунта' },
                 { href: `/projects/${id}/style-bank`, icon: Sparkles, label: 'Мой стиль', color: 'text-orange-400 bg-orange-400/10', desc: 'Одобренный контент' },
               ].map(({ href, icon: Icon, label, color, desc }) => (
