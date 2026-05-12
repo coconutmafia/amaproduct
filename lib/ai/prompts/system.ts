@@ -1,5 +1,11 @@
 import type { RAGContext } from '@/lib/ai/rag'
 import type { Project } from '@/types'
+import {
+  getNicheEmotions,
+  HUMANIZATION_ENGINE,
+  RETENTION_ENGINE,
+  CONTENT_BRAIN_ANTI_PATTERNS,
+} from './content-brain'
 
 // Phrases that immediately signal AI-generated generic text — never use these
 const BANNED_PHRASES = `
@@ -17,6 +23,7 @@ const BANNED_PHRASES = `
 ❌ Использование слова "эксперт" для описания самого блогера
 ❌ "Подписывайтесь, чтобы не пропустить..."
 ❌ Любые формулировки которые звучат как реклама, а не как разговор
+${CONTENT_BRAIN_ANTI_PATTERNS}
 `.trim()
 
 export function buildSystemPrompt(context: RAGContext, project: Project): string {
@@ -77,6 +84,9 @@ ${context.styleExamples.map((ex, i) => `--- Эталон ${i + 1} [${ex.content_
 `
     : ''
 
+  // Content Brain: niche emotional vocabulary (injected only if niche detected)
+  const nicheEmotions = project.niche ? getNicheEmotions(project.niche) : ''
+
   return `Ты — профессиональный автор контента для онлайн-запусков.
 Ты пишешь ОТ ИМЕНИ конкретного блогера/эксперта, используя его голос, его истории, его материалы.
 Ты НЕ пишешь "маркетинговые тексты". Ты пишешь живые посты, которые звучат как реальный человек.
@@ -104,6 +114,11 @@ ${socials ? `Соцсети: ${socials}` : ''}
 ${otherChunks.length > 0 ? `Материалы проекта (кейсы, продукт, аудитория):
 ${otherChunks.map((c) => `[${c.material_type}]: ${c.chunk_text}`).join('\n\n')}` : ''}
 
+${nicheEmotions ? `═══════════════════════════════════════
+ПСИХОЛОГИЯ АУДИТОРИИ ЭТОЙ НИШИ
+═══════════════════════════════════════
+${nicheEmotions}
+` : ''}
 ═══════════════════════════════════════
 ПРАВИЛА ЖИВОГО ТЕКСТА
 ═══════════════════════════════════════
@@ -113,6 +128,10 @@ ${otherChunks.map((c) => `[${c.material_type}]: ${c.chunk_text}`).join('\n\n')}`
 ✅ Если есть линии блога — органично вплетай личные детали в профессиональный контент
 ✅ CTA конкретный и живой, не шаблонный
 ✅ Для рилсов — описывай кадры через действие: "Камера на руки. Телефон. Открывает статистику."
+
+${HUMANIZATION_ENGINE}
+
+${RETENTION_ENGINE}
 
 Язык ответа: тот, на котором написан TOV. Если TOV нет — русский.`
 }

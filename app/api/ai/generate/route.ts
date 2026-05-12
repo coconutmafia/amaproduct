@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt, buildValidatorUserPrompt } from '@/lib/ai/prompts/system'
+import { getSchemaForPhase, getHookEngine, getEmotionalMechanics, getCTAEngine } from '@/lib/ai/prompts/content-brain'
 import { checkAndConsumeGeneration } from '@/lib/generations'
 import { NextResponse } from 'next/server'
 import type { WarmupPhase } from '@/types'
@@ -92,6 +93,12 @@ export async function POST(request: Request) {
           email: `ФОРМАТ EMAIL: Личное письмо, не рекламная рассылка. Тема письма — интригует, не продаёт. Начни с истории или наблюдения. Один чёткий CTA в конце. Тон как будто пишешь другу.`,
         }
 
+        // ── Content Brain layers (phase + type specific) ─────────────────
+        const contentSchema = getSchemaForPhase(phase, contentType)
+        const hookEngine    = getHookEngine(contentType)
+        const emotionalArc  = getEmotionalMechanics(phase)
+        const ctaGuidance   = getCTAEngine(phase)
+
         const userPrompt = `Создай ${contentTypeLabel[contentType] || contentType} для блогера.
 
 ПАРАМЕТРЫ:
@@ -104,6 +111,16 @@ ${typeAngle[contentType] ? `\n${typeAngle[contentType]}\n` : ''}
 ВАЖНО: Если указан «Смысл дня» — контент должен раскрывать именно этот смысл, не отходи от него.
 
 ОБЯЗАТЕЛЬНО: Используй конкретные детали из материалов проекта (кейсы, цифры, истории клиентов, TOV). Не пиши абстрактно — каждое утверждение должно быть конкретным.
+
+─── ПСИХОЛОГИЯ ЭТОГО КОНТЕНТА ───────────────────────────────
+${emotionalArc}
+
+${contentSchema}
+
+${hookEngine}
+
+${ctaGuidance}
+─────────────────────────────────────────────────────────────
 
 ${additionalInstructions ? `ДОПОЛНИТЕЛЬНО: ${additionalInstructions}` : ''}
 

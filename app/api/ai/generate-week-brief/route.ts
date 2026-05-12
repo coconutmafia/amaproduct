@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
+import { getSchemaForPhase, getEmotionalMechanics, getCTAEngine } from '@/lib/ai/prompts/content-brain'
 import { NextResponse } from 'next/server'
 
 export const maxDuration = 90
@@ -61,6 +62,15 @@ export async function POST(request: Request) {
     systemKnowledge = rag.systemKnowledge.slice(0, 3).map(c => c.chunk_text).join('\n\n').slice(0, 1000)
   } catch { /* ignore */ }
 
+  // Group unique phases in this week for content brain injection
+  const uniquePhases = [...new Set(days.map(d => d.phase))]
+  const phasePsychology = uniquePhases.map(phase => {
+    const emotions = getEmotionalMechanics(phase)
+    const schema   = getSchemaForPhase(phase, 'post')
+    const cta      = getCTAEngine(phase)
+    return `--- ФАЗА «${phase.toUpperCase()}» ---\n${emotions}\n${schema}\n${cta}`
+  }).join('\n\n')
+
   const daysText = days.map(d =>
     `День ${d.day} (${d.date}) — фаза: ${d.phase}, смысл: ${d.meaning || 'не задан'}`
   ).join('\n')
@@ -78,13 +88,21 @@ ${blogLinesSummary}
 ПРОЕКТ: ${project.name}
 НИША: ${project.niche || 'не указана'}
 ${project.description ? `ОПИСАНИЕ: ${project.description}` : ''}
-${systemKnowledge ? `МЕТОДОЛОГИЯ ПРОГРЕВОВ (используй при планировании):\n${systemKnowledge}\n` : ''}
+${systemKnowledge ? `МЕТОДОЛОГИЯ ПРОГРЕВОВ:\n${systemKnowledge}\n` : ''}
 ${projectSummary ? `МАТЕРИАЛЫ ПРОЕКТА (кейсы, продукт, TOV):\n${projectSummary}\n` : ''}
 ${blogLinesInstruction}
+─── ПСИХОЛОГИЯ КОНТЕНТА ПО ФАЗАМ ───────────────────────────
+${phasePsychology}
+────────────────────────────────────────────────────────────
+
 ДНИ НЕДЕЛИ:
 ${daysText}
 
-ЗАДАЧА: для каждого дня пропиши конкретную тему каждой единицы контента (1–2 предложения). Если день строится на личной линии блога — начни тему с личной истории, профессиональный смысл должен вытекать из неё сам.
+ЗАДАЧА: для каждого дня пропиши конкретную тему каждой единицы контента (1–2 предложения).
+- Тема должна соответствовать эмоциональной дуге своей фазы (см. выше)
+- Для поста — выбери подходящую схему контента из фазы и отрази её в теме
+- Используй конкретику из материалов проекта: реальные кейсы, цифры, истории
+- Если день строится на личной линии блога — начни с личной истории, смысл вытекает из неё
 
 JSON формат (строго):
 {"days":[{"day":1,"brief":{"post":"конкретная тема поста","stories":"конкретная тема сториз","reels":"конкретная тема рилса"}}]}`
