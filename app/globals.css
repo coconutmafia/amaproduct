@@ -181,13 +181,13 @@
 }
 /* Text highlights: forest green → warm orange (tropical, unique) */
 .gradient-text {
-  background: linear-gradient(135deg, #3A9A50 0%, #7ABF55 45%, #F5A84A 100%);
+  background: linear-gradient(135deg, #3A8A48 0%, #5AAF60 50%, #7ABF55 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 .gradient-border {
-  border-image: linear-gradient(135deg, #3A9A50, #F5A84A) 1;
+  border-image: linear-gradient(135deg, #3A8A48, #7ABF55) 1;
 }
 .text-outline {
   -webkit-text-fill-color: transparent;
