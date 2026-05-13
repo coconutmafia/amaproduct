@@ -370,6 +370,23 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
 }
 
 // ── Import from other project dialog ─────────────────────────────────────────
+
+// Evergreen = done once, reused across products. Project-specific = changes per launch.
+const EVERGREEN_TYPES = new Set([
+  'audience_survey', 'interview_transcript', 'audience_research',
+  'interview_transcription', 'meanings_map', 'unpacking_map',
+  'tone_of_voice', 'tov', 'blog_lines', 'competitors', 'marketing_strategy',
+])
+
+interface GlobalMaterial {
+  id: string
+  project_id: string
+  project_name: string
+  material_type: string
+  title: string
+  processing_status: string
+}
+
 interface OtherProject {
   id: string
   name: string
@@ -387,32 +404,40 @@ function ImportMaterialsDialog({
   onClose: () => void
   onSuccess: (materials: Material[]) => void
 }) {
+  const [tab, setTab] = useState<'global' | 'project'>('global')
+  const [loading, setLoading] = useState(false)
+  const [globalMaterials, setGlobalMaterials] = useState<GlobalMaterial[]>([])
   const [projects, setProjects] = useState<OtherProject[]>([])
-  const [loadingProjects, setLoadingProjects] = useState(false)
   const [selectedProjectId, setSelectedProjectId] = useState<string>('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [importing, setImporting] = useState(false)
 
   useEffect(() => {
     if (!open) return
-    setLoadingProjects(true)
-    fetch(`/api/materials?excludeProject=${projectId}`)
-      .then(r => r.json())
-      .then(d => setProjects(d.projects || []))
-      .catch(() => toast.error('Не удалось загрузить проекты'))
-      .finally(() => setLoadingProjects(false))
+    setLoading(true)
+    setSelectedIds(new Set())
+    // Load both global and project lists in parallel
+    Promise.all([
+      fetch(`/api/materials?excludeProject=${projectId}&mode=global`).then(r => r.json()),
+      fetch(`/api/materials?excludeProject=${projectId}`).then(r => r.json()),
+    ])
+      .then(([gData, pData]) => {
+        setGlobalMaterials((gData as { global: GlobalMaterial[] }).global || [])
+        setProjects((pData as { projects: OtherProject[] }).projects || [])
+      })
+      .catch(() => toast.error('Не удалось загрузить материалы'))
+      .finally(() => setLoading(false))
   }, [open, projectId])
 
   const selectedProject = projects.find(p => p.id === selectedProjectId)
 
-  const toggleMaterial = (id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
+  const toggle = (id: string) => setSelectedIds(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
+  const selectAllGlobal = () => setSelectedIds(new Set(globalMaterials.map(m => m.id)))
 
   const handleImport = async () => {
     if (!selectedIds.size) return
@@ -435,72 +460,148 @@ function ImportMaterialsDialog({
     }
   }
 
+  // Group global materials by type category
+  const globalByCategory = globalMaterials.reduce<Record<string, GlobalMaterial[]>>((acc, m) => {
+    const cat = TYPE_META[m.material_type]?.category ?? 'ПРОЧЕЕ'
+    if (!acc[cat]) acc[cat] = []
+    acc[cat]!.push(m)
+    return acc
+  }, {})
+
   return (
     <Dialog open={open} onOpenChange={v => { if (!v && !importing) onClose() }}>
       <DialogContent className="sm:max-w-lg border-border bg-card max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Импортировать материалы из другого проекта</DialogTitle>
+          <DialogTitle>Импортировать материалы</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 mt-1">
-          <p className="text-xs text-muted-foreground">
-            Некоторые материалы (аудитория, тон-оф-войс, конкуренты) часто одинаковые для разных продуктов. Выбери проект и импортируй нужные файлы.
-          </p>
 
-          {loadingProjects ? (
+        {/* Tabs */}
+        <div className="flex rounded-xl border border-border overflow-hidden text-sm font-medium">
+          <button
+            onClick={() => { setTab('global'); setSelectedIds(new Set()) }}
+            className={`flex-1 py-2 transition-colors ${tab === 'global' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:text-foreground'}`}
+          >
+            ⭐ Общая база
+          </button>
+          <button
+            onClick={() => { setTab('project'); setSelectedIds(new Set()) }}
+            className={`flex-1 py-2 transition-colors ${tab === 'project' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:text-foreground'}`}
+          >
+            📁 Из проекта
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {loading ? (
             <div className="flex justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : projects.length === 0 ? (
-            <div className="text-center py-8 text-sm text-muted-foreground">
-              Нет других проектов с загруженными материалами
-            </div>
-          ) : (
+          ) : tab === 'global' ? (
+            /* ── Global base tab ── */
             <>
-              <Select value={selectedProjectId} onValueChange={id => { setSelectedProjectId(id ?? ''); setSelectedIds(new Set()) }}>
-                <SelectTrigger className="border-border">
-                  <SelectValue placeholder="Выбери проект" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map(p => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  <span className="font-medium text-foreground">Постоянные материалы</span> — делаются один раз и подходят для всех продуктов: распаковка, TOV, исследование аудитории, карта смыслов.
+                </p>
+                {globalMaterials.length > 0 && (
+                  <button onClick={selectAllGlobal} className="text-xs text-primary whitespace-nowrap hover:underline shrink-0">
+                    Выбрать все
+                  </button>
+                )}
+              </div>
 
-              {selectedProject && (
-                <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                  <p className="text-xs text-muted-foreground">Выбери материалы для импорта:</p>
-                  {selectedProject.materials.map(m => {
-                    const isSelected = selectedIds.has(m.id)
-                    return (
-                      <button
-                        key={m.id}
-                        onClick={() => toggleMaterial(m.id)}
-                        className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border text-left text-sm transition-all ${
-                          isSelected ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/40'
-                        }`}
-                      >
-                        <div className={`h-4 w-4 rounded border-2 shrink-0 flex items-center justify-center ${
-                          isSelected ? 'border-primary bg-primary' : 'border-muted-foreground'
-                        }`}>
-                          {isSelected && <Check className="h-2.5 w-2.5 text-white" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{m.title}</p>
-                          <p className="text-xs text-muted-foreground">{TYPE_META[m.material_type]?.label || m.material_type}</p>
-                        </div>
-                      </button>
-                    )
-                  })}
+              {globalMaterials.length === 0 ? (
+                <div className="text-center py-8 text-sm text-muted-foreground">
+                  В других проектах нет постоянных материалов.<br />
+                  <span className="text-xs">TOV, распаковка, исследование аудитории появятся здесь автоматически.</span>
                 </div>
+              ) : (
+                <div className="space-y-3 max-h-80 overflow-y-auto">
+                  {Object.entries(globalByCategory).map(([cat, items]) => (
+                    <div key={cat}>
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5 px-1">{cat}</p>
+                      <div className="space-y-1">
+                        {items.map(m => {
+                          const isSel = selectedIds.has(m.id)
+                          return (
+                            <button key={m.id} onClick={() => toggle(m.id)}
+                              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all ${
+                                isSel ? 'border-primary bg-primary/8' : 'border-border bg-card hover:border-primary/40'
+                              }`}>
+                              <div className={`h-4 w-4 rounded border-2 shrink-0 flex items-center justify-center ${
+                                isSel ? 'border-primary bg-primary' : 'border-muted-foreground/50'
+                              }`}>
+                                {isSel && <Check className="h-2.5 w-2.5 text-white" />}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{m.title}</p>
+                                <p className="text-xs text-muted-foreground">{TYPE_META[m.material_type]?.label || m.material_type}</p>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground/60 shrink-0 hidden sm:block truncate max-w-[80px]">{m.project_name}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            /* ── From project tab ── */
+            <>
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">Проектные материалы</span> — воронки, продукты, кейсы. Меняются под каждый запуск.
+              </p>
+              {projects.length === 0 ? (
+                <div className="text-center py-8 text-sm text-muted-foreground">Нет других проектов с материалами</div>
+              ) : (
+                <>
+                  <Select value={selectedProjectId} onValueChange={id => { setSelectedProjectId(id ?? ''); setSelectedIds(new Set()) }}>
+                    <SelectTrigger className="border-border">
+                      <SelectValue placeholder="Выбери проект" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {projects.map(p => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {selectedProject && (
+                    <div className="space-y-1 max-h-64 overflow-y-auto">
+                      {selectedProject.materials.map(m => {
+                        const isSel = selectedIds.has(m.id)
+                        const isEvergreen = EVERGREEN_TYPES.has(m.material_type)
+                        return (
+                          <button key={m.id} onClick={() => toggle(m.id)}
+                            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all ${
+                              isSel ? 'border-primary bg-primary/8' : 'border-border bg-card hover:border-primary/40'
+                            }`}>
+                            <div className={`h-4 w-4 rounded border-2 shrink-0 flex items-center justify-center ${
+                              isSel ? 'border-primary bg-primary' : 'border-muted-foreground/50'
+                            }`}>
+                              {isSel && <Check className="h-2.5 w-2.5 text-white" />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{m.title}</p>
+                              <p className="text-xs text-muted-foreground">{TYPE_META[m.material_type]?.label || m.material_type}</p>
+                            </div>
+                            {isEvergreen && <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded shrink-0">постоянный</span>}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 pt-1">
             <Button variant="outline" className="flex-1" onClick={onClose} disabled={importing}>Отмена</Button>
             <Button
-              className="flex-1 gradient-accent text-white hover:opacity-90"
+              className="flex-1 bg-[#3A8A48] hover:bg-[#2E6E3A] text-white"
               onClick={handleImport}
               disabled={importing || selectedIds.size === 0}
             >

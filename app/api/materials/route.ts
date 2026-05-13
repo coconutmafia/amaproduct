@@ -1,6 +1,18 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+// Material types that are "evergreen" — done once, reused across products/launches
+const EVERGREEN_TYPES = [
+  'audience_survey', 'interview_transcript', 'audience_research',
+  'interview_transcription', // from new research feature
+  'meanings_map',
+  'unpacking_map',
+  'tone_of_voice', 'tov',
+  'blog_lines',
+  'competitors',
+  'marketing_strategy',
+]
+
 export async function GET(request: Request) {
   try {
     const supabase = await createClient()
@@ -9,6 +21,7 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url)
     const excludeProjectId = searchParams.get('excludeProject')
+    const mode = searchParams.get('mode') // 'global' | null
 
     // Get all user's projects (except current)
     let projectsQuery = supabase
@@ -21,27 +34,38 @@ export async function GET(request: Request) {
     const { data: projects } = await projectsQuery
 
     if (!projects || projects.length === 0) {
-      return NextResponse.json({ projects: [] })
+      return NextResponse.json({ projects: [], global: [] })
     }
 
     const projectIds = projects.map(p => p.id)
 
     // Get materials from those projects
-    const { data: materials } = await supabase
+    let materialsQuery = supabase
       .from('project_materials')
       .select('id, project_id, material_type, title, processing_status, created_at')
       .in('project_id', projectIds)
       .eq('processing_status', 'ready')
       .order('created_at', { ascending: false })
 
-    // Group by project
+    const { data: materials } = await materialsQuery
+
+    if (mode === 'global') {
+      // Return evergreen materials flat, with project name attached
+      const projectMap = Object.fromEntries(projects.map(p => [p.id, p.name]))
+      const globalMaterials = (materials || [])
+        .filter(m => EVERGREEN_TYPES.includes(m.material_type))
+        .map(m => ({ ...m, project_name: projectMap[m.project_id] ?? '' }))
+      return NextResponse.json({ global: globalMaterials, projects: [] })
+    }
+
+    // Default: group by project
     const grouped = projects.map(p => ({
       id: p.id,
       name: p.name,
       materials: (materials || []).filter(m => m.project_id === p.id),
     })).filter(p => p.materials.length > 0)
 
-    return NextResponse.json({ projects: grouped })
+    return NextResponse.json({ projects: grouped, global: [] })
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     return NextResponse.json({ error: msg }, { status: 500 })
