@@ -71,14 +71,16 @@ export function ProjectWizard() {
   const [autofillLoading, setAutofillLoading] = useState(false)
 
   const handleAutofill = async () => {
-    const url = instagramUrl.trim() || telegramUrl.trim()
-    if (!url) { toast.error('Сначала введи ссылку на Instagram или Telegram'); return }
+    if (!instagramUrl.trim() && !telegramUrl.trim()) {
+      toast.error('Сначала введи ссылку на Instagram или Telegram')
+      return
+    }
     setAutofillLoading(true)
     try {
       const res = await fetch('/api/projects/autofill', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ instagramUrl: instagramUrl.trim(), telegramUrl: telegramUrl.trim() }),
       })
       const data = await res.json() as {
         error?: string
@@ -270,8 +272,10 @@ export function ProjectWizard() {
                   <h3 className="font-semibold text-foreground">Уже ведёшь блог?</h3>
                 </div>
                 <p className="text-sm text-muted-foreground pl-10">
-                  Вставь ссылку на Instagram или Telegram — AI SMM-щик сам проанализирует профиль
-                  и заполнит всю информацию. Ты сможешь отредактировать.
+                  Вставь ссылку на Instagram или Telegram — AI SMM-щик сам проанализирует профиль и заполнит всю информацию.
+                </p>
+                <p className="text-sm text-muted-foreground/70 pl-10">
+                  Ты сможешь отредактировать.
                 </p>
               </div>
 

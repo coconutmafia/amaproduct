@@ -132,32 +132,54 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { url } = await request.json() as { url: string }
-    if (!url?.trim()) return NextResponse.json({ error: 'URL не указан' }, { status: 400 })
+    // Accept both URLs — try each until one works
+    const body = await request.json() as { url?: string; instagramUrl?: string; telegramUrl?: string }
+    const instagramRaw = (body.instagramUrl || (body.url && body.url.includes('instagram') ? body.url : '') || '').trim()
+    const telegramRaw  = (body.telegramUrl  || (body.url && (body.url.includes('t.me') || body.url.includes('telegram')) ? body.url : '') || '').trim()
 
-    const { username, platform } = extractUsername(url)
+    if (!instagramRaw && !telegramRaw) {
+      return NextResponse.json({ error: 'Укажи ссылку на Instagram или Telegram' }, { status: 400 })
+    }
 
-    // Scrape content
     let bio = ''
     let posts: string[] = []
     let platformLabel = ''
 
-    if (platform === 'telegram') {
-      const result = await scrapeTelegram(username)
-      bio = result.bio
-      posts = result.posts
-      platformLabel = `Telegram @${username}`
-    } else if (platform === 'instagram') {
-      const result = await scrapeInstagram(username)
-      bio = result.bio
-      posts = result.posts
-      platformLabel = `Instagram @${username}`
-    } else {
-      return NextResponse.json({ error: 'Поддерживаются только Instagram и Telegram для автозаполнения' }, { status: 400 })
+    // Try Telegram first — more reliable (public web viewer t.me/s/)
+    if (telegramRaw) {
+      try {
+        const { username } = extractUsername(telegramRaw)
+        const result = await scrapeTelegram(username)
+        if (result.bio || result.posts.length > 0) {
+          bio = result.bio
+          posts = result.posts
+          platformLabel = `Telegram @${username}`
+        }
+      } catch (e) {
+        console.warn('[autofill] Telegram failed:', e instanceof Error ? e.message : e)
+      }
+    }
+
+    // Try Instagram as fallback (or primary if no Telegram)
+    if (!platformLabel && instagramRaw) {
+      try {
+        const { username } = extractUsername(instagramRaw)
+        const result = await scrapeInstagram(username)
+        if (result.bio || result.posts.length > 0) {
+          bio = result.bio
+          posts = result.posts
+          platformLabel = `Instagram @${username}`
+        }
+      } catch (e) {
+        console.warn('[autofill] Instagram failed:', e instanceof Error ? e.message : e)
+      }
     }
 
     if (!bio && posts.length === 0) {
-      return NextResponse.json({ error: 'Не удалось загрузить данные профиля. Убедись что аккаунт публичный.' }, { status: 422 })
+      const tried = [telegramRaw && 'Telegram', instagramRaw && 'Instagram'].filter(Boolean).join(' и ')
+      return NextResponse.json({
+        error: `Не удалось загрузить данные из ${tried}. Проверь что аккаунты публичные и попробуй ещё раз.`,
+      }, { status: 422 })
     }
 
     // Build content for AI analysis
