@@ -83,18 +83,29 @@ async function scrapeInstagram(username: string): Promise<{ bio: string; posts: 
   const posts: string[] = []
   let bio = ''
 
+  // ── Method 1: Instagram internal API ────────────────────────────────────────
   try {
-    const res = await fetch(`https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
-        'Accept': '*/*', 'Accept-Language': 'ru,en;q=0.9',
-        'x-ig-app-id': '936619743392459',
-        'Referer': `https://www.instagram.com/${username}/`,
-      },
-      signal: AbortSignal.timeout(12000),
-    })
+    const res = await fetch(
+      `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`,
+      {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+          'Accept': 'application/json', 'Accept-Language': 'ru,en;q=0.9',
+          'x-ig-app-id': '936619743392459',
+          'x-requested-with': 'XMLHttpRequest',
+          'Referer': `https://www.instagram.com/${username}/`,
+          'Origin': 'https://www.instagram.com',
+        },
+        signal: AbortSignal.timeout(10000),
+      }
+    )
     if (res.ok) {
-      const json = await res.json() as { data?: { user?: { biography?: string; edge_owner_to_timeline_media?: { edges?: Array<{ node?: { edge_media_to_caption?: { edges?: Array<{ node?: { text?: string } }> } } }> } } } }
+      const json = await res.json() as {
+        data?: { user?: {
+          biography?: string
+          edge_owner_to_timeline_media?: { edges?: Array<{ node?: { edge_media_to_caption?: { edges?: Array<{ node?: { text?: string } }> } } }> }
+        } }
+      }
       const user = json?.data?.user
       if (user) {
         bio = user.biography ?? ''
@@ -107,19 +118,106 @@ async function scrapeInstagram(username: string): Promise<{ bio: string; posts: 
     }
   } catch { /* fall through */ }
 
-  // Fallback: HTML scrape
+  // ── Method 2: ?__a=1 lightweight endpoint ────────────────────────────────────
+  try {
+    const res = await fetch(`https://www.instagram.com/${username}/?__a=1&__d=dis`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)',
+        'Accept': 'application/json', 'Accept-Language': 'ru,en;q=0.9',
+        'Referer': 'https://www.instagram.com/',
+      },
+      signal: AbortSignal.timeout(10000),
+    })
+    if (res.ok) {
+      const json = await res.json() as {
+        graphql?: { user?: { biography?: string; edge_owner_to_timeline_media?: { edges?: Array<{ node?: { edge_media_to_caption?: { edges?: Array<{ node?: { text?: string } }> } } }> } } }
+      }
+      const user = json?.graphql?.user
+      if (user) {
+        if (!bio) bio = user.biography ?? ''
+        for (const e of (user.edge_owner_to_timeline_media?.edges ?? [])) {
+          const cap = e.node?.edge_media_to_caption?.edges?.[0]?.node?.text
+          if (cap && cap.length > 20 && !posts.includes(cap)) posts.push(cap)
+        }
+        if (bio || posts.length > 0) return { bio, posts: posts.slice(0, 20) }
+      }
+    }
+  } catch { /* fall through */ }
+
+  // ── Method 3: picuki.com public mirror ───────────────────────────────────────
+  try {
+    const html = await fetch(`https://www.picuki.com/profile/${username}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Accept-Language': 'ru,en;q=0.9',
+        'Accept': 'text/html',
+      },
+      signal: AbortSignal.timeout(12000),
+    }).then(r => { if (!r.ok) throw new Error(`picuki ${r.status}`); return r.text() })
+
+    // Bio
+    if (!bio) {
+      const bm = html.match(/<div[^>]+class="[^"]*profile-description[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
+        || html.match(/<span[^>]+class="[^"]*biography[^"]*"[^>]*>([\s\S]*?)<\/span>/i)
+      if (bm) bio = decodeHtml(bm[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
+    }
+    // Post captions
+    const captionRe = /<div[^>]+class="[^"]*photo-description[^"]*"[^>]*>([\s\S]*?)<\/div>/gi
+    let m: RegExpExecArray | null
+    while ((m = captionRe.exec(html)) !== null && posts.length < 20) {
+      const t = decodeHtml(m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
+      if (t.length > 30 && !posts.includes(t)) posts.push(t)
+    }
+    if (bio || posts.length > 0) return { bio, posts }
+  } catch { /* fall through */ }
+
+  // ── Method 4: imginn.com public mirror ───────────────────────────────────────
+  try {
+    const html = await fetch(`https://imginn.com/${username}/`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Accept-Language': 'ru,en;q=0.9',
+        'Accept': 'text/html',
+      },
+      signal: AbortSignal.timeout(12000),
+    }).then(r => { if (!r.ok) throw new Error(`imginn ${r.status}`); return r.text() })
+
+    // Bio
+    if (!bio) {
+      const bm = html.match(/<p[^>]+class="[^"]*desc[^"]*"[^>]*>([\s\S]*?)<\/p>/i)
+        || html.match(/"description"\s*:\s*"([^"]+)"/)
+      if (bm) bio = decodeHtml(bm[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
+    }
+    // Captions
+    const capRe = /<p[^>]+class="[^"]*item-description[^"]*"[^>]*>([\s\S]*?)<\/p>/gi
+    let m: RegExpExecArray | null
+    while ((m = capRe.exec(html)) !== null && posts.length < 20) {
+      const t = decodeHtml(m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
+      if (t.length > 30 && !posts.includes(t)) posts.push(t)
+    }
+    if (bio || posts.length > 0) return { bio, posts }
+  } catch { /* fall through */ }
+
+  // ── Method 5: Direct HTML scrape (og:description at least gives bio) ─────────
   try {
     const html = await fetch(`https://www.instagram.com/${username}/`, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)', 'Accept-Language': 'ru,en;q=0.9' },
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Accept-Language': 'ru,en;q=0.9',
+      },
       signal: AbortSignal.timeout(12000),
     }).then(r => r.text())
-    const bm = html.match(/"biography"\s*:\s*"([^"]*)"/)
-    if (bm) bio = decodeHtml(bm[1])
+
+    if (!bio) {
+      const bm = html.match(/"biography"\s*:\s*"([^"]*)"/)
+        || html.match(/<meta[^>]+property="og:description"[^>]+content="([^"]+)"/)
+      if (bm) bio = decodeHtml(bm[1])
+    }
     const re = /"text"\s*:\s*"((?:[^"\\]|\\.)*)"/g
     let cm: RegExpExecArray | null
     while ((cm = re.exec(html)) !== null && posts.length < 20) {
       const t = decodeHtml(cm[1])
-      if (t.length > 40 && !t.includes('{"') && !t.startsWith('http')) posts.push(t)
+      if (t.length > 40 && !t.includes('{"') && !t.startsWith('http') && !posts.includes(t)) posts.push(t)
     }
   } catch { /* ignore */ }
 
