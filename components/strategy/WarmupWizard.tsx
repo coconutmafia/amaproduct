@@ -210,6 +210,13 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   const router = useRouter()
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
+
+  // Scroll <main> to top after each step change (useEffect runs after render)
+  useEffect(() => {
+    const main = document.querySelector('main')
+    if (main) main.scrollTop = 0
+    else window.scrollTo(0, 0)
+  }, [step])
   const [generatingSummary, setGeneratingSummary] = useState(false)
   const [generatingSeconds, setGeneratingSeconds] = useState(0)
   const [aiPlanData, setAiPlanData] = useState<AIPlanData | null>(null)
@@ -1196,14 +1203,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
         <div className="flex items-center justify-between pt-2 border-t border-border">
           <Button
             variant="outline"
-            onClick={() => {
-              setStep(Math.max(1, step - 1))
-              setTimeout(() => {
-                window.scrollTo(0, 0)
-                document.body.scrollTop = 0
-                document.documentElement.scrollTop = 0
-              }, 50)
-            }}
+            onClick={() => setStep(Math.max(1, step - 1))}
             disabled={step === 1}
             className="border-border"
           >
@@ -1214,14 +1214,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           <Button
             onClick={() => {
               if (step === 7) generatePlan()
-              else {
-                setStep(step + 1)
-                setTimeout(() => {
-                window.scrollTo(0, 0)
-                document.body.scrollTop = 0
-                document.documentElement.scrollTop = 0
-              }, 50)
-              }
+              else setStep(step + 1)
             }}
             className="gradient-accent text-white hover:opacity-90"
             disabled={step === 7 && generatingSummary}

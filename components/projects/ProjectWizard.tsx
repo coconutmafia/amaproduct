@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -223,12 +223,12 @@ export function ProjectWizard() {
     }
   }
 
-  function scrollToTop() {
-    // The scroll container is the <main> element in the dashboard layout, not window
+  // Scroll <main> to top after React re-renders the new step content
+  useEffect(() => {
     const main = document.querySelector('main')
-    if (main) main.scrollTo({ top: 0, behavior: 'smooth' })
-    else window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
+    if (main) main.scrollTop = 0
+    else window.scrollTo(0, 0)
+  }, [step])
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-10">
@@ -692,7 +692,7 @@ export function ProjectWizard() {
 
       {/* Navigation */}
       <div className="flex items-center justify-between">
-        <Button variant="outline" onClick={() => { setStep(s => s - 1); scrollToTop() }} disabled={step === 1}>
+        <Button variant="outline" onClick={() => setStep(s => s - 1)} disabled={step === 1}>
           <ChevronLeft className="mr-2 h-4 w-4" /> Назад
         </Button>
 
@@ -701,7 +701,6 @@ export function ProjectWizard() {
             onClick={() => {
               if (step === 1 && !name.trim()) { toast.error('Введите имя / название проекта'); return }
               setStep(s => s + 1)
-              scrollToTop()
             }}
             className="gradient-accent text-white hover:opacity-90"
           >
