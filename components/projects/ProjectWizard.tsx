@@ -67,8 +67,11 @@ export function ProjectWizard() {
   // ── AI Name ─────────────────────────────────────
   const [aiName, setAiName] = useState('')
 
-  // ── Autofill ──────────────────────────────────────
+  // ── Autofill (profile) ────────────────────────────
   const [autofillLoading, setAutofillLoading] = useState(false)
+
+  // ── Autofill (product URL) — per product index ────
+  const [productFillLoading, setProductFillLoading] = useState<Record<number, boolean>>({})
 
   const handleAutofill = async () => {
     if (!instagramUrl.trim() && !telegramUrl.trim()) {
@@ -101,6 +104,32 @@ export function ProjectWizard() {
       toast.error(err instanceof Error ? err.message : 'Не удалось получить данные профиля')
     } finally {
       setAutofillLoading(false)
+    }
+  }
+
+  const handleProductFill = async (i: number) => {
+    const url = products[i].sales_page_url.trim()
+    if (!url) return
+    setProductFillLoading(prev => ({ ...prev, [i]: true }))
+    try {
+      const res = await fetch('/api/projects/scrape-product', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      })
+      const data = await res.json() as { error?: string; name?: string; product_type?: string; description?: string }
+      if (!res.ok) throw new Error(data.error || 'Ошибка анализа')
+      if (data.name && !products[i].name.trim()) updateProduct(i, 'name', data.name)
+      if (data.product_type) {
+        const valid = ['курс','консультация','марафон','интенсив','мастер-класс','наставничество','подписка','другое']
+        if (valid.includes(data.product_type)) updateProduct(i, 'product_type', data.product_type)
+      }
+      if (data.description && !products[i].description.trim()) updateProduct(i, 'description', data.description)
+      toast.success('Описание заполнено из страницы продажи')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось загрузить страницу')
+    } finally {
+      setProductFillLoading(prev => ({ ...prev, [i]: false }))
     }
   }
 
@@ -478,7 +507,14 @@ export function ProjectWizard() {
                   <Label className="flex items-center gap-1.5">
                     <CalendarDays className="h-3.5 w-3.5 text-primary" /> Дата старта запуска
                   </Label>
-                  <Input type="date" value={launchDate} onChange={e => setLaunchDate(e.target.value)} />
+                  {/* Native date — explicit border so iOS Safari renders it correctly */}
+                  <input
+                    type="date"
+                    value={launchDate}
+                    onChange={e => setLaunchDate(e.target.value)}
+                    className="flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground appearance-none focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    style={{ WebkitAppearance: 'none' }}
+                  />
                   <p className={HINT}>Когда открываются продажи? AI считает дни прогрева от этой даты</p>
                 </div>
                 <div className="space-y-1.5">
@@ -571,6 +607,30 @@ export function ProjectWizard() {
                     </div>
                   </div>
 
+                  {/* Sales URL first — with auto-fill button */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Ссылка на страницу продажи</Label>
+                    <Input
+                      placeholder="https://..."
+                      value={product.sales_page_url}
+                      onChange={e => updateProduct(i, 'sales_page_url', e.target.value)}
+                      className="h-8 text-sm"
+                    />
+                    {product.sales_page_url.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => handleProductFill(i)}
+                        disabled={productFillLoading[i]}
+                        className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary text-xs font-medium py-1.5 transition-all disabled:opacity-60"
+                      >
+                        {productFillLoading[i]
+                          ? <><Loader2 className="h-3 w-3 animate-spin" /> Анализирую страницу…</>
+                          : <><Wand2 className="h-3 w-3" /> Заполнить описание из сайта</>
+                        }
+                      </button>
+                    )}
+                  </div>
+
                   <div className="space-y-1.5">
                     <Label className="text-xs">Описание продукта</Label>
                     <Textarea
@@ -579,16 +639,6 @@ export function ProjectWizard() {
                       onChange={e => updateProduct(i, 'description', e.target.value)}
                       rows={2}
                       className="text-sm resize-none"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Ссылка на страницу продажи</Label>
-                    <Input
-                      placeholder="https://..."
-                      value={product.sales_page_url}
-                      onChange={e => updateProduct(i, 'sales_page_url', e.target.value)}
-                      className="h-8 text-sm"
                     />
                   </div>
                 </div>
