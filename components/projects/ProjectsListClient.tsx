@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { ProjectCard } from './ProjectCard'
 import { Button } from '@/components/ui/button'
@@ -14,7 +13,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { Plus, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Project {
@@ -60,21 +59,13 @@ export function ProjectsListClient({ projects: initial }: { projects: Project[] 
               whileTap={{ scale: 0.9 }}
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmId(project.id) }}
               disabled={deletingId === project.id}
-              className="absolute bottom-3 right-3 z-10 flex h-7 w-7 items-center justify-center rounded-lg bg-background/80 backdrop-blur-sm border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-all opacity-0 group-hover:opacity-100"
+              className="absolute bottom-3 right-3 z-10 flex h-7 w-7 items-center justify-center rounded-lg bg-background/80 backdrop-blur-sm border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
               title="Удалить проект"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </motion.button>
           </div>
         ))}
-        <Link href="/projects/new">
-          <div className="flex items-center justify-center h-full min-h-[140px] rounded-xl border border-dashed border-border hover:border-primary/40 hover:bg-primary/5 transition-all cursor-pointer">
-            <div className="flex flex-col items-center gap-2 text-muted-foreground hover:text-primary transition-colors p-6">
-              <Plus className="h-8 w-8" />
-              <span className="text-sm font-medium">Создать проект</span>
-            </div>
-          </div>
-        </Link>
       </div>
 
       <Dialog open={!!confirmId} onOpenChange={(open: boolean) => !open && setConfirmId(null)}>

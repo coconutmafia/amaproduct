@@ -14,7 +14,7 @@ import { toast } from 'sonner'
 import {
   ChevronRight, ChevronLeft, MessageCircle, Globe,
   Plus, X, Check, Loader2, Package, GitBranch,
-  Play, Users, Target, Sparkles, Bot, CalendarDays, Wallet,
+  Play, Users, Target, Sparkles, Bot, CalendarDays, Wallet, Wand2,
 } from 'lucide-react'
 
 interface Product {
@@ -66,6 +66,41 @@ export function ProjectWizard() {
 
   // ── AI Name ─────────────────────────────────────
   const [aiName, setAiName] = useState('')
+
+  // ── Autofill ──────────────────────────────────────
+  const [autofillLoading, setAutofillLoading] = useState(false)
+
+  const handleAutofill = async () => {
+    const url = instagramUrl.trim() || telegramUrl.trim()
+    if (!url) { toast.error('Сначала введи ссылку на Instagram или Telegram'); return }
+    setAutofillLoading(true)
+    try {
+      const res = await fetch('/api/projects/autofill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      })
+      const data = await res.json() as {
+        error?: string
+        platform?: string
+        niche?: string
+        description?: string
+        target_audience?: string
+        content_goals?: string
+      }
+      if (!res.ok) throw new Error(data.error || 'Ошибка анализа')
+      // Only fill fields that are currently empty
+      if (data.niche && !niche.trim()) setNiche(data.niche)
+      if (data.description && !description.trim()) setDescription(data.description)
+      if (data.target_audience && !targetAudience.trim()) setTargetAudience(data.target_audience)
+      if (data.content_goals && !contentGoals.trim()) setContentGoals(data.content_goals)
+      toast.success(`Данные заполнены из ${data.platform ?? 'профиля'} — проверь и отредактируй`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось получить данные профиля')
+    } finally {
+      setAutofillLoading(false)
+    }
+  }
 
   const addProduct = () => setProducts(p => [...p, {
     name: '', product_type: 'курс', price: '', currency: 'RUB', description: '', sales_page_url: ''
@@ -186,8 +221,15 @@ export function ProjectWizard() {
     }
   }
 
+  function scrollToTop() {
+    // The scroll container is the <main> element in the dashboard layout, not window
+    const main = document.querySelector('main')
+    if (main) main.scrollTo({ top: 0, behavior: 'smooth' })
+    else scrollToTop()
+  }
+
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-2xl mx-auto space-y-6 pb-10">
 
       {/* Steps indicator */}
       <div className="flex items-center justify-between">
@@ -329,6 +371,22 @@ export function ProjectWizard() {
                 </div>
               ))}
               <p className={HINT}>Вставь ссылки на активные площадки. AI учтёт специфику каждой</p>
+
+              {/* Autofill button */}
+              {(instagramUrl.trim() || telegramUrl.trim()) && (
+                <button
+                  type="button"
+                  onClick={handleAutofill}
+                  disabled={autofillLoading}
+                  className="mt-1 w-full flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary text-sm font-medium py-2.5 transition-all disabled:opacity-60"
+                >
+                  {autofillLoading ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" /> Анализирую профиль…</>
+                  ) : (
+                    <><Wand2 className="h-4 w-4" /> Заполнить автоматически из профиля</>
+                  )}
+                </button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -592,7 +650,7 @@ export function ProjectWizard() {
 
       {/* Navigation */}
       <div className="flex items-center justify-between">
-        <Button variant="outline" onClick={() => { setStep(s => s - 1); window.scrollTo({ top: 0, behavior: 'smooth' }) }} disabled={step === 1}>
+        <Button variant="outline" onClick={() => { setStep(s => s - 1); scrollToTop() }} disabled={step === 1}>
           <ChevronLeft className="mr-2 h-4 w-4" /> Назад
         </Button>
 
@@ -601,7 +659,7 @@ export function ProjectWizard() {
             onClick={() => {
               if (step === 1 && !name.trim()) { toast.error('Введите имя / название проекта'); return }
               setStep(s => s + 1)
-              window.scrollTo({ top: 0, behavior: 'smooth' })
+              scrollToTop()
             }}
             className="gradient-accent text-white hover:opacity-90"
           >
