@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { ProjectCard } from './ProjectCard'
@@ -13,13 +13,49 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { Trash2 } from 'lucide-react'
+import { Trash2, MoreVertical } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Project {
   id: string
   name: string
   [key: string]: unknown
+}
+
+function CardMenu({ projectId, onDelete }: { projectId: string; onDelete: () => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(o => !o) }}
+        className="flex h-7 w-7 items-center justify-center rounded-lg bg-background/90 backdrop-blur-sm border border-border text-muted-foreground hover:bg-secondary transition-all"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-9 z-50 min-w-[140px] rounded-xl border border-border bg-card shadow-lg py-1">
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(false); onDelete() }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Удалить проект
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function ProjectsListClient({ projects: initial }: { projects: Project[] }) {
@@ -50,20 +86,15 @@ export function ProjectsListClient({ projects: initial }: { projects: Project[] 
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {projects.map((project, i) => (
-          <div key={project.id} className="relative group">
+          <div key={project.id} className="relative">
             <ProjectCard project={project as never} index={i} />
-            {/* Delete button — appears on hover */}
-            <motion.button
-              initial={{ opacity: 0 }}
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmId(project.id) }}
-              disabled={deletingId === project.id}
-              className="absolute bottom-3 right-3 z-10 flex h-7 w-7 items-center justify-center rounded-lg bg-background/80 backdrop-blur-sm border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-              title="Удалить проект"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </motion.button>
+            {/* Always-visible ⋯ menu in top-right corner */}
+            <div className="absolute top-3 right-3 z-10">
+              <CardMenu
+                projectId={project.id}
+                onDelete={() => setConfirmId(project.id)}
+              />
+            </div>
           </div>
         ))}
       </div>

@@ -225,7 +225,7 @@ export function ProjectWizard() {
     // The scroll container is the <main> element in the dashboard layout, not window
     const main = document.querySelector('main')
     if (main) main.scrollTo({ top: 0, behavior: 'smooth' })
-    else scrollToTop()
+    else window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   return (
@@ -257,139 +257,177 @@ export function ProjectWizard() {
 
       {/* ── STEP 1: О блогере ───────────────────────── */}
       {step === 1 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Users className="h-5 w-5 text-primary" /> О блогере
-            </CardTitle>
-            <CardDescription>
-              Чем подробнее заполнишь — тем точнее AI SMM-щик адаптирует контент именно под тебя
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
+        <div className="space-y-4">
 
-            {/* AI Name block */}
-            <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <Bot className="h-4 w-4 text-primary" />
-                <span className="text-sm font-medium">Дай имя своему AI SMM-щику</span>
-                <Badge variant="outline" className="text-xs text-primary border-primary/30">необязательно</Badge>
-              </div>
-              <Input
-                placeholder="Например: Алёша, Вика, Макс..."
-                value={aiName}
-                onChange={e => setAiName(e.target.value)}
-                className="bg-background"
-                maxLength={30}
-              />
-              <p className={HINT}>
-                Это имя будет отображаться в интерфейсе вместо «AI SMM-щик» — делает работу теплее и привычнее
-              </p>
-            </div>
-
-            {/* Main fields */}
-            <div className="space-y-1.5">
-              <Label>Имя блогера / название проекта<span className="text-destructive ml-0.5">*</span></Label>
-              <Input
-                placeholder="Анна Иванова — Нутрициолог"
-                value={name}
-                onChange={e => setName(e.target.value)}
-              />
-              <p className={HINT}>Полное имя или псевдоним, который используется в блоге</p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Ниша / тема блога</Label>
-              <Input
-                placeholder="Нутрициология и здоровое питание"
-                value={niche}
-                onChange={e => setNiche(e.target.value)}
-              />
-              <p className={HINT}>Чем занимается эксперт? Это помогает AI писать в нужном контексте</p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-2">
-                <Users className="h-3.5 w-3.5 text-primary" /> Целевая аудитория
-              </Label>
-              <Textarea
-                placeholder="Женщины 25-45 лет, мамы в декрете, хотят похудеть после родов без жёстких диет, боятся срывов..."
-                value={targetAudience}
-                onChange={e => setTargetAudience(e.target.value)}
-                rows={3}
-                className="resize-none"
-              />
-              <p className={HINT}>
-                Кто читает блог? Возраст, пол, боли, желания. Чем конкретнее — тем точнее контент попадёт в них
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-2">
-                <Target className="h-3.5 w-3.5 text-primary" /> Цели контента
-              </Label>
-              <Textarea
-                placeholder="Прогреть аудиторию к курсу, показать экспертность, повысить доверие через кейсы, получить заявки на консультации..."
-                value={contentGoals}
-                onChange={e => setContentGoals(e.target.value)}
-                rows={2}
-                className="resize-none"
-              />
-              <p className={HINT}>Зачем вообще публикуется контент? Какой результат нужен от блога?</p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Описание / о чём блог</Label>
-              <Textarea
-                placeholder="Блог о здоровом питании без жёстких ограничений. Анна — нутрициолог с 7-летним опытом, помогла 500+ клиентам похудеть и сохранить результат. Стиль — живой, честный, с юмором..."
-                value={description}
-                onChange={e => setDescription(e.target.value)}
-                rows={3}
-                className="resize-none"
-              />
-              <p className={HINT}>Свободное описание: о чём пишет, как себя позиционирует, стиль общения с аудиторией</p>
-            </div>
-
-            <div className="space-y-3">
-              <Label>Социальные сети</Label>
-              {[
-                { icon: Sparkles, ph: 'https://instagram.com/username', val: instagramUrl, set: setInstagramUrl, label: 'Instagram' },
-                { icon: Globe,     ph: 'https://vk.com/username',       val: vkUrl,        set: setVkUrl,        label: 'VK' },
-                { icon: MessageCircle, ph: 'https://t.me/username',     val: telegramUrl,  set: setTelegramUrl,  label: 'Telegram' },
-                { icon: Play,      ph: 'https://youtube.com/@channel',  val: youtubeUrl,   set: setYoutubeUrl,   label: 'YouTube' },
-              ].map(({ icon: Icon, ph, val, set, label }) => (
-                <div key={label} className="relative">
-                  <span className="absolute left-3 top-2.5 text-xs text-muted-foreground w-16">{label}</span>
-                  <Icon className="absolute left-20 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder={ph}
-                    value={val}
-                    onChange={e => set(e.target.value)}
-                    className="pl-26"
-                    style={{ paddingLeft: '6.5rem' }}
-                  />
+          {/* ── Автозаполнение — главный блок ── */}
+          <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10">
+            <CardContent className="pt-5 space-y-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl gradient-accent">
+                    <Wand2 className="h-4 w-4 text-white" />
+                  </div>
+                  <h3 className="font-semibold text-foreground">Уже ведёшь блог?</h3>
                 </div>
-              ))}
-              <p className={HINT}>Вставь ссылки на активные площадки. AI учтёт специфику каждой</p>
+                <p className="text-sm text-muted-foreground pl-10">
+                  Вставь ссылку на Instagram или Telegram — AI SMM-щик сам проанализирует профиль
+                  и заполнит всю информацию. Ты сможешь отредактировать.
+                </p>
+              </div>
 
-              {/* Autofill button */}
-              {(instagramUrl.trim() || telegramUrl.trim()) && (
-                <button
-                  type="button"
-                  onClick={handleAutofill}
-                  disabled={autofillLoading}
-                  className="mt-1 w-full flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary text-sm font-medium py-2.5 transition-all disabled:opacity-60"
-                >
-                  {autofillLoading ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" /> Анализирую профиль…</>
-                  ) : (
-                    <><Wand2 className="h-4 w-4" /> Заполнить автоматически из профиля</>
-                  )}
-                </button>
+              {/* Quick social inputs — only Instagram + Telegram for autofill */}
+              <div className="space-y-2">
+                {[
+                  { icon: Sparkles, ph: 'https://instagram.com/username или @username', val: instagramUrl, set: setInstagramUrl, label: 'Instagram' },
+                  { icon: MessageCircle, ph: 'https://t.me/username или @username', val: telegramUrl, set: setTelegramUrl, label: 'Telegram' },
+                ].map(({ icon: Icon, ph, val, set, label }) => (
+                  <div key={label} className="relative">
+                    <span className="absolute left-3 top-2.5 text-xs text-muted-foreground w-[5.5rem]">{label}</span>
+                    <Icon className="absolute left-[5.5rem] top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder={ph}
+                      value={val}
+                      onChange={e => set(e.target.value)}
+                      className="bg-background/80"
+                      style={{ paddingLeft: '6.5rem' }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleAutofill}
+                disabled={autofillLoading || (!instagramUrl.trim() && !telegramUrl.trim())}
+                className="w-full flex items-center justify-center gap-2 rounded-xl gradient-accent text-white text-sm font-medium py-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-primary/20"
+              >
+                {autofillLoading ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Анализирую профиль…</>
+                ) : (
+                  <><Wand2 className="h-4 w-4" /> Заполнить автоматически</>
+                )}
+              </button>
+              {!instagramUrl.trim() && !telegramUrl.trim() && (
+                <p className="text-xs text-center text-muted-foreground -mt-1">
+                  Введи хотя бы одну ссылку выше
+                </p>
               )}
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+
+          {/* ── Основные поля ── */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Users className="h-4 w-4 text-primary" /> Или заполни вручную
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+
+              {/* AI Name block */}
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Bot className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium">Дай имя своему AI SMM-щику</span>
+                  <Badge variant="outline" className="text-xs text-primary border-primary/30">необязательно</Badge>
+                </div>
+                <Input
+                  placeholder="Например: Алёша, Вика, Макс..."
+                  value={aiName}
+                  onChange={e => setAiName(e.target.value)}
+                  className="bg-background"
+                  maxLength={30}
+                />
+                <p className={HINT}>
+                  Это имя будет отображаться вместо «AI SMM-щик» — делает работу теплее
+                </p>
+              </div>
+
+              {/* Main fields */}
+              <div className="space-y-1.5">
+                <Label>Имя блогера / название проекта<span className="text-destructive ml-0.5">*</span></Label>
+                <Input
+                  placeholder="Анна Иванова — Нутрициолог"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                />
+                <p className={HINT}>Полное имя или псевдоним, который используется в блоге</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Ниша / тема блога</Label>
+                <Input
+                  placeholder="Нутрициология и здоровое питание"
+                  value={niche}
+                  onChange={e => setNiche(e.target.value)}
+                />
+                <p className={HINT}>Чем занимается эксперт? Это помогает AI писать в нужном контексте</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-2">
+                  <Users className="h-3.5 w-3.5 text-primary" /> Целевая аудитория
+                </Label>
+                <Textarea
+                  placeholder="Женщины 25-45 лет, мамы в декрете, хотят похудеть после родов без жёстких диет, боятся срывов..."
+                  value={targetAudience}
+                  onChange={e => setTargetAudience(e.target.value)}
+                  rows={3}
+                  className="resize-none"
+                />
+                <p className={HINT}>
+                  Кто читает блог? Возраст, пол, боли, желания
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-2">
+                  <Target className="h-3.5 w-3.5 text-primary" /> Цели контента
+                </Label>
+                <Textarea
+                  placeholder="Прогреть аудиторию к курсу, показать экспертность, получить заявки на консультации..."
+                  value={contentGoals}
+                  onChange={e => setContentGoals(e.target.value)}
+                  rows={2}
+                  className="resize-none"
+                />
+                <p className={HINT}>Зачем вообще публикуется контент?</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Описание / о чём блог</Label>
+                <Textarea
+                  placeholder="Блог о здоровом питании без жёстких ограничений. Анна — нутрициолог с 7-летним опытом, помогла 500+ клиентам похудеть и сохранить результат. Стиль — живой, честный, с юмором..."
+                  value={description}
+                  onChange={e => setDescription(e.target.value)}
+                  rows={3}
+                  className="resize-none"
+                />
+                <p className={HINT}>Свободное описание: о чём пишет, как себя позиционирует, стиль общения с аудиторией</p>
+              </div>
+
+              {/* Additional social links */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Остальные площадки</Label>
+                {[
+                  { icon: Globe,  ph: 'https://vk.com/username', val: vkUrl,       set: setVkUrl,       label: 'VK' },
+                  { icon: Play,   ph: 'https://youtube.com/@channel', val: youtubeUrl, set: setYoutubeUrl, label: 'YouTube' },
+                ].map(({ icon: Icon, ph, val, set, label }) => (
+                  <div key={label} className="relative">
+                    <span className="absolute left-3 top-2.5 text-xs text-muted-foreground w-[5.5rem]">{label}</span>
+                    <Icon className="absolute left-[5.5rem] top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder={ph}
+                      value={val}
+                      onChange={e => set(e.target.value)}
+                      style={{ paddingLeft: '6.5rem' }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* ── STEP 2: Продукт и запуск ─────────────────── */}
