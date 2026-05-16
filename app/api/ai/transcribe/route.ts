@@ -6,8 +6,11 @@ import { NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
-const SUPPORTED = ['audio/mpeg', 'audio/mp4', 'audio/m4a', 'audio/wav', 'audio/ogg',
-  'audio/webm', 'video/mp4', 'audio/x-m4a', 'audio/aac', 'application/octet-stream']
+const SUPPORTED = [
+  'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a', 'audio/wav',
+  'audio/ogg', 'audio/oga', 'audio/opus', 'audio/x-ogg', 'video/ogg', 'application/ogg',
+  'audio/webm', 'video/mp4', 'audio/x-m4a', 'audio/aac', 'application/octet-stream',
+]
 
 export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY
@@ -42,9 +45,14 @@ export async function POST(request: Request) {
   const ext = file.name.split('.').pop()?.toLowerCase() ?? 'mp3'
   const mimeMap: Record<string, string> = {
     mp3: 'audio/mpeg', mp4: 'audio/mp4', m4a: 'audio/x-m4a',
-    wav: 'audio/wav', ogg: 'audio/ogg', webm: 'audio/webm', aac: 'audio/aac',
+    wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg',
+    webm: 'audio/webm', aac: 'audio/aac', flac: 'audio/flac',
   }
-  const mime = mimeMap[ext] ?? (SUPPORTED.includes(file.type) ? file.type : 'audio/mpeg')
+  // OGG variants from browser — normalise to audio/ogg so Whisper accepts it
+  const normalisedType = ['video/ogg', 'application/ogg', 'audio/x-ogg', 'audio/oga', 'audio/opus'].includes(file.type)
+    ? 'audio/ogg'
+    : file.type
+  const mime = mimeMap[ext] ?? (SUPPORTED.includes(normalisedType) ? normalisedType : 'audio/mpeg')
 
   // Re-wrap so OpenAI SDK gets a properly-named File
   const bytes = await file.arrayBuffer()

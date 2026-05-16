@@ -70,9 +70,9 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   }, [])
 
   const handleFile = useCallback((file: File) => {
-    const allowed = ['audio/', 'video/mp4', 'video/']
-    if (!allowed.some(p => file.type.startsWith(p)) && !file.name.match(/\.(mp3|mp4|m4a|wav|ogg|webm|aac)$/i)) {
-      toast.error('Поддерживаются: MP3, MP4, M4A, WAV, OGG, WEBM')
+    const allowed = ['audio/', 'video/mp4', 'video/', 'application/ogg']
+    if (!allowed.some(p => file.type.startsWith(p)) && !file.name.match(/\.(mp3|mp4|m4a|wav|ogg|oga|opus|webm|aac)$/i)) {
+      toast.error('Поддерживаются: MP3, MP4, M4A, WAV, OGG, OPUS, WEBM')
       return
     }
     const MAX_MB = 25
