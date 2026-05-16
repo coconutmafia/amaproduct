@@ -12,10 +12,11 @@ import { ProgressIndicator } from '@/components/shared/ProgressIndicator'
 import { UnpackingInterview } from '@/components/projects/UnpackingInterview'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { toast } from 'sonner'
+import Link from 'next/link'
 import {
   CheckCircle2, Circle, Loader, AlertCircle, Upload, BookOpen,
   X, File, Loader2, Plus, FileText, Mic, ChevronDown, ChevronUp,
-  Info, MessageSquare, Sparkles, Trash2, Copy, Check, Pencil,
+  Info, MessageSquare, Sparkles, Trash2, Copy, Check, Pencil, AudioLines,
 } from 'lucide-react'
 
 interface Material {
@@ -274,6 +275,31 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
         </DialogHeader>
 
         <div className="space-y-4 mt-1">
+
+          {/* ── Audio transcription CTA — only for interview transcripts ── */}
+          {materialType === 'interview_transcript' && (
+            <Link
+              href={`/projects/${projectId}/research`}
+              onClick={onClose}
+              className="block"
+            >
+              <div className="rounded-xl border-2 border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10 p-4 hover:border-primary/50 hover:bg-primary/10 transition-all cursor-pointer">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl gradient-accent">
+                    <AudioLines className="h-4.5 w-4.5 text-white" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-semibold text-foreground">Есть аудиозапись созвона?</p>
+                    <p className="text-xs text-muted-foreground">
+                      Загрузи аудио — AI расшифрует, составит таблицу интервью и карту смыслов автоматически
+                    </p>
+                    <p className="text-xs font-medium text-primary mt-1">Открыть AI-транскрибацию →</p>
+                  </div>
+                </div>
+              </div>
+            </Link>
+          )}
+
           {/* Hint from meta */}
           {TYPE_META[materialType] && (
             <div className="flex gap-2 p-3 rounded-lg bg-primary/5 border border-primary/15 text-xs text-muted-foreground">
@@ -1141,7 +1167,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                       )}
 
                       {/* Upload button */}
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         {type === 'unpacking_map' && (
                           <Button
                             size="sm"
@@ -1152,6 +1178,19 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                             <MessageSquare className="h-3 w-3 mr-1.5" />
                             Пройти интервью
                           </Button>
+                        )}
+                        {/* Audio transcription shortcut for interview_transcript */}
+                        {type === 'interview_transcript' && (
+                          <Link href={`/projects/${projectId}/research`}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs h-8 px-3 border-primary/40 text-primary hover:bg-primary/10"
+                            >
+                              <AudioLines className="h-3 w-3 mr-1.5" />
+                              Из аудио
+                            </Button>
+                          </Link>
                         )}
                         <Button
                           size="sm"
