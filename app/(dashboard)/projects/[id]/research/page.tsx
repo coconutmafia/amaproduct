@@ -168,7 +168,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       {/* Header */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" asChild className="h-8 w-8 shrink-0">
-          <Link href={`/projects/${id}`}><ArrowLeft className="h-4 w-4" /></Link>
+          <Link href={`/projects/${id}/knowledge`}><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
         <div>
           <h1 className="text-lg font-bold text-foreground">Исследование аудитории</h1>
