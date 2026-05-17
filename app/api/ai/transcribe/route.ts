@@ -54,9 +54,11 @@ export async function POST(request: Request) {
     : file.type
   const mime = mimeMap[ext] ?? (SUPPORTED.includes(normalisedType) ? normalisedType : 'audio/mpeg')
 
-  // Re-wrap so OpenAI SDK gets a properly-named File
+  // Use OpenAI's toFile helper — guarantees the SDK receives a correctly
+  // structured Uploadable regardless of runtime File implementation quirks.
+  const { toFile } = await import('openai')
   const bytes = await file.arrayBuffer()
-  const audio = new File([bytes], `interview.${ext}`, { type: mime })
+  const audio = await toFile(Buffer.from(bytes), `interview.${ext}`, { type: mime })
 
   try {
     const transcription = await openai.audio.transcriptions.create({
