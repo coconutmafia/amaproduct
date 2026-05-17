@@ -36,9 +36,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Файл не найден' }, { status: 400 })
   }
 
-  const MAX = 25 * 1024 * 1024 // 25 MB — Whisper limit
+  const MAX = 25 * 1024 * 1024 // 25 MB — Whisper hard limit per request (client chunks large files)
   if (file.size > MAX) {
-    return NextResponse.json({ error: 'Файл слишком большой (максимум 25 МБ)' }, { status: 400 })
+    return NextResponse.json({ error: 'Чанк слишком большой (максимум 25 МБ). Используй клиентское разбиение на части.' }, { status: 400 })
   }
 
   // Normalise to a type Whisper accepts

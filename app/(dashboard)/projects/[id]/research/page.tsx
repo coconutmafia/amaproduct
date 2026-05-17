@@ -38,6 +38,11 @@ const TYPE_LABELS: Record<string, string> = {
   pain: 'Боль', need: 'Потребность', trigger: 'Триггер', objection: 'Возражение',
 }
 
+// Whisper API hard limit is 25 MB per request.
+// For larger files the client slices into ≤23 MB byte chunks and sends each
+// sequentially, then concatenates the transcripts.
+const CHUNK_BYTES = 23 * 1024 * 1024 // 23 MB — safely under Whisper's 25 MB limit
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function ResearchPage({ params }: { params: Promise<{ id: string }> }) {
@@ -50,23 +55,55 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   const [expandedRespondent, setExpandedRespondent] = useState<string | null>(null)
   const [isDragging, setIsDragging]   = useState(false)
   const [selectedFile, setSelectedFile] = useState<{ name: string; sizeMb: string; estMin: string } | null>(null)
+  const [chunkProgress, setChunkProgress] = useState<{ current: number; total: number } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ── Transcription ───────────────────────────────────────────────────────────
   const transcribeFile = useCallback(async (file: File) => {
     setStep('transcribing')
-    const fd = new FormData()
-    fd.append('audio', file)
+    setChunkProgress(null)
+
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? 'mp3'
+
     try {
-      const res = await fetch('/api/ai/transcribe', { method: 'POST', body: fd })
-      const data = await res.json() as { text?: string; error?: string }
-      if (!res.ok || data.error) throw new Error(data.error ?? 'Transcription failed')
-      setTranscription(data.text ?? '')
+      if (file.size <= CHUNK_BYTES) {
+        // ── Single chunk (existing path) ────────────────────────────────────
+        const fd = new FormData()
+        fd.append('audio', file)
+        const res = await fetch('/api/ai/transcribe', { method: 'POST', body: fd })
+        const data = await res.json() as { text?: string; error?: string }
+        if (!res.ok || data.error) throw new Error(data.error ?? 'Transcription failed')
+        setTranscription(data.text ?? '')
+      } else {
+        // ── Multi-chunk: split → transcribe each → join ──────────────────────
+        const totalChunks = Math.ceil(file.size / CHUNK_BYTES)
+        const parts: string[] = []
+
+        for (let i = 0; i < totalChunks; i++) {
+          setChunkProgress({ current: i + 1, total: totalChunks })
+          const start = i * CHUNK_BYTES
+          const end   = Math.min(start + CHUNK_BYTES, file.size)
+          const chunk = new File([file.slice(start, end)], `chunk_${i + 1}.${ext}`, { type: file.type })
+
+          const fd = new FormData()
+          fd.append('audio', chunk)
+          const res  = await fetch('/api/ai/transcribe', { method: 'POST', body: fd })
+          const data = await res.json() as { text?: string; error?: string }
+          if (!res.ok || data.error) throw new Error(data.error ?? `Ошибка в части ${i + 1}`)
+          parts.push(data.text ?? '')
+        }
+
+        setTranscription(parts.join(' '))
+        setChunkProgress(null)
+      }
+
       setStep('transcribed')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Ошибка расшифровки')
       setStep('upload')
+      setChunkProgress(null)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleFile = useCallback((file: File) => {
@@ -75,10 +112,10 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       toast.error('Поддерживаются: MP3, MP4, M4A, WAV, OGG, OPUS, WEBM')
       return
     }
-    const MAX_MB = 25
+    const MAX_MB = 100
     const sizeMb = file.size / (1024 * 1024)
     if (sizeMb > MAX_MB) {
-      toast.error(`Файл ${sizeMb.toFixed(1)} МБ — максимум ${MAX_MB} МБ (≈ 30 минут MP3/M4A)`)
+      toast.error(`Файл ${sizeMb.toFixed(1)} МБ — максимум ${MAX_MB} МБ`)
       return
     }
 
@@ -212,12 +249,26 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                   <Loader2 className="h-7 w-7 text-[#3A8A48] animate-spin" />
                 </div>
                 <div className="space-y-1">
-                  <p className="font-semibold text-foreground">Расшифровываю аудио...</p>
+                  <p className="font-semibold text-foreground">
+                    {chunkProgress
+                      ? `Расшифровываю часть ${chunkProgress.current} из ${chunkProgress.total}...`
+                      : 'Расшифровываю аудио...'}
+                  </p>
                   {selectedFile && (
                     <p className="text-sm text-[#3A8A48] font-medium">{selectedFile.name} · {selectedFile.sizeMb} МБ · {selectedFile.estMin}</p>
                   )}
+                  {chunkProgress && chunkProgress.total > 1 && (
+                    <div className="w-full h-1.5 rounded-full bg-[#3A8A48]/15 overflow-hidden mt-1">
+                      <div
+                        className="h-full rounded-full bg-[#3A8A48] transition-all duration-500"
+                        style={{ width: `${Math.round((chunkProgress.current / chunkProgress.total) * 100)}%` }}
+                      />
+                    </div>
+                  )}
                   <p className="text-sm text-muted-foreground">
-                    {selectedFile && parseInt(selectedFile.estMin) >= 10
+                    {chunkProgress && chunkProgress.total > 1
+                      ? `Большой файл разбит на ${chunkProgress.total} части — не закрывай страницу`
+                      : selectedFile && parseInt(selectedFile.estMin) >= 10
                       ? 'Для длинных записей это может занять несколько минут — не закрывай страницу'
                       : 'Обычно 1–3 минуты — не закрывай страницу'}
                   </p>
@@ -235,9 +286,9 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                 </div>
                 {/* Limit hint */}
                 <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium">
-                  <span>⏱ Максимум ~30 минут записи (до 25 МБ)</span>
+                  <span>⏱ До 100 МБ (≈ 100 минут MP3)</span>
                   <span className="text-amber-400">·</span>
-                  <span>Запись длиннее — сохрани двумя файлами</span>
+                  <span>Большие файлы разбиваются автоматически</span>
                 </div>
                 <Button variant="outline" size="sm" onClick={e => { e.stopPropagation(); fileInputRef.current?.click() }}>
                   <Upload className="h-3.5 w-3.5 mr-1.5" /> Выбрать файл

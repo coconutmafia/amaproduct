@@ -56,7 +56,7 @@ export function ProjectCard({ project, index = 0 }: ProjectCardProps) {
         <Link href={`/projects/${project.id}`}>
           <Card className="group border-border bg-card hover:border-primary/40 hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden">
             <CardHeader className="pb-2 px-4">
-              <h3 className="font-semibold text-foreground truncate group-hover:text-primary transition-colors pr-1">
+              <h3 className="font-semibold text-foreground line-clamp-2 group-hover:text-primary transition-colors pr-1">
                 {project.name}
               </h3>
               <div className="flex items-center gap-2 mt-1">
