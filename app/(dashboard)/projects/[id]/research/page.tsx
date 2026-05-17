@@ -139,8 +139,21 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
           throw new Error(`«${fileName}» слишком большой (${(bytes.byteLength / 1024 / 1024).toFixed(1)} МБ) — максимум 100 МБ на файл`)
         }
 
-        const ext         = fileName.split('.').pop()?.toLowerCase() ?? 'mp3'
         const mime        = safeMime(fileType)   // guaranteed valid MIME
+
+        // Derive extension from MIME (always ASCII-safe) or sanitize filename.
+        // If fileName is the default Cyrillic fallback ('файл 1'), the raw ext
+        // contains Cyrillic/spaces which can cause WebKit SyntaxError when used
+        // as a Content-Disposition filename in FormData.append.
+        const MIME_EXT: Record<string, string> = {
+          'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/mp4': 'mp4',
+          'audio/x-m4a': 'm4a', 'audio/m4a': 'm4a', 'audio/wav': 'wav',
+          'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/aac': 'aac',
+          'audio/flac': 'flac', 'video/mp4': 'mp4',
+        }
+        const rawExt = fileName.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? ''
+        const ext    = rawExt || MIME_EXT[mime] || 'mp3'   // always ASCII-safe
+
         const totalChunks = Math.ceil(bytes.byteLength / CHUNK_BYTES)
 
         for (let ci = 0; ci < totalChunks; ci++) {
@@ -166,10 +179,8 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       setProgress(null)
       setStep('transcribed')
     } catch (err) {
-      const name = (err as { name?: string })?.name ?? ''
-      const msg  = err instanceof Error ? err.message : String(err)
-      // Any remaining WebKit DOMException gets a user-friendly message
-      if (msg.includes('did not match the expected pattern') || name === 'SyntaxError') {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('did not match the expected pattern')) {
         toast.error('Не удалось прочитать файл. Скачай его сначала в приложение «Файлы», потом загрузи.')
       } else {
         toast.error(msg || 'Ошибка расшифровки')
