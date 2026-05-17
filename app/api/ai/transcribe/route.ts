@@ -54,15 +54,9 @@ export async function POST(request: Request) {
     : file.type
   const mime = mimeMap[ext] ?? (SUPPORTED.includes(normalisedType) ? normalisedType : 'audio/mpeg')
 
-  // Use OpenAI's toFile helper — guarantees the SDK receives a correctly
-  // structured Uploadable regardless of runtime File implementation quirks.
+  // Re-wrap with a clean name so Whisper gets the right extension/type
   const { toFile } = await import('openai')
-  const bytes = await file.arrayBuffer()
-  const audio = await toFile(Buffer.from(bytes), `interview.${ext}`, { type: mime })
-
-  // Debug: first 4 bytes as hex so we can verify the binary data is correct
-  const header = Array.from(new Uint8Array(bytes, 0, Math.min(4, bytes.byteLength)))
-    .map(b => b.toString(16).padStart(2, '0')).join('')
+  const audio = await toFile(file, `interview.${ext}`, { type: mime })
 
   try {
     const transcription = await openai.audio.transcriptions.create({
@@ -76,7 +70,6 @@ export async function POST(request: Request) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Transcription failed'
     console.error('Whisper error:', msg)
-    // Include byte count + first 4 bytes so client can diagnose data integrity
-    return NextResponse.json({ error: `Ошибка расшифровки: ${msg} [sz=${bytes.byteLength} hx=${header}]` }, { status: 500 })
+    return NextResponse.json({ error: `Ошибка расшифровки: ${msg}` }, { status: 500 })
   }
 }

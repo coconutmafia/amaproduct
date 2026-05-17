@@ -63,36 +63,9 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ── Transcription ───────────────────────────────────────────────────────────
-  // Accepts multiple files — transcribes sequentially and concatenates results.
-  // Files >23 MB are byte-split into chunks (Whisper's 25 MB hard limit).
-  //
-  // iOS / iCloud: File objects may be cloud-only (not downloaded yet).
-  // We retry reading up to ICLOUD_MAX_ATTEMPTS times with a delay.
-  const ICLOUD_MAX_ATTEMPTS = 15  // up to ~60 s of waiting (4 s × 15)
-  const ICLOUD_RETRY_MS     = 4000
-
-  // iOS sometimes returns UTI strings (e.g. 'dyn.ah62d4rv4ge81g3py') instead of
-  // proper MIME types for iCloud files. This helper ensures only valid MIME types.
-  const safeMime = (raw: string): string =>
-    /^[a-zA-Z][a-zA-Z0-9!#$&\-^_]*\/[a-zA-Z0-9][a-zA-Z0-9!#$&\-^_.+]*$/.test(raw)
-      ? raw
-      : 'audio/mpeg'
-
-  // FileReader-based read — older API, more battle-tested on iOS/iCloud than
-  // file.arrayBuffer(). Avoids any potential WebKit DOMException from the
-  // Promise-based arrayBuffer() path.
-  const readFileBuffer = useCallback((file: File): Promise<ArrayBuffer> => {
-    return new Promise((resolve, reject) => {
-      try {
-        const reader = new FileReader()
-        reader.onload  = () => { resolve(reader.result as ArrayBuffer) }
-        reader.onerror = () => { reject(new Error(reader.error?.message || 'FileReader error')) }
-        reader.readAsArrayBuffer(file)
-      } catch (e) {
-        reject(e)
-      }
-    })
-  }, [])
+  // Uses file.slice() — a lazy Blob that lets iOS download iCloud files on
+  // demand when fetch() reads it. No FileReader, no ArrayBuffer intermediary.
+  // Files > CHUNK_BYTES are split and sent sequentially.
 
   const transcribeFiles = useCallback(async (files: File[]) => {
     setStep('transcribing')
@@ -104,57 +77,33 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       for (let fi = 0; fi < files.length; fi++) {
         const file = files[fi]
 
-        let bytes:    ArrayBuffer | null = null
-        let fileName: string            = `файл ${fi + 1}`
-        let fileType: string            = 'audio/mpeg'
+        // Read metadata safely (may throw on iOS iCloud stubs)
+        let fileName = `файл ${fi + 1}`
+        let fileSize = 0
+        try { fileName = file.name  } catch { /* iCloud stub */ }
+        try { fileSize = file.size  } catch { /* iCloud stub */ }
 
-        for (let attempt = 1; attempt <= ICLOUD_MAX_ATTEMPTS; attempt++) {
-          try {
-            bytes = await readFileBuffer(file)
-            try { fileName = file.name } catch { /* iCloud stub not ready */ }
-            try { fileType = file.type } catch { /* iCloud stub not ready */ }
-            break
-          } catch {
-            if (attempt < ICLOUD_MAX_ATTEMPTS) {
-              let label = `файл ${fi + 1}`
-              try { label = file.name } catch { /* still not ready */ }
-              setIcloudWait({ name: label, attempt, max: ICLOUD_MAX_ATTEMPTS })
-              await new Promise(r => setTimeout(r, ICLOUD_RETRY_MS))
-            }
-          }
-        }
-        setIcloudWait(null)
-
-        if (!bytes) {
-          throw new Error(`«${fileName}» не удалось загрузить. Открой приложение «Файлы», дождись загрузки и попробуй снова.`)
-        }
+        const rawExt = fileName.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? ''
+        const ext    = rawExt || 'mp3'
 
         const MAX_BYTES = 100 * 1024 * 1024
-        if (bytes.byteLength > MAX_BYTES) {
-          throw new Error(`«${fileName}» слишком большой (${(bytes.byteLength / 1024 / 1024).toFixed(1)} МБ) — максимум 100 МБ на файл`)
+        if (fileSize > MAX_BYTES) {
+          throw new Error(`«${fileName}» слишком большой (${(fileSize / 1024 / 1024).toFixed(1)} МБ) — максимум 100 МБ`)
         }
 
-        const mime = safeMime(fileType)
-
-        const MIME_EXT: Record<string, string> = {
-          'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/mp4': 'mp4',
-          'audio/x-m4a': 'm4a', 'audio/m4a': 'm4a', 'audio/wav': 'wav',
-          'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/aac': 'aac',
-          'audio/flac': 'flac', 'video/mp4': 'mp4',
-        }
-        const rawExt = fileName.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? ''
-        const ext    = rawExt || MIME_EXT[mime] || 'mp3'
-
-        const totalChunks = Math.ceil(bytes.byteLength / CHUNK_BYTES)
+        // When size is unknown (iCloud stub not yet materialised) assume 1 chunk
+        const totalChunks = fileSize > 0 ? Math.ceil(fileSize / CHUNK_BYTES) : 1
 
         for (let ci = 0; ci < totalChunks; ci++) {
           setProgress({ fileIndex: fi + 1, totalFiles: files.length, chunkIndex: ci + 1, totalChunks })
-          const start = ci * CHUNK_BYTES
-          const end   = Math.min(start + CHUNK_BYTES, bytes.byteLength)
 
-          const chunkBuffer = bytes.slice(start, end)
-          const chunkBlob   = new Blob([chunkBuffer], { type: mime })
-          const fd          = new FormData()
+          // file.slice() is a lazy Blob — bytes are read by fetch(), which
+          // triggers iCloud download automatically on iOS if not yet on device.
+          const start     = ci * CHUNK_BYTES
+          const end       = fileSize > 0 ? Math.min(start + CHUNK_BYTES, fileSize) : undefined
+          const chunkBlob = end !== undefined ? file.slice(start, end) : file
+
+          const fd = new FormData()
           fd.append('audio', chunkBlob, `chunk_${ci + 1}.${ext}`)
 
           const res  = await fetch('/api/ai/transcribe', { method: 'POST', body: fd })
@@ -171,26 +120,19 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       setProgress(null)
       setStep('transcribed')
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      toast.error(msg || 'Ошибка расшифровки')
+      toast.error(err instanceof Error ? err.message : 'Ошибка расшифровки')
       setStep('upload')
       setProgress(null)
       setIcloudWait(null)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [readFileBuffer])
+  }, [])
 
-  // handleFiles: receives FileList directly — no Array.from, no property access.
-  // All file reading happens lazily inside transcribeFiles with iCloud retry.
   const handleFiles = useCallback((fileList: FileList) => {
     const count = fileList.length
     if (count === 0) return
     setSelectedFile({ name: count === 1 ? 'файл выбран' : `${count} файлов выбрано`, sizeMb: '…', estMin: '…' })
-    // Build a plain array by index access — deferred inside transcribeFiles
-    const files: File[] = []
-    for (let i = 0; i < count; i++) {
-      try { const f = fileList.item(i); if (f) files.push(f) } catch { /* skip */ }
-    }
+    const files = Array.from(fileList)
     if (files.length === 0) { toast.error('Не удалось прочитать файлы'); return }
     transcribeFiles(files)
   }, [transcribeFiles])
