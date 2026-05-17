@@ -165,6 +165,41 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     transcribeFiles(files)
   }, [transcribeFiles])
 
+  // openPicker: called from the button — a direct trusted user gesture on iOS.
+  // We do NOT read files in onChange (e.target.files throws DOMException for
+  // iCloud files on iOS Safari). Instead we wait for the change event via a
+  // one-time listener, then read from the ref — different code path, no throw.
+  const openPicker = useCallback(() => {
+    const input = fileInputRef.current
+    if (!input) return
+
+    const onChanged = () => {
+      input.removeEventListener('change', onChanged)
+      // Small delay: give iOS time to make the FileList accessible
+      setTimeout(() => {
+        try {
+          const fl = input.files
+          if (fl && fl.length > 0) handleFiles(fl)
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : ''
+          if (msg.includes('did not match the expected pattern')) {
+            toast.error('iOS не может прочитать файлы из iCloud прямо сейчас. Открой «Файлы», загрузи их на устройство и попробуй снова.')
+          } else {
+            toast.error(msg || 'Ошибка при чтении файлов')
+          }
+        }
+        try { input.value = '' } catch { /* ignore */ }
+      }, 300)
+    }
+
+    input.addEventListener('change', onChanged)
+    try {
+      input.click()
+    } catch {
+      input.removeEventListener('change', onChanged)
+    }
+  }, [handleFiles])
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
@@ -273,34 +308,25 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       {(step === 'upload' || step === 'transcribing') && (
         <div className="space-y-4">
           {/* Hidden file input.
-              NO accept attribute — iOS Safari throws 'The string did not match
-              the expected pattern.' (WebKit DOMException) when accept is set and
-              the user picks iCloud files. Type validation happens in JS instead. */}
+              No accept attr — iOS Safari throws DOMException when accept is set
+              with iCloud files. No onChange — we read via ref in openPicker()
+              to avoid iOS touching e.target.files before we're ready. */}
           <input
-            id="audio-file-input"
             ref={fileInputRef}
             type="file"
             multiple
             className="hidden"
-            onChange={e => {
-              try {
-                const fl = e.target.files
-                if (fl && fl.length > 0) handleFiles(fl)
-              } catch (err) {
-                toast.error(err instanceof Error ? err.message : 'Ошибка при выборе файлов')
-              }
-              try { e.target.value = '' } catch { /* ignore */ }
+            onChange={() => {
+              // Intentionally empty — files are read via ref in openPicker()
+              // to work around iOS Safari DOMException on e.target.files access
             }}
           />
 
-          {/* Drop zone — label wraps content so clicking anywhere triggers the native file picker on iOS */}
-          <label
-            htmlFor={step === 'upload' ? 'audio-file-input' : undefined}
+          <div
             onDrop={handleDrop}
             onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
             onDragLeave={() => setIsDragging(false)}
             className={`relative flex flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed p-10 text-center transition-all
-              ${step === 'upload' ? 'cursor-pointer' : 'cursor-default'}
               ${isDragging ? 'border-[#3A8A48] bg-[#3A8A48]/5' : 'border-[#DEDEDE] hover:border-[#3A8A48]/50 hover:bg-[#3A8A48]/3'}
               ${step === 'transcribing' ? 'pointer-events-none opacity-70' : ''}`}
           >
@@ -367,13 +393,16 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                   <span className="text-amber-400">·</span>
                   <span>Большие файлы разбиваются автоматически</span>
                 </div>
-                {/* Explicit button — also valid as a label child, so it opens the picker on iOS */}
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-input bg-background text-sm font-medium shadow-sm hover:bg-accent hover:text-accent-foreground transition-colors">
+                <button
+                  type="button"
+                  onClick={openPicker}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-input bg-background text-sm font-medium shadow-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+                >
                   <Upload className="h-3.5 w-3.5" /> Выбрать файл
-                </span>
+                </button>
               </>
             )}
-          </label>
+          </div>
 
           {/* Manual text fallback */}
           {step === 'upload' && (

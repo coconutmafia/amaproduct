@@ -65,7 +65,7 @@ export function ProjectCard({ project, index = 0 }: ProjectCardProps) {
                   {project.status === 'active' ? 'Активен' : project.status === 'draft' ? 'Черновик' : 'Архив'}
                 </span>
                 {project.niche && (
-                  <p className="text-xs text-muted-foreground truncate">{project.niche}</p>
+                  <p className="text-xs text-muted-foreground line-clamp-2">{project.niche}</p>
                 )}
               </div>
             </CardHeader>
