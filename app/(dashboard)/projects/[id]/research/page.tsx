@@ -57,20 +57,25 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   const [selectedFile, setSelectedFile] = useState<{ name: string; sizeMb: string; estMin: string } | null>(null)
   // fileIndex/totalFiles track which file we're on; chunkIndex/totalChunks track byte-chunks within that file
   const [progress, setProgress] = useState<{ fileIndex: number; totalFiles: number; chunkIndex: number; totalChunks: number } | null>(null)
+  // shown while waiting for iCloud to finish downloading a file
+  const [icloudWait, setIcloudWait] = useState<{ name: string; attempt: number; max: number } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ── Transcription ───────────────────────────────────────────────────────────
   // Accepts multiple files — transcribes sequentially and concatenates results.
   // Files >23 MB are byte-split into chunks (Whisper's 25 MB hard limit).
   //
-  // iOS Safari issue: File objects from iCloud Drive are lazy references that
-  // haven't been downloaded yet. Reading them via FormData/fetch throws
-  // 'The string did not match the expected pattern.' (DOMException SyntaxError).
-  // Fix: materialise each file to ArrayBuffer first — this forces iCloud to
-  // download the file, and lets us catch the error per-file gracefully.
+  // iOS / iCloud: File objects may be cloud-only (not downloaded yet).
+  // We retry arrayBuffer() up to ICLOUD_MAX_ATTEMPTS times with a delay —
+  // iOS downloads the file in the background after the user picks it, so
+  // retrying is enough to let it finish.
+  const ICLOUD_MAX_ATTEMPTS = 8   // up to ~24 s of waiting
+  const ICLOUD_RETRY_MS     = 3000
+
   const transcribeFiles = useCallback(async (files: File[]) => {
     setStep('transcribing')
     setProgress(null)
+    setIcloudWait(null)
     const allParts: string[] = []
 
     try {
@@ -78,13 +83,25 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         const file = files[fi]
         const ext  = file.name.split('.').pop()?.toLowerCase() ?? 'mp3'
 
-        // Materialise: read the whole file into memory before processing.
-        // Catches iCloud / unavailable file errors early, per file.
-        let bytes: ArrayBuffer
-        try {
-          bytes = await file.arrayBuffer()
-        } catch {
-          toast.warning(`«${file.name}» не удалось прочитать — возможно, файл в iCloud и не загружен на устройство`)
+        // Materialise with iCloud retry.
+        // iOS starts downloading cloud-only files in the background as soon as
+        // the user picks them; we just need to wait long enough.
+        let bytes: ArrayBuffer | null = null
+        for (let attempt = 1; attempt <= ICLOUD_MAX_ATTEMPTS; attempt++) {
+          try {
+            bytes = await file.arrayBuffer()
+            break // success
+          } catch {
+            if (attempt < ICLOUD_MAX_ATTEMPTS) {
+              setIcloudWait({ name: file.name, attempt, max: ICLOUD_MAX_ATTEMPTS })
+              await new Promise(r => setTimeout(r, ICLOUD_RETRY_MS))
+            }
+          }
+        }
+        setIcloudWait(null)
+
+        if (!bytes) {
+          toast.warning(`«${file.name}» не загрузился — пропускаю`)
           continue
         }
 
@@ -282,7 +299,9 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                 </div>
                 <div className="space-y-2 w-full max-w-xs">
                   <p className="font-semibold text-foreground text-center">
-                    {progress
+                    {icloudWait
+                      ? `☁️ Загружаю из iCloud...`
+                      : progress
                       ? progress.totalFiles > 1
                         ? `Файл ${progress.fileIndex} из ${progress.totalFiles}${progress.totalChunks > 1 ? ` · часть ${progress.chunkIndex}/${progress.totalChunks}` : ''}...`
                         : progress.totalChunks > 1
@@ -290,7 +309,10 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                         : 'Расшифровываю аудио...'
                       : 'Расшифровываю аудио...'}
                   </p>
-                  {selectedFile && (
+                  {icloudWait && (
+                    <p className="text-sm text-muted-foreground text-center">«{icloudWait.name}» · ожидание {icloudWait.attempt}/{icloudWait.max}</p>
+                  )}
+                  {!icloudWait && selectedFile && (
                     <p className="text-sm text-[#3A8A48] font-medium text-center">{selectedFile.name} · {selectedFile.sizeMb} МБ · {selectedFile.estMin}</p>
                   )}
                   {/* Overall progress bar */}
@@ -307,7 +329,9 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                     )
                   })()}
                   <p className="text-sm text-muted-foreground text-center">
-                    {progress && (progress.totalFiles > 1 || progress.totalChunks > 1)
+                    {icloudWait
+                      ? 'iOS скачивает файл из iCloud — подожди немного'
+                      : progress && (progress.totalFiles > 1 || progress.totalChunks > 1)
                       ? 'Не закрывай страницу — это займёт несколько минут'
                       : selectedFile && parseInt(selectedFile.estMin) >= 10
                       ? 'Для длинных записей это может занять несколько минут — не закрывай страницу'
