@@ -150,23 +150,30 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // handleFiles: deliberately avoids reading any file properties (name/size/type)
-  // before transcribeFiles — those accessors can throw on iOS for iCloud files.
-  const handleFiles = useCallback((fileList: File[]) => {
-    if (fileList.length === 0) return
-    setSelectedFile({
-      name:   fileList.length === 1 ? ((() => { try { return fileList[0].name } catch { return 'файл' } })()) : `${fileList.length} файлов`,
-      sizeMb: '…',
-      estMin: '…',
-    })
-    transcribeFiles(fileList)
+  // handleFiles: receives FileList directly — no Array.from, no property access.
+  // All file reading happens lazily inside transcribeFiles with iCloud retry.
+  const handleFiles = useCallback((fileList: FileList) => {
+    const count = fileList.length
+    if (count === 0) return
+    setSelectedFile({ name: count === 1 ? 'файл выбран' : `${count} файлов выбрано`, sizeMb: '…', estMin: '…' })
+    // Build a plain array by index access — deferred inside transcribeFiles
+    const files: File[] = []
+    for (let i = 0; i < count; i++) {
+      try { const f = fileList.item(i); if (f) files.push(f) } catch { /* skip */ }
+    }
+    if (files.length === 0) { toast.error('Не удалось прочитать файлы'); return }
+    transcribeFiles(files)
   }, [transcribeFiles])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
-    const files = Array.from(e.dataTransfer.files)
-    if (files.length) handleFiles(files)
+    try {
+      const fl = e.dataTransfer.files
+      if (fl && fl.length > 0) handleFiles(fl)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка при перетаскивании файлов')
+    }
   }, [handleFiles])
 
   // ── Analysis Step 1: → Table 1 ─────────────────────────────────────────────
@@ -265,15 +272,25 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       {/* ── Step: Upload ── */}
       {(step === 'upload' || step === 'transcribing') && (
         <div className="space-y-4">
-          {/* Hidden file input — referenced by label below for iOS Safari compatibility */}
+          {/* Hidden file input.
+              NO accept attribute — iOS Safari throws 'The string did not match
+              the expected pattern.' (WebKit DOMException) when accept is set and
+              the user picks iCloud files. Type validation happens in JS instead. */}
           <input
             id="audio-file-input"
             ref={fileInputRef}
             type="file"
-            accept=".mp3,.mp4,.m4a,.wav,.ogg,.oga,.opus,.webm,.aac"
             multiple
             className="hidden"
-            onChange={e => { const files = Array.from(e.target.files ?? []); if (files.length) handleFiles(files); e.target.value = '' }}
+            onChange={e => {
+              try {
+                const fl = e.target.files
+                if (fl && fl.length > 0) handleFiles(fl)
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : 'Ошибка при выборе файлов')
+              }
+              try { e.target.value = '' } catch { /* ignore */ }
+            }}
           />
 
           {/* Drop zone — label wraps content so clicking anywhere triggers the native file picker on iOS */}
