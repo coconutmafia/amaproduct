@@ -38,11 +38,10 @@ const TYPE_LABELS: Record<string, string> = {
   pain: 'Боль', need: 'Потребность', trigger: 'Триггер', objection: 'Возражение',
 }
 
-// Vercel Serverless Function body limit is ~4.5 MB (Hobby plan).
-// We slice audio into 4 MB chunks so every upload stays under that limit.
-// Each 4 MB chunk ≈ 4 min of MP3@128kbps or 8 min of AAC@64kbps.
-// Whisper's own 25 MB hard limit is a non-issue at this chunk size.
-const CHUNK_BYTES = 4 * 1024 * 1024 // 4 MB — safely under Vercel's 4.5 MB limit
+// Whisper's hard limit is 25 MB per request.
+// We slice into 24 MB chunks — safely under Whisper's limit while keeping
+// chunks large enough for reliable format detection.
+const CHUNK_BYTES = 24 * 1024 * 1024 // 24 MB
 
 // ── Main component ────────────────────────────────────────────────────────────
 
