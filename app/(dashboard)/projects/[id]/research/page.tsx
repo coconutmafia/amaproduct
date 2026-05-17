@@ -99,26 +99,30 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     setIcloudWait(null)
     const allParts: string[] = []
 
+    // Diagnostic step tracker — tells us exactly which line threw
+    let dbg = 'init'
+
     try {
       for (let fi = 0; fi < files.length; fi++) {
         const file = files[fi]
 
-        // ── Materialise with iCloud retry ────────────────────────────────────
-        // On iOS, File objects from iCloud Drive may be lazy placeholders.
-        // We use FileReader (older, more compatible API) and retry until iOS
-        // finishes downloading the file in the background.
         let bytes:    ArrayBuffer | null = null
         let fileName: string            = `файл ${fi + 1}`
         let fileType: string            = 'audio/mpeg'
 
         for (let attempt = 1; attempt <= ICLOUD_MAX_ATTEMPTS; attempt++) {
           try {
-            bytes = await readFileBuffer(file)   // FileReader — triggers iCloud download
-            // Only read name/type after successful buffer read
+            dbg = `read(${fi+1}:${attempt})`
+            bytes = await readFileBuffer(file)
+            dbg = `name(${fi+1})`
             try { fileName = file.name    } catch { /* iCloud stub not ready */ }
+            dbg = `type(${fi+1})`
             try { fileType = file.type    } catch { /* iCloud stub not ready */ }
             break
-          } catch {
+          } catch (retryErr) {
+            // Re-throw immediately if it's the DOMException — no point retrying
+            const retryMsg = retryErr instanceof Error ? retryErr.message : ''
+            if (retryMsg.includes('did not match the expected pattern')) throw retryErr
             if (attempt < ICLOUD_MAX_ATTEMPTS) {
               let label = `файл ${fi + 1}`
               try { label = file.name } catch { /* still not ready */ }
@@ -133,18 +137,14 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
           throw new Error(`«${fileName}» не удалось загрузить. Открой приложение «Файлы», дождись загрузки и попробуй снова.`)
         }
 
-        // ── Validate size ─────────────────────────────────────────────────────
         const MAX_BYTES = 100 * 1024 * 1024
         if (bytes.byteLength > MAX_BYTES) {
           throw new Error(`«${fileName}» слишком большой (${(bytes.byteLength / 1024 / 1024).toFixed(1)} МБ) — максимум 100 МБ на файл`)
         }
 
-        const mime        = safeMime(fileType)   // guaranteed valid MIME
+        dbg = `mime(${fi+1})`
+        const mime = safeMime(fileType)
 
-        // Derive extension from MIME (always ASCII-safe) or sanitize filename.
-        // If fileName is the default Cyrillic fallback ('файл 1'), the raw ext
-        // contains Cyrillic/spaces which can cause WebKit SyntaxError when used
-        // as a Content-Disposition filename in FormData.append.
         const MIME_EXT: Record<string, string> = {
           'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/mp4': 'mp4',
           'audio/x-m4a': 'm4a', 'audio/m4a': 'm4a', 'audio/wav': 'wav',
@@ -152,7 +152,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
           'audio/flac': 'flac', 'video/mp4': 'mp4',
         }
         const rawExt = fileName.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? ''
-        const ext    = rawExt || MIME_EXT[mime] || 'mp3'   // always ASCII-safe
+        const ext    = rawExt || MIME_EXT[mime] || 'mp3'
 
         const totalChunks = Math.ceil(bytes.byteLength / CHUNK_BYTES)
 
@@ -161,14 +161,17 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
           const start = ci * CHUNK_BYTES
           const end   = Math.min(start + CHUNK_BYTES, bytes.byteLength)
 
-          // ArrayBuffer.slice — no MIME type involved, no File/Blob constructor.
-          // Then wrap in a plain Blob with explicit type for the FormData upload.
+          dbg = `slice(${fi+1}:${ci+1})`
           const chunkBuffer = bytes.slice(start, end)
-          const chunkBlob   = new Blob([chunkBuffer], { type: mime })
-
+          dbg = `blob(${fi+1}:${ci+1})`
+          const chunkBlob = new Blob([chunkBuffer], { type: mime })
+          dbg = `fd(${fi+1}:${ci+1})`
           const fd = new FormData()
+          dbg = `append(${fi+1}:${ci+1})`
           fd.append('audio', chunkBlob, `chunk_${ci + 1}.${ext}`)
+          dbg = `fetch(${fi+1}:${ci+1})`
           const res  = await fetch('/api/ai/transcribe', { method: 'POST', body: fd })
+          dbg = `json(${fi+1}:${ci+1})`
           const data = await res.json() as { text?: string; error?: string }
           if (!res.ok || data.error) throw new Error(data.error ?? `Файл ${fi + 1}, часть ${ci + 1}: ошибка`)
           allParts.push(data.text ?? '')
@@ -179,12 +182,10 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       setProgress(null)
       setStep('transcribed')
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (msg.includes('did not match the expected pattern')) {
-        toast.error('Не удалось прочитать файл. Скачай его сначала в приложение «Файлы», потом загрузи.')
-      } else {
-        toast.error(msg || 'Ошибка расшифровки')
-      }
+      const errName = (err as { name?: string })?.name ?? ''
+      const msg     = err instanceof Error ? err.message : String(err)
+      // Show step + raw error so we can diagnose exactly where WebKit throws
+      toast.error(`[${dbg}] ${errName ? errName + ': ' : ''}${msg || 'Ошибка'}`)
       setStep('upload')
       setProgress(null)
       setIcloudWait(null)
