@@ -38,10 +38,11 @@ const TYPE_LABELS: Record<string, string> = {
   pain: 'Боль', need: 'Потребность', trigger: 'Триггер', objection: 'Возражение',
 }
 
-// Whisper API hard limit is 25 MB per request.
-// For larger files the client slices into ≤23 MB byte chunks and sends each
-// sequentially, then concatenates the transcripts.
-const CHUNK_BYTES = 23 * 1024 * 1024 // 23 MB — safely under Whisper's 25 MB limit
+// Vercel Serverless Function body limit is ~4.5 MB (Hobby plan).
+// We slice audio into 4 MB chunks so every upload stays under that limit.
+// Each 4 MB chunk ≈ 4 min of MP3@128kbps or 8 min of AAC@64kbps.
+// Whisper's own 25 MB hard limit is a non-issue at this chunk size.
+const CHUNK_BYTES = 4 * 1024 * 1024 // 4 MB — safely under Vercel's 4.5 MB limit
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -99,9 +100,6 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     setIcloudWait(null)
     const allParts: string[] = []
 
-    // Diagnostic step tracker — tells us exactly which line threw
-    let dbg = 'init'
-
     try {
       for (let fi = 0; fi < files.length; fi++) {
         const file = files[fi]
@@ -112,17 +110,11 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
 
         for (let attempt = 1; attempt <= ICLOUD_MAX_ATTEMPTS; attempt++) {
           try {
-            dbg = `read(${fi+1}:${attempt})`
             bytes = await readFileBuffer(file)
-            dbg = `name(${fi+1})`
-            try { fileName = file.name    } catch { /* iCloud stub not ready */ }
-            dbg = `type(${fi+1})`
-            try { fileType = file.type    } catch { /* iCloud stub not ready */ }
+            try { fileName = file.name } catch { /* iCloud stub not ready */ }
+            try { fileType = file.type } catch { /* iCloud stub not ready */ }
             break
-          } catch (retryErr) {
-            // Re-throw immediately if it's the DOMException — no point retrying
-            const retryMsg = retryErr instanceof Error ? retryErr.message : ''
-            if (retryMsg.includes('did not match the expected pattern')) throw retryErr
+          } catch {
             if (attempt < ICLOUD_MAX_ATTEMPTS) {
               let label = `файл ${fi + 1}`
               try { label = file.name } catch { /* still not ready */ }
@@ -142,7 +134,6 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
           throw new Error(`«${fileName}» слишком большой (${(bytes.byteLength / 1024 / 1024).toFixed(1)} МБ) — максимум 100 МБ на файл`)
         }
 
-        dbg = `mime(${fi+1})`
         const mime = safeMime(fileType)
 
         const MIME_EXT: Record<string, string> = {
@@ -161,19 +152,13 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
           const start = ci * CHUNK_BYTES
           const end   = Math.min(start + CHUNK_BYTES, bytes.byteLength)
 
-          dbg = `slice(${fi+1}:${ci+1})`
           const chunkBuffer = bytes.slice(start, end)
-          dbg = `blob(${fi+1}:${ci+1})`
-          const chunkBlob = new Blob([chunkBuffer], { type: mime })
-          dbg = `fd(${fi+1}:${ci+1})`
-          const fd = new FormData()
-          dbg = `append(${fi+1}:${ci+1})`
+          const chunkBlob   = new Blob([chunkBuffer], { type: mime })
+          const fd          = new FormData()
           fd.append('audio', chunkBlob, `chunk_${ci + 1}.${ext}`)
-          dbg = `fetch(${fi+1}:${ci+1})`
+
           const res  = await fetch('/api/ai/transcribe', { method: 'POST', body: fd })
-          dbg = `text(${fi+1}:${ci+1})`
           const body = await res.text()
-          dbg = `parse(${fi+1}:${ci+1})`
           let data: { text?: string; error?: string }
           try { data = JSON.parse(body) as { text?: string; error?: string } }
           catch { throw new Error(`Сервер вернул ошибку ${res.status}. Попробуй ещё раз.`) }
@@ -186,10 +171,8 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       setProgress(null)
       setStep('transcribed')
     } catch (err) {
-      const errName = (err as { name?: string })?.name ?? ''
-      const msg     = err instanceof Error ? err.message : String(err)
-      // Show step + raw error so we can diagnose exactly where WebKit throws
-      toast.error(`[${dbg}] ${errName ? errName + ': ' : ''}${msg || 'Ошибка'}`)
+      const msg = err instanceof Error ? err.message : String(err)
+      toast.error(msg || 'Ошибка расшифровки')
       setStep('upload')
       setProgress(null)
       setIcloudWait(null)
