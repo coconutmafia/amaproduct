@@ -69,8 +69,8 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   // We retry arrayBuffer() up to ICLOUD_MAX_ATTEMPTS times with a delay —
   // iOS downloads the file in the background after the user picks it, so
   // retrying is enough to let it finish.
-  const ICLOUD_MAX_ATTEMPTS = 8   // up to ~24 s of waiting
-  const ICLOUD_RETRY_MS     = 3000
+  const ICLOUD_MAX_ATTEMPTS = 15  // up to ~60 s of waiting (4 s × 15)
+  const ICLOUD_RETRY_MS     = 4000
 
   const transcribeFiles = useCallback(async (files: File[]) => {
     setStep('transcribing')
@@ -101,8 +101,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         setIcloudWait(null)
 
         if (!bytes) {
-          toast.warning(`«${file.name}» не загрузился — пропускаю`)
-          continue
+          throw new Error(`«${file.name}» не удалось загрузить из iCloud. Попробуй открыть приложение «Файлы», дождаться загрузки файла, а потом выбрать снова.`)
         }
 
         const mime        = file.type || 'audio/mpeg'
@@ -310,7 +309,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                       : 'Расшифровываю аудио...'}
                   </p>
                   {icloudWait && (
-                    <p className="text-sm text-muted-foreground text-center">«{icloudWait.name}» · ожидание {icloudWait.attempt}/{icloudWait.max}</p>
+                    <p className="text-sm text-muted-foreground text-center">«{icloudWait.name}»</p>
                   )}
                   {!icloudWait && selectedFile && (
                     <p className="text-sm text-[#3A8A48] font-medium text-center">{selectedFile.name} · {selectedFile.sizeMb} МБ · {selectedFile.estMin}</p>
@@ -330,7 +329,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                   })()}
                   <p className="text-sm text-muted-foreground text-center">
                     {icloudWait
-                      ? 'iOS скачивает файл из iCloud — подожди немного'
+                      ? `iOS скачивает файл из iCloud — подожди (${icloudWait.attempt}/${icloudWait.max})`
                       : progress && (progress.totalFiles > 1 || progress.totalChunks > 1)
                       ? 'Не закрывай страницу — это займёт несколько минут'
                       : selectedFile && parseInt(selectedFile.estMin) >= 10
