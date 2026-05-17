@@ -1,16 +1,18 @@
-import { createClient } from '@/lib/supabase/server'
-import { NextResponse } from 'next/server'
+import { createClient }      from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { NextResponse }       from 'next/server'
 
 // Force dynamic — prevents Next.js from importing this module at build time
 // (OpenAI key is only available at runtime, not during static analysis)
-export const dynamic = 'force-dynamic'
+export const dynamic    = 'force-dynamic'
 export const maxDuration = 300
 
-const SUPPORTED = [
-  'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a', 'audio/wav',
-  'audio/ogg', 'audio/oga', 'audio/opus', 'audio/x-ogg', 'video/ogg', 'application/ogg',
-  'audio/webm', 'video/mp4', 'audio/x-m4a', 'audio/aac', 'application/octet-stream',
-]
+const MIME_MAP: Record<string, string> = {
+  mp3:  'audio/mpeg',  mp4:  'audio/mp4',   m4a:  'audio/x-m4a',
+  wav:  'audio/wav',   ogg:  'audio/ogg',   oga:  'audio/ogg',
+  opus: 'audio/ogg',   webm: 'audio/webm',  aac:  'audio/aac',
+  flac: 'audio/flac',
+}
 
 export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY
@@ -24,39 +26,70 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let formData: FormData
+  // ── Parse JSON body ────────────────────────────────────────────────────────
+  // Client uploads the file directly to Supabase Storage (bypassing Vercel's
+  // body-size limit), then calls this route with just the storage path +
+  // optional byte range so we can chunk large files for Whisper's 25 MB cap.
+  let body: { storagePath?: string; start?: number; end?: number; ext?: string }
   try {
-    formData = await request.formData()
+    body = await request.json() as typeof body
   } catch {
-    return NextResponse.json({ error: 'Invalid form data' }, { status: 400 })
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const file = formData.get('audio') as File | null
-  if (!file || file.size === 0) {
-    return NextResponse.json({ error: 'Файл не найден' }, { status: 400 })
+  const { storagePath, start, end, ext: rawExt } = body
+  if (!storagePath) return NextResponse.json({ error: 'storagePath обязателен' }, { status: 400 })
+
+  // Security: only allow access to the authenticated user's own folder
+  if (!storagePath.startsWith(`${user.id}/`)) {
+    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 
-  const MAX = 25 * 1024 * 1024 // 25 MB — Whisper hard limit per request (client chunks large files)
-  if (file.size > MAX) {
-    return NextResponse.json({ error: 'Чанк слишком большой (максимум 25 МБ). Используй клиентское разбиение на части.' }, { status: 400 })
+  const ext  = rawExt ?? storagePath.split('.').pop()?.toLowerCase() ?? 'mp3'
+  const mime = MIME_MAP[ext] ?? 'audio/mpeg'
+
+  // ── Fetch byte-range from Supabase Storage ─────────────────────────────────
+  const admin = createAdminClient()
+  const { data: signData, error: signError } = await admin.storage
+    .from('audio-temp')
+    .createSignedUrl(storagePath, 300) // 5-min TTL
+
+  if (signError || !signData?.signedUrl) {
+    console.error('Storage sign error:', signError)
+    return NextResponse.json({ error: 'Не удалось получить доступ к файлу в хранилище' }, { status: 500 })
   }
 
-  // Normalise to a type Whisper accepts
-  const ext = file.name.split('.').pop()?.toLowerCase() ?? 'mp3'
-  const mimeMap: Record<string, string> = {
-    mp3: 'audio/mpeg', mp4: 'audio/mp4', m4a: 'audio/x-m4a',
-    wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg',
-    webm: 'audio/webm', aac: 'audio/aac', flac: 'audio/flac',
+  const rangeHeaders: Record<string, string> = {}
+  if (start !== undefined && end !== undefined) {
+    rangeHeaders['Range'] = `bytes=${start}-${end - 1}`
   }
-  // OGG variants from browser — normalise to audio/ogg so Whisper accepts it
-  const normalisedType = ['video/ogg', 'application/ogg', 'audio/x-ogg', 'audio/oga', 'audio/opus'].includes(file.type)
-    ? 'audio/ogg'
-    : file.type
-  const mime = mimeMap[ext] ?? (SUPPORTED.includes(normalisedType) ? normalisedType : 'audio/mpeg')
 
-  // Re-wrap with a clean name so Whisper gets the right extension/type
+  const storageRes = await fetch(signData.signedUrl, { headers: rangeHeaders })
+  // 200 = full file, 206 = partial (Range request honoured)
+  if (!storageRes.ok && storageRes.status !== 206) {
+    return NextResponse.json(
+      { error: `Ошибка загрузки из хранилища: ${storageRes.status}` },
+      { status: 500 },
+    )
+  }
+
+  const chunkBlob = await storageRes.blob()
+
+  if (chunkBlob.size === 0) {
+    return NextResponse.json({ error: 'Пустой фрагмент файла' }, { status: 400 })
+  }
+
+  const MAX = 25 * 1024 * 1024 // Whisper hard limit
+  if (chunkBlob.size > MAX) {
+    return NextResponse.json(
+      { error: 'Фрагмент слишком большой (максимум 25 МБ). Уменьши CHUNK_BYTES на клиенте.' },
+      { status: 400 },
+    )
+  }
+
+  // ── Send to Whisper ────────────────────────────────────────────────────────
   const { toFile } = await import('openai')
-  const audio = await toFile(file, `interview.${ext}`, { type: mime })
+  const audio = await toFile(chunkBlob, `interview.${ext}`, { type: mime })
 
   try {
     const transcription = await openai.audio.transcriptions.create({
@@ -65,7 +98,6 @@ export async function POST(request: Request) {
       language:        'ru',
       response_format: 'text',
     })
-
     return NextResponse.json({ text: transcription })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Transcription failed'

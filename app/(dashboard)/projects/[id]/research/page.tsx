@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useRef, use } from 'react'
+import { createClient as createSupabaseClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import { ArrowLeft, Upload, Mic, Loader2, ChevronDown, ChevronUp, Sparkles, Download, CheckCircle2, Users, Map, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -39,9 +40,14 @@ const TYPE_LABELS: Record<string, string> = {
 }
 
 // Whisper's hard limit is 25 MB per request.
-// We slice into 24 MB chunks — safely under Whisper's limit while keeping
-// chunks large enough for reliable format detection.
+// We slice into 24 MB chunks on the client side — safely under Whisper's cap.
+// The file is uploaded directly to Supabase Storage (bypassing Vercel's
+// ~4.5 MB body limit), and the API route fetches byte-ranges from there.
 const CHUNK_BYTES = 24 * 1024 * 1024 // 24 MB
+
+type ProgressState =
+  | { stage: 'uploading';     fileIndex: number; totalFiles: number }
+  | { stage: 'transcribing';  fileIndex: number; totalFiles: number; chunkIndex: number; totalChunks: number }
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -55,8 +61,8 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   const [expandedRespondent, setExpandedRespondent] = useState<string | null>(null)
   const [isDragging, setIsDragging]   = useState(false)
   const [selectedFile, setSelectedFile] = useState<{ name: string; sizeMb: string; estMin: string } | null>(null)
-  // fileIndex/totalFiles track which file we're on; chunkIndex/totalChunks track byte-chunks within that file
-  const [progress, setProgress] = useState<{ fileIndex: number; totalFiles: number; chunkIndex: number; totalChunks: number } | null>(null)
+  // tracks both upload stage (to Supabase Storage) and transcription stage (chunks → Whisper)
+  const [progress, setProgress] = useState<ProgressState | null>(null)
   // shown while waiting for iCloud to finish downloading a file
   const [icloudWait, setIcloudWait] = useState<{ name: string; attempt: number; max: number } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -70,45 +76,72 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     setStep('transcribing')
     setProgress(null)
     setIcloudWait(null)
-    const allParts: string[] = []
+
+    const supabase     = createSupabaseClient()
+    const allParts:    string[] = []
+    const uploadedPaths: string[] = []
 
     try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Войди в систему, чтобы загрузить файл')
+
       for (let fi = 0; fi < files.length; fi++) {
         const file = files[fi]
 
         // Read metadata safely (may throw on iOS iCloud stubs)
         let fileName = `файл ${fi + 1}`
         let fileSize = 0
-        try { fileName = file.name  } catch { /* iCloud stub */ }
-        try { fileSize = file.size  } catch { /* iCloud stub */ }
+        try { fileName = file.name } catch { /* iCloud stub */ }
+        try { fileSize = file.size } catch { /* iCloud stub */ }
 
         const rawExt = fileName.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? ''
         const ext    = rawExt || 'mp3'
 
-        const MAX_BYTES = 100 * 1024 * 1024
-        if (fileSize > MAX_BYTES) {
-          throw new Error(`«${fileName}» слишком большой (${(fileSize / 1024 / 1024).toFixed(1)} МБ) — максимум 100 МБ`)
+        // ── Step 1: upload to Supabase Storage ──────────────────────────────
+        // Direct browser→Supabase upload — completely bypasses Vercel's
+        // ~4.5 MB request-body limit. On iOS the read also triggers iCloud
+        // download automatically, so no separate icloudWait polling needed.
+        setProgress({ stage: 'uploading', fileIndex: fi + 1, totalFiles: files.length })
+
+        const storagePath = `${user.id}/${Date.now()}_${fi}.${ext}`
+        const { error: uploadError } = await supabase.storage
+          .from('audio-temp')
+          .upload(storagePath, file, { upsert: true })
+
+        if (uploadError) throw new Error(`Ошибка загрузки: ${uploadError.message}`)
+        uploadedPaths.push(storagePath)
+
+        // Resolve actual file size — needed for chunking.
+        // If the File was an iCloud stub (size === 0) we now have the real size
+        // via a HEAD request against the just-uploaded object.
+        let actualSize = fileSize
+        if (actualSize === 0) {
+          const { data: sd } = await supabase.storage.from('audio-temp').createSignedUrl(storagePath, 60)
+          if (sd?.signedUrl) {
+            const hd = await fetch(sd.signedUrl, { method: 'HEAD' })
+            actualSize = parseInt(hd.headers.get('content-length') ?? '0', 10)
+          }
         }
 
-        // When size is unknown (iCloud stub not yet materialised) assume 1 chunk
-        const totalChunks = fileSize > 0 ? Math.ceil(fileSize / CHUNK_BYTES) : 1
+        // ── Step 2: transcribe in 24 MB chunks via the API ──────────────────
+        const totalChunks = actualSize > 0 ? Math.ceil(actualSize / CHUNK_BYTES) : 1
 
         for (let ci = 0; ci < totalChunks; ci++) {
-          setProgress({ fileIndex: fi + 1, totalFiles: files.length, chunkIndex: ci + 1, totalChunks })
+          setProgress({ stage: 'transcribing', fileIndex: fi + 1, totalFiles: files.length, chunkIndex: ci + 1, totalChunks })
 
-          // file.slice() is a lazy Blob — bytes are read by fetch(), which
-          // triggers iCloud download automatically on iOS if not yet on device.
-          const start     = ci * CHUNK_BYTES
-          const end       = fileSize > 0 ? Math.min(start + CHUNK_BYTES, fileSize) : undefined
-          const chunkBlob = end !== undefined ? file.slice(start, end) : file
+          const start = ci * CHUNK_BYTES
+          const end   = actualSize > 0 ? Math.min(start + CHUNK_BYTES, actualSize) : undefined
 
-          const fd = new FormData()
-          fd.append('audio', chunkBlob, `chunk_${ci + 1}.${ext}`)
-
-          const res  = await fetch('/api/ai/transcribe', { method: 'POST', body: fd })
-          const body = await res.text()
+          // Small JSON payload — well under any request-body limit.
+          // The route fetches the byte-range from Supabase Storage directly.
+          const res  = await fetch('/api/ai/transcribe', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ storagePath, start, end, ext }),
+          })
+          const bodyText = await res.text()
           let data: { text?: string; error?: string }
-          try { data = JSON.parse(body) as { text?: string; error?: string } }
+          try { data = JSON.parse(bodyText) as { text?: string; error?: string } }
           catch { throw new Error(`Сервер вернул ошибку ${res.status}. Попробуй ещё раз.`) }
           if (!res.ok || data.error) throw new Error(data.error ?? `Файл ${fi + 1}, часть ${ci + 1}: ошибка`)
           allParts.push(data.text ?? '')
@@ -123,6 +156,11 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       setStep('upload')
       setProgress(null)
       setIcloudWait(null)
+    } finally {
+      // Always remove the temporary storage files, even on error
+      if (uploadedPaths.length > 0) {
+        await supabase.storage.from('audio-temp').remove(uploadedPaths).catch(() => {})
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -310,7 +348,11 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                   <p className="font-semibold text-foreground text-center">
                     {icloudWait
                       ? `☁️ Загружаю из iCloud...`
-                      : progress
+                      : progress?.stage === 'uploading'
+                      ? progress.totalFiles > 1
+                        ? `Загружаю файл ${progress.fileIndex} из ${progress.totalFiles}...`
+                        : 'Загружаю файл...'
+                      : progress?.stage === 'transcribing'
                       ? progress.totalFiles > 1
                         ? `Файл ${progress.fileIndex} из ${progress.totalFiles}${progress.totalChunks > 1 ? ` · часть ${progress.chunkIndex}/${progress.totalChunks}` : ''}...`
                         : progress.totalChunks > 1
@@ -325,7 +367,12 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                     <p className="text-sm text-[#3A8A48] font-medium text-center">{selectedFile.name} · {selectedFile.sizeMb} МБ · {selectedFile.estMin}</p>
                   )}
                   {/* Overall progress bar */}
-                  {progress && (progress.totalFiles > 1 || progress.totalChunks > 1) && (() => {
+                  {progress?.stage === 'uploading' && (
+                    <div className="w-full h-1.5 rounded-full bg-[#3A8A48]/15 overflow-hidden">
+                      <div className="h-full rounded-full bg-[#3A8A48]/50 animate-pulse" style={{ width: '100%' }} />
+                    </div>
+                  )}
+                  {progress?.stage === 'transcribing' && (progress.totalFiles > 1 || progress.totalChunks > 1) && (() => {
                     const done = (progress.fileIndex - 1) / progress.totalFiles
                     const cur  = (progress.chunkIndex / progress.totalChunks) / progress.totalFiles
                     return (
@@ -340,7 +387,9 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                   <p className="text-sm text-muted-foreground text-center">
                     {icloudWait
                       ? `iOS скачивает файл из iCloud — подожди (${icloudWait.attempt}/${icloudWait.max})`
-                      : progress && (progress.totalFiles > 1 || progress.totalChunks > 1)
+                      : progress?.stage === 'uploading'
+                      ? 'Загружаю файл — не закрывай страницу'
+                      : progress?.stage === 'transcribing' && (progress.totalFiles > 1 || progress.totalChunks > 1)
                       ? 'Не закрывай страницу — это займёт несколько минут'
                       : selectedFile && parseInt(selectedFile.estMin) >= 10
                       ? 'Для длинных записей это может занять несколько минут — не закрывай страницу'
