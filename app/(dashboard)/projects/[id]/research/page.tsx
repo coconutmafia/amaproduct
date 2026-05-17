@@ -55,88 +55,90 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   const [expandedRespondent, setExpandedRespondent] = useState<string | null>(null)
   const [isDragging, setIsDragging]   = useState(false)
   const [selectedFile, setSelectedFile] = useState<{ name: string; sizeMb: string; estMin: string } | null>(null)
-  const [chunkProgress, setChunkProgress] = useState<{ current: number; total: number } | null>(null)
+  // fileIndex/totalFiles track which file we're on; chunkIndex/totalChunks track byte-chunks within that file
+  const [progress, setProgress] = useState<{ fileIndex: number; totalFiles: number; chunkIndex: number; totalChunks: number } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ── Transcription ───────────────────────────────────────────────────────────
-  const transcribeFile = useCallback(async (file: File) => {
+  // Accepts multiple files — transcribes sequentially and concatenates results.
+  // Files >23 MB are byte-split into chunks (Whisper's 25 MB hard limit).
+  const transcribeFiles = useCallback(async (files: File[]) => {
     setStep('transcribing')
-    setChunkProgress(null)
-
-    const ext = file.name.split('.').pop()?.toLowerCase() ?? 'mp3'
+    setProgress(null)
+    const allParts: string[] = []
 
     try {
-      if (file.size <= CHUNK_BYTES) {
-        // ── Single chunk (existing path) ────────────────────────────────────
-        const fd = new FormData()
-        fd.append('audio', file)
-        const res = await fetch('/api/ai/transcribe', { method: 'POST', body: fd })
-        const data = await res.json() as { text?: string; error?: string }
-        if (!res.ok || data.error) throw new Error(data.error ?? 'Transcription failed')
-        setTranscription(data.text ?? '')
-      } else {
-        // ── Multi-chunk: split → transcribe each → join ──────────────────────
-        const totalChunks = Math.ceil(file.size / CHUNK_BYTES)
-        const parts: string[] = []
+      for (let fi = 0; fi < files.length; fi++) {
+        const file = files[fi]
+        const ext  = file.name.split('.').pop()?.toLowerCase() ?? 'mp3'
 
-        for (let i = 0; i < totalChunks; i++) {
-          setChunkProgress({ current: i + 1, total: totalChunks })
-          const start = i * CHUNK_BYTES
-          const end   = Math.min(start + CHUNK_BYTES, file.size)
-          const chunk = new File([file.slice(start, end)], `chunk_${i + 1}.${ext}`, { type: file.type })
-
-          const fd = new FormData()
-          fd.append('audio', chunk)
+        if (file.size <= CHUNK_BYTES) {
+          setProgress({ fileIndex: fi + 1, totalFiles: files.length, chunkIndex: 1, totalChunks: 1 })
+          const fd  = new FormData()
+          fd.append('audio', file)
           const res  = await fetch('/api/ai/transcribe', { method: 'POST', body: fd })
           const data = await res.json() as { text?: string; error?: string }
-          if (!res.ok || data.error) throw new Error(data.error ?? `Ошибка в части ${i + 1}`)
-          parts.push(data.text ?? '')
+          if (!res.ok || data.error) throw new Error(data.error ?? 'Transcription failed')
+          allParts.push(data.text ?? '')
+        } else {
+          const totalChunks = Math.ceil(file.size / CHUNK_BYTES)
+          for (let ci = 0; ci < totalChunks; ci++) {
+            setProgress({ fileIndex: fi + 1, totalFiles: files.length, chunkIndex: ci + 1, totalChunks })
+            const start = ci * CHUNK_BYTES
+            const end   = Math.min(start + CHUNK_BYTES, file.size)
+            const chunk = new File([file.slice(start, end)], `chunk_${ci + 1}.${ext}`, { type: file.type })
+            const fd    = new FormData()
+            fd.append('audio', chunk)
+            const res  = await fetch('/api/ai/transcribe', { method: 'POST', body: fd })
+            const data = await res.json() as { text?: string; error?: string }
+            if (!res.ok || data.error) throw new Error(data.error ?? `Файл ${fi + 1}, часть ${ci + 1}: ошибка`)
+            allParts.push(data.text ?? '')
+          }
         }
-
-        setTranscription(parts.join(' '))
-        setChunkProgress(null)
       }
 
+      setTranscription(allParts.join('\n\n'))
+      setProgress(null)
       setStep('transcribed')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Ошибка расшифровки')
       setStep('upload')
-      setChunkProgress(null)
+      setProgress(null)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleFile = useCallback((file: File) => {
+  const handleFiles = useCallback((fileList: File[]) => {
     const allowed = ['audio/', 'video/mp4', 'video/', 'application/ogg']
-    if (!allowed.some(p => file.type.startsWith(p)) && !file.name.match(/\.(mp3|mp4|m4a|wav|ogg|oga|opus|webm|aac)$/i)) {
-      toast.error('Поддерживаются: MP3, MP4, M4A, WAV, OGG, OPUS, WEBM')
-      return
-    }
+    const valid = fileList.filter(f =>
+      allowed.some(p => f.type.startsWith(p)) || f.name.match(/\.(mp3|mp4|m4a|wav|ogg|oga|opus|webm|aac)$/i)
+    )
+    if (valid.length === 0) { toast.error('Поддерживаются: MP3, MP4, M4A, WAV, OGG, WEBM'); return }
+    if (valid.length < fileList.length) toast.warning(`${fileList.length - valid.length} файл(ов) пропущено — неподдерживаемый формат`)
+
     const MAX_MB = 100
-    const sizeMb = file.size / (1024 * 1024)
-    if (sizeMb > MAX_MB) {
-      toast.error(`Файл ${sizeMb.toFixed(1)} МБ — максимум ${MAX_MB} МБ`)
-      return
+    for (const f of valid) {
+      const mb = f.size / (1024 * 1024)
+      if (mb > MAX_MB) { toast.error(`${f.name}: ${mb.toFixed(1)} МБ — максимум ${MAX_MB} МБ на файл`); return }
     }
 
-    // Estimate duration: MP3/M4A/AAC ≈ 1 min per MB at 128kbps; WAV ≈ 5× smaller duration
-    const isWav = file.name.toLowerCase().endsWith('.wav')
-    const estMin = isWav ? Math.max(1, Math.round(sizeMb / 10)) : Math.max(1, Math.round(sizeMb))
+    const totalMb  = valid.reduce((s, f) => s + f.size / (1024 * 1024), 0)
+    const allWav   = valid.every(f => f.name.toLowerCase().endsWith('.wav'))
+    const estMin   = allWav ? Math.max(1, Math.round(totalMb / 10)) : Math.max(1, Math.round(totalMb))
     setSelectedFile({
-      name:   file.name,
-      sizeMb: sizeMb.toFixed(1),
+      name:   valid.length === 1 ? valid[0].name : `${valid.length} файла`,
+      sizeMb: totalMb.toFixed(1),
       estMin: estMin > 1 ? `≈ ${estMin} мин` : '< 1 мин',
     })
-
-    transcribeFile(file)
-  }, [transcribeFile])
+    transcribeFiles(valid)
+  }, [transcribeFiles])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
-    const file = e.dataTransfer.files[0]
-    if (file) handleFile(file)
-  }, [handleFile])
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length) handleFiles(files)
+  }, [handleFiles])
 
   // ── Analysis Step 1: → Table 1 ─────────────────────────────────────────────
   const analyzeTable1 = useCallback(async () => {
@@ -240,8 +242,9 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
             ref={fileInputRef}
             type="file"
             accept=".mp3,.mp4,.m4a,.wav,.ogg,.oga,.opus,.webm,.aac"
+            multiple
             className="hidden"
-            onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }}
+            onChange={e => { const files = Array.from(e.target.files ?? []); if (files.length) handleFiles(files); e.target.value = '' }}
           />
 
           {/* Drop zone — label wraps content so clicking anywhere triggers the native file picker on iOS */}
@@ -260,26 +263,35 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#3A8A48]/10">
                   <Loader2 className="h-7 w-7 text-[#3A8A48] animate-spin" />
                 </div>
-                <div className="space-y-1">
-                  <p className="font-semibold text-foreground">
-                    {chunkProgress
-                      ? `Расшифровываю часть ${chunkProgress.current} из ${chunkProgress.total}...`
+                <div className="space-y-2 w-full max-w-xs">
+                  <p className="font-semibold text-foreground text-center">
+                    {progress
+                      ? progress.totalFiles > 1
+                        ? `Файл ${progress.fileIndex} из ${progress.totalFiles}${progress.totalChunks > 1 ? ` · часть ${progress.chunkIndex}/${progress.totalChunks}` : ''}...`
+                        : progress.totalChunks > 1
+                        ? `Расшифровываю часть ${progress.chunkIndex} из ${progress.totalChunks}...`
+                        : 'Расшифровываю аудио...'
                       : 'Расшифровываю аудио...'}
                   </p>
                   {selectedFile && (
-                    <p className="text-sm text-[#3A8A48] font-medium">{selectedFile.name} · {selectedFile.sizeMb} МБ · {selectedFile.estMin}</p>
+                    <p className="text-sm text-[#3A8A48] font-medium text-center">{selectedFile.name} · {selectedFile.sizeMb} МБ · {selectedFile.estMin}</p>
                   )}
-                  {chunkProgress && chunkProgress.total > 1 && (
-                    <div className="w-full h-1.5 rounded-full bg-[#3A8A48]/15 overflow-hidden mt-1">
-                      <div
-                        className="h-full rounded-full bg-[#3A8A48] transition-all duration-500"
-                        style={{ width: `${Math.round((chunkProgress.current / chunkProgress.total) * 100)}%` }}
-                      />
-                    </div>
-                  )}
-                  <p className="text-sm text-muted-foreground">
-                    {chunkProgress && chunkProgress.total > 1
-                      ? `Большой файл разбит на ${chunkProgress.total} части — не закрывай страницу`
+                  {/* Overall progress bar */}
+                  {progress && (progress.totalFiles > 1 || progress.totalChunks > 1) && (() => {
+                    const done = (progress.fileIndex - 1) / progress.totalFiles
+                    const cur  = (progress.chunkIndex / progress.totalChunks) / progress.totalFiles
+                    return (
+                      <div className="w-full h-1.5 rounded-full bg-[#3A8A48]/15 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-[#3A8A48] transition-all duration-500"
+                          style={{ width: `${Math.round((done + cur) * 100)}%` }}
+                        />
+                      </div>
+                    )
+                  })()}
+                  <p className="text-sm text-muted-foreground text-center">
+                    {progress && (progress.totalFiles > 1 || progress.totalChunks > 1)
+                      ? 'Не закрывай страницу — это займёт несколько минут'
                       : selectedFile && parseInt(selectedFile.estMin) >= 10
                       ? 'Для длинных записей это может занять несколько минут — не закрывай страницу'
                       : 'Обычно 1–3 минуты — не закрывай страницу'}
@@ -293,7 +305,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                 </div>
                 <div className="space-y-1">
                   <p className="font-semibold text-foreground">Перетащи аудиозапись интервью</p>
-                  <p className="text-sm text-muted-foreground">или нажми чтобы выбрать файл</p>
+                  <p className="text-sm text-muted-foreground">или нажми чтобы выбрать файл(ы)</p>
                   <p className="text-xs text-muted-foreground/60 mt-1">MP3, MP4, M4A, WAV, OGG, WEBM</p>
                 </div>
                 {/* Limit hint */}
