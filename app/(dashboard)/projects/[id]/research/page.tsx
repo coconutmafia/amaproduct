@@ -81,19 +81,28 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     try {
       for (let fi = 0; fi < files.length; fi++) {
         const file = files[fi]
-        const ext  = file.name.split('.').pop()?.toLowerCase() ?? 'mp3'
 
-        // Materialise with iCloud retry.
-        // iOS starts downloading cloud-only files in the background as soon as
-        // the user picks them; we just need to wait long enough.
-        let bytes: ArrayBuffer | null = null
+        // ── Materialise with iCloud retry ────────────────────────────────────
+        // On iOS, File objects (especially from iCloud Drive) may be lazy
+        // placeholders — even .name/.type/.size can throw before the file is
+        // ready. We wrap the entire read (including property access) in a
+        // retry loop so iOS has time to download the file in the background.
+        let bytes:    ArrayBuffer | null = null
+        let fileName: string            = `файл ${fi + 1}`
+        let fileType: string            = 'audio/mpeg'
+
         for (let attempt = 1; attempt <= ICLOUD_MAX_ATTEMPTS; attempt++) {
           try {
-            bytes = await file.arrayBuffer()
-            break // success
+            bytes    = await file.arrayBuffer()    // triggers iCloud download
+            fileName = file.name                   // safe to read after success
+            fileType = file.type || 'audio/mpeg'
+            break
           } catch {
             if (attempt < ICLOUD_MAX_ATTEMPTS) {
-              setIcloudWait({ name: file.name, attempt, max: ICLOUD_MAX_ATTEMPTS })
+              // Show current file label — use index until name is readable
+              let label = `файл ${fi + 1}`
+              try { label = file.name } catch { /* still not ready */ }
+              setIcloudWait({ name: label, attempt, max: ICLOUD_MAX_ATTEMPTS })
               await new Promise(r => setTimeout(r, ICLOUD_RETRY_MS))
             }
           }
@@ -101,18 +110,24 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         setIcloudWait(null)
 
         if (!bytes) {
-          throw new Error(`«${file.name}» не удалось загрузить из iCloud. Попробуй открыть приложение «Файлы», дождаться загрузки файла, а потом выбрать снова.`)
+          throw new Error(`«${fileName}» не удалось загрузить. Открой приложение «Файлы», дождись загрузки и попробуй снова.`)
         }
 
-        const mime        = file.type || 'audio/mpeg'
-        const blob        = new Blob([bytes], { type: mime })
+        // ── Validate size after materialisation ───────────────────────────────
+        const MAX_BYTES = 100 * 1024 * 1024
+        if (bytes.byteLength > MAX_BYTES) {
+          throw new Error(`«${fileName}» слишком большой (${(bytes.byteLength / 1024 / 1024).toFixed(1)} МБ) — максимум 100 МБ на файл`)
+        }
+
+        const ext         = fileName.split('.').pop()?.toLowerCase() ?? 'mp3'
+        const blob        = new Blob([bytes], { type: fileType })
         const totalChunks = Math.ceil(blob.size / CHUNK_BYTES)
 
         for (let ci = 0; ci < totalChunks; ci++) {
           setProgress({ fileIndex: fi + 1, totalFiles: files.length, chunkIndex: ci + 1, totalChunks })
           const start = ci * CHUNK_BYTES
           const end   = Math.min(start + CHUNK_BYTES, blob.size)
-          const chunk = new File([blob.slice(start, end)], `chunk_${ci + 1}.${ext}`, { type: mime })
+          const chunk = new File([blob.slice(start, end)], `chunk_${ci + 1}.${ext}`, { type: fileType })
 
           const fd   = new FormData()
           fd.append('audio', chunk)
@@ -123,13 +138,6 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         }
       }
 
-      if (allParts.length === 0) {
-        toast.error('Ни один файл не удалось прочитать')
-        setStep('upload')
-        setProgress(null)
-        return
-      }
-
       setTranscription(allParts.join('\n\n'))
       setProgress(null)
       setStep('transcribed')
@@ -137,33 +145,21 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       toast.error(err instanceof Error ? err.message : 'Ошибка расшифровки')
       setStep('upload')
       setProgress(null)
+      setIcloudWait(null)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // handleFiles: deliberately avoids reading any file properties (name/size/type)
+  // before transcribeFiles — those accessors can throw on iOS for iCloud files.
   const handleFiles = useCallback((fileList: File[]) => {
-    const allowed = ['audio/', 'video/mp4', 'video/', 'application/ogg']
-    const valid = fileList.filter(f =>
-      allowed.some(p => f.type.startsWith(p)) || f.name.match(/\.(mp3|mp4|m4a|wav|ogg|oga|opus|webm|aac)$/i)
-    )
-    if (valid.length === 0) { toast.error('Поддерживаются: MP3, MP4, M4A, WAV, OGG, WEBM'); return }
-    if (valid.length < fileList.length) toast.warning(`${fileList.length - valid.length} файл(ов) пропущено — неподдерживаемый формат`)
-
-    const MAX_MB = 100
-    for (const f of valid) {
-      const mb = f.size / (1024 * 1024)
-      if (mb > MAX_MB) { toast.error(`${f.name}: ${mb.toFixed(1)} МБ — максимум ${MAX_MB} МБ на файл`); return }
-    }
-
-    const totalMb  = valid.reduce((s, f) => s + f.size / (1024 * 1024), 0)
-    const allWav   = valid.every(f => f.name.toLowerCase().endsWith('.wav'))
-    const estMin   = allWav ? Math.max(1, Math.round(totalMb / 10)) : Math.max(1, Math.round(totalMb))
+    if (fileList.length === 0) return
     setSelectedFile({
-      name:   valid.length === 1 ? valid[0].name : `${valid.length} файла`,
-      sizeMb: totalMb.toFixed(1),
-      estMin: estMin > 1 ? `≈ ${estMin} мин` : '< 1 мин',
+      name:   fileList.length === 1 ? ((() => { try { return fileList[0].name } catch { return 'файл' } })()) : `${fileList.length} файлов`,
+      sizeMb: '…',
+      estMin: '…',
     })
-    transcribeFiles(valid)
+    transcribeFiles(fileList)
   }, [transcribeFiles])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
