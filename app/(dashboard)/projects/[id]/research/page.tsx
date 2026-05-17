@@ -234,12 +234,24 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       {/* ── Step: Upload ── */}
       {(step === 'upload' || step === 'transcribing') && (
         <div className="space-y-4">
-          <div
+          {/* Hidden file input — referenced by label below for iOS Safari compatibility */}
+          <input
+            id="audio-file-input"
+            ref={fileInputRef}
+            type="file"
+            accept=".mp3,.mp4,.m4a,.wav,.ogg,.oga,.opus,.webm,.aac"
+            className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }}
+          />
+
+          {/* Drop zone — label wraps content so clicking anywhere triggers the native file picker on iOS */}
+          <label
+            htmlFor={step === 'upload' ? 'audio-file-input' : undefined}
             onDrop={handleDrop}
             onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
             onDragLeave={() => setIsDragging(false)}
-            onClick={() => step === 'upload' && fileInputRef.current?.click()}
-            className={`relative flex flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed p-10 text-center cursor-pointer transition-all
+            className={`relative flex flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed p-10 text-center transition-all
+              ${step === 'upload' ? 'cursor-pointer' : 'cursor-default'}
               ${isDragging ? 'border-[#3A8A48] bg-[#3A8A48]/5' : 'border-[#DEDEDE] hover:border-[#3A8A48]/50 hover:bg-[#3A8A48]/3'}
               ${step === 'transcribing' ? 'pointer-events-none opacity-70' : ''}`}
           >
@@ -290,14 +302,13 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                   <span className="text-amber-400">·</span>
                   <span>Большие файлы разбиваются автоматически</span>
                 </div>
-                <Button variant="outline" size="sm" onClick={e => { e.stopPropagation(); fileInputRef.current?.click() }}>
-                  <Upload className="h-3.5 w-3.5 mr-1.5" /> Выбрать файл
-                </Button>
+                {/* Explicit button — also valid as a label child, so it opens the picker on iOS */}
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-input bg-background text-sm font-medium shadow-sm hover:bg-accent hover:text-accent-foreground transition-colors">
+                  <Upload className="h-3.5 w-3.5" /> Выбрать файл
+                </span>
               </>
             )}
-            <input ref={fileInputRef} type="file" accept="audio/*,video/mp4,.mp4,.m4a,.mp3,.wav,.ogg,.webm" className="hidden"
-              onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
-          </div>
+          </label>
 
           {/* Manual text fallback */}
           {step === 'upload' && (
