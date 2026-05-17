@@ -60,6 +60,10 @@ export async function POST(request: Request) {
   const bytes = await file.arrayBuffer()
   const audio = await toFile(Buffer.from(bytes), `interview.${ext}`, { type: mime })
 
+  // Debug: first 4 bytes as hex so we can verify the binary data is correct
+  const header = Array.from(new Uint8Array(bytes, 0, Math.min(4, bytes.byteLength)))
+    .map(b => b.toString(16).padStart(2, '0')).join('')
+
   try {
     const transcription = await openai.audio.transcriptions.create({
       file:            audio,
@@ -72,6 +76,7 @@ export async function POST(request: Request) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Transcription failed'
     console.error('Whisper error:', msg)
-    return NextResponse.json({ error: `Ошибка расшифровки: ${msg}` }, { status: 500 })
+    // Include byte count + first 4 bytes so client can diagnose data integrity
+    return NextResponse.json({ error: `Ошибка расшифровки: ${msg} [sz=${bytes.byteLength} hx=${header}]` }, { status: 500 })
   }
 }
