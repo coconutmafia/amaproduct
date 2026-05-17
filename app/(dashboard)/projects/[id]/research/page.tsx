@@ -137,10 +137,11 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
           setProgress({ fileIndex: fi + 1, totalFiles: files.length, chunkIndex: ci + 1, totalChunks })
           const start = ci * CHUNK_BYTES
           const end   = Math.min(start + CHUNK_BYTES, blob.size)
-          const chunk = new File([blob.slice(start, end)], `chunk_${ci + 1}.${ext}`, { type: mime })
+          // Use blob.slice (not new File) — avoids WebKit DOMException on iOS
+          const chunkBlob = blob.slice(start, end, mime)
 
           const fd   = new FormData()
-          fd.append('audio', chunk)
+          fd.append('audio', chunkBlob, `chunk_${ci + 1}.${ext}`)
           const res  = await fetch('/api/ai/transcribe', { method: 'POST', body: fd })
           const data = await res.json() as { text?: string; error?: string }
           if (!res.ok || data.error) throw new Error(data.error ?? `Файл ${fi + 1}, часть ${ci + 1}: ошибка`)
@@ -152,7 +153,12 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       setProgress(null)
       setStep('transcribed')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка расшифровки')
+      const msg = err instanceof Error ? err.message : ''
+      if (msg.includes('did not match the expected pattern')) {
+        toast.error('Не удалось прочитать аудиофайл. Попробуй скачать файл в приложение «Файлы» и загрузить оттуда.')
+      } else {
+        toast.error(msg || 'Ошибка расшифровки')
+      }
       setStep('upload')
       setProgress(null)
       setIcloudWait(null)
