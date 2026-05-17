@@ -62,6 +62,12 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   // ── Transcription ───────────────────────────────────────────────────────────
   // Accepts multiple files — transcribes sequentially and concatenates results.
   // Files >23 MB are byte-split into chunks (Whisper's 25 MB hard limit).
+  //
+  // iOS Safari issue: File objects from iCloud Drive are lazy references that
+  // haven't been downloaded yet. Reading them via FormData/fetch throws
+  // 'The string did not match the expected pattern.' (DOMException SyntaxError).
+  // Fix: materialise each file to ArrayBuffer first — this forces iCloud to
+  // download the file, and lets us catch the error per-file gracefully.
   const transcribeFiles = useCallback(async (files: File[]) => {
     setStep('transcribing')
     setProgress(null)
@@ -72,29 +78,40 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         const file = files[fi]
         const ext  = file.name.split('.').pop()?.toLowerCase() ?? 'mp3'
 
-        if (file.size <= CHUNK_BYTES) {
-          setProgress({ fileIndex: fi + 1, totalFiles: files.length, chunkIndex: 1, totalChunks: 1 })
-          const fd  = new FormData()
-          fd.append('audio', file)
+        // Materialise: read the whole file into memory before processing.
+        // Catches iCloud / unavailable file errors early, per file.
+        let bytes: ArrayBuffer
+        try {
+          bytes = await file.arrayBuffer()
+        } catch {
+          toast.warning(`«${file.name}» не удалось прочитать — возможно, файл в iCloud и не загружен на устройство`)
+          continue
+        }
+
+        const mime        = file.type || 'audio/mpeg'
+        const blob        = new Blob([bytes], { type: mime })
+        const totalChunks = Math.ceil(blob.size / CHUNK_BYTES)
+
+        for (let ci = 0; ci < totalChunks; ci++) {
+          setProgress({ fileIndex: fi + 1, totalFiles: files.length, chunkIndex: ci + 1, totalChunks })
+          const start = ci * CHUNK_BYTES
+          const end   = Math.min(start + CHUNK_BYTES, blob.size)
+          const chunk = new File([blob.slice(start, end)], `chunk_${ci + 1}.${ext}`, { type: mime })
+
+          const fd   = new FormData()
+          fd.append('audio', chunk)
           const res  = await fetch('/api/ai/transcribe', { method: 'POST', body: fd })
           const data = await res.json() as { text?: string; error?: string }
-          if (!res.ok || data.error) throw new Error(data.error ?? 'Transcription failed')
+          if (!res.ok || data.error) throw new Error(data.error ?? `Файл ${fi + 1}, часть ${ci + 1}: ошибка`)
           allParts.push(data.text ?? '')
-        } else {
-          const totalChunks = Math.ceil(file.size / CHUNK_BYTES)
-          for (let ci = 0; ci < totalChunks; ci++) {
-            setProgress({ fileIndex: fi + 1, totalFiles: files.length, chunkIndex: ci + 1, totalChunks })
-            const start = ci * CHUNK_BYTES
-            const end   = Math.min(start + CHUNK_BYTES, file.size)
-            const chunk = new File([file.slice(start, end)], `chunk_${ci + 1}.${ext}`, { type: file.type })
-            const fd    = new FormData()
-            fd.append('audio', chunk)
-            const res  = await fetch('/api/ai/transcribe', { method: 'POST', body: fd })
-            const data = await res.json() as { text?: string; error?: string }
-            if (!res.ok || data.error) throw new Error(data.error ?? `Файл ${fi + 1}, часть ${ci + 1}: ошибка`)
-            allParts.push(data.text ?? '')
-          }
         }
+      }
+
+      if (allParts.length === 0) {
+        toast.error('Ни один файл не удалось прочитать')
+        setStep('upload')
+        setProgress(null)
+        return
       }
 
       setTranscription(allParts.join('\n\n'))
