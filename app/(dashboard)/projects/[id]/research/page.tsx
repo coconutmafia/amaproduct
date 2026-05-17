@@ -72,6 +72,15 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   const ICLOUD_MAX_ATTEMPTS = 15  // up to ~60 s of waiting (4 s × 15)
   const ICLOUD_RETRY_MS     = 4000
 
+  // iOS sometimes returns UTI strings (e.g. 'dyn.ah62d4rv4ge81g3py') instead of
+  // proper MIME types for iCloud files. Passing a UTI to new File({type}) causes
+  // WebKit to throw 'The string did not match the expected pattern.'
+  // This helper ensures only valid MIME types are used.
+  const safeMime = (raw: string): string =>
+    /^[a-zA-Z][a-zA-Z0-9!#$&\-^_]*\/[a-zA-Z0-9][a-zA-Z0-9!#$&\-^_.+]*$/.test(raw)
+      ? raw
+      : 'audio/mpeg'
+
   const transcribeFiles = useCallback(async (files: File[]) => {
     setStep('transcribing')
     setProgress(null)
@@ -95,7 +104,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
           try {
             bytes    = await file.arrayBuffer()    // triggers iCloud download
             fileName = file.name                   // safe to read after success
-            fileType = file.type || 'audio/mpeg'
+            fileType = safeMime(file.type || '')
             break
           } catch {
             if (attempt < ICLOUD_MAX_ATTEMPTS) {
@@ -120,14 +129,15 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         }
 
         const ext         = fileName.split('.').pop()?.toLowerCase() ?? 'mp3'
-        const blob        = new Blob([bytes], { type: fileType })
+        const mime        = safeMime(fileType)   // guaranteed valid MIME
+        const blob        = new Blob([bytes], { type: mime })
         const totalChunks = Math.ceil(blob.size / CHUNK_BYTES)
 
         for (let ci = 0; ci < totalChunks; ci++) {
           setProgress({ fileIndex: fi + 1, totalFiles: files.length, chunkIndex: ci + 1, totalChunks })
           const start = ci * CHUNK_BYTES
           const end   = Math.min(start + CHUNK_BYTES, blob.size)
-          const chunk = new File([blob.slice(start, end)], `chunk_${ci + 1}.${ext}`, { type: fileType })
+          const chunk = new File([blob.slice(start, end)], `chunk_${ci + 1}.${ext}`, { type: mime })
 
           const fd   = new FormData()
           fd.append('audio', chunk)
