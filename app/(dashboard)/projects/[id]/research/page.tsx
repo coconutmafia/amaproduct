@@ -171,8 +171,12 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
           fd.append('audio', chunkBlob, `chunk_${ci + 1}.${ext}`)
           dbg = `fetch(${fi+1}:${ci+1})`
           const res  = await fetch('/api/ai/transcribe', { method: 'POST', body: fd })
-          dbg = `json(${fi+1}:${ci+1})`
-          const data = await res.json() as { text?: string; error?: string }
+          dbg = `text(${fi+1}:${ci+1})`
+          const body = await res.text()
+          dbg = `parse(${fi+1}:${ci+1})`
+          let data: { text?: string; error?: string }
+          try { data = JSON.parse(body) as { text?: string; error?: string } }
+          catch { throw new Error(`Сервер вернул ошибку ${res.status}. Попробуй ещё раз.`) }
           if (!res.ok || data.error) throw new Error(data.error ?? `Файл ${fi + 1}, часть ${ci + 1}: ошибка`)
           allParts.push(data.text ?? '')
         }
