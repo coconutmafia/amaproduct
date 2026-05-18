@@ -53,7 +53,10 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
 
   const [step, setStep]               = useState<Step>('upload')
   const [transcription, setTranscription] = useState('')
+  // per-file parts — used for batch analysis (avoid hitting AI output token limit)
+  const [transcriptionParts, setTranscriptionParts] = useState<{ name: string; text: string }[]>([])
   const [table1, setTable1]           = useState<InterviewTable | null>(null)
+  const [analysisBatch, setAnalysisBatch] = useState<{ current: number; total: number } | null>(null)
   const [expandedRespondent, setExpandedRespondent] = useState<string | null>(null)
   const [isDragging, setIsDragging]   = useState(false)
   const [selectedFile, setSelectedFile] = useState<{ name: string; sizeMb: string; estMin: string } | null>(null)
@@ -76,7 +79,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     setIcloudWait(null)
 
     const supabase  = createSupabaseClient()
-    const allParts: string[] = []
+    const allParts: { name: string; text: string }[] = []
 
     // Initialise per-file queue so the user sees all files upfront
     const initNames = files.map((f, i) => {
@@ -166,7 +169,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
           fileParts.push(data.text ?? '')
         }
 
-        allParts.push(fileParts.join(' '))
+        allParts.push({ name: fileName, text: fileParts.join(' ') })
         updateFile(fi, { status: 'done' })
 
       } catch (err) {
@@ -183,7 +186,8 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     setProgress(null)
 
     if (allParts.length > 0) {
-      setTranscription(allParts.join('\n\n'))
+      setTranscriptionParts(allParts)
+      setTranscription(allParts.map(p => p.text).join('\n\n'))
       setStep('transcribed')
     } else {
       toast.error('Ни один файл не удалось расшифровать')
@@ -196,7 +200,11 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     const count = fileList.length
     if (count === 0) return
     setSelectedFile({ name: count === 1 ? 'файл выбран' : `${count} файлов выбрано`, sizeMb: '…', estMin: '…' })
-    const files = Array.from(fileList)
+    // Sort by filename so касдев1, касдев2, касдев3 are processed in order
+    const files = Array.from(fileList).sort((a, b) => {
+      try { return a.name.localeCompare(b.name, 'ru', { numeric: true, sensitivity: 'base' }) }
+      catch { return 0 }
+    })
     if (files.length === 0) { toast.error('Не удалось прочитать файлы'); return }
     transcribeFiles(files)
   }, [transcribeFiles])
@@ -247,25 +255,52 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     }
   }, [handleFiles])
 
-  // ── Analysis Step 1: → Table 1 ─────────────────────────────────────────────
+  // ── Analysis: batch by 3 files to stay within AI output token limit ──────────
+  // With many files the combined transcription can produce 10-15 respondents,
+  // which requires 15-20K output tokens — more than the model's 8K cap.
+  // Processing 3 files at a time keeps output comfortably under the limit.
   const analyzeTable1 = useCallback(async () => {
     setStep('analyzing1')
+    setAnalysisBatch(null)
     try {
-      const res  = await fetch('/api/ai/research-analyze', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ projectId: id, step: 'table1', transcription }),
-      })
-      const data = await res.json() as { table1?: InterviewTable; error?: string }
-      if (!res.ok || data.error) throw new Error(data.error ?? 'Analysis failed')
-      setTable1(data.table1 ?? null)
+      const BATCH = 3
+      const parts = transcriptionParts.length > 0
+        ? transcriptionParts
+        : [{ name: 'Интервью', text: transcription }]
+
+      const batches: typeof parts[] = []
+      for (let i = 0; i < parts.length; i += BATCH) batches.push(parts.slice(i, i + BATCH))
+
+      const allRespondents: Respondent[] = []
+      setAnalysisBatch({ current: 0, total: batches.length })
+
+      for (let bi = 0; bi < batches.length; bi++) {
+        setAnalysisBatch({ current: bi + 1, total: batches.length })
+        const batchText = batches[bi]
+          .map((p, i) => batches[bi].length > 1 ? `[Файл ${bi * BATCH + i + 1}: ${p.name}]\n${p.text}` : p.text)
+          .join('\n\n---\n\n')
+
+        const res  = await fetch('/api/ai/research-analyze', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ projectId: id, step: 'table1', transcription: batchText }),
+        })
+        const data = await res.json() as { table1?: InterviewTable; error?: string }
+        if (!res.ok || data.error) throw new Error(data.error ?? `Батч ${bi + 1}: ошибка анализа`)
+        allRespondents.push(...(data.table1?.respondents ?? []))
+      }
+
+      const combined: InterviewTable = { respondents: allRespondents }
+      setTable1(combined)
+      setAnalysisBatch(null)
       setStep('table1')
-      setExpandedRespondent(data.table1?.respondents[0]?.id ?? null)
+      setExpandedRespondent(allRespondents[0]?.id ?? null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Ошибка анализа')
+      setAnalysisBatch(null)
       setStep('transcribed')
     }
-  }, [id, transcription])
+  }, [id, transcription, transcriptionParts])
 
   // ── Save to materials ───────────────────────────────────────────────────────
   const saveToMaterials = useCallback(async () => {
@@ -316,7 +351,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         {[
           { label: 'Загрузка',     done: step !== 'upload' && step !== 'transcribing' },
           { label: 'Расшифровка',  done: ['table1', 'analyzing1', 'saving', 'saved'].includes(step) },
-          { label: 'Таблица 1',    done: ['saving', 'saved'].includes(step) },
+          { label: 'Таблица',      done: ['saving', 'saved'].includes(step) },
           { label: 'Сохранено',    done: step === 'saved' },
         ].map((s, i, arr) => (
           <div key={i} className="flex items-center gap-2">
@@ -487,13 +522,25 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         </div>
       )}
 
-      {/* ── Step: Analyzing Table 1 ── */}
+      {/* ── Step: Analyzing ── */}
       {step === 'analyzing1' && (
         <div className="rounded-xl border border-[#ECECEC] bg-white p-8 flex flex-col items-center gap-4 text-center">
           <Loader2 className="h-8 w-8 text-[#3A8A48] animate-spin" />
           <div>
-            <p className="font-semibold text-foreground">Анализирую интервью...</p>
+            <p className="font-semibold text-foreground">
+              {analysisBatch && analysisBatch.total > 1
+                ? `Анализирую батч ${analysisBatch.current} из ${analysisBatch.total}...`
+                : 'Анализирую интервью...'}
+            </p>
             <p className="text-sm text-muted-foreground mt-1">Определяю участников, вопросы, цитаты и эмоциональные тоны</p>
+            {analysisBatch && analysisBatch.total > 1 && (
+              <div className="mt-3 w-48 h-1.5 rounded-full bg-[#3A8A48]/15 overflow-hidden mx-auto">
+                <div
+                  className="h-full rounded-full bg-[#3A8A48] transition-all duration-500"
+                  style={{ width: `${Math.round(((analysisBatch.current - 1) / analysisBatch.total) * 100)}%` }}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -507,7 +554,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                 <Users className="h-3.5 w-3.5 text-blue-600" />
               </div>
               <div>
-                <p className="text-sm font-bold text-foreground">Таблица 1 — Расшифровка интервью</p>
+                <p className="text-sm font-bold text-foreground">Таблица исследования</p>
                 <p className="text-xs text-muted-foreground">{table1.respondents.length} участников</p>
               </div>
             </div>
@@ -617,7 +664,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                     <Users className="h-3.5 w-3.5 text-blue-600" />
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-foreground">Таблица 1 — Расшифровка интервью</p>
+                    <p className="text-sm font-bold text-foreground">Таблица исследования</p>
                     <p className="text-xs text-muted-foreground">{table1.respondents.length} участников</p>
                   </div>
                 </div>
@@ -713,10 +760,12 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                 onClick={() => {
                   setStep('upload')
                   setTranscription('')
+                  setTranscriptionParts([])
                   setTable1(null)
                   setExpandedRespondent(null)
                   setSelectedFile(null)
                   setProgress(null)
+                  setFileQueue([])
                 }}
                 className="gap-2"
               >
