@@ -30,14 +30,14 @@ export async function POST(request: Request) {
   // Client uploads the file directly to Supabase Storage (bypassing Vercel's
   // body-size limit), then calls this route with just the storage path +
   // optional byte range so we can chunk large files for Whisper's 25 MB cap.
-  let body: { storagePath?: string; start?: number; end?: number; ext?: string }
+  let body: { storagePath?: string; start?: number; end?: number; ext?: string; isLastChunk?: boolean }
   try {
     body = await request.json() as typeof body
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { storagePath, start, end, ext: rawExt } = body
+  const { storagePath, start, end, ext: rawExt, isLastChunk } = body
   if (!storagePath) return NextResponse.json({ error: 'storagePath обязателен' }, { status: 400 })
 
   // Security: only allow access to the authenticated user's own folder
@@ -98,6 +98,11 @@ export async function POST(request: Request) {
       language:        'ru',
       response_format: 'text',
     })
+    // Clean up the storage file once the last chunk is transcribed
+    if (isLastChunk) {
+      await admin.storage.from('audio-temp').remove([storagePath]).catch(() => {})
+    }
+
     return NextResponse.json({ text: transcription })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Transcription failed'

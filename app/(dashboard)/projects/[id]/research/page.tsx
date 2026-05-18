@@ -82,6 +82,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     const uploadedPaths: string[] = []
 
     try {
+      // Verify session is active (the upload-url route does the real auth check)
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Войди в систему, чтобы загрузить файл')
 
@@ -97,23 +98,38 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         const rawExt = fileName.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? ''
         const ext    = rawExt || 'mp3'
 
-        // ── Step 1: upload to Supabase Storage ──────────────────────────────
-        // Direct browser→Supabase upload — completely bypasses Vercel's
-        // ~4.5 MB request-body limit. On iOS the read also triggers iCloud
-        // download automatically, so no separate icloudWait polling needed.
+        // ── Step 1: upload to Supabase Storage via signed URL ───────────────
+        // The server issues a one-time signed upload URL (no RLS needed).
+        // The browser PUTs the file directly to Supabase — completely bypasses
+        // Vercel's ~4.5 MB request-body limit.  On iOS, reading the File also
+        // triggers an iCloud download automatically.
         setProgress({ stage: 'uploading', fileIndex: fi + 1, totalFiles: files.length })
 
-        const storagePath = `${user.id}/${Date.now()}_${fi}.${ext}`
+        // 1a. Ask server for a signed upload URL
+        const urlRes  = await fetch('/api/ai/transcribe/upload-url', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ ext }),
+        })
+        const urlBody = await urlRes.text()
+        let urlData: { path?: string; token?: string; error?: string }
+        try { urlData = JSON.parse(urlBody) as typeof urlData }
+        catch { throw new Error(`Ошибка получения ссылки (${urlRes.status})`) }
+        if (!urlRes.ok || urlData.error) throw new Error(urlData.error ?? 'Ошибка получения ссылки')
+
+        const storagePath = urlData.path!
+        const uploadToken = urlData.token!
+
+        // 1b. Upload directly to Supabase Storage
         const { error: uploadError } = await supabase.storage
           .from('audio-temp')
-          .upload(storagePath, file, { upsert: true })
+          .uploadToSignedUrl(storagePath, uploadToken, file)
 
         if (uploadError) throw new Error(`Ошибка загрузки: ${uploadError.message}`)
         uploadedPaths.push(storagePath)
 
         // Resolve actual file size — needed for chunking.
-        // If the File was an iCloud stub (size === 0) we now have the real size
-        // via a HEAD request against the just-uploaded object.
+        // If the File was an iCloud stub (size === 0) get the real size via HEAD.
         let actualSize = fileSize
         if (actualSize === 0) {
           const { data: sd } = await supabase.storage.from('audio-temp').createSignedUrl(storagePath, 60)
@@ -134,10 +150,11 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
 
           // Small JSON payload — well under any request-body limit.
           // The route fetches the byte-range from Supabase Storage directly.
+          const isLastChunk = ci === totalChunks - 1
           const res  = await fetch('/api/ai/transcribe', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ storagePath, start, end, ext }),
+            body:    JSON.stringify({ storagePath, start, end, ext, isLastChunk }),
           })
           const bodyText = await res.text()
           let data: { text?: string; error?: string }
