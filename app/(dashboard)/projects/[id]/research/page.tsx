@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, use } from 'react'
 import { createClient as createSupabaseClient } from '@/lib/supabase/client'
 import Link from 'next/link'
-import { ArrowLeft, Upload, Mic, Loader2, ChevronDown, ChevronUp, Sparkles, Download, CheckCircle2, Users, FileText, Save, Plus } from 'lucide-react'
+import { ArrowLeft, Upload, Mic, Loader2, ChevronDown, ChevronUp, Sparkles, Download, CheckCircle2, Users, FileText, Save, Plus, X, Circle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import type { InterviewTable, Respondent } from '@/app/api/ai/research-analyze/route'
@@ -11,6 +11,14 @@ import type { InterviewTable, Respondent } from '@/app/api/ai/research-analyze/r
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Step = 'upload' | 'transcribing' | 'transcribed' | 'analyzing1' | 'table1' | 'saving' | 'saved'
+
+type FileStatus = {
+  name:        string
+  status:      'pending' | 'uploading' | 'transcribing' | 'done' | 'error'
+  chunkIndex?: number
+  totalChunks?: number
+  error?:      string
+}
 
 const BLOCK_LABELS: Record<string, string> = {
   point_a:   'Точка А',
@@ -53,6 +61,8 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   const [progress, setProgress] = useState<ProgressState | null>(null)
   // shown while waiting for iCloud to finish downloading a file
   const [icloudWait, setIcloudWait] = useState<{ name: string; attempt: number; max: number } | null>(null)
+  // per-file status for multi-file processing
+  const [fileQueue, setFileQueue] = useState<FileStatus[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ── Transcription ───────────────────────────────────────────────────────────
@@ -65,35 +75,43 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     setProgress(null)
     setIcloudWait(null)
 
-    const supabase     = createSupabaseClient()
-    const allParts:    string[] = []
-    const uploadedPaths: string[] = []
+    const supabase  = createSupabaseClient()
+    const allParts: string[] = []
 
-    try {
-      // Verify session is active (the upload-url route does the real auth check)
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Войди в систему, чтобы загрузить файл')
+    // Initialise per-file queue so the user sees all files upfront
+    const initNames = files.map((f, i) => {
+      let name = `файл ${i + 1}`
+      try { name = f.name } catch { /* iCloud stub */ }
+      return name
+    })
+    setFileQueue(initNames.map(name => ({ name, status: 'pending' })))
 
-      for (let fi = 0; fi < files.length; fi++) {
+    const updateFile = (fi: number, patch: Partial<FileStatus>) =>
+      setFileQueue(prev => prev.map((s, i) => i === fi ? { ...s, ...patch } : s))
+
+    // Auth check once
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      toast.error('Войди в систему, чтобы загрузить файлы')
+      setStep('upload')
+      return
+    }
+
+    for (let fi = 0; fi < files.length; fi++) {
+      const uploadedPaths: string[] = []
+
+      try {
         const file = files[fi]
-
-        // Read metadata safely (may throw on iOS iCloud stubs)
-        let fileName = `файл ${fi + 1}`
+        let fileName = initNames[fi]
         let fileSize = 0
-        try { fileName = file.name } catch { /* iCloud stub */ }
         try { fileSize = file.size } catch { /* iCloud stub */ }
 
         const rawExt = fileName.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? ''
         const ext    = rawExt || 'mp3'
 
-        // ── Step 1: upload to Supabase Storage via signed URL ───────────────
-        // The server issues a one-time signed upload URL (no RLS needed).
-        // The browser PUTs the file directly to Supabase — completely bypasses
-        // Vercel's ~4.5 MB request-body limit.  On iOS, reading the File also
-        // triggers an iCloud download automatically.
-        setProgress({ stage: 'uploading', fileIndex: fi + 1, totalFiles: files.length })
+        // ── 1. Upload to Supabase Storage via signed URL ────────────────────
+        updateFile(fi, { status: 'uploading' })
 
-        // 1a. Ask server for a signed upload URL
         const urlRes  = await fetch('/api/ai/transcribe/upload-url', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -108,16 +126,13 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         const storagePath = urlData.path!
         const uploadToken = urlData.token!
 
-        // 1b. Upload directly to Supabase Storage
         const { error: uploadError } = await supabase.storage
           .from('audio-temp')
           .uploadToSignedUrl(storagePath, uploadToken, file)
-
         if (uploadError) throw new Error(`Ошибка загрузки: ${uploadError.message}`)
         uploadedPaths.push(storagePath)
 
-        // Resolve actual file size — needed for chunking.
-        // If the File was an iCloud stub (size === 0) get the real size via HEAD.
+        // Resolve actual size (iCloud stubs may report 0)
         let actualSize = fileSize
         if (actualSize === 0) {
           const { data: sd } = await supabase.storage.from('audio-temp').createSignedUrl(storagePath, 60)
@@ -127,45 +142,52 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
           }
         }
 
-        // ── Step 2: transcribe in 24 MB chunks via the API ──────────────────
+        // ── 2. Transcribe in 24 MB chunks ───────────────────────────────────
         const totalChunks = actualSize > 0 ? Math.ceil(actualSize / CHUNK_BYTES) : 1
+        const fileParts: string[] = []
 
         for (let ci = 0; ci < totalChunks; ci++) {
-          setProgress({ stage: 'transcribing', fileIndex: fi + 1, totalFiles: files.length, chunkIndex: ci + 1, totalChunks })
+          updateFile(fi, { status: 'transcribing', chunkIndex: ci + 1, totalChunks })
 
-          const start = ci * CHUNK_BYTES
-          const end   = actualSize > 0 ? Math.min(start + CHUNK_BYTES, actualSize) : undefined
-
-          // Small JSON payload — well under any request-body limit.
-          // The route fetches the byte-range from Supabase Storage directly.
+          const start       = ci * CHUNK_BYTES
+          const end         = actualSize > 0 ? Math.min(start + CHUNK_BYTES, actualSize) : undefined
           const isLastChunk = ci === totalChunks - 1
-          const res  = await fetch('/api/ai/transcribe', {
+
+          const res      = await fetch('/api/ai/transcribe', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({ storagePath, start, end, ext, isLastChunk }),
           })
           const bodyText = await res.text()
           let data: { text?: string; error?: string }
-          try { data = JSON.parse(bodyText) as { text?: string; error?: string } }
-          catch { throw new Error(`Сервер вернул ошибку ${res.status}. Попробуй ещё раз.`) }
-          if (!res.ok || data.error) throw new Error(data.error ?? `Файл ${fi + 1}, часть ${ci + 1}: ошибка`)
-          allParts.push(data.text ?? '')
+          try { data = JSON.parse(bodyText) as typeof data }
+          catch { throw new Error(`Сервер вернул ошибку ${res.status}`) }
+          if (!res.ok || data.error) throw new Error(data.error ?? `Часть ${ci + 1}: ошибка`)
+          fileParts.push(data.text ?? '')
+        }
+
+        allParts.push(fileParts.join(' '))
+        updateFile(fi, { status: 'done' })
+
+      } catch (err) {
+        // ── One file failed — mark it and continue with the rest ────────────
+        const msg = err instanceof Error ? err.message : 'Неизвестная ошибка'
+        updateFile(fi, { status: 'error', error: msg })
+      } finally {
+        if (uploadedPaths.length > 0) {
+          await supabase.storage.from('audio-temp').remove(uploadedPaths).catch(() => {})
         }
       }
+    }
 
+    setProgress(null)
+
+    if (allParts.length > 0) {
       setTranscription(allParts.join('\n\n'))
-      setProgress(null)
       setStep('transcribed')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка расшифровки')
+    } else {
+      toast.error('Ни один файл не удалось расшифровать')
       setStep('upload')
-      setProgress(null)
-      setIcloudWait(null)
-    } finally {
-      // Always remove the temporary storage files, even on error
-      if (uploadedPaths.length > 0) {
-        await supabase.storage.from('audio-temp').remove(uploadedPaths).catch(() => {})
-      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -338,57 +360,56 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#3A8A48]/10">
                   <Loader2 className="h-7 w-7 text-[#3A8A48] animate-spin" />
                 </div>
-                <div className="space-y-2 w-full max-w-xs">
+                <div className="space-y-3 w-full max-w-sm">
                   <p className="font-semibold text-foreground text-center">
-                    {icloudWait
-                      ? `☁️ Загружаю из iCloud...`
-                      : progress?.stage === 'uploading'
-                      ? progress.totalFiles > 1
-                        ? `Загружаю файл ${progress.fileIndex} из ${progress.totalFiles}...`
-                        : 'Загружаю файл...'
-                      : progress?.stage === 'transcribing'
-                      ? progress.totalFiles > 1
-                        ? `Файл ${progress.fileIndex} из ${progress.totalFiles}${progress.totalChunks > 1 ? ` · часть ${progress.chunkIndex}/${progress.totalChunks}` : ''}...`
-                        : progress.totalChunks > 1
-                        ? `Расшифровываю часть ${progress.chunkIndex} из ${progress.totalChunks}...`
-                        : 'Расшифровываю аудио...'
-                      : 'Расшифровываю аудио...'}
+                    {fileQueue.length > 1 ? `Расшифровываю ${fileQueue.length} файлов...` : 'Расшифровываю аудио...'}
                   </p>
-                  {icloudWait && (
-                    <p className="text-sm text-muted-foreground text-center">«{icloudWait.name}»</p>
-                  )}
-                  {!icloudWait && selectedFile && (
-                    <p className="text-sm text-[#3A8A48] font-medium text-center">{selectedFile.name} · {selectedFile.sizeMb} МБ · {selectedFile.estMin}</p>
-                  )}
-                  {/* Overall progress bar */}
-                  {progress?.stage === 'uploading' && (
-                    <div className="w-full h-1.5 rounded-full bg-[#3A8A48]/15 overflow-hidden">
-                      <div className="h-full rounded-full bg-[#3A8A48]/50 animate-pulse" style={{ width: '100%' }} />
+
+                  {/* Per-file status list */}
+                  {fileQueue.length > 0 && (
+                    <div className="space-y-1.5 w-full">
+                      {fileQueue.map((f, i) => (
+                        <div key={i} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs transition-colors ${
+                          f.status === 'done'        ? 'border-green-200  bg-green-50' :
+                          f.status === 'error'       ? 'border-red-200    bg-red-50' :
+                          f.status === 'uploading' ||
+                          f.status === 'transcribing'? 'border-[#3A8A48]/25 bg-[#3A8A48]/5' :
+                          'border-[#ECECEC] bg-white/60'
+                        }`}>
+                          {f.status === 'uploading' || f.status === 'transcribing'
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin text-[#3A8A48] shrink-0" />
+                            : f.status === 'done'
+                            ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                            : f.status === 'error'
+                            ? <X className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                            : <Circle className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />}
+                          <span className="flex-1 truncate font-medium text-foreground">{f.name}</span>
+                          <span className={`shrink-0 text-[11px] ${f.status === 'error' ? 'text-red-600' : 'text-muted-foreground'}`}>
+                            {f.status === 'uploading'    ? 'Загружаю...' :
+                             f.status === 'transcribing' ? (f.totalChunks && f.totalChunks > 1 ? `Часть ${f.chunkIndex}/${f.totalChunks}` : 'Расшифровываю...') :
+                             f.status === 'done'         ? 'Готово ✓' :
+                             f.status === 'error'        ? (f.error?.slice(0, 30) ?? 'Ошибка') :
+                             'Ожидание...'}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   )}
-                  {progress?.stage === 'transcribing' && (progress.totalFiles > 1 || progress.totalChunks > 1) && (() => {
-                    const done = (progress.fileIndex - 1) / progress.totalFiles
-                    const cur  = (progress.chunkIndex / progress.totalChunks) / progress.totalFiles
+
+                  {/* Progress bar — fraction of done files */}
+                  {fileQueue.length > 1 && (() => {
+                    const done = fileQueue.filter(f => f.status === 'done' || f.status === 'error').length
                     return (
                       <div className="w-full h-1.5 rounded-full bg-[#3A8A48]/15 overflow-hidden">
                         <div
                           className="h-full rounded-full bg-[#3A8A48] transition-all duration-500"
-                          style={{ width: `${Math.round((done + cur) * 100)}%` }}
+                          style={{ width: `${Math.round((done / fileQueue.length) * 100)}%` }}
                         />
                       </div>
                     )
                   })()}
-                  <p className="text-sm text-muted-foreground text-center">
-                    {icloudWait
-                      ? `iOS скачивает файл из iCloud — подожди (${icloudWait.attempt}/${icloudWait.max})`
-                      : progress?.stage === 'uploading'
-                      ? 'Загружаю файл — не закрывай страницу'
-                      : progress?.stage === 'transcribing' && (progress.totalFiles > 1 || progress.totalChunks > 1)
-                      ? 'Не закрывай страницу — это займёт несколько минут'
-                      : selectedFile && parseInt(selectedFile.estMin) >= 10
-                      ? 'Для длинных записей это может занять несколько минут — не закрывай страницу'
-                      : 'Обычно 1–3 минуты — не закрывай страницу'}
-                  </p>
+
+                  <p className="text-xs text-muted-foreground text-center">Не закрывай страницу — это займёт несколько минут</p>
                 </div>
               </>
             ) : (
