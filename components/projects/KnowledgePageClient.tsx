@@ -1014,6 +1014,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
   }, [materials, completenessScore])
   const [showHint, setShowHint] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [generatingMeanings, setGeneratingMeanings] = useState(false)
 
   const materialsByType = materials.reduce<Record<string, Material[]>>((acc, m) => {
     if (!acc[m.material_type]) acc[m.material_type] = []
@@ -1056,6 +1057,25 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
       window.location.reload()
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const generateMeaningsMap = async () => {
+    setGeneratingMeanings(true)
+    try {
+      const res = await fetch('/api/ai/research-analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, step: 'generate_meanings' }),
+      })
+      const data = await res.json() as { table2?: unknown; error?: string }
+      if (!res.ok || data.error) throw new Error(data.error ?? 'Ошибка генерации')
+      toast.success('Карта смыслов сгенерирована и сохранена в материалы')
+      window.location.reload()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Ошибка генерации карты смыслов')
+    } finally {
+      setGeneratingMeanings(false)
     }
   }
 
@@ -1191,6 +1211,18 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                               Из аудио
                             </Button>
                           </Link>
+                        )}
+                        {type === 'meanings_map' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={generatingMeanings}
+                            className="text-xs h-8 px-3 border-primary/40 text-primary hover:bg-primary/10"
+                            onClick={generateMeaningsMap}
+                          >
+                            {generatingMeanings ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1.5" />}
+                            {generatingMeanings ? 'Генерирую...' : 'Сгенерировать из исследования'}
+                          </Button>
                         )}
                         <Button
                           size="sm"

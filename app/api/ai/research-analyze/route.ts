@@ -130,6 +130,44 @@ JSON формат (строго):
 }`
 }
 
+function buildMeaningsFromMaterialsPrompt(materials: { title: string; raw_content: string }[]): string {
+  const combined = materials
+    .map(m => `=== ${m.title} ===\n${m.raw_content}`)
+    .join('\n\n')
+
+  return `Из результатов исследования аудитории создай карту смыслов. Верни ТОЛЬКО JSON.
+
+МАТЕРИАЛЫ ИССЛЕДОВАНИЯ:
+${combined}
+
+ЗАДАЧА:
+1. Найди повторяющиеся боли, потребности, триггеры и возражения из всех материалов
+2. Сгруппируй похожие (например: "толстая жопа" + "лишних 5 кг" + "торчит живот" → категория "Лишний вес")
+3. Сохрани ВСЕ дословные формулировки клиентов в customer_words — они будут использоваться в контенте
+4. Выяви глубинный триггер за болью (психологическая причина)
+5. Придумай идею, как подать продукт через эту боль
+
+Типы категорий:
+- pain: что болит прямо сейчас
+- need: чего хочется достичь
+- trigger: что запустило поиск решения
+- objection: почему ещё не купили/не действуют
+
+JSON формат (строго):
+{
+  "categories": [
+    {
+      "type": "pain",
+      "category": "Общее название (например: Лишний вес / Эстетический дискомфорт)",
+      "customer_words": ["толстая жопа", "лишних 5 кг", "живот висит", "не влезаю в джинсы"],
+      "deep_trigger": "глубинная психологическая причина (страх, желание признания и т.д.)",
+      "objection": "главное возражение — почему не действуют прямо сейчас",
+      "content_idea": "идея: как подать продукт/оффер через эту боль в контенте"
+    }
+  ]
+}`
+}
+
 // ── Route ──────────────────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
@@ -139,7 +177,7 @@ export async function POST(request: Request) {
 
   const body = await request.json() as {
     projectId:     string
-    step:          'table1' | 'table2'
+    step:          'table1' | 'table2' | 'save' | 'generate_meanings'
     transcription?: string
     table1?:       InterviewTable
   }
@@ -179,15 +217,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'AI не смог структурировать данные. Попробуй ещё раз.' }, { status: 500 })
     }
 
-    // Save raw transcription to project_materials (for RAG)
-    await supabase.from('project_materials').upsert({
-      project_id:        projectId,
-      title:             `Расшифровка интервью`,
-      material_type:     'interview_transcription',
-      raw_content:       transcription,
-      processing_status: 'ready',
-    }, { onConflict: 'project_id,material_type,title' })
-
     return NextResponse.json({ table1: data })
   }
 
@@ -222,6 +251,93 @@ export async function POST(request: Request) {
     await supabase.from('project_materials').upsert({
       project_id:        projectId,
       title:             'Карта смыслов (исследование аудитории)',
+      material_type:     'meanings_map',
+      raw_content:       meaningsText,
+      processing_status: 'ready',
+    }, { onConflict: 'project_id,material_type,title' })
+
+    return NextResponse.json({ table2: data })
+  }
+
+  // ── Step: Save transcript + table to materials ──────────────────────────────
+  if (step === 'save') {
+    if (!transcription) return NextResponse.json({ error: 'transcription required' }, { status: 400 })
+    if (!table1) return NextResponse.json({ error: 'table1 required' }, { status: 400 })
+
+    const dateLabel = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+
+    // Build human-readable table text
+    const tableText = table1.respondents.map(r => {
+      const header = `Участник: ${r.name || r.id}${r.segment ? ` (${r.segment})` : ''}`
+      const answers = r.answers.map(a =>
+        `  Вопрос: ${a.question}\n  Ответ: ${a.full_answer}\n  Цитаты: ${a.key_quotes.join(' | ')}\n  Тон: ${a.emotional_tone}`
+      ).join('\n\n')
+      return `${header}\n\n${answers}`
+    }).join('\n\n---\n\n')
+
+    // Insert transcript
+    await supabase.from('project_materials').insert({
+      project_id:        projectId,
+      title:             `Расшифровка интервью · ${dateLabel}`,
+      material_type:     'interview_transcript',
+      raw_content:       transcription,
+      processing_status: 'ready',
+    })
+
+    // Insert research table
+    await supabase.from('project_materials').insert({
+      project_id:        projectId,
+      title:             `Таблица исследования · ${dateLabel}`,
+      material_type:     'audience_research',
+      raw_content:       tableText,
+      processing_status: 'ready',
+    })
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ── Step: Generate Meanings Map from all research materials ─────────────────
+  if (step === 'generate_meanings') {
+    const { data: materials } = await supabase
+      .from('project_materials')
+      .select('title, raw_content')
+      .eq('project_id', projectId)
+      .in('material_type', ['interview_transcript', 'audience_research'])
+
+    if (!materials || materials.length === 0) {
+      return NextResponse.json(
+        { error: 'Нет данных исследования аудитории. Сначала добавь хотя бы одно интервью.' },
+        { status: 400 }
+      )
+    }
+
+    const response = await anthropic.messages.create({
+      model:      MODEL,
+      max_tokens: 8000,
+      system:     TABLE2_SYSTEM,
+      messages:   [{ role: 'user', content: buildMeaningsFromMaterialsPrompt(materials as { title: string; raw_content: string }[]) }],
+    })
+
+    const raw = response.content[0].type === 'text' ? response.content[0].text : ''
+
+    let data: MeaningsMap
+    try {
+      const jsonMatch = raw.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) throw new Error('No JSON found')
+      data = JSON.parse(jsonMatch[0]) as MeaningsMap
+    } catch {
+      return NextResponse.json({ error: 'AI не смог создать карту смыслов. Попробуй ещё раз.' }, { status: 500 })
+    }
+
+    const meaningsText = data.categories
+      .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${c.customer_words.join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
+      .join('\n\n')
+
+    const title = 'Карта смыслов (исследование аудитории)'
+
+    await supabase.from('project_materials').upsert({
+      project_id:        projectId,
+      title,
       material_type:     'meanings_map',
       raw_content:       meaningsText,
       processing_status: 'ready',
