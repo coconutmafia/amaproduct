@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { NextResponse } from 'next/server'
 
-export const maxDuration = 120
+export const maxDuration = 300
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -163,7 +163,7 @@ export async function POST(request: Request) {
 
     const response = await anthropic.messages.create({
       model:      MODEL,
-      max_tokens: 4096,
+      max_tokens: 8000,
       system:     TABLE1_SYSTEM,
       messages:   [{ role: 'user', content: buildTable1Prompt(transcription) }],
     })
@@ -197,7 +197,7 @@ export async function POST(request: Request) {
 
     const response = await anthropic.messages.create({
       model:      MODEL,
-      max_tokens: 4096,
+      max_tokens: 8000,
       system:     TABLE2_SYSTEM,
       messages:   [{ role: 'user', content: buildTable2Prompt(table1) }],
     })
