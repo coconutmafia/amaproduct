@@ -17,6 +17,7 @@ import {
   CheckCircle2, Circle, Loader, AlertCircle, Upload, BookOpen,
   X, File, Loader2, Plus, FileText, Mic, ChevronDown, ChevronUp,
   Info, MessageSquare, Sparkles, Trash2, Copy, Check, Pencil, AudioLines,
+  Download,
 } from 'lucide-react'
 
 interface Material {
@@ -1042,6 +1043,28 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
     }
   }
 
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const downloadMaterial = async (id: string, title: string) => {
+    setDownloadingId(id)
+    try {
+      const res = await fetch(`/api/materials/${id}`)
+      if (!res.ok) throw new Error('Ошибка загрузки')
+      const data = await res.json() as { raw_content?: string }
+      const content = data.raw_content || ''
+      if (!content.trim()) { toast.error('В материале пока нет содержимого'); return }
+      const safe = (title || 'material').replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().slice(0, 80) || 'material'
+      const blob = new Blob(['﻿' + content], { type: 'text/plain;charset=utf-8' })
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href = url; a.download = `${safe}.txt`; a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Не удалось скачать материал')
+    } finally {
+      setDownloadingId(null)
+    }
+  }
+
   const handleDelete = async (id: string) => {
     setDeletingId(id)
     // Optimistic remove
@@ -1109,7 +1132,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
       window.location.reload()
     } catch (err) {
       toast.dismiss(loadingToast)
-      toast.error(err instanceof Error ? err.message : 'Ошибка генерации карты смыслов')
+      toast.error(err instanceof Error ? err.message : 'Ошибка генерации карты смыслов', { duration: 60000 })
     } finally {
       setGeneratingMeanings(false)
     }
@@ -1206,6 +1229,17 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                                   }
                                 </button>
                               )}
+                              <button
+                                onClick={() => downloadMaterial(item.id, item.title)}
+                                disabled={downloadingId === item.id}
+                                className="p-0.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors shrink-0"
+                                title="Скачать"
+                              >
+                                {downloadingId === item.id
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : <Download className="h-3 w-3" />
+                                }
+                              </button>
                               <button
                                 onClick={() => handleDelete(item.id)}
                                 disabled={deletingId === item.id}

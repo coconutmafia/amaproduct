@@ -428,12 +428,16 @@ export async function POST(request: Request) {
           const cats = parseMap(raw)
 
           if (cats.length === 0) {
-            console.error('[generate_meanings] parse failed. stop_reason=%s, raw[0..600]=%s',
-              finalMsg.stop_reason, raw.slice(0, 600))
-            const hint = finalMsg.stop_reason === 'max_tokens'
-              ? 'Ответ AI обрезан по длине. Попробуй ещё раз.'
-              : 'AI не смог создать карту смыслов. Попробуй ещё раз.'
-            send({ type: 'error', message: hint })
+            const blockTypes = finalMsg.content.map(b => b.type).join(',') || 'НЕТ БЛОКОВ'
+            const snippet = raw.trim().slice(0, 280) || '(пустой ответ)'
+            console.error('[generate_meanings] parse failed. stop_reason=%s blocks=%s raw[0..600]=%s',
+              finalMsg.stop_reason, blockTypes, raw.slice(0, 600))
+            // Surface the real diagnostic to the client so we can SEE the
+            // actual model output instead of guessing.
+            send({
+              type: 'error',
+              message: `Не удалось разобрать ответ AI. stop=${finalMsg.stop_reason}; блоки=[${blockTypes}]; ответ: «${snippet}»`,
+            })
             return
           }
 
