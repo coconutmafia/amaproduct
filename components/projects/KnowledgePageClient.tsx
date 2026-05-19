@@ -1060,59 +1060,53 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
     }
   }
 
-  // SSE-streamed (like warmup-plan): the server sends a heartbeat on every AI
-  // chunk so the connection never goes silent — that's what was killing the
-  // request on iOS / mobile networks ("долго грузило и слетело").
+  // Background job + polling. The server does the work via after(),
+  // independent of this connection — survives screen lock / tab close on
+  // iOS. We just kick it off, then poll a tiny status endpoint (<1s each,
+  // nothing to "слететь"). User can even leave the page.
   const generateMeaningsMap = async () => {
     setGeneratingMeanings(true)
-    const loadingToast = toast.loading('Собираю карту смыслов из всех интервью. Это займёт несколько минут — не закрывай страницу')
+    const loadingToast = toast.loading('Запускаю генерацию карты смыслов…')
     try {
-      const res = await fetch('/api/ai/research-analyze', {
+      const start = await fetch('/api/ai/research-analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId, step: 'generate_meanings' }),
       })
-      if (!res.ok && res.headers.get('content-type')?.includes('application/json')) {
-        const j = await res.json() as { error?: string }
-        throw new Error(j.error ?? 'Ошибка генерации')
-      }
-      if (!res.body) throw new Error('Нет ответа от сервера')
+      const startData = await start.json().catch(() => ({})) as { ok?: boolean; error?: string }
+      if (!start.ok || startData.error) throw new Error(startData.error ?? 'Ошибка запуска генерации')
 
-      const reader  = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let done   = false
-      let errMsg = ''
+      toast.loading('Карта смыслов генерируется в фоне. Это займёт несколько минут — можно не ждать и не закрывать обязательно.', { id: loadingToast })
 
-      while (true) {
-        const { value, done: streamDone } = await reader.read()
-        if (streamDone) break
-        buffer += decoder.decode(value, { stream: true })
-
-        const events = buffer.split('\n\n')
-        buffer = events.pop() ?? ''
-        for (const ev of events) {
-          const line = ev.split('\n').find(l => l.startsWith('data: '))
-          if (!line) continue
-          try {
-            const msg = JSON.parse(line.slice(6)) as { type: string; message?: string }
-            if (msg.type === 'status' && msg.message) {
-              toast.loading(msg.message, { id: loadingToast })
-            } else if (msg.type === 'done') {
-              done = true
-            } else if (msg.type === 'error') {
-              errMsg = msg.message ?? 'Ошибка генерации карты смыслов'
-            }
-          } catch { /* ignore non-JSON heartbeat */ }
+      // Poll status. ~8 min budget at 6s interval. Each poll is tiny.
+      const MAX_POLLS = 80
+      for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise(r => setTimeout(r, 6000))
+        let st: { status?: string; error?: string } = {}
+        try {
+          const res = await fetch('/api/ai/research-analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId, step: 'meanings_status' }),
+          })
+          st = await res.json() as typeof st
+        } catch {
+          continue // transient network blip — keep polling
         }
+        if (st.status === 'ready') {
+          toast.dismiss(loadingToast)
+          toast.success('Карта смыслов готова и сохранена в материалы')
+          window.location.reload()
+          return
+        }
+        if (st.status === 'error') {
+          throw new Error(st.error ?? 'Ошибка генерации карты смыслов')
+        }
+        // 'processing' / 'none' — keep waiting
       }
-
-      if (errMsg) throw new Error(errMsg)
-      if (!done) throw new Error('Генерация прервалась. Попробуй ещё раз.')
-
+      // Timed out polling — job may still finish; tell the user to check back
       toast.dismiss(loadingToast)
-      toast.success('Карта смыслов сгенерирована и сохранена в материалы')
-      window.location.reload()
+      toast.message('Генерация ещё идёт. Обнови страницу через пару минут — карта появится в материалах.')
     } catch (err) {
       toast.dismiss(loadingToast)
       toast.error(err instanceof Error ? err.message : 'Ошибка генерации карты смыслов')
