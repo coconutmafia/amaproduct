@@ -215,12 +215,14 @@ export async function POST(request: Request) {
 
   const body = await request.json() as {
     projectId:     string
-    step:          'table1' | 'table2' | 'save' | 'generate_meanings'
+    step:          'table1' | 'table2' | 'save' | 'generate_meanings' | 'meanings_batch' | 'meanings_merge'
     transcription?: string
     table1?:       InterviewTable
+    batchIndex?:   number
+    categories?:   MeaningsCategory[]
   }
 
-  const { projectId, step, transcription, table1 } = body
+  const { projectId, step, transcription, table1, batchIndex, categories } = body
 
   if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
 
@@ -407,6 +409,95 @@ export async function POST(request: Request) {
       const mergedRaw = mergeResp.content[0].type === 'text' ? mergeResp.content[0].text : ''
       const merged    = parseMap(mergedRaw)
       data = { categories: merged.length > 0 ? merged : partial }
+    }
+
+    const meaningsText = data.categories
+      .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${c.customer_words.join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
+      .join('\n\n')
+
+    await supabase.from('project_materials').upsert({
+      project_id:        projectId,
+      title:             'Карта смыслов (исследование аудитории)',
+      material_type:     'meanings_map',
+      raw_content:       meaningsText,
+      processing_status: 'ready',
+    }, { onConflict: 'project_id,material_type,title' })
+
+    return NextResponse.json({ table2: data })
+  }
+
+  // ── Client-orchestrated map-reduce (avoids one multi-minute request that
+  //    iOS Safari / Vercel kills). Client loops batches, then calls merge. ──
+  const MEANINGS_BATCH = 3
+
+  const loadResearchMaterials = async () => {
+    let mats: { title: string; raw_content: string }[] = []
+    const research = await supabase
+      .from('project_materials')
+      .select('title, raw_content')
+      .eq('project_id', projectId)
+      .eq('material_type', 'audience_research')
+    mats = (research.data ?? []) as typeof mats
+    if (mats.length === 0) {
+      const transcripts = await supabase
+        .from('project_materials')
+        .select('title, raw_content')
+        .eq('project_id', projectId)
+        .eq('material_type', 'interview_transcript')
+      mats = (transcripts.data ?? []) as typeof mats
+    }
+    return mats
+  }
+
+  const parseMap = (txt: string): MeaningsCategory[] => {
+    try {
+      const m = txt.match(/\{[\s\S]*\}/)
+      if (!m) return []
+      return (JSON.parse(m[0]) as MeaningsMap).categories ?? []
+    } catch { return [] }
+  }
+
+  // Step: process ONE batch of materials → partial categories
+  if (step === 'meanings_batch') {
+    const materials = await loadResearchMaterials()
+    if (materials.length === 0) {
+      return NextResponse.json(
+        { error: 'Нет данных исследования аудитории. Сначала добавь хотя бы одно интервью.' },
+        { status: 400 }
+      )
+    }
+    const totalBatches = Math.ceil(materials.length / MEANINGS_BATCH)
+    const bi    = batchIndex ?? 0
+    const batch = materials.slice(bi * MEANINGS_BATCH, bi * MEANINGS_BATCH + MEANINGS_BATCH)
+
+    const resp = await anthropic.messages.create({
+      model:      MODEL,
+      max_tokens: 8000,
+      system:     TABLE2_SYSTEM,
+      messages:   [{ role: 'user', content: buildMeaningsFromMaterialsPrompt(batch) }],
+    })
+    const raw = resp.content[0].type === 'text' ? resp.content[0].text : ''
+    return NextResponse.json({ categories: parseMap(raw), totalBatches })
+  }
+
+  // Step: merge all partial categories → final map + save
+  if (step === 'meanings_merge') {
+    const partial = categories ?? []
+    if (partial.length === 0) {
+      return NextResponse.json({ error: 'AI не смог создать карту смыслов. Попробуй ещё раз.' }, { status: 500 })
+    }
+
+    let data: MeaningsMap = { categories: partial }
+    if (partial.length > 8) {
+      const mergeResp = await anthropic.messages.create({
+        model:      MODEL,
+        max_tokens: 8000,
+        system:     TABLE2_SYSTEM,
+        messages:   [{ role: 'user', content: buildMergeMeaningsPrompt(partial) }],
+      })
+      const mergedRaw = mergeResp.content[0].type === 'text' ? mergeResp.content[0].text : ''
+      const merged    = parseMap(mergedRaw)
+      if (merged.length > 0) data = { categories: merged }
     }
 
     const meaningsText = data.categories

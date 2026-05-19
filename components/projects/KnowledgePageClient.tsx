@@ -1060,17 +1060,49 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
     }
   }
 
+  // Client-orchestrated map-reduce: each request is short (one AI call), so
+  // iOS Safari / Vercel never kills a multi-minute single request.
   const generateMeaningsMap = async () => {
     setGeneratingMeanings(true)
-    const loadingToast = toast.loading('Анализирую все интервью и собираю карту смыслов. Это займёт несколько минут — не закрывай страницу')
+    const loadingToast = toast.loading('Собираю карту смыслов из всех интервью. Это займёт несколько минут — не закрывай страницу')
     try {
-      const res = await fetch('/api/ai/research-analyze', {
+      type Cat = Record<string, unknown>
+      const allCategories: Cat[] = []
+
+      // First batch also tells us how many batches there are
+      const first = await fetch('/api/ai/research-analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, step: 'generate_meanings' }),
+        body: JSON.stringify({ projectId, step: 'meanings_batch', batchIndex: 0 }),
       })
-      const data = await res.json() as { table2?: unknown; error?: string }
-      if (!res.ok || data.error) throw new Error(data.error ?? 'Ошибка генерации')
+      const firstData = await first.json() as { categories?: Cat[]; totalBatches?: number; error?: string }
+      if (!first.ok || firstData.error) throw new Error(firstData.error ?? 'Ошибка генерации')
+      allCategories.push(...(firstData.categories ?? []))
+      const totalBatches = firstData.totalBatches ?? 1
+
+      // Remaining batches
+      for (let bi = 1; bi < totalBatches; bi++) {
+        toast.loading(`Анализирую часть ${bi + 1} из ${totalBatches}...`, { id: loadingToast })
+        const res = await fetch('/api/ai/research-analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId, step: 'meanings_batch', batchIndex: bi }),
+        })
+        const d = await res.json() as { categories?: Cat[]; error?: string }
+        if (!res.ok || d.error) throw new Error(d.error ?? `Часть ${bi + 1}: ошибка`)
+        allCategories.push(...(d.categories ?? []))
+      }
+
+      // Merge + save
+      toast.loading('Объединяю и сохраняю карту смыслов...', { id: loadingToast })
+      const mergeRes = await fetch('/api/ai/research-analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, step: 'meanings_merge', categories: allCategories }),
+      })
+      const mergeData = await mergeRes.json() as { table2?: unknown; error?: string }
+      if (!mergeRes.ok || mergeData.error) throw new Error(mergeData.error ?? 'Ошибка объединения')
+
       toast.dismiss(loadingToast)
       toast.success('Карта смыслов сгенерирована и сохранена в материалы')
       window.location.reload()
