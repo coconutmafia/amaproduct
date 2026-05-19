@@ -381,10 +381,22 @@ export async function POST(request: Request) {
     const encoder = new TextEncoder()
     const stream  = new ReadableStream({
       async start(controller) {
+        let closed = false
+        const safeEnqueue = (s: string) => {
+          if (closed) return
+          try { controller.enqueue(encoder.encode(s)) } catch { closed = true }
+        }
         const send = (data: Record<string, unknown>) =>
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+          safeEnqueue(`data: ${JSON.stringify(data)}\n\n`)
+
+        // Independent keepalive: emit an SSE comment every 10s no matter what
+        // (AI latency before first token, DB writes, batch gaps). This is what
+        // stops iOS Safari / mobile networks killing the idle connection
+        // ("Load failed"). Per-chunk heartbeats alone leave silent gaps.
+        const ping = setInterval(() => safeEnqueue(': ping\n\n'), 10000)
 
         try {
+          safeEnqueue(': ping\n\n') // immediate first byte — flush headers
           const partial: MeaningsCategory[] = []
 
           // ── Stage 1 (map): one streamed AI call per batch ──────────────────
@@ -407,7 +419,6 @@ export async function POST(request: Request) {
 
           if (partial.length === 0) {
             send({ type: 'error', message: 'AI не смог создать карту смыслов. Попробуй ещё раз.' })
-            controller.close()
             return
           }
 
@@ -448,7 +459,9 @@ export async function POST(request: Request) {
           console.error('[generate_meanings] stream error:', msg)
           send({ type: 'error', message: msg })
         } finally {
-          controller.close()
+          clearInterval(ping)
+          closed = true
+          try { controller.close() } catch { /* already closed */ }
         }
       },
     })
