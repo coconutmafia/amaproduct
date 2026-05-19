@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ArrowLeft, Sparkles, AlertCircle, Zap } from 'lucide-react'
+import { ArrowLeft, Sparkles, AlertCircle, Zap, HelpCircle, ChevronDown, ChevronUp } from 'lucide-react'
 import { ContentPlanGrid } from '@/components/content/ContentPlanGrid'
 import { AiEditChat } from '@/components/ai/AiEditChat'
 import { toast } from 'sonner'
@@ -111,6 +111,7 @@ export default function ContentPlanPage() {
   const [hasPlan, setHasPlan] = useState(false)
   const [loading, setLoading] = useState(true)
   const [generatingQuickPlan, setGeneratingQuickPlan] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
 
   // Load warmup plan data
   const loadPlanData = useCallback(async (weekNum: number) => {
@@ -260,18 +261,30 @@ export default function ContentPlanPage() {
     }
   }, [id, totalDays])
 
+  // When plannedTypes is empty the grid shows a default [post, stories, reels]
+  // fallback. Add/remove must operate on that *effective* set — otherwise
+  // removing does nothing (filtering an empty array) and adding wipes the
+  // visible defaults (empty array + new type = only the new type).
+  const DEFAULT_TYPES: ContentType[] = ['post', 'stories', 'reels']
+  const effectiveTypes = (pt?: ContentType[]) =>
+    pt && pt.length > 0 ? pt : DEFAULT_TYPES
+
   const handleRemoveType = useCallback((dayNum: number, type: ContentType) => {
     setDays(prev => prev.map(d =>
-      d.day === dayNum ? { ...d, plannedTypes: (d.plannedTypes || []).filter(t => t !== type) } : d
+      d.day === dayNum
+        ? { ...d, plannedTypes: effectiveTypes(d.plannedTypes).filter(t => t !== type) }
+        : d
     ))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleAddType = useCallback((dayNum: number, type: ContentType) => {
-    setDays(prev => prev.map(d =>
-      d.day === dayNum && !(d.plannedTypes || []).includes(type)
-        ? { ...d, plannedTypes: [...(d.plannedTypes || []), type] }
-        : d
-    ))
+    setDays(prev => prev.map(d => {
+      if (d.day !== dayNum) return d
+      const base = effectiveTypes(d.plannedTypes)
+      return base.includes(type) ? d : { ...d, plannedTypes: [...base, type] }
+    }))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleGenerateWeekBrief = useCallback(async () => {
@@ -371,8 +384,14 @@ export default function ContentPlanPage() {
         <div className="flex-1 min-w-0">
           <h1 className="text-xl font-bold text-foreground">Контент-план</h1>
           <p className="text-sm text-muted-foreground truncate">
-            {planName ? planName : 'Кликайте на тип контента, чтобы сгенерировать'}
-            {totalDays && ` · ${totalDays} дней`}
+            {(() => {
+              // planName looks like "Прогрев 48 дней — ПРОДУКТ (старт 2026-05-18)"
+              // Show just the product name + duration, not the whole technical string.
+              const product = planName?.match(/—\s*(.+?)\s*\(старт/)?.[1]?.trim()
+                ?? planName?.replace(/^Прогрев\s+\d+\s+дней\s*[—-]\s*/, '').replace(/\s*\(старт.*\)$/, '').trim()
+              return product || 'Кликайте на тип контента, чтобы сгенерировать'
+            })()}
+            {totalDays ? ` · ${totalDays} дней` : ''}
           </p>
         </div>
         {!hasPlan && (
@@ -382,6 +401,30 @@ export default function ContentPlanPage() {
               Создать стратегию
             </Button>
           </Link>
+        )}
+      </div>
+
+      {/* Collapsible help — how to work with the content plan */}
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <button
+          onClick={() => setShowHelp(v => !v)}
+          className="w-full flex items-center justify-between gap-2 px-4 py-3 text-sm font-medium text-foreground hover:bg-secondary/40 transition-colors"
+        >
+          <span className="flex items-center gap-2">
+            <HelpCircle className="h-4 w-4 text-primary shrink-0" />
+            Как работать с контент-планом
+          </span>
+          {showHelp ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+        </button>
+        {showHelp && (
+          <div className="px-4 pb-4 pt-1 space-y-2 text-sm text-muted-foreground border-t border-border">
+            <p>• Каждый день недели — карточка с темой и форматами контента (Пост, Сторис, Рилз и др.).</p>
+            <p>• <span className="text-foreground font-medium">Нажми на формат</span> (Пост / Сторис / Рилз) — AI сгенерирует готовый текст под тему дня.</p>
+            <p>• <span className="text-foreground font-medium">Крестик ×</span> на формате — убрать его из дня. <span className="text-foreground font-medium">«+»</span> — добавить нужный формат (Email, Лонгрид и т.д.).</p>
+            <p>• Сгенерированный контент помечается галочкой ✓ — нажми на него, чтобы открыть и отредактировать.</p>
+            <p>• Кнопка <span className="text-foreground font-medium">«AI-правка»</span> внизу — попроси AI поменять темы или структуру плана словами.</p>
+            <p>• Переключай недели стрелками ‹ › вверху. Кнопка <span className="text-foreground font-medium">«Создать»</span> — сгенерировать весь контент недели сразу.</p>
+          </div>
         )}
       </div>
 
