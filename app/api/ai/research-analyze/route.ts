@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { anthropic, MODEL } from '@/lib/ai/client'
-import { NextResponse, after } from 'next/server'
+import { NextResponse } from 'next/server'
 
 export const maxDuration = 300
 
@@ -131,10 +130,10 @@ JSON формат (строго):
 }`
 }
 
-// Cap per-material content so a batch never blows past the context window.
-// Research tables are short; raw transcripts can be huge — we only need
-// enough signal to pull pains/needs/quotes, not every word.
-const PER_MATERIAL_CAP = 18000
+// Cap per-material content. Research tables are condensed already; this keeps
+// the single combined prompt small → faster generation. We only need enough
+// signal to pull pains/needs/quotes, not every word of every transcript.
+const PER_MATERIAL_CAP = 9000
 
 function buildMeaningsFromMaterialsPrompt(materials: { title: string; raw_content: string }[]): string {
   const combined = materials
@@ -337,11 +336,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true })
   }
 
-  // ── Step: Start Meanings Map generation as a BACKGROUND job ─────────────────
-  // No streaming. The work runs server-side via after(), independent of the
-  // client connection — survives screen lock, app switch, tab close on iOS.
-  // The meanings_map material row itself is the job: processing_status tracks
-  // state ('processing' → 'ready'/'error'). Client polls 'meanings_status'.
+  // ── Step: Generate Meanings Map — SYNCHRONOUS, one AI call ─────────────────
+  // Exactly like dropping all files into one Claude chat: read everything in
+  // a single pass, return the result. No streaming / batching / after() —
+  // every extra layer was just another thing that could (and did) break.
+  // One call ≈ 60-90s, well under maxDuration (300s). The material is also
+  // saved server-side, so even if the client connection drops the result is
+  // not lost — a page refresh shows it.
   const MEANINGS_TITLE = 'Карта смыслов (исследование аудитории)'
 
   if (step === 'generate_meanings') {
@@ -370,17 +371,6 @@ export async function POST(request: Request) {
       )
     }
 
-    const admin = createAdminClient()
-
-    // Mark the job as processing (this row IS the job state)
-    await admin.from('project_materials').upsert({
-      project_id:        projectId,
-      title:             MEANINGS_TITLE,
-      material_type:     'meanings_map',
-      raw_content:       '⏳ Карта смыслов генерируется… Это займёт несколько минут. Можно закрыть страницу — она появится здесь автоматически.',
-      processing_status: 'processing',
-    }, { onConflict: 'project_id,material_type,title' })
-
     const parseMap = (txt: string): MeaningsCategory[] => {
       try {
         const m = txt.match(/\{[\s\S]*\}/)
@@ -389,69 +379,38 @@ export async function POST(request: Request) {
       } catch { return [] }
     }
 
-    // ONE pass over ALL materials — like dropping every file into one prompt
-    // (Claude's 200K context easily fits ~10 condensed interviews). No
-    // map-reduce: it was 4 sequential calls = 3-4 min. One call ≈ 60-90s.
-    // High max_tokens so the full map isn't truncated. Still inside after()
-    // so the client connection / iOS state is irrelevant to completion.
-    after(async () => {
-      try {
-        const resp = await anthropic.messages.create({
-          model:      MODEL,
-          max_tokens: 16000,
-          system:     TABLE2_SYSTEM,
-          messages:   [{ role: 'user', content: buildMeaningsFromMaterialsPrompt(materials) }],
-        })
-        const raw  = resp.content[0]?.type === 'text' ? resp.content[0].text : ''
-        const cats = parseMap(raw)
+    try {
+      const resp = await anthropic.messages.create({
+        model:      MODEL,
+        max_tokens: 16000,
+        system:     TABLE2_SYSTEM,
+        messages:   [{ role: 'user', content: buildMeaningsFromMaterialsPrompt(materials) }],
+      })
+      const raw  = resp.content[0]?.type === 'text' ? resp.content[0].text : ''
+      const cats = parseMap(raw)
 
-        if (cats.length === 0) {
-          await admin.from('project_materials').upsert({
-            project_id: projectId, title: MEANINGS_TITLE, material_type: 'meanings_map',
-            raw_content: 'ERROR: AI не смог создать карту смыслов. Попробуй ещё раз.',
-            processing_status: 'error',
-          }, { onConflict: 'project_id,material_type,title' })
-          return
-        }
-
-        const meaningsText = cats
-          .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${c.customer_words.join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
-          .join('\n\n')
-
-        await admin.from('project_materials').upsert({
-          project_id: projectId, title: MEANINGS_TITLE, material_type: 'meanings_map',
-          raw_content: meaningsText, processing_status: 'ready',
-        }, { onConflict: 'project_id,material_type,title' })
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'AI недоступен'
-        console.error('[generate_meanings] background error:', msg)
-        await admin.from('project_materials').upsert({
-          project_id: projectId, title: MEANINGS_TITLE, material_type: 'meanings_map',
-          raw_content: `ERROR: ${msg}`, processing_status: 'error',
-        }, { onConflict: 'project_id,material_type,title' })
+      if (cats.length === 0) {
+        return NextResponse.json({ error: 'AI не смог создать карту смыслов. Попробуй ещё раз.' }, { status: 500 })
       }
-    })
 
-    return NextResponse.json({ ok: true })
-  }
+      const meaningsText = cats
+        .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${c.customer_words.join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
+        .join('\n\n')
 
-  // ── Step: Poll Meanings Map job status ─────────────────────────────────────
-  if (step === 'meanings_status') {
-    const { data: row } = await supabase
-      .from('project_materials')
-      .select('processing_status, raw_content')
-      .eq('project_id', projectId)
-      .eq('material_type', 'meanings_map')
-      .eq('title', MEANINGS_TITLE)
-      .maybeSingle()
+      await supabase.from('project_materials').upsert({
+        project_id:        projectId,
+        title:             MEANINGS_TITLE,
+        material_type:     'meanings_map',
+        raw_content:       meaningsText,
+        processing_status: 'ready',
+      }, { onConflict: 'project_id,material_type,title' })
 
-    if (!row) return NextResponse.json({ status: 'none' })
-    const status = row.processing_status as string
-    if (status === 'error') {
-      const rc = (row.raw_content as string) ?? ''
-      return NextResponse.json({ status: 'error', error: rc.replace(/^ERROR:\s*/, '') || 'Ошибка генерации' })
+      return NextResponse.json({ table2: { categories: cats } })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'AI недоступен'
+      console.error('[generate_meanings] error:', msg)
+      return NextResponse.json({ error: `Ошибка генерации: ${msg}` }, { status: 500 })
     }
-    return NextResponse.json({ status }) // 'processing' | 'ready'
   }
 
   // ── Client-orchestrated map-reduce (avoids one multi-minute request that

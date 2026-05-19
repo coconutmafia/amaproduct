@@ -1060,56 +1060,32 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
     }
   }
 
-  // Background job + polling. The server does the work via after(),
-  // independent of this connection — survives screen lock / tab close on
-  // iOS. We just kick it off, then poll a tiny status endpoint (<1s each,
-  // nothing to "слететь"). User can even leave the page.
+  // One synchronous request — like dropping all files into one Claude chat.
+  // The server reads everything in a single AI pass (~60-90s) and also saves
+  // the result, so even if this connection drops the map is not lost — a
+  // page refresh shows it.
   const generateMeaningsMap = async () => {
     setGeneratingMeanings(true)
-    const loadingToast = toast.loading('Запускаю генерацию карты смыслов…')
+    const loadingToast = toast.loading('Собираю карту смыслов из всех интервью (≈1 минута). Не закрывай страницу.')
     try {
-      const start = await fetch('/api/ai/research-analyze', {
+      const res = await fetch('/api/ai/research-analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId, step: 'generate_meanings' }),
       })
-      const startData = await start.json().catch(() => ({})) as { ok?: boolean; error?: string }
-      if (!start.ok || startData.error) throw new Error(startData.error ?? 'Ошибка запуска генерации')
+      const data = await res.json().catch(() => ({})) as { table2?: unknown; error?: string }
+      if (!res.ok || data.error) throw new Error(data.error ?? 'Ошибка генерации')
 
-      toast.loading('Карта смыслов генерируется в фоне. Это займёт несколько минут — можно не ждать и не закрывать обязательно.', { id: loadingToast })
-
-      // Poll status. ~8 min budget at 6s interval. Each poll is tiny.
-      const MAX_POLLS = 80
-      for (let i = 0; i < MAX_POLLS; i++) {
-        await new Promise(r => setTimeout(r, 6000))
-        let st: { status?: string; error?: string } = {}
-        try {
-          const res = await fetch('/api/ai/research-analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projectId, step: 'meanings_status' }),
-          })
-          st = await res.json() as typeof st
-        } catch {
-          continue // transient network blip — keep polling
-        }
-        if (st.status === 'ready') {
-          toast.dismiss(loadingToast)
-          toast.success('Карта смыслов готова и сохранена в материалы')
-          window.location.reload()
-          return
-        }
-        if (st.status === 'error') {
-          throw new Error(st.error ?? 'Ошибка генерации карты смыслов')
-        }
-        // 'processing' / 'none' — keep waiting
-      }
-      // Timed out polling — job may still finish; tell the user to check back
       toast.dismiss(loadingToast)
-      toast.message('Генерация ещё идёт. Обнови страницу через пару минут — карта появится в материалах.')
+      toast.success('Карта смыслов готова и сохранена в материалы')
+      window.location.reload()
     } catch (err) {
       toast.dismiss(loadingToast)
-      toast.error(err instanceof Error ? err.message : 'Ошибка генерации карты смыслов')
+      toast.error(
+        err instanceof Error && err.message.includes('Failed')
+          ? 'Связь оборвалась, но карта могла сохраниться — обнови страницу через минуту.'
+          : (err instanceof Error ? err.message : 'Ошибка генерации карты смыслов')
+      )
     } finally {
       setGeneratingMeanings(false)
     }
