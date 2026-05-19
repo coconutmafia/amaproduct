@@ -371,11 +371,27 @@ export async function POST(request: Request) {
     }
 
     const parseMap = (txt: string): MeaningsCategory[] => {
-      try {
-        const m = txt.match(/\{[\s\S]*\}/)
-        if (!m) return []
-        return (JSON.parse(m[0]) as MeaningsMap).categories ?? []
-      } catch { return [] }
+      if (!txt) return []
+      // Strip markdown fences, then try whole-string parse, then brace-match
+      const cleaned = txt.replace(/```json/gi, '').replace(/```/g, '').trim()
+      const tryParse = (s: string): MeaningsCategory[] => {
+        try {
+          const o = JSON.parse(s) as MeaningsMap
+          return Array.isArray(o.categories) ? o.categories : []
+        } catch { return [] }
+      }
+      let cats = tryParse(cleaned)
+      if (cats.length === 0) {
+        const m = cleaned.match(/\{[\s\S]*\}/)
+        if (m) cats = tryParse(m[0])
+      }
+      // Last resort: extract just the categories array if the outer JSON
+      // is truncated/malformed
+      if (cats.length === 0) {
+        const a = cleaned.match(/"categories"\s*:\s*(\[[\s\S]*\])/)
+        if (a) { try { cats = JSON.parse(a[1]) as MeaningsCategory[] } catch { /* give up */ } }
+      }
+      return cats
     }
 
     const encoder = new TextEncoder()
@@ -403,11 +419,21 @@ export async function POST(request: Request) {
             if (chunk.type === 'content_block_delta') send({ type: 'progress' })
           }
           const finalMsg = await aiStream.finalMessage()
-          const raw  = finalMsg.content[0]?.type === 'text' ? finalMsg.content[0].text : ''
+          // Concatenate ALL text blocks — newer Claude models may emit a
+          // thinking/other block before the text answer, so content[0]
+          // isn't reliably the text.
+          const raw = finalMsg.content
+            .map(b => (b.type === 'text' ? b.text : ''))
+            .join('\n')
           const cats = parseMap(raw)
 
           if (cats.length === 0) {
-            send({ type: 'error', message: 'AI не смог создать карту смыслов. Попробуй ещё раз.' })
+            console.error('[generate_meanings] parse failed. stop_reason=%s, raw[0..600]=%s',
+              finalMsg.stop_reason, raw.slice(0, 600))
+            const hint = finalMsg.stop_reason === 'max_tokens'
+              ? 'Ответ AI обрезан по длине. Попробуй ещё раз.'
+              : 'AI не смог создать карту смыслов. Попробуй ещё раз.'
+            send({ type: 'error', message: hint })
             return
           }
 
