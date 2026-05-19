@@ -130,9 +130,19 @@ JSON формат (строго):
 }`
 }
 
+// Cap per-material content so a batch never blows past the context window.
+// Research tables are short; raw transcripts can be huge — we only need
+// enough signal to pull pains/needs/quotes, not every word.
+const PER_MATERIAL_CAP = 18000
+
 function buildMeaningsFromMaterialsPrompt(materials: { title: string; raw_content: string }[]): string {
   const combined = materials
-    .map(m => `=== ${m.title} ===\n${m.raw_content}`)
+    .map(m => {
+      const content = m.raw_content.length > PER_MATERIAL_CAP
+        ? m.raw_content.slice(0, PER_MATERIAL_CAP) + '\n…(текст обрезан)'
+        : m.raw_content
+      return `=== ${m.title} ===\n${content}`
+    })
     .join('\n\n')
 
   return `Из результатов исследования аудитории создай карту смыслов. Верни ТОЛЬКО JSON.
@@ -163,6 +173,34 @@ JSON формат (строго):
       "deep_trigger": "глубинная психологическая причина (страх, желание признания и т.д.)",
       "objection": "главное возражение — почему не действуют прямо сейчас",
       "content_idea": "идея: как подать продукт/оффер через эту боль в контенте"
+    }
+  ]
+}`
+}
+
+// Stage 2 of map-reduce: merge partial maps from each batch into one clean map.
+function buildMergeMeaningsPrompt(categories: MeaningsCategory[]): string {
+  return `Объедини частичные карты смыслов из разных групп интервью в одну чистую карту. Верни ТОЛЬКО JSON.
+
+ЧАСТИЧНЫЕ КАТЕГОРИИ:
+${JSON.stringify(categories, null, 2)}
+
+ЗАДАЧА:
+1. Объедини похожие категории в одну (например две «Лишний вес» → одна)
+2. При объединении СОХРАНИ все customer_words из всех источников (это главное — они идут в контент)
+3. Убери только точные дубликаты формулировок
+4. Сохрани все типы: pain, need, trigger, objection
+
+JSON формат (строго, без markdown):
+{
+  "categories": [
+    {
+      "type": "pain",
+      "category": "Общее название",
+      "customer_words": ["формулировка 1", "формулировка 2"],
+      "deep_trigger": "глубинная психологическая причина",
+      "objection": "главное возражение",
+      "content_idea": "идея подачи через эту боль в контенте"
     }
   ]
 }`
@@ -297,47 +335,87 @@ export async function POST(request: Request) {
   }
 
   // ── Step: Generate Meanings Map from all research materials ─────────────────
+  // Map-reduce: with many interviews, one combined prompt overflows the AI's
+  // output token budget (truncated JSON → parse failure). Instead we build a
+  // partial map per batch of 3 materials, then merge them into one clean map.
   if (step === 'generate_meanings') {
-    const { data: materials } = await supabase
+    // Prefer the condensed research tables; fall back to raw transcripts
+    let materials: { title: string; raw_content: string }[] = []
+
+    const research = await supabase
       .from('project_materials')
       .select('title, raw_content')
       .eq('project_id', projectId)
-      .in('material_type', ['interview_transcript', 'audience_research'])
+      .eq('material_type', 'audience_research')
+    materials = (research.data ?? []) as typeof materials
 
-    if (!materials || materials.length === 0) {
+    if (materials.length === 0) {
+      const transcripts = await supabase
+        .from('project_materials')
+        .select('title, raw_content')
+        .eq('project_id', projectId)
+        .eq('material_type', 'interview_transcript')
+      materials = (transcripts.data ?? []) as typeof materials
+    }
+
+    if (materials.length === 0) {
       return NextResponse.json(
         { error: 'Нет данных исследования аудитории. Сначала добавь хотя бы одно интервью.' },
         { status: 400 }
       )
     }
 
-    const response = await anthropic.messages.create({
-      model:      MODEL,
-      max_tokens: 8000,
-      system:     TABLE2_SYSTEM,
-      messages:   [{ role: 'user', content: buildMeaningsFromMaterialsPrompt(materials as { title: string; raw_content: string }[]) }],
-    })
+    const parseMap = (txt: string): MeaningsCategory[] => {
+      try {
+        const m = txt.match(/\{[\s\S]*\}/)
+        if (!m) return []
+        return (JSON.parse(m[0]) as MeaningsMap).categories ?? []
+      } catch { return [] }
+    }
 
-    const raw = response.content[0].type === 'text' ? response.content[0].text : ''
+    // ── Stage 1 (map): partial map per batch of 3 ──────────────────────────
+    const BATCH = 3
+    const partial: MeaningsCategory[] = []
 
-    let data: MeaningsMap
-    try {
-      const jsonMatch = raw.match(/\{[\s\S]*\}/)
-      if (!jsonMatch) throw new Error('No JSON found')
-      data = JSON.parse(jsonMatch[0]) as MeaningsMap
-    } catch {
+    for (let i = 0; i < materials.length; i += BATCH) {
+      const batch = materials.slice(i, i + BATCH)
+      const resp  = await anthropic.messages.create({
+        model:      MODEL,
+        max_tokens: 8000,
+        system:     TABLE2_SYSTEM,
+        messages:   [{ role: 'user', content: buildMeaningsFromMaterialsPrompt(batch) }],
+      })
+      const raw = resp.content[0].type === 'text' ? resp.content[0].text : ''
+      partial.push(...parseMap(raw))
+    }
+
+    if (partial.length === 0) {
       return NextResponse.json({ error: 'AI не смог создать карту смыслов. Попробуй ещё раз.' }, { status: 500 })
+    }
+
+    // ── Stage 2 (reduce): merge partials into one clean map ────────────────
+    let data: MeaningsMap
+    if (materials.length <= BATCH) {
+      data = { categories: partial }
+    } else {
+      const mergeResp = await anthropic.messages.create({
+        model:      MODEL,
+        max_tokens: 8000,
+        system:     TABLE2_SYSTEM,
+        messages:   [{ role: 'user', content: buildMergeMeaningsPrompt(partial) }],
+      })
+      const mergedRaw = mergeResp.content[0].type === 'text' ? mergeResp.content[0].text : ''
+      const merged    = parseMap(mergedRaw)
+      data = { categories: merged.length > 0 ? merged : partial }
     }
 
     const meaningsText = data.categories
       .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${c.customer_words.join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
       .join('\n\n')
 
-    const title = 'Карта смыслов (исследование аудитории)'
-
     await supabase.from('project_materials').upsert({
       project_id:        projectId,
-      title,
+      title:             'Карта смыслов (исследование аудитории)',
       material_type:     'meanings_map',
       raw_content:       meaningsText,
       processing_status: 'ready',

@@ -529,10 +529,11 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
           <div>
             <p className="font-semibold text-foreground">
               {analysisBatch && analysisBatch.total > 1
-                ? `Анализирую батч ${analysisBatch.current} из ${analysisBatch.total}...`
+                ? `Анализирую часть ${analysisBatch.current} из ${analysisBatch.total}...`
                 : 'Анализирую интервью...'}
             </p>
             <p className="text-sm text-muted-foreground mt-1">Определяю участников, вопросы, цитаты и эмоциональные тоны</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">Это займёт несколько минут — не закрывай страницу</p>
             {analysisBatch && analysisBatch.total > 1 && (
               <div className="mt-3 w-48 h-1.5 rounded-full bg-[#3A8A48]/15 overflow-hidden mx-auto">
                 <div

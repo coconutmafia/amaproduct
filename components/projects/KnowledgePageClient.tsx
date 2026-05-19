@@ -1062,6 +1062,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
 
   const generateMeaningsMap = async () => {
     setGeneratingMeanings(true)
+    const loadingToast = toast.loading('Анализирую все интервью и собираю карту смыслов. Это займёт несколько минут — не закрывай страницу')
     try {
       const res = await fetch('/api/ai/research-analyze', {
         method: 'POST',
@@ -1070,9 +1071,11 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
       })
       const data = await res.json() as { table2?: unknown; error?: string }
       if (!res.ok || data.error) throw new Error(data.error ?? 'Ошибка генерации')
+      toast.dismiss(loadingToast)
       toast.success('Карта смыслов сгенерирована и сохранена в материалы')
       window.location.reload()
     } catch (err) {
+      toast.dismiss(loadingToast)
       toast.error(err instanceof Error ? err.message : 'Ошибка генерации карты смыслов')
     } finally {
       setGeneratingMeanings(false)
