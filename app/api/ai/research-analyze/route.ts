@@ -389,27 +389,23 @@ export async function POST(request: Request) {
       } catch { return [] }
     }
 
-    const BATCH = 3
-    const batches: { title: string; raw_content: string }[][] = []
-    for (let i = 0; i < materials.length; i += BATCH) batches.push(materials.slice(i, i + BATCH))
-
-    // Run the full map-reduce AFTER the response is sent. Bounded by
-    // maxDuration (300s) — comfortably fits typical 3-10 interviews.
+    // ONE pass over ALL materials — like dropping every file into one prompt
+    // (Claude's 200K context easily fits ~10 condensed interviews). No
+    // map-reduce: it was 4 sequential calls = 3-4 min. One call ≈ 60-90s.
+    // High max_tokens so the full map isn't truncated. Still inside after()
+    // so the client connection / iOS state is irrelevant to completion.
     after(async () => {
       try {
-        const partial: MeaningsCategory[] = []
-        for (const batch of batches) {
-          const resp = await anthropic.messages.create({
-            model:      MODEL,
-            max_tokens: 8000,
-            system:     TABLE2_SYSTEM,
-            messages:   [{ role: 'user', content: buildMeaningsFromMaterialsPrompt(batch) }],
-          })
-          const raw = resp.content[0]?.type === 'text' ? resp.content[0].text : ''
-          partial.push(...parseMap(raw))
-        }
+        const resp = await anthropic.messages.create({
+          model:      MODEL,
+          max_tokens: 16000,
+          system:     TABLE2_SYSTEM,
+          messages:   [{ role: 'user', content: buildMeaningsFromMaterialsPrompt(materials) }],
+        })
+        const raw  = resp.content[0]?.type === 'text' ? resp.content[0].text : ''
+        const cats = parseMap(raw)
 
-        if (partial.length === 0) {
+        if (cats.length === 0) {
           await admin.from('project_materials').upsert({
             project_id: projectId, title: MEANINGS_TITLE, material_type: 'meanings_map',
             raw_content: 'ERROR: AI не смог создать карту смыслов. Попробуй ещё раз.',
@@ -418,20 +414,7 @@ export async function POST(request: Request) {
           return
         }
 
-        let data: MeaningsMap = { categories: partial }
-        if (batches.length > 1) {
-          const mResp = await anthropic.messages.create({
-            model:      MODEL,
-            max_tokens: 8000,
-            system:     TABLE2_SYSTEM,
-            messages:   [{ role: 'user', content: buildMergeMeaningsPrompt(partial) }],
-          })
-          const mRaw   = mResp.content[0]?.type === 'text' ? mResp.content[0].text : ''
-          const merged = parseMap(mRaw)
-          if (merged.length > 0) data = { categories: merged }
-        }
-
-        const meaningsText = data.categories
+        const meaningsText = cats
           .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${c.customer_words.join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
           .join('\n\n')
 
@@ -449,7 +432,7 @@ export async function POST(request: Request) {
       }
     })
 
-    return NextResponse.json({ ok: true, batches: batches.length })
+    return NextResponse.json({ ok: true })
   }
 
   // ── Step: Poll Meanings Map job status ─────────────────────────────────────
