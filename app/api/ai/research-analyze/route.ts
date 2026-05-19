@@ -336,12 +336,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true })
   }
 
-  // ── Step: Generate Meanings Map from all research materials ─────────────────
-  // Map-reduce: with many interviews, one combined prompt overflows the AI's
-  // output token budget (truncated JSON → parse failure). Instead we build a
-  // partial map per batch of 3 materials, then merge them into one clean map.
+  // ── Step: Generate Meanings Map (SSE-streamed, like warmup-plan) ────────────
+  // Map-reduce over batches of 3 materials, then merge. Streamed with
+  // heartbeats on every AI chunk so the connection never goes silent —
+  // mobile networks / iOS Safari kill connections idle for 60+ sec.
   if (step === 'generate_meanings') {
-    // Prefer the condensed research tables; fall back to raw transcripts
     let materials: { title: string; raw_content: string }[] = []
 
     const research = await supabase
@@ -375,55 +374,93 @@ export async function POST(request: Request) {
       } catch { return [] }
     }
 
-    // ── Stage 1 (map): partial map per batch of 3 ──────────────────────────
     const BATCH = 3
-    const partial: MeaningsCategory[] = []
+    const batches: { title: string; raw_content: string }[][] = []
+    for (let i = 0; i < materials.length; i += BATCH) batches.push(materials.slice(i, i + BATCH))
 
-    for (let i = 0; i < materials.length; i += BATCH) {
-      const batch = materials.slice(i, i + BATCH)
-      const resp  = await anthropic.messages.create({
-        model:      MODEL,
-        max_tokens: 8000,
-        system:     TABLE2_SYSTEM,
-        messages:   [{ role: 'user', content: buildMeaningsFromMaterialsPrompt(batch) }],
-      })
-      const raw = resp.content[0].type === 'text' ? resp.content[0].text : ''
-      partial.push(...parseMap(raw))
-    }
+    const encoder = new TextEncoder()
+    const stream  = new ReadableStream({
+      async start(controller) {
+        const send = (data: Record<string, unknown>) =>
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
 
-    if (partial.length === 0) {
-      return NextResponse.json({ error: 'AI не смог создать карту смыслов. Попробуй ещё раз.' }, { status: 500 })
-    }
+        try {
+          const partial: MeaningsCategory[] = []
 
-    // ── Stage 2 (reduce): merge partials into one clean map ────────────────
-    let data: MeaningsMap
-    if (materials.length <= BATCH) {
-      data = { categories: partial }
-    } else {
-      const mergeResp = await anthropic.messages.create({
-        model:      MODEL,
-        max_tokens: 8000,
-        system:     TABLE2_SYSTEM,
-        messages:   [{ role: 'user', content: buildMergeMeaningsPrompt(partial) }],
-      })
-      const mergedRaw = mergeResp.content[0].type === 'text' ? mergeResp.content[0].text : ''
-      const merged    = parseMap(mergedRaw)
-      data = { categories: merged.length > 0 ? merged : partial }
-    }
+          // ── Stage 1 (map): one streamed AI call per batch ──────────────────
+          for (let bi = 0; bi < batches.length; bi++) {
+            send({ type: 'status', message: `Анализирую часть ${bi + 1} из ${batches.length}...` })
 
-    const meaningsText = data.categories
-      .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${c.customer_words.join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
-      .join('\n\n')
+            const s = anthropic.messages.stream({
+              model:      MODEL,
+              max_tokens: 8000,
+              system:     TABLE2_SYSTEM,
+              messages:   [{ role: 'user', content: buildMeaningsFromMaterialsPrompt(batches[bi]) }],
+            })
+            for await (const chunk of s) {
+              if (chunk.type === 'content_block_delta') send({ type: 'progress' })
+            }
+            const final = await s.finalMessage()
+            const raw   = final.content[0]?.type === 'text' ? final.content[0].text : ''
+            partial.push(...parseMap(raw))
+          }
 
-    await supabase.from('project_materials').upsert({
-      project_id:        projectId,
-      title:             'Карта смыслов (исследование аудитории)',
-      material_type:     'meanings_map',
-      raw_content:       meaningsText,
-      processing_status: 'ready',
-    }, { onConflict: 'project_id,material_type,title' })
+          if (partial.length === 0) {
+            send({ type: 'error', message: 'AI не смог создать карту смыслов. Попробуй ещё раз.' })
+            controller.close()
+            return
+          }
 
-    return NextResponse.json({ table2: data })
+          // ── Stage 2 (reduce): merge partials into one clean map ────────────
+          let data: MeaningsMap = { categories: partial }
+          if (batches.length > 1) {
+            send({ type: 'status', message: 'Объединяю и сохраняю карту смыслов...' })
+            const ms = anthropic.messages.stream({
+              model:      MODEL,
+              max_tokens: 8000,
+              system:     TABLE2_SYSTEM,
+              messages:   [{ role: 'user', content: buildMergeMeaningsPrompt(partial) }],
+            })
+            for await (const chunk of ms) {
+              if (chunk.type === 'content_block_delta') send({ type: 'progress' })
+            }
+            const mFinal = await ms.finalMessage()
+            const mRaw   = mFinal.content[0]?.type === 'text' ? mFinal.content[0].text : ''
+            const merged = parseMap(mRaw)
+            if (merged.length > 0) data = { categories: merged }
+          }
+
+          const meaningsText = data.categories
+            .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${c.customer_words.join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
+            .join('\n\n')
+
+          await supabase.from('project_materials').upsert({
+            project_id:        projectId,
+            title:             'Карта смыслов (исследование аудитории)',
+            material_type:     'meanings_map',
+            raw_content:       meaningsText,
+            processing_status: 'ready',
+          }, { onConflict: 'project_id,material_type,title' })
+
+          send({ type: 'done', table2: data })
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'AI недоступен'
+          console.error('[generate_meanings] stream error:', msg)
+          send({ type: 'error', message: msg })
+        } finally {
+          controller.close()
+        }
+      },
+    })
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type':       'text/event-stream',
+        'Cache-Control':      'no-cache, no-transform',
+        'X-Accel-Buffering':  'no',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    })
   }
 
   // ── Client-orchestrated map-reduce (avoids one multi-minute request that

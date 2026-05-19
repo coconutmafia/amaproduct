@@ -1060,48 +1060,55 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
     }
   }
 
-  // Client-orchestrated map-reduce: each request is short (one AI call), so
-  // iOS Safari / Vercel never kills a multi-minute single request.
+  // SSE-streamed (like warmup-plan): the server sends a heartbeat on every AI
+  // chunk so the connection never goes silent — that's what was killing the
+  // request on iOS / mobile networks ("долго грузило и слетело").
   const generateMeaningsMap = async () => {
     setGeneratingMeanings(true)
     const loadingToast = toast.loading('Собираю карту смыслов из всех интервью. Это займёт несколько минут — не закрывай страницу')
     try {
-      type Cat = Record<string, unknown>
-      const allCategories: Cat[] = []
-
-      // First batch also tells us how many batches there are
-      const first = await fetch('/api/ai/research-analyze', {
+      const res = await fetch('/api/ai/research-analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, step: 'meanings_batch', batchIndex: 0 }),
+        body: JSON.stringify({ projectId, step: 'generate_meanings' }),
       })
-      const firstData = await first.json() as { categories?: Cat[]; totalBatches?: number; error?: string }
-      if (!first.ok || firstData.error) throw new Error(firstData.error ?? 'Ошибка генерации')
-      allCategories.push(...(firstData.categories ?? []))
-      const totalBatches = firstData.totalBatches ?? 1
+      if (!res.ok && res.headers.get('content-type')?.includes('application/json')) {
+        const j = await res.json() as { error?: string }
+        throw new Error(j.error ?? 'Ошибка генерации')
+      }
+      if (!res.body) throw new Error('Нет ответа от сервера')
 
-      // Remaining batches
-      for (let bi = 1; bi < totalBatches; bi++) {
-        toast.loading(`Анализирую часть ${bi + 1} из ${totalBatches}...`, { id: loadingToast })
-        const res = await fetch('/api/ai/research-analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectId, step: 'meanings_batch', batchIndex: bi }),
-        })
-        const d = await res.json() as { categories?: Cat[]; error?: string }
-        if (!res.ok || d.error) throw new Error(d.error ?? `Часть ${bi + 1}: ошибка`)
-        allCategories.push(...(d.categories ?? []))
+      const reader  = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let done   = false
+      let errMsg = ''
+
+      while (true) {
+        const { value, done: streamDone } = await reader.read()
+        if (streamDone) break
+        buffer += decoder.decode(value, { stream: true })
+
+        const events = buffer.split('\n\n')
+        buffer = events.pop() ?? ''
+        for (const ev of events) {
+          const line = ev.split('\n').find(l => l.startsWith('data: '))
+          if (!line) continue
+          try {
+            const msg = JSON.parse(line.slice(6)) as { type: string; message?: string }
+            if (msg.type === 'status' && msg.message) {
+              toast.loading(msg.message, { id: loadingToast })
+            } else if (msg.type === 'done') {
+              done = true
+            } else if (msg.type === 'error') {
+              errMsg = msg.message ?? 'Ошибка генерации карты смыслов'
+            }
+          } catch { /* ignore non-JSON heartbeat */ }
+        }
       }
 
-      // Merge + save
-      toast.loading('Объединяю и сохраняю карту смыслов...', { id: loadingToast })
-      const mergeRes = await fetch('/api/ai/research-analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, step: 'meanings_merge', categories: allCategories }),
-      })
-      const mergeData = await mergeRes.json() as { table2?: unknown; error?: string }
-      if (!mergeRes.ok || mergeData.error) throw new Error(mergeData.error ?? 'Ошибка объединения')
+      if (errMsg) throw new Error(errMsg)
+      if (!done) throw new Error('Генерация прервалась. Попробуй ещё раз.')
 
       toast.dismiss(loadingToast)
       toast.success('Карта смыслов сгенерирована и сохранена в материалы')
