@@ -418,12 +418,12 @@ export default function ContentPlanPage() {
         </button>
         {showHelp && (
           <div className="px-4 pb-4 pt-1 space-y-2 text-sm text-muted-foreground border-t border-border">
-            <p>• Каждый день недели — карточка с темой и форматами контента (Пост, Сторис, Рилз и др.).</p>
-            <p>• <span className="text-foreground font-medium">Нажми на формат</span> (Пост / Сторис / Рилз) — AI сгенерирует готовый текст под тему дня.</p>
-            <p>• <span className="text-foreground font-medium">Крестик ×</span> на формате — убрать его из дня. <span className="text-foreground font-medium">«+»</span> — добавить нужный формат (Email, Лонгрид и т.д.).</p>
-            <p>• Сгенерированный контент помечается галочкой ✓ — нажми на него, чтобы открыть и отредактировать.</p>
-            <p>• Кнопка <span className="text-foreground font-medium">«AI-правка»</span> внизу — попроси AI поменять темы или структуру плана словами.</p>
-            <p>• Переключай недели стрелками ‹ › вверху. Кнопка <span className="text-foreground font-medium">«Создать»</span> — сгенерировать весь контент недели сразу.</p>
+            <p>• Темы из плана прогрева уже расставлены по дням недели.</p>
+            <p>• <span className="text-foreground font-medium">Шаг 1.</span> Выбери форматы для каждого дня (× убрать, + добавить Email/Лонгрид и т.д.), затем нажми <span className="text-foreground font-medium">«Сгенерировать план»</span> — AI распишет тему под каждый формат.</p>
+            <p>• <span className="text-foreground font-medium">Шаг 2.</span> Нажми на формат (Пост / Сторис / Рилз) — AI сгенерирует готовый текст под его тему.</p>
+            <p>• Сгенерированный контент помечается галочкой ✓ — нажми, чтобы открыть и отредактировать.</p>
+            <p>• <span className="text-foreground font-medium">«AI-правка»</span> внизу — попроси AI поменять темы или структуру плана словами.</p>
+            <p>• Переключай недели стрелками ‹ › вверху.</p>
           </div>
         )}
       </div>

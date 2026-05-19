@@ -225,7 +225,14 @@ export function ContentPlanGrid({
   const [pendingBadge, setPendingBadge] = useState<{ day: number; type: ContentType; phase: WarmupPhase; theme?: string } | null>(null)
   const [extraContext, setExtraContext] = useState('')
 
-  void projectId; void warmupPlanId; void toast
+  void projectId; void warmupPlanId
+
+  // Two-step flow: a content unit can only be generated AFTER the week plan
+  // (per-format themes / briefs) has been generated for that day. Otherwise
+  // the user is jumping straight to content with no theme guidance.
+  const briefReady = (day: DayContent) =>
+    !!day.dayBriefs && Object.keys(day.dayBriefs).length > 0
+  const weekHasBrief = days.some(briefReady)
 
   const activeDay = pendingBadge?.day ?? (viewingKey ? parseInt(viewingKey.split('-')[0]) : null)
 
@@ -311,6 +318,10 @@ export function ContentPlanGrid({
                           if (generatingDay === genKey) return
                           const isPending = pendingBadge?.day === day.day && pendingBadge?.type === type
                           if (isPending) { setPendingBadge(null); setExtraContext(''); return }
+                          if (!briefReady(day)) {
+                            toast.error('Сначала нажми «Сгенерировать план» вверху — AI распишет тему под каждый формат', { duration: 5000 })
+                            return
+                          }
                           setPendingBadge({ day: day.day, type, phase: day.phase || 'awareness', theme: day.dayBriefs?.[type] || day.theme })
                           setViewingKey(null); setAddingToDay(null)
                         }}
@@ -425,11 +436,15 @@ export function ContentPlanGrid({
                           <button
                             onClick={() => {
                               if (isGenerating) return
-                              if (existing) { setViewingKey(isViewing ? null : genKey); setAddingToDay(null) }
-                              else {
-                                if (isPending) { setPendingBadge(null); setExtraContext('') }
-                                else { setPendingBadge({ day: day.day, type, phase: day.phase || 'awareness', theme: day.dayBriefs?.[type] || day.theme }); setViewingKey(null); setAddingToDay(null) }
+                              if (existing) { setViewingKey(isViewing ? null : genKey); setAddingToDay(null); return }
+                              // Gate: must generate the week plan (per-format
+                              // themes) before generating any content unit
+                              if (!briefReady(day)) {
+                                toast.error('Сначала нажми «Сгенерировать план» вверху — AI распишет тему под каждый формат', { duration: 5000 })
+                                return
                               }
+                              if (isPending) { setPendingBadge(null); setExtraContext('') }
+                              else { setPendingBadge({ day: day.day, type, phase: day.phase || 'awareness', theme: day.dayBriefs?.[type] || day.theme }); setViewingKey(null); setAddingToDay(null) }
                             }}
                             className="flex items-center gap-1 pl-2.5 pr-2 py-1 rounded-lg text-xs font-medium transition-all"
                             style={{ backgroundColor: bgColor, color: tColor, border: `1.5px solid ${bColor}`, boxShadow: isViewing || isPending ? `0 0 0 2px ${bColor}` : undefined }}
@@ -675,8 +690,8 @@ export function ContentPlanGrid({
           <button onClick={handleGenerateWeekBriefClick} disabled={loading || generatingWeekBrief}
             className="flex items-center gap-1.5 h-9 px-4 rounded-xl text-xs font-semibold border border-[#3A8A48]/30 bg-[#3A8A48]/8 text-[#3A8A48] hover:bg-[#3A8A48]/15 transition-all disabled:opacity-50">
             {generatingWeekBrief
-              ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /><span className="ml-1">Создаю...</span></>
-              : <><Sparkles className="h-3.5 w-3.5" /><span className="ml-1">Создать</span></>}
+              ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /><span className="ml-1">Составляю план...</span></>
+              : <><Sparkles className="h-3.5 w-3.5" /><span className="ml-1">{weekHasBrief ? 'Обновить план' : 'Сгенерировать план'}</span></>}
           </button>
           <button onClick={onExport}
             className="flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-medium border border-[#E8E8E8] bg-white text-[#888] hover:text-[#555] transition-all">
@@ -684,6 +699,14 @@ export function ContentPlanGrid({
           </button>
         </div>
       </div>
+
+      {/* Two-step flow hint — shown until the week plan is generated */}
+      {!weekHasBrief && !generatingWeekBrief && (
+        <div className="rounded-xl border border-[#3A8A48]/25 bg-[#3A8A48]/5 p-3.5 text-xs text-[#2E6E3A] space-y-1">
+          <p><span className="font-semibold">Шаг 1.</span> Нажми <span className="font-semibold">«Сгенерировать план»</span> — AI распишет тему под каждый формат контента на эту неделю.</p>
+          <p><span className="font-semibold">Шаг 2.</span> Потом нажимай на формат (Пост / Сторис / Рилз), чтобы сгенерировать готовый текст под его тему.</p>
+        </div>
+      )}
 
       {/* Grid / list */}
       <ListView />
