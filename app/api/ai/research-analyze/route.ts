@@ -336,13 +336,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true })
   }
 
-  // ── Step: Generate Meanings Map — SYNCHRONOUS, one AI call ─────────────────
-  // Exactly like dropping all files into one Claude chat: read everything in
-  // a single pass, return the result. No streaming / batching / after() —
-  // every extra layer was just another thing that could (and did) break.
-  // One call ≈ 60-90s, well under maxDuration (300s). The material is also
-  // saved server-side, so even if the client connection drops the result is
-  // not lost — a page refresh shows it.
+  // ── Step: Generate Meanings Map — SSE-streamed, ONE AI call ───────────────
+  // Identical pattern to the warmup-plan route (which works on this host):
+  // a single anthropic.messages.stream() with a heartbeat on every chunk +
+  // a 10s keepalive. The connection never goes silent → mobile Safari can't
+  // kill it ("грузилось, потом слетела" = silent >60s request was dropped).
+  // One AI pass over all materials, like dropping every file into one chat.
   const MEANINGS_TITLE = 'Карта смыслов (исследование аудитории)'
 
   if (step === 'generate_meanings') {
@@ -379,38 +378,72 @@ export async function POST(request: Request) {
       } catch { return [] }
     }
 
-    try {
-      const resp = await anthropic.messages.create({
-        model:      MODEL,
-        max_tokens: 16000,
-        system:     TABLE2_SYSTEM,
-        messages:   [{ role: 'user', content: buildMeaningsFromMaterialsPrompt(materials) }],
-      })
-      const raw  = resp.content[0]?.type === 'text' ? resp.content[0].text : ''
-      const cats = parseMap(raw)
+    const encoder = new TextEncoder()
+    const stream  = new ReadableStream({
+      async start(controller) {
+        let closed = false
+        const push = (s: string) => { if (!closed) { try { controller.enqueue(encoder.encode(s)) } catch { closed = true } } }
+        const send = (d: Record<string, unknown>) => push(`data: ${JSON.stringify(d)}\n\n`)
 
-      if (cats.length === 0) {
-        return NextResponse.json({ error: 'AI не смог создать карту смыслов. Попробуй ещё раз.' }, { status: 500 })
-      }
+        // Never let the connection go silent: immediate first byte, then a
+        // ping every 10s regardless of AI latency / DB write.
+        push(': open\n\n')
+        const ping = setInterval(() => push(': ping\n\n'), 10000)
 
-      const meaningsText = cats
-        .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${c.customer_words.join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
-        .join('\n\n')
+        try {
+          send({ type: 'status', message: 'Анализирую все интервью...' })
 
-      await supabase.from('project_materials').upsert({
-        project_id:        projectId,
-        title:             MEANINGS_TITLE,
-        material_type:     'meanings_map',
-        raw_content:       meaningsText,
-        processing_status: 'ready',
-      }, { onConflict: 'project_id,material_type,title' })
+          const aiStream = anthropic.messages.stream({
+            model:      MODEL,
+            max_tokens: 16000,
+            system:     TABLE2_SYSTEM,
+            messages:   [{ role: 'user', content: buildMeaningsFromMaterialsPrompt(materials) }],
+          })
+          for await (const chunk of aiStream) {
+            if (chunk.type === 'content_block_delta') send({ type: 'progress' })
+          }
+          const finalMsg = await aiStream.finalMessage()
+          const raw  = finalMsg.content[0]?.type === 'text' ? finalMsg.content[0].text : ''
+          const cats = parseMap(raw)
 
-      return NextResponse.json({ table2: { categories: cats } })
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'AI недоступен'
-      console.error('[generate_meanings] error:', msg)
-      return NextResponse.json({ error: `Ошибка генерации: ${msg}` }, { status: 500 })
-    }
+          if (cats.length === 0) {
+            send({ type: 'error', message: 'AI не смог создать карту смыслов. Попробуй ещё раз.' })
+            return
+          }
+
+          const meaningsText = cats
+            .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${c.customer_words.join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
+            .join('\n\n')
+
+          await supabase.from('project_materials').upsert({
+            project_id:        projectId,
+            title:             MEANINGS_TITLE,
+            material_type:     'meanings_map',
+            raw_content:       meaningsText,
+            processing_status: 'ready',
+          }, { onConflict: 'project_id,material_type,title' })
+
+          send({ type: 'done' })
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'AI недоступен'
+          console.error('[generate_meanings] stream error:', msg)
+          send({ type: 'error', message: msg })
+        } finally {
+          clearInterval(ping)
+          closed = true
+          try { controller.close() } catch { /* already closed */ }
+        }
+      },
+    })
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type':           'text/event-stream',
+        'Cache-Control':          'no-cache, no-transform',
+        'X-Accel-Buffering':      'no',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    })
   }
 
   // ── Client-orchestrated map-reduce (avoids one multi-minute request that

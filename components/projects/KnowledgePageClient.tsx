@@ -1060,10 +1060,10 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
     }
   }
 
-  // One synchronous request — like dropping all files into one Claude chat.
-  // The server reads everything in a single AI pass (~60-90s) and also saves
-  // the result, so even if this connection drops the map is not lost — a
-  // page refresh shows it.
+  // SSE stream — same pattern as warmup-plan (proven to work on this host).
+  // Server heartbeats every chunk + 10s ping so the connection never goes
+  // silent. One AI pass over all interviews. Result is also saved server-
+  // side, so a dropped connection still leaves the map (refresh shows it).
   const generateMeaningsMap = async () => {
     setGeneratingMeanings(true)
     const loadingToast = toast.loading('Собираю карту смыслов из всех интервью (≈1 минута). Не закрывай страницу.')
@@ -1073,19 +1073,43 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId, step: 'generate_meanings' }),
       })
-      const data = await res.json().catch(() => ({})) as { table2?: unknown; error?: string }
-      if (!res.ok || data.error) throw new Error(data.error ?? 'Ошибка генерации')
+      if (!res.ok && res.headers.get('content-type')?.includes('application/json')) {
+        const j = await res.json().catch(() => ({})) as { error?: string }
+        throw new Error(j.error ?? 'Ошибка генерации')
+      }
+      if (!res.body) throw new Error('Нет ответа от сервера')
+
+      const reader  = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = '', done = false, errMsg = ''
+
+      while (true) {
+        const { value, done: streamDone } = await reader.read()
+        if (streamDone) break
+        buffer += decoder.decode(value, { stream: true })
+        const parts = buffer.split('\n\n')
+        buffer = parts.pop() ?? ''
+        for (const ev of parts) {
+          const line = ev.split('\n').find(l => l.startsWith('data: '))
+          if (!line) continue
+          try {
+            const m = JSON.parse(line.slice(6)) as { type: string; message?: string }
+            if (m.type === 'status' && m.message) toast.loading(m.message, { id: loadingToast })
+            else if (m.type === 'done') done = true
+            else if (m.type === 'error') errMsg = m.message ?? 'Ошибка генерации карты смыслов'
+          } catch { /* heartbeat */ }
+        }
+      }
+
+      if (errMsg) throw new Error(errMsg)
+      if (!done) throw new Error('Связь оборвалась, но карта могла сохраниться — обнови страницу через минуту.')
 
       toast.dismiss(loadingToast)
       toast.success('Карта смыслов готова и сохранена в материалы')
       window.location.reload()
     } catch (err) {
       toast.dismiss(loadingToast)
-      toast.error(
-        err instanceof Error && err.message.includes('Failed')
-          ? 'Связь оборвалась, но карта могла сохраниться — обнови страницу через минуту.'
-          : (err instanceof Error ? err.message : 'Ошибка генерации карты смыслов')
-      )
+      toast.error(err instanceof Error ? err.message : 'Ошибка генерации карты смыслов')
     } finally {
       setGeneratingMeanings(false)
     }
