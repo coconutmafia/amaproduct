@@ -29,14 +29,21 @@ function buildDaysFromWarmupPlan(planData: WarmupPlanData, weekNumber: number, s
   // Flatten all daily_plan entries from all phases
   const allDays: Array<{ day: number; phase: WarmupPhase; format: ContentType[]; theme: string }> = []
 
+  // Seed defaults at construction time when the warmup plan doesn't specify
+  // formats for a day. Empty plannedTypes from the plan would otherwise be
+  // indistinguishable from "user deliberately removed everything" — and the
+  // UI now respects an empty array as truly empty (no defaults at render).
+  const DEFAULT_FORMATS: ContentType[] = ['post', 'stories', 'reels']
+
   for (const phaseData of planData.warmup_plan.phases) {
     for (const dayPlan of phaseData.daily_plan) {
       // Support both old format (format+theme) and new format (meaning)
       const dayData = dayPlan as unknown as Record<string, unknown>
+      const fmt = (dayData.format as ContentType[]) || []
       allDays.push({
         day: dayPlan.day,
         phase: phaseData.phase as WarmupPhase,
-        format: (dayData.format as ContentType[]) || [],
+        format: fmt.length > 0 ? fmt : DEFAULT_FORMATS,
         theme: (dayData.meaning as string) || (dayData.theme as string) || '',
       })
     }
@@ -261,30 +268,25 @@ export default function ContentPlanPage() {
     }
   }, [id, totalDays])
 
-  // When plannedTypes is empty the grid shows a default [post, stories, reels]
-  // fallback. Add/remove must operate on that *effective* set — otherwise
-  // removing does nothing (filtering an empty array) and adding wipes the
-  // visible defaults (empty array + new type = only the new type).
-  const DEFAULT_TYPES: ContentType[] = ['post', 'stories', 'reels']
-  const effectiveTypes = (pt?: ContentType[]) =>
-    pt && pt.length > 0 ? pt : DEFAULT_TYPES
-
+  // Defaults are seeded at day construction (buildDaysFromWarmupPlan), so
+  // plannedTypes is never empty unless the user deliberately emptied it.
+  // Add/remove operate on the literal current array — an empty array stays
+  // empty after add? No: add appends; remove from empty is a no-op (no chip
+  // is visible to click anyway).
   const handleRemoveType = useCallback((dayNum: number, type: ContentType) => {
     setDays(prev => prev.map(d =>
       d.day === dayNum
-        ? { ...d, plannedTypes: effectiveTypes(d.plannedTypes).filter(t => t !== type) }
+        ? { ...d, plannedTypes: (d.plannedTypes ?? []).filter(t => t !== type) }
         : d
     ))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleAddType = useCallback((dayNum: number, type: ContentType) => {
     setDays(prev => prev.map(d => {
       if (d.day !== dayNum) return d
-      const base = effectiveTypes(d.plannedTypes)
+      const base = d.plannedTypes ?? []
       return base.includes(type) ? d : { ...d, plannedTypes: [...base, type] }
     }))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleGenerateWeekBrief = useCallback(async () => {

@@ -296,8 +296,7 @@ export function ContentPlanGrid({
           {/* Card columns */}
           <div className="grid grid-cols-7 gap-2">
             {days.map((day) => {
-              const displayTypes = (day.plannedTypes && day.plannedTypes.length > 0)
-                ? day.plannedTypes : (['post', 'stories', 'reels'] as ContentType[])
+              const displayTypes = day.plannedTypes ?? []
               const available = DISPLAY_TYPES.filter(t => !displayTypes.includes(t))
               const isAddOpen = addingToDay === day.day
 
@@ -381,8 +380,10 @@ export function ContentPlanGrid({
     return (
       <div className="space-y-2">
         {days.map((day) => {
-          const displayTypes = (day.plannedTypes && day.plannedTypes.length > 0)
-            ? day.plannedTypes : (['post', 'stories', 'reels'] as ContentType[])
+          // Show exactly what the day has. If the user removed every chip
+          // we keep it empty (only + is shown). The defaults are seeded at
+          // day construction time in page.tsx, not as a render-time fallback.
+          const displayTypes = day.plannedTypes ?? []
           const isAddOpen = addingToDay === day.day
           const available = DISPLAY_TYPES.filter(t => !displayTypes.includes(t))
 
@@ -432,7 +433,7 @@ export function ContentPlanGrid({
                       const bColor  = existing || isPending ? c.borderDone : c.border
                       const tColor  = existing || isPending ? c.textDone : c.text
                       return (
-                        <div key={type} className="flex items-center gap-0.5">
+                        <div key={type} className="flex items-center gap-1">
                           <button
                             onClick={() => {
                               if (isGenerating) return
@@ -456,9 +457,12 @@ export function ContentPlanGrid({
                             {existing && !isViewing && <Check className="h-2.5 w-2.5 ml-0.5 text-green-600" />}
                           </button>
                           {onRemoveType && !existing && !isGenerating && (
-                            <button onClick={(e) => { e.stopPropagation(); onRemoveType(day.day, type) }}
-                              className="flex h-4 w-4 items-center justify-center rounded-full text-[#aaa] hover:bg-red-50 hover:text-red-500 transition-all">
-                              <X className="h-2.5 w-2.5" />
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); onRemoveType(day.day, type) }}
+                              aria-label="Убрать формат"
+                              className="ml-1 flex h-8 w-8 items-center justify-center rounded-full text-[#888] bg-white border border-[#E8E8E8] active:bg-red-50 active:text-red-500 hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-all shadow-sm shrink-0 touch-manipulation">
+                              <X className="h-4 w-4" />
                             </button>
                           )}
                         </div>

@@ -292,6 +292,7 @@ async function recalculateCompleteness(projectId: string) {
   if (types.has('marketing_strategy'))  score += 15
   if (types.has('funnel_description'))  score += 10
   if (types.has('audience_research'))   score += 10
+  if (types.has('blog_lines'))          score += 10
   if (types.has('competitors'))         score += 5
   if (types.has('product_description')) score += 5
 

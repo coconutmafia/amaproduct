@@ -117,6 +117,29 @@ export async function DELETE(request: Request) {
     const { error } = await supabase.from('project_materials').delete().eq('id', id)
     if (error) throw new Error(error.message)
 
+    // Recalculate project completeness so the stored score stays in sync
+    // with the dynamic score shown inside the project (same formula).
+    const { data: remaining } = await supabase
+      .from('project_materials')
+      .select('material_type')
+      .eq('project_id', material.project_id)
+      .eq('processing_status', 'ready')
+    const types = new Set(remaining?.map(m => m.material_type) || [])
+    let score = 0
+    if (types.has('tone_of_voice'))       score += 25
+    if (types.has('unpacking_map'))       score += 15
+    if (types.has('cases_reviews'))       score += 15
+    if (types.has('marketing_strategy'))  score += 15
+    if (types.has('funnel_description'))  score += 10
+    if (types.has('audience_research'))   score += 10
+    if (types.has('blog_lines'))          score += 10
+    if (types.has('competitors'))         score += 5
+    if (types.has('product_description')) score += 5
+    await supabase
+      .from('projects')
+      .update({ completeness_score: Math.min(100, score) })
+      .eq('id', material.project_id)
+
     return NextResponse.json({ success: true })
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
