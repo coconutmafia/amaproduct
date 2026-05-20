@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ProgressIndicator } from '@/components/shared/ProgressIndicator'
 import { UnpackingInterview } from '@/components/projects/UnpackingInterview'
+import { ToneFromContentDialog } from '@/components/projects/ToneFromContentDialog'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -994,6 +995,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
   const [uploadFor, setUploadFor] = useState<string | null>(null)
   const [showBlogLines, setShowBlogLines] = useState(false)
   const [showInterview, setShowInterview] = useState(false)
+  const [showToneFromContent, setShowToneFromContent] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [materials, setMaterials] = useState(initialMaterials)
   const [editingBlogLines, setEditingBlogLines] = useState<{ id: string; content: string } | null>(null)
@@ -1294,6 +1296,17 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                             {generatingMeanings ? 'Генерирую...' : 'Сгенерировать из исследования'}
                           </Button>
                         )}
+                        {type === 'tone_of_voice' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-8 px-3 border-primary/40 text-primary hover:bg-primary/10"
+                            onClick={() => setShowToneFromContent(true)}
+                          >
+                            <Sparkles className="h-3 w-3 mr-1.5" />
+                            Из моих текстов
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant={hasItems ? 'outline' : 'default'}
@@ -1366,6 +1379,14 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
         projectId={projectId}
         open={showInterview}
         onClose={() => setShowInterview(false)}
+        onSuccess={() => window.location.reload()}
+      />
+
+      {/* Tone of Voice from user's own content */}
+      <ToneFromContentDialog
+        projectId={projectId}
+        open={showToneFromContent}
+        onClose={() => setShowToneFromContent(false)}
         onSuccess={() => window.location.reload()}
       />
 

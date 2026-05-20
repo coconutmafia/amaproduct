@@ -343,8 +343,61 @@ export default function ContentPlanPage() {
   }, [id, days])
 
   const handleExport = useCallback(async () => {
-    toast.info('Экспорт контент-плана в разработке...')
-  }, [])
+    if (!days || days.length === 0) {
+      toast.error('Нечего экспортировать — план ещё не сформирован')
+      return
+    }
+    const PHASE_RU: Record<string, string> = {
+      awareness: 'Прогрев на нишу',
+      trust:     'Прогрев на эксперта',
+      desire:    'Прогрев на продукт',
+      close:     'Отработка возражений',
+    }
+    const TYPE_RU: Record<string, string> = {
+      post: 'Пост', carousel: 'Карусель', reels: 'Рилз', stories: 'Сторис',
+      live: 'Эфир', webinar: 'Вебинар', email: 'Email',
+    }
+
+    const lines: string[] = []
+    lines.push(`# Контент-план — Неделя ${week}`)
+    if (planName) lines.push(`\n_${planName}_`)
+    lines.push('')
+
+    for (const d of days) {
+      const phase = d.phase ? ` · ${PHASE_RU[d.phase] ?? d.phase}` : ''
+      lines.push(`## ${d.dayOfWeek}, ${d.date}${phase}`)
+      if (d.theme) lines.push(`\n${d.theme}`)
+      if (d.plannedTypes && d.plannedTypes.length > 0) {
+        lines.push(`\n**Форматы:** ${d.plannedTypes.map(t => TYPE_RU[t] ?? t).join(', ')}`)
+      }
+      if (d.dayBriefs && Object.keys(d.dayBriefs).length > 0) {
+        lines.push('\n### Темы под форматы')
+        for (const [t, brief] of Object.entries(d.dayBriefs)) {
+          if (!brief) continue
+          lines.push(`- **${TYPE_RU[t] ?? t}:** ${brief}`)
+        }
+      }
+      if (d.items && d.items.length > 0) {
+        lines.push('\n### Сгенерированный контент')
+        for (const it of d.items) {
+          lines.push(`\n#### ${TYPE_RU[it.content_type] ?? it.content_type}${it.title ? ` — ${it.title}` : ''}`)
+          if (it.body_text) lines.push(it.body_text)
+          if (it.cta) lines.push(`\n**CTA:** ${it.cta}`)
+          if (it.hashtags && it.hashtags.length > 0) lines.push(`\n**Хэштеги:** ${it.hashtags.join(' ')}`)
+        }
+      }
+      lines.push('\n---\n')
+    }
+
+    const md   = lines.join('\n')
+    const blob = new Blob(['﻿' + md], { type: 'text/markdown;charset=utf-8' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    const safeName = (planName || 'content-plan').replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().slice(0, 60) || 'content-plan'
+    a.href = url; a.download = `${safeName} — Неделя ${week}.md`; a.click()
+    URL.revokeObjectURL(url)
+    toast.success('Скачано')
+  }, [days, week, planName])
 
   const handleQuickPlan = useCallback(async () => {
     setGeneratingQuickPlan(true)
