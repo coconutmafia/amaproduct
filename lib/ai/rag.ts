@@ -121,6 +121,37 @@ export async function buildRAGContext(
           }))
       }
     }
+
+    // ── ALWAYS include curated identity/voice materials ─────────────────────
+    // These types are the project's voice fingerprint — never let chunking
+    // state hide them. We pull raw_content directly and merge on top of
+    // whatever chunks contributed (deduped by material_type+title hash).
+    const ALWAYS_INCLUDE = [
+      'my_instagram',     // own IG profile + posts analysis
+      'competitors',      // competitor IG accounts analysis
+      'tone_of_voice',    // explicit ToV
+      'meanings_map',     // audience language map
+      'unpacking_map',    // personality / story
+      'blog_lines',       // narrative lines
+    ]
+    const { data: alwaysMats } = await supabase
+      .from('project_materials')
+      .select('title, material_type, raw_content')
+      .eq('project_id', projectId)
+      .in('material_type', ALWAYS_INCLUDE)
+
+    if (alwaysMats && alwaysMats.length > 0) {
+      const seen = new Set(projectChunks.map(c => `${c.material_type}::${c.chunk_text.slice(0, 60)}`))
+      for (const m of alwaysMats) {
+        const raw = (m.raw_content ?? '').toString()
+        if (!raw.trim()) continue
+        const chunk_text = `[${m.material_type}] ${m.title}:\n${raw.slice(0, 1500)}`
+        const key = `${m.material_type}::${chunk_text.slice(0, 60)}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        projectChunks.push({ chunk_text, material_type: m.material_type as string, metadata: {} })
+      }
+    }
   }
 
   // ── Style examples (approved content for few-shot learning) ──────────────

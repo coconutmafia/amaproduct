@@ -52,6 +52,26 @@ export async function POST(request: Request) {
     }
   } catch { /* ignore */ }
 
+  // 1b. Direct query for Instagram analysis (own + competitors) — same reason:
+  //     these materials are voice/positioning gold and must always reach the
+  //     prompt regardless of chunking state.
+  let myInstagramSummary = ''
+  let competitorsSummary = ''
+  try {
+    const { data: igMats } = await supabase
+      .from('project_materials')
+      .select('title, material_type, raw_content')
+      .eq('project_id', projectId)
+      .in('material_type', ['my_instagram', 'competitors'])
+      .limit(6)
+    if (igMats && igMats.length > 0) {
+      const own = igMats.filter(m => m.material_type === 'my_instagram')
+      const ext = igMats.filter(m => m.material_type === 'competitors')
+      myInstagramSummary  = own.map(m => `${m.title}: ${sanitizeForPrompt((m.raw_content as string) ?? '').slice(0, 1800)}`).join('\n\n')
+      competitorsSummary  = ext.map(m => `${m.title}: ${sanitizeForPrompt((m.raw_content as string) ?? '').slice(0, 1200)}`).join('\n\n').slice(0, 4500)
+    }
+  } catch { /* ignore */ }
+
   // 2. RAG for project context (TOV, cases, product) + system knowledge (methodology)
   let projectSummary = ''
   let systemKnowledge = ''
@@ -90,6 +110,8 @@ ${blogLinesSummary}
 ${project.description ? `ОПИСАНИЕ: ${project.description}` : ''}
 ${systemKnowledge ? `МЕТОДОЛОГИЯ ПРОГРЕВОВ:\n${systemKnowledge}\n` : ''}
 ${projectSummary ? `МАТЕРИАЛЫ ПРОЕКТА (кейсы, продукт, TOV):\n${projectSummary}\n` : ''}
+${myInstagramSummary ? `АНАЛИЗ МОЕГО INSTAGRAM (опирайся на этот голос/темы при формулировках):\n${myInstagramSummary}\n` : ''}
+${competitorsSummary ? `АНАЛИЗ INSTAGRAM КОНКУРЕНТОВ (что у них «заходит»; отстраивайся, не копируй):\n${competitorsSummary}\n` : ''}
 ${blogLinesInstruction}
 ─── ПСИХОЛОГИЯ КОНТЕНТА ПО ФАЗАМ ───────────────────────────
 ${phasePsychology}
