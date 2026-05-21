@@ -23,7 +23,6 @@ import {
   FileText,
   Sparkles,
   Loader2,
-  Upload,
   RefreshCw,
   Save,
   RotateCcw,
@@ -248,7 +247,6 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
   const [useCases, setUseCases] = useState(true)
   const [extraCasesText, setExtraCasesText] = useState('')
-  const [extraCasesFile, setExtraCasesFile] = useState<File | null>(null)
   const [selectedHooks, setSelectedHooks] = useState<string[]>([])
   const [hookTexts, setHookTexts] = useState<Record<string, string>>({}) // текст к каждому хуку
   const [extraHooks, setExtraHooks] = useState('')
@@ -966,18 +964,10 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                 className="bg-background border border-border text-sm min-h-[80px]"
               />
             </div>
-            <div>
-              <label className="flex items-center gap-2 cursor-pointer text-xs text-primary hover:text-primary/80 transition-colors">
-                <Upload className="h-3.5 w-3.5" />
-                {extraCasesFile ? extraCasesFile.name : 'Загрузить файл с кейсами (PDF, DOCX)'}
-                <input
-                  type="file"
-                  className="hidden"
-                  accept=".pdf,.docx,.doc,.txt"
-                  onChange={(e) => setExtraCasesFile(e.target.files?.[0] || null)}
-                />
-              </label>
-            </div>
+            <p className="text-xs text-muted-foreground">
+              Файлы с кейсами (PDF, DOCX) загружай в Материалы проекта → «Кейсы и отзывы» —
+              оттуда AI учитывает их во всех генерациях.
+            </p>
           </div>
         </div>
       )}
