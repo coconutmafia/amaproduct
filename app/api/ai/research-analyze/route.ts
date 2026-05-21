@@ -429,14 +429,33 @@ export async function POST(request: Request) {
 
           if (cats.length === 0) {
             const blockTypes = finalMsg.content.map(b => b.type).join(',') || 'НЕТ БЛОКОВ'
-            const snippet = raw.trim().slice(0, 280) || '(пустой ответ)'
             console.error('[generate_meanings] parse failed. stop_reason=%s blocks=%s raw[0..600]=%s',
               finalMsg.stop_reason, blockTypes, raw.slice(0, 600))
-            // Surface the real diagnostic to the client so we can SEE the
-            // actual model output instead of guessing.
+            // Persist the diagnostic as the meanings_map material with error
+            // status. The user sees it in the materials list and can open /
+            // download it — toasts disappear, this stays until we fix it.
+            const diagnostic = [
+              `❌ Не удалось разобрать ответ AI`,
+              ``,
+              `Причина остановки модели: ${finalMsg.stop_reason}`,
+              `Типы блоков в ответе: [${blockTypes}]`,
+              `Длина текстового ответа: ${raw.length} символов`,
+              ``,
+              `─── Полный ответ AI (первые 4000 символов) ───`,
+              raw.slice(0, 4000) || '(пусто)',
+            ].join('\n')
+            try {
+              await supabase.from('project_materials').upsert({
+                project_id:        projectId,
+                title:             MEANINGS_TITLE,
+                material_type:     'meanings_map',
+                raw_content:       diagnostic,
+                processing_status: 'error',
+              }, { onConflict: 'project_id,material_type,title' })
+            } catch { /* swallow */ }
             send({
               type: 'error',
-              message: `Не удалось разобрать ответ AI. stop=${finalMsg.stop_reason}; блоки=[${blockTypes}]; ответ: «${snippet}»`,
+              message: `Не удалось разобрать ответ AI. Открой «Карта смыслов блога» в материалах и скачай — там полный текст ответа AI для диагностики.`,
             })
             return
           }
@@ -457,6 +476,16 @@ export async function POST(request: Request) {
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'AI недоступен'
           console.error('[generate_meanings] stream error:', msg)
+          // Persist the error too, so it stays visible in materials
+          try {
+            await supabase.from('project_materials').upsert({
+              project_id:        projectId,
+              title:             MEANINGS_TITLE,
+              material_type:     'meanings_map',
+              raw_content:       `❌ Ошибка генерации карты смыслов\n\n${msg}\n\n(Стек: ${err instanceof Error && err.stack ? err.stack.slice(0, 1500) : 'нет'})`,
+              processing_status: 'error',
+            }, { onConflict: 'project_id,material_type,title' })
+          } catch { /* swallow */ }
           send({ type: 'error', message: msg })
         } finally {
           clearInterval(ping)
