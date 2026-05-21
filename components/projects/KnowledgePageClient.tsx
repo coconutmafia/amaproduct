@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ProgressIndicator } from '@/components/shared/ProgressIndicator'
 import { UnpackingInterview } from '@/components/projects/UnpackingInterview'
 import { ToneFromContentDialog } from '@/components/projects/ToneFromContentDialog'
+import { InstagramAccountDialog } from '@/components/projects/InstagramAccountDialog'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -61,10 +62,15 @@ const TYPE_META: Record<string, { label: string; hint: string; category: string 
     hint: 'Документ с ключевыми смыслами, которые ты транслируешь через блог — о чём ты, зачем тебя читать.',
     category: 'СТРАТЕГИЯ',
   },
+  my_instagram: {
+    label: 'Мой Instagram',
+    hint: 'Подключи 1 свой публичный аккаунт — AI заберёт последние 25 постов и сделает разбор твоего голоса и позиционирования.',
+    category: 'INSTAGRAM',
+  },
   competitors: {
-    label: 'Конкуренты',
-    hint: 'Список конкурентов с описанием их сильных и слабых сторон. Поможет выстроить отстройку и взять лучшее.',
-    category: 'СТРАТЕГИЯ',
+    label: 'Конкуренты в Instagram',
+    hint: 'До 5 публичных Instagram-аккаунтов конкурентов. AI разберёт что у них работает: темы, hooks, формулировки — чтобы научиться у лучших.',
+    category: 'INSTAGRAM',
   },
   tone_of_voice: {
     label: 'Tone of Voice',
@@ -105,7 +111,8 @@ const TYPE_META: Record<string, { label: string; hint: string; category: string 
 
 const CATEGORIES = [
   { key: 'АУДИТОРИЯ', title: 'АУДИТОРИЯ', types: ['audience_survey', 'interview_transcript', 'audience_research'] },
-  { key: 'СТРАТЕГИЯ', title: 'СТРАТЕГИЯ', types: ['unpacking_map', 'meanings_map', 'competitors', 'tone_of_voice'] },
+  { key: 'INSTAGRAM', title: 'INSTAGRAM', types: ['my_instagram', 'competitors'] },
+  { key: 'СТРАТЕГИЯ', title: 'СТРАТЕГИЯ', types: ['unpacking_map', 'meanings_map', 'tone_of_voice'] },
   { key: 'СОЦИАЛЬНЫЕ ДОКАЗАТЕЛЬСТВА', title: 'СОЦИАЛЬНЫЕ ДОКАЗАТЕЛЬСТВА', types: ['cases_reviews'] },
   { key: 'МАРКЕТИНГ', title: 'МАРКЕТИНГ', types: ['marketing_strategy', 'marketing_tactics', 'funnel_description', 'chatbot_description'] },
   { key: 'ЛИЧНОСТЬ', title: 'ЛИЧНОСТЬ', types: ['blog_lines'] },
@@ -996,6 +1003,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
   const [showBlogLines, setShowBlogLines] = useState(false)
   const [showInterview, setShowInterview] = useState(false)
   const [showToneFromContent, setShowToneFromContent] = useState(false)
+  const [igDialogType, setIgDialogType] = useState<'my_instagram' | 'competitors' | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [materials, setMaterials] = useState(initialMaterials)
   const [editingBlogLines, setEditingBlogLines] = useState<{ id: string; content: string } | null>(null)
@@ -1307,15 +1315,40 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                             Из моих текстов
                           </Button>
                         )}
-                        <Button
-                          size="sm"
-                          variant={hasItems ? 'outline' : 'default'}
-                          className={`text-xs h-8 px-4 ${hasItems ? 'border-border' : 'gradient-accent text-white hover:opacity-90 border-0'}`}
-                          onClick={() => type === 'blog_lines' ? (setEditingBlogLines(null), setShowBlogLines(true)) : setUploadFor(type)}
-                        >
-                          <Upload className="h-3 w-3 mr-1.5" />
-                          {hasItems ? 'Добавить ещё' : 'Загрузить'}
-                        </Button>
+                        {/* Instagram types: server-enforced quota (1 own / 5 competitors).
+                            We hide the button when full; backend rejects anyway. */}
+                        {(type === 'my_instagram' || type === 'competitors') ? (() => {
+                          const limit = type === 'my_instagram' ? 1 : 5
+                          const used  = items.length
+                          if (used >= limit) {
+                            return (
+                              <span className="text-xs text-muted-foreground">
+                                {type === 'my_instagram' ? 'Аккаунт подключён' : `Достигнут лимит ${limit}/5 — удали один, чтобы добавить новый`}
+                              </span>
+                            )
+                          }
+                          return (
+                            <Button
+                              size="sm"
+                              variant={hasItems ? 'outline' : 'default'}
+                              className={`text-xs h-8 px-4 ${hasItems ? 'border-border' : 'gradient-accent text-white hover:opacity-90 border-0'}`}
+                              onClick={() => setIgDialogType(type as 'my_instagram' | 'competitors')}
+                            >
+                              <Upload className="h-3 w-3 mr-1.5" />
+                              {type === 'my_instagram' ? 'Подключить аккаунт' : (hasItems ? `Добавить ещё (${used}/5)` : 'Добавить конкурента')}
+                            </Button>
+                          )
+                        })() : (
+                          <Button
+                            size="sm"
+                            variant={hasItems ? 'outline' : 'default'}
+                            className={`text-xs h-8 px-4 ${hasItems ? 'border-border' : 'gradient-accent text-white hover:opacity-90 border-0'}`}
+                            onClick={() => type === 'blog_lines' ? (setEditingBlogLines(null), setShowBlogLines(true)) : setUploadFor(type)}
+                          >
+                            <Upload className="h-3 w-3 mr-1.5" />
+                            {hasItems ? 'Добавить ещё' : 'Загрузить'}
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1389,6 +1422,17 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
         onClose={() => setShowToneFromContent(false)}
         onSuccess={() => window.location.reload()}
       />
+
+      {/* Instagram account (own / competitor) scrape + analyze */}
+      {igDialogType && (
+        <InstagramAccountDialog
+          projectId={projectId}
+          accountType={igDialogType}
+          open={!!igDialogType}
+          onClose={() => setIgDialogType(null)}
+          onSuccess={() => window.location.reload()}
+        />
+      )}
 
       <ImportMaterialsDialog
         projectId={projectId}
