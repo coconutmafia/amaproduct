@@ -86,7 +86,7 @@ export default function AccountAnalysisPage() {
         <div>
           <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
             <AtSign className="h-5 w-5 text-pink-400" />
-            Анализ AtSign-аккаунта
+            Анализ Instagram-аккаунта
           </h1>
           <p className="text-sm text-muted-foreground">AI анализирует твой контент и даёт рекомендации по стратегии запуска</p>
         </div>
@@ -112,7 +112,7 @@ export default function AccountAnalysisPage() {
             <CardContent className="space-y-4">
               {/* Username */}
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Никнейм в AtSign</Label>
+                <Label className="text-xs text-muted-foreground">Никнейм в Instagram</Label>
                 <div className="relative">
                   <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">@</span>
                   <Input

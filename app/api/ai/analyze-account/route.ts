@@ -102,7 +102,8 @@ ${postsText}
       messages: [{ role: 'user', content: userPrompt }],
     })
 
-    const analysis = response.content[0].type === 'text' ? response.content[0].text : ''
+    // Scan ALL text blocks — content[0] may be a non-text (thinking) block.
+    const analysis = response.content.map(b => (b.type === 'text' ? b.text : '')).join('\n')
 
     // Save analysis to project materials
     await supabase.from('project_materials').insert({

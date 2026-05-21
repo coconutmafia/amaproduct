@@ -136,7 +136,9 @@ JSON формат (строго):
       messages: [{ role: 'user', content: prompt }],
     })
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : ''
+    // Scan ALL text blocks — newer Claude models can emit a thinking block
+    // first, so content[0] is not reliably the text answer.
+    const text = response.content.map(b => (b.type === 'text' ? b.text : '')).join('\n')
 
     // Extract JSON block
     const jsonMatch = text.match(/\{[\s\S]*\}/)

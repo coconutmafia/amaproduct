@@ -161,7 +161,9 @@ ${contentType === 'email' ? `Напиши письмо для email-рассыл
           messages: [{ role: 'user', content: userPrompt }],
         })
 
-        const generatedText = genResponse.content[0].type === 'text' ? genResponse.content[0].text : ''
+        // Scan ALL text blocks — a leading thinking block would make
+        // content[0] non-text and silently produce empty content.
+        const generatedText = genResponse.content.map(b => (b.type === 'text' ? b.text : '')).join('\n')
 
         // ── Step 3: Validate (only for text posts) ──────────────────────────
         // Validator uses the SAME system prompt = full context (TOV, methodology, style examples)

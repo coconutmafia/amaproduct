@@ -279,7 +279,7 @@ export async function POST(request: Request) {
       messages:   [{ role: 'user', content: buildTable1Prompt(transcription) }],
     })
 
-    const raw = response.content[0].type === 'text' ? response.content[0].text : ''
+    const raw = response.content.map(b => (b.type === 'text' ? b.text : '')).join('\n')
 
     let data: InterviewTable
     try {
@@ -304,7 +304,7 @@ export async function POST(request: Request) {
       messages:   [{ role: 'user', content: buildTable2Prompt(table1) }],
     })
 
-    const raw = response.content[0].type === 'text' ? response.content[0].text : ''
+    const raw = response.content.map(b => (b.type === 'text' ? b.text : '')).join('\n')
 
     let data: MeaningsMap
     try {
