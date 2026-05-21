@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { upsertProjectMaterial } from '@/lib/supabase/upsertMaterial'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { NextResponse } from 'next/server'
 
@@ -321,13 +322,13 @@ export async function POST(request: Request) {
       .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${c.customer_words.join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
       .join('\n\n')
 
-    await supabase.from('project_materials').upsert({
+    await upsertProjectMaterial(supabase, {
       project_id:        projectId,
       title:             'Карта смыслов (исследование аудитории)',
       material_type:     'meanings_map',
       raw_content:       meaningsText,
       processing_status: 'ready',
-    }, { onConflict: 'project_id,material_type,title' })
+    })
 
     return NextResponse.json({ table2: data })
   }
@@ -432,13 +433,13 @@ export async function POST(request: Request) {
     // they at least see that something started — vs a hollow circle that
     // looks like the click never registered.
     try {
-      await supabase.from('project_materials').upsert({
+      await upsertProjectMaterial(supabase, {
         project_id:        projectId,
         title:             MEANINGS_TITLE,
         material_type:     'meanings_map',
         raw_content:       '⏳ Карта смыслов генерируется… Если эта надпись висит дольше 5 минут — что-то пошло не так, попробуй ещё раз.',
         processing_status: 'processing',
-      }, { onConflict: 'project_id,material_type,title' })
+      })
     } catch { /* swallow */ }
 
     const encoder = new TextEncoder()
@@ -492,13 +493,13 @@ export async function POST(request: Request) {
               raw.slice(0, 4000) || '(пусто)',
             ].join('\n')
             try {
-              await supabase.from('project_materials').upsert({
+              await upsertProjectMaterial(supabase, {
                 project_id:        projectId,
                 title:             MEANINGS_TITLE,
                 material_type:     'meanings_map',
                 raw_content:       diagnostic,
                 processing_status: 'error',
-              }, { onConflict: 'project_id,material_type,title' })
+              })
             } catch { /* swallow */ }
             send({
               type: 'error',
@@ -511,13 +512,13 @@ export async function POST(request: Request) {
             .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${c.customer_words.join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
             .join('\n\n')
 
-          const { error: saveErr } = await supabase.from('project_materials').upsert({
+          const { error: saveErr } = await upsertProjectMaterial(supabase, {
             project_id:        projectId,
             title:             MEANINGS_TITLE,
             material_type:     'meanings_map',
             raw_content:       meaningsText,
             processing_status: 'ready',
-          }, { onConflict: 'project_id,material_type,title' })
+          })
 
           if (saveErr) {
             console.error('[generate_meanings] save error:', saveErr)
@@ -531,13 +532,13 @@ export async function POST(request: Request) {
           console.error('[generate_meanings] stream error:', msg)
           // Persist the error too, so it stays visible in materials
           try {
-            await supabase.from('project_materials').upsert({
+            await upsertProjectMaterial(supabase, {
               project_id:        projectId,
               title:             MEANINGS_TITLE,
               material_type:     'meanings_map',
               raw_content:       `❌ Ошибка генерации карты смыслов\n\n${msg}\n\n(Стек: ${err instanceof Error && err.stack ? err.stack.slice(0, 1500) : 'нет'})`,
               processing_status: 'error',
-            }, { onConflict: 'project_id,material_type,title' })
+            })
           } catch { /* swallow */ }
           send({ type: 'error', message: msg })
         } finally {
@@ -636,13 +637,13 @@ export async function POST(request: Request) {
       .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${c.customer_words.join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
       .join('\n\n')
 
-    await supabase.from('project_materials').upsert({
+    await upsertProjectMaterial(supabase, {
       project_id:        projectId,
       title:             'Карта смыслов (исследование аудитории)',
       material_type:     'meanings_map',
       raw_content:       meaningsText,
       processing_status: 'ready',
-    }, { onConflict: 'project_id,material_type,title' })
+    })
 
     return NextResponse.json({ table2: data })
   }

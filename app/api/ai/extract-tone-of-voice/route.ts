@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { upsertProjectMaterial } from '@/lib/supabase/upsertMaterial'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { NextResponse } from 'next/server'
 
@@ -77,13 +78,13 @@ export async function POST(request: Request) {
   // Placeholder so the user sees the request reached the server. Survives
   // mobile drops, tab close, etc.
   try {
-    await supabase.from('project_materials').upsert({
+    await upsertProjectMaterial(supabase, {
       project_id:        projectId,
       title:             TOV_TITLE,
       material_type:     'tone_of_voice',
       raw_content:       '⏳ Tone of Voice анализируется… Если эта надпись висит дольше 3 минут — что-то пошло не так, попробуй ещё раз.',
       processing_status: 'processing',
-    }, { onConflict: 'project_id,material_type,title' })
+    })
   } catch { /* swallow */ }
 
   // SSE stream with keepalive — mobile networks kill silent connections.
@@ -128,25 +129,25 @@ export async function POST(request: Request) {
             text.slice(0, 4000) || '(пусто)',
           ].join('\n')
           try {
-            await supabase.from('project_materials').upsert({
+            await upsertProjectMaterial(supabase, {
               project_id:        projectId,
               title:             TOV_TITLE,
               material_type:     'tone_of_voice',
               raw_content:       diagnostic,
               processing_status: 'error',
-            }, { onConflict: 'project_id,material_type,title' })
+            })
           } catch { /* swallow */ }
           send({ type: 'error', message: 'Не удалось извлечь ToV. Открой материал «Tone of Voice (извлечён из твоих текстов)» — там полная диагностика.' })
           return
         }
 
-        const { error: saveErr } = await supabase.from('project_materials').upsert({
+        const { error: saveErr } = await upsertProjectMaterial(supabase, {
           project_id:        projectId,
           title:             TOV_TITLE,
           material_type:     'tone_of_voice',
           raw_content:       text,
           processing_status: 'ready',
-        }, { onConflict: 'project_id,material_type,title' })
+        })
 
         if (saveErr) {
           console.error('[extract-tone-of-voice] save error:', saveErr)
@@ -159,13 +160,13 @@ export async function POST(request: Request) {
         const msg = err instanceof Error ? err.message : 'AI недоступен'
         console.error('[extract-tone-of-voice] error:', msg)
         try {
-          await supabase.from('project_materials').upsert({
+          await upsertProjectMaterial(supabase, {
             project_id:        projectId,
             title:             TOV_TITLE,
             material_type:     'tone_of_voice',
             raw_content:       `❌ Ошибка извлечения Tone of Voice\n\n${msg}\n\n(Стек: ${err instanceof Error && err.stack ? err.stack.slice(0, 1500) : 'нет'})`,
             processing_status: 'error',
-          }, { onConflict: 'project_id,material_type,title' })
+          })
         } catch { /* swallow */ }
         send({ type: 'error', message: msg })
       } finally {
