@@ -35,15 +35,23 @@ function buildDaysFromWarmupPlan(planData: WarmupPlanData, weekNumber: number, s
   // UI now respects an empty array as truly empty (no defaults at render).
   const DEFAULT_FORMATS: ContentType[] = ['post', 'stories', 'reels']
 
+  // Per-day saved briefs (themes per content format), populated below.
+  const savedBriefs: Record<number, Record<string, string>> = {}
+
   for (const phaseData of planData.warmup_plan.phases) {
     for (const dayPlan of phaseData.daily_plan) {
       // Support both old format (format+theme) and new format (meaning)
       const dayData = dayPlan as unknown as Record<string, unknown>
-      const fmt = (dayData.format as ContentType[]) || []
+      // `formats` = user's saved format choice; `format` = legacy plan field
+      const savedFmt = (dayData.formats as ContentType[]) || (dayData.format as ContentType[]) || []
+      const briefs = dayData.briefs as Record<string, string> | undefined
+      if (briefs && Object.keys(briefs).length > 0) savedBriefs[dayPlan.day] = briefs
       allDays.push({
         day: dayPlan.day,
         phase: phaseData.phase as WarmupPhase,
-        format: fmt.length > 0 ? fmt : DEFAULT_FORMATS,
+        // An empty saved `formats` is a deliberate "user removed all" only if
+        // briefs exist for that day; otherwise fall back to defaults.
+        format: savedFmt.length > 0 ? savedFmt : (briefs ? [] : DEFAULT_FORMATS),
         theme: (dayData.meaning as string) || (dayData.theme as string) || '',
       })
     }
@@ -72,6 +80,7 @@ function buildDaysFromWarmupPlan(planData: WarmupPlanData, weekNumber: number, s
       plannedTypes: d.format,
       phase: d.phase,
       theme: d.theme,
+      dayBriefs: savedBriefs[d.day],
     }
   })
 }
@@ -115,6 +124,8 @@ export default function ContentPlanPage() {
   const [totalWeeks, setTotalWeeks] = useState(7)
   const [planName, setPlanName] = useState<string | null>(null)
   const [warmupPlanId, setWarmupPlanId] = useState<string | null>(null)
+  // Full plan_data kept in state so we can persist per-day briefs/formats back.
+  const [planData, setPlanData] = useState<WarmupPlanData | null>(null)
   const [hasPlan, setHasPlan] = useState(false)
   const [loading, setLoading] = useState(true)
   const [generatingQuickPlan, setGeneratingQuickPlan] = useState(false)
@@ -152,6 +163,7 @@ export default function ContentPlanPage() {
         if (warmupPlan.plan_data) {
           const planData = warmupPlan.plan_data as WarmupPlanData
           if (planData?.warmup_plan?.phases?.length > 0) {
+            setPlanData(planData)
             const builtDays = buildDaysFromWarmupPlan(planData, weekNum, 1, planBaseDate)
             if (builtDays.length > 0) {
               // Fetch existing generated content for these days
@@ -273,21 +285,50 @@ export default function ContentPlanPage() {
   // Add/remove operate on the literal current array — an empty array stays
   // empty after add? No: add appends; remove from empty is a no-op (no chip
   // is visible to click anyway).
+  // Persist per-day format choices + generated briefs into warmup_plans.plan_data
+  // so the week plan survives a page reload / week switch. Only days present in
+  // `currentDays` (the visible week) are touched — other weeks keep their data.
+  const persistPlan = useCallback(async (currentDays: DayData[]) => {
+    if (!warmupPlanId || !planData) return
+    const byDay = new Map(currentDays.map(d => [d.day, d]))
+    const next = JSON.parse(JSON.stringify(planData)) as WarmupPlanData
+    for (const phase of next.warmup_plan.phases) {
+      for (const dp of phase.daily_plan) {
+        const d = byDay.get(dp.day)
+        if (!d) continue
+        const e = dp as unknown as Record<string, unknown>
+        e.formats = d.plannedTypes ?? []
+        if (d.dayBriefs && Object.keys(d.dayBriefs).length > 0) e.briefs = d.dayBriefs
+      }
+    }
+    setPlanData(next)
+    const { error } = await supabase.from('warmup_plans').update({ plan_data: next }).eq('id', warmupPlanId)
+    if (error) console.error('persistPlan error:', error)
+  }, [warmupPlanId, planData, supabase])
+
   const handleRemoveType = useCallback((dayNum: number, type: ContentType) => {
-    setDays(prev => prev.map(d =>
-      d.day === dayNum
-        ? { ...d, plannedTypes: (d.plannedTypes ?? []).filter(t => t !== type) }
-        : d
-    ))
-  }, [])
+    setDays(prev => {
+      const next = prev.map(d =>
+        d.day === dayNum
+          ? { ...d, plannedTypes: (d.plannedTypes ?? []).filter(t => t !== type) }
+          : d
+      )
+      void persistPlan(next)
+      return next
+    })
+  }, [persistPlan])
 
   const handleAddType = useCallback((dayNum: number, type: ContentType) => {
-    setDays(prev => prev.map(d => {
-      if (d.day !== dayNum) return d
-      const base = d.plannedTypes ?? []
-      return base.includes(type) ? d : { ...d, plannedTypes: [...base, type] }
-    }))
-  }, [])
+    setDays(prev => {
+      const next = prev.map(d => {
+        if (d.day !== dayNum) return d
+        const base = d.plannedTypes ?? []
+        return base.includes(type) ? d : { ...d, plannedTypes: [...base, type] }
+      })
+      void persistPlan(next)
+      return next
+    })
+  }, [persistPlan])
 
   const handleGenerateWeekBrief = useCallback(async () => {
     const briefDays = days.filter(d => d.phase).map(d => ({
@@ -325,22 +366,26 @@ export default function ContentPlanPage() {
         toast.error('AI вернул некорректный ответ, попробуй ещё раз')
         return
       }
-      // Update themes in days state
-      setDays(prev => prev.map(d => {
-        const briefDay = data.days.find(b => b.day === d.day)
-        if (!briefDay) return d
-        // Merge: set theme to main brief text, add types if missing
-        const newTheme = Object.values(briefDay.brief).join(' · ')
-        const addTypes = Object.keys(briefDay.brief) as ContentType[]
-        const existingTypes = d.plannedTypes || []
-        const mergedTypes = [...new Set([...existingTypes, ...addTypes])]
-        return { ...d, theme: newTheme, plannedTypes: mergedTypes, dayBriefs: briefDay.brief }
-      }))
-      toast.success('План недели готов! Кликай на тип контента чтобы сгенерировать')
+      // Update themes in days state, then persist the week plan
+      setDays(prev => {
+        const next = prev.map(d => {
+          const briefDay = data.days.find(b => b.day === d.day)
+          if (!briefDay) return d
+          // Merge: set theme to main brief text, add types if missing
+          const newTheme = Object.values(briefDay.brief).join(' · ')
+          const addTypes = Object.keys(briefDay.brief) as ContentType[]
+          const existingTypes = d.plannedTypes || []
+          const mergedTypes = [...new Set([...existingTypes, ...addTypes])]
+          return { ...d, theme: newTheme, plannedTypes: mergedTypes, dayBriefs: briefDay.brief }
+        })
+        void persistPlan(next)
+        return next
+      })
+      toast.success('План недели готов и сохранён! Кликай на тип контента чтобы сгенерировать')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Ошибка')
     }
-  }, [id, days])
+  }, [id, days, persistPlan])
 
   const handleExport = useCallback(async () => {
     if (!days || days.length === 0) {
