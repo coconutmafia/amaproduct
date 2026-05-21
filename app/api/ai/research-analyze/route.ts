@@ -394,6 +394,20 @@ export async function POST(request: Request) {
       return cats
     }
 
+    // Upsert a 'processing' placeholder IMMEDIATELY so the user can see
+    // the request reached the server. If anything below blows up silently,
+    // they at least see that something started — vs a hollow circle that
+    // looks like the click never registered.
+    try {
+      await supabase.from('project_materials').upsert({
+        project_id:        projectId,
+        title:             MEANINGS_TITLE,
+        material_type:     'meanings_map',
+        raw_content:       '⏳ Карта смыслов генерируется… Если эта надпись висит дольше 5 минут — что-то пошло не так, попробуй ещё раз.',
+        processing_status: 'processing',
+      }, { onConflict: 'project_id,material_type,title' })
+    } catch { /* swallow */ }
+
     const encoder = new TextEncoder()
     const stream  = new ReadableStream({
       async start(controller) {

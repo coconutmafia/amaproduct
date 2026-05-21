@@ -1054,7 +1054,29 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
   }
 
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
-  const downloadMaterial = async (id: string, title: string) => {
+
+  // Parses the audience_research text format saved by research-analyze →
+  // CSV rows. The format is: "Участник: NAME (SEGMENT)\n\n  Вопрос: ...\n
+  // Ответ: ...\n  Цитаты: a | b\n  Тон: ...\n\n  ...\n\n---\n\n Участник: ..."
+  const audienceResearchToCsv = (text: string): string => {
+    const rows: string[][] = [['Участник', 'Сегмент', 'Вопрос', 'Ответ', 'Ключевые цитаты', 'Тон']]
+    const sections = text.split(/\n---\n/)
+    for (const sec of sections) {
+      const header = sec.match(/Участник:\s*(.+?)(?:\s*\((.+?)\))?\s*$/m)
+      if (!header) continue
+      const name    = header[1].trim()
+      const segment = (header[2] ?? '').trim()
+      const re = /\s*Вопрос:\s*(.+?)\s*\n\s*Ответ:\s*([\s\S]+?)\n\s*Цитаты:\s*(.+?)\n\s*Тон:\s*(.+?)(?=\n\s*\n|\n\s*Вопрос:|$)/g
+      let m: RegExpExecArray | null
+      while ((m = re.exec(sec)) !== null) {
+        rows.push([name, segment, m[1].trim(), m[2].trim(), m[3].trim(), m[4].trim()])
+      }
+    }
+    const esc = (s: string) => `"${s.replace(/"/g, '""')}"`
+    return rows.map(r => r.map(esc).join(',')).join('\n')
+  }
+
+  const downloadMaterial = async (id: string, title: string, type?: string) => {
     setDownloadingId(id)
     try {
       const res = await fetch(`/api/materials/${id}`)
@@ -1063,10 +1085,19 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
       const content = data.raw_content || ''
       if (!content.trim()) { toast.error('В материале пока нет содержимого'); return }
       const safe = (title || 'material').replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().slice(0, 80) || 'material'
-      const blob = new Blob(['﻿' + content], { type: 'text/plain;charset=utf-8' })
+
+      // Audience research → CSV (opens in Excel/Numbers). Others → .txt.
+      const isResearch = type === 'audience_research'
+      const csv = isResearch ? audienceResearchToCsv(content) : null
+      const mime = isResearch ? 'text/csv;charset=utf-8' : 'text/plain;charset=utf-8'
+      const ext  = isResearch ? 'csv' : 'txt'
+      const body = isResearch && csv && csv.split('\n').length > 1 ? csv : content
+      const finalExt = isResearch && csv && csv.split('\n').length > 1 ? 'csv' : ext
+
+      const blob = new Blob(['﻿' + body], { type: finalExt === 'csv' ? 'text/csv;charset=utf-8' : mime })
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
-      a.href = url; a.download = `${safe}.txt`; a.click()
+      a.href = url; a.download = `${safe}.${finalExt}`; a.click()
       URL.revokeObjectURL(url)
     } catch {
       toast.error('Не удалось скачать материал')
@@ -1240,7 +1271,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                                 </button>
                               )}
                               <button
-                                onClick={() => downloadMaterial(item.id, item.title)}
+                                onClick={() => downloadMaterial(item.id, item.title, type)}
                                 disabled={downloadingId === item.id}
                                 className="p-0.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors shrink-0"
                                 title="Скачать"

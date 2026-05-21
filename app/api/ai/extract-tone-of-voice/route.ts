@@ -72,6 +72,20 @@ export async function POST(request: Request) {
     .single()
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
+  const TOV_TITLE = 'Tone of Voice (извлечён из твоих текстов)'
+
+  // Placeholder so the user sees the request reached the server. Survives
+  // mobile drops, tab close, etc.
+  try {
+    await supabase.from('project_materials').upsert({
+      project_id:        projectId,
+      title:             TOV_TITLE,
+      material_type:     'tone_of_voice',
+      raw_content:       '⏳ Tone of Voice анализируется… Если эта надпись висит дольше 3 минут — что-то пошло не так, попробуй ещё раз.',
+      processing_status: 'processing',
+    }, { onConflict: 'project_id,material_type,title' })
+  } catch { /* swallow */ }
+
   // SSE stream with keepalive — mobile networks kill silent connections.
   const encoder = new TextEncoder()
   const stream  = new ReadableStream({
@@ -101,14 +115,34 @@ export async function POST(request: Request) {
           .trim()
 
         if (!text || text.length < 80) {
-          const snippet = text.slice(0, 280) || '(пустой ответ)'
-          send({ type: 'error', message: `AI вернул пустой / слишком короткий ответ. stop=${finalMsg.stop_reason}; ответ: «${snippet}»` })
+          const blockTypes = finalMsg.content.map(b => b.type).join(',') || 'НЕТ БЛОКОВ'
+          const diagnostic = [
+            `❌ Не удалось извлечь Tone of Voice`,
+            ``,
+            `Причина: AI вернул пустой / слишком короткий ответ.`,
+            `stop_reason: ${finalMsg.stop_reason}`,
+            `Типы блоков: [${blockTypes}]`,
+            `Длина текстового ответа: ${text.length} символов`,
+            ``,
+            `─── Полный ответ AI (первые 4000 символов) ───`,
+            text.slice(0, 4000) || '(пусто)',
+          ].join('\n')
+          try {
+            await supabase.from('project_materials').upsert({
+              project_id:        projectId,
+              title:             TOV_TITLE,
+              material_type:     'tone_of_voice',
+              raw_content:       diagnostic,
+              processing_status: 'error',
+            }, { onConflict: 'project_id,material_type,title' })
+          } catch { /* swallow */ }
+          send({ type: 'error', message: 'Не удалось извлечь ToV. Открой материал «Tone of Voice (извлечён из твоих текстов)» — там полная диагностика.' })
           return
         }
 
         await supabase.from('project_materials').upsert({
           project_id:        projectId,
-          title:             'Tone of Voice (извлечён из твоих текстов)',
+          title:             TOV_TITLE,
           material_type:     'tone_of_voice',
           raw_content:       text,
           processing_status: 'ready',
@@ -118,6 +152,15 @@ export async function POST(request: Request) {
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'AI недоступен'
         console.error('[extract-tone-of-voice] error:', msg)
+        try {
+          await supabase.from('project_materials').upsert({
+            project_id:        projectId,
+            title:             TOV_TITLE,
+            material_type:     'tone_of_voice',
+            raw_content:       `❌ Ошибка извлечения Tone of Voice\n\n${msg}\n\n(Стек: ${err instanceof Error && err.stack ? err.stack.slice(0, 1500) : 'нет'})`,
+            processing_status: 'error',
+          }, { onConflict: 'project_id,material_type,title' })
+        } catch { /* swallow */ }
         send({ type: 'error', message: msg })
       } finally {
         clearInterval(ping)
