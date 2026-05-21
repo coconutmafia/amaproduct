@@ -140,13 +140,19 @@ export async function POST(request: Request) {
           return
         }
 
-        await supabase.from('project_materials').upsert({
+        const { error: saveErr } = await supabase.from('project_materials').upsert({
           project_id:        projectId,
           title:             TOV_TITLE,
           material_type:     'tone_of_voice',
           raw_content:       text,
           processing_status: 'ready',
         }, { onConflict: 'project_id,material_type,title' })
+
+        if (saveErr) {
+          console.error('[extract-tone-of-voice] save error:', saveErr)
+          send({ type: 'error', message: `Tone of Voice собран, но не сохранился: ${saveErr.message}` })
+          return
+        }
 
         send({ type: 'done' })
       } catch (err) {

@@ -511,13 +511,19 @@ export async function POST(request: Request) {
             .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${c.customer_words.join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
             .join('\n\n')
 
-          await supabase.from('project_materials').upsert({
+          const { error: saveErr } = await supabase.from('project_materials').upsert({
             project_id:        projectId,
             title:             MEANINGS_TITLE,
             material_type:     'meanings_map',
             raw_content:       meaningsText,
             processing_status: 'ready',
           }, { onConflict: 'project_id,material_type,title' })
+
+          if (saveErr) {
+            console.error('[generate_meanings] save error:', saveErr)
+            send({ type: 'error', message: `Карта смыслов собрана, но не сохранилась: ${saveErr.message}` })
+            return
+          }
 
           send({ type: 'done' })
         } catch (err) {

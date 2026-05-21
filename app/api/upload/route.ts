@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { computeCompleteness } from '@/lib/completeness'
 
 // 60 секунд — для векторизации через OpenAI
 export const maxDuration = 60
@@ -284,20 +285,10 @@ async function recalculateCompleteness(projectId: string) {
     .eq('project_id', projectId)
     .eq('processing_status', 'ready')
 
-  const types = new Set(materials?.map(m => m.material_type) || [])
-  let score = 0
-  if (types.has('tone_of_voice'))       score += 25
-  if (types.has('unpacking_map'))       score += 15
-  if (types.has('cases_reviews'))       score += 15
-  if (types.has('marketing_strategy'))  score += 15
-  if (types.has('funnel_description'))  score += 10
-  if (types.has('audience_research'))   score += 10
-  if (types.has('blog_lines'))          score += 10
-  if (types.has('competitors'))         score += 5
-  if (types.has('product_description')) score += 5
+  const score = computeCompleteness(materials?.map(m => m.material_type) || [])
 
   await supabase
     .from('projects')
-    .update({ completeness_score: Math.min(100, score) })
+    .update({ completeness_score: score })
     .eq('id', projectId)
 }

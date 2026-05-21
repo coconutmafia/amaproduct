@@ -15,6 +15,7 @@ import { InstagramAccountDialog } from '@/components/projects/InstagramAccountDi
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { toast } from 'sonner'
 import Link from 'next/link'
+import { computeCompleteness } from '@/lib/completeness'
 import {
   CheckCircle2, Circle, Loader, AlertCircle, Upload, BookOpen,
   X, File, Loader2, Plus, FileText, Mic, ChevronDown, ChevronUp,
@@ -1008,21 +1009,15 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
   const [materials, setMaterials] = useState(initialMaterials)
   const [editingBlogLines, setEditingBlogLines] = useState<{ id: string; content: string } | null>(null)
   const [loadingEditId, setLoadingEditId] = useState<string | null>(null)
-  // Recalculate score dynamically as materials change (same weights as upload API)
-  const score = useMemo(() => {
-    const types = new Set(materials.map(m => m.material_type))
-    let s = 0
-    if (types.has('tone_of_voice'))       s += 25
-    if (types.has('unpacking_map'))       s += 15
-    if (types.has('cases_reviews'))       s += 15
-    if (types.has('marketing_strategy'))  s += 15
-    if (types.has('funnel_description'))  s += 10
-    if (types.has('audience_research'))   s += 10
-    if (types.has('competitors'))         s += 5
-    if (types.has('product_description')) s += 5
-    if (types.has('blog_lines'))          s += 10
-    return Math.min(100, Math.max(s, completenessScore))
-  }, [materials, completenessScore])
+  // Live score — same shared formula and same ready-only filter as the
+  // server (upload/delete routes). No Math.max floor: the number must be
+  // able to go DOWN when a material is deleted.
+  const score = useMemo(
+    () => computeCompleteness(
+      materials.filter(m => m.processing_status === 'ready').map(m => m.material_type)
+    ),
+    [materials],
+  )
   const [showHint, setShowHint] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [generatingMeanings, setGeneratingMeanings] = useState(false)
