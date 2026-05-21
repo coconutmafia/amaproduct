@@ -51,6 +51,22 @@ export async function checkAndConsumeGeneration(userId: string): Promise<Generat
   return { allowed: allowed as boolean, remaining, monthlyUsed, monthlyLimit, bonusRemaining }
 }
 
+// Refund one generation — called when a consumed generation produced nothing
+// (project not found, AI error, etc.). Credited as a bonus generation, which
+// is consumed first, so it's effectively a full refund and never goes negative.
+export async function refundGeneration(userId: string): Promise<void> {
+  try {
+    const supabase = await createClient()
+    const { data: profile } = await supabase
+      .from('profiles').select('role, bonus_generations').eq('id', userId).single()
+    if (profile?.role === 'admin') return
+    const current = profile?.bonus_generations ?? 0
+    await supabase.from('profiles').update({ bonus_generations: current + 1 }).eq('id', userId)
+  } catch (e) {
+    console.error('refundGeneration failed:', e)
+  }
+}
+
 export async function getGenerationStats(userId: string): Promise<GenerationCheckResult> {
   const supabase = await createClient()
 

@@ -3,7 +3,7 @@ import { anthropic, MODEL } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt, buildValidatorUserPrompt } from '@/lib/ai/prompts/system'
 import { getSchemaForPhase, getHookEngine, getEmotionalMechanics, getCTAEngine } from '@/lib/ai/prompts/content-brain'
-import { checkAndConsumeGeneration } from '@/lib/generations'
+import { checkAndConsumeGeneration, refundGeneration } from '@/lib/generations'
 import { NextResponse } from 'next/server'
 import type { WarmupPhase } from '@/types'
 
@@ -35,7 +35,10 @@ export async function POST(request: Request) {
     .eq('owner_id', user.id)
     .single()
 
-  if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+  if (!project) {
+    await refundGeneration(user.id) // nothing was generated — give the quota back
+    return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+  }
 
   // ── SSE stream — keeps connection alive through both Claude calls ───────────
   const encoder = new TextEncoder()
@@ -278,6 +281,8 @@ ${contentType === 'email' ? `Напиши письмо для email-рассыл
       } catch (err) {
         const msg = err instanceof Error ? err.message : (typeof err === 'object' && err !== null && 'message' in err ? String((err as { message: unknown }).message) : 'Generation failed')
         console.error('Generate SSE error:', err)
+        // Generation failed — refund the consumed quota so the user isn't charged
+        await refundGeneration(user.id)
         send({ type: 'error', message: msg })
         controller.close()
       }

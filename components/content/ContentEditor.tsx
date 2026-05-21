@@ -1,6 +1,7 @@
 'use client'
 
 import { useEditor, EditorContent } from '@tiptap/react'
+import { useEffect } from 'react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import CharacterCount from '@tiptap/extension-character-count'
@@ -27,6 +28,7 @@ export function ContentEditor({ content, onChange, placeholder, className }: Con
       CharacterCount,
     ],
     content,
+    immediatelyRender: false, // required for Next.js SSR
     onUpdate: ({ editor }) => {
       onChange(editor.getText())
     },
@@ -36,6 +38,16 @@ export function ContentEditor({ content, onChange, placeholder, className }: Con
       },
     },
   })
+
+  // Sync external content changes (generation, regeneration, AI-edit) into the
+  // editor — useEditor only applies `content` once at mount. Without this the
+  // freshly generated post never appears in the editor box.
+  useEffect(() => {
+    if (!editor) return
+    if (content !== editor.getText()) {
+      editor.commands.setContent(content, { emitUpdate: false })
+    }
+  }, [content, editor])
 
   if (!editor) return null
 

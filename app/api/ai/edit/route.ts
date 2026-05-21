@@ -152,11 +152,21 @@ export async function POST(request: Request) {
             desire: 'Желание', close: 'Закрытие', activation: 'Активация',
           }
 
+          // Guard: plan_data may be malformed / missing the expected shape
+          const planPhasesArr = Array.isArray(planData?.warmup_plan?.phases)
+            ? planData.warmup_plan.phases
+            : []
+          if (planPhasesArr.length === 0) {
+            send({ type: 'error', message: 'План прогрева повреждён или пуст — пересоздай его в разделе «Стратегия».' })
+            controller.close()
+            return
+          }
+
           // Format plan as readable lines grouped by phase
           const planLines: string[] = []
-          for (const phase of planData.warmup_plan.phases) {
+          for (const phase of planPhasesArr) {
             const phaseLabel = PHASE_LABELS[phase.phase] || phase.label || phase.phase
-            for (const day of phase.daily_plan) {
+            for (const day of (Array.isArray(phase.daily_plan) ? phase.daily_plan : [])) {
               const d = day as unknown as Record<string, unknown>
               const meaning = (d.meaning as string) || (d.theme as string) || '—'
               planLines.push(`День ${day.day} [${phaseLabel}]: ${meaning}`)
@@ -165,7 +175,7 @@ export async function POST(request: Request) {
 
           // Content Brain: phase psychology for all unique phases in this plan
           const planPhases = [...new Set(
-            planData.warmup_plan.phases.map((p: { phase: string }) => p.phase)
+            planPhasesArr.map((p: { phase: string }) => p.phase)
           )] as string[]
           const planPhasePsychology = planPhases.map(ph => {
             return `[${ph.toUpperCase()}] ${getEmotionalMechanics(ph)}\n${getSchemaForPhase(ph, 'post')}\n${getCTAEngine(ph)}`
@@ -287,13 +297,15 @@ ${currentContent}
           if (changesMatch) {
             try {
               const changes = JSON.parse(changesMatch[1].trim()) as {
-                days: Array<{ day: number; meaning: string }>
+                days?: Array<{ day: number; meaning: string }>
               }
               const planData = contextData.plan_data as WarmupPlanData
+              const phases = Array.isArray(planData?.warmup_plan?.phases) ? planData.warmup_plan.phases : []
+              const changeDays = Array.isArray(changes.days) ? changes.days : []
 
-              for (const change of changes.days) {
-                for (const phase of planData.warmup_plan.phases) {
-                  const dayEntry = phase.daily_plan.find((d) => d.day === change.day)
+              for (const change of changeDays) {
+                for (const phase of phases) {
+                  const dayEntry = (Array.isArray(phase.daily_plan) ? phase.daily_plan : []).find((d) => d.day === change.day)
                   if (dayEntry) {
                     const d = dayEntry as unknown as Record<string, unknown>
                     d.meaning = change.meaning
@@ -309,7 +321,7 @@ ${currentContent}
                 .select()
                 .single()
 
-              send({ type: 'done', updatedData: updatedPlan, changedDays: changes.days })
+              send({ type: 'done', updatedData: updatedPlan, changedDays: changeDays })
             } catch {
               send({ type: 'done', updatedData: contextData, changedDays: [] })
             }
