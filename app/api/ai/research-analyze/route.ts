@@ -157,11 +157,15 @@ ${combined}
 4. Выяви глубинный триггер за болью (психологическая причина)
 5. Придумай идею, как подать продукт через эту боль
 
-Типы категорий:
+Типы категорий (поле type — ТОЛЬКО одно из этих значений строкой):
 - pain: что болит прямо сейчас
 - need: чего хочется достичь
 - trigger: что запустило поиск решения
 - objection: почему ещё не купили/не действуют
+
+ВАЖНО про формат:
+- type, category, deep_trigger, objection, content_idea — простые строки.
+- customer_words — ОБЯЗАТЕЛЬНО МАССИВ строк (["фраза 1", "фраза 2"]). НИКОГДА не одной склеенной строкой.
 
 JSON формат (строго):
 {
@@ -176,6 +180,35 @@ JSON формат (строго):
     }
   ]
 }`
+}
+
+// Normalize AI output — the model can return wrong types (customer_words
+// as a string, unknown type values, etc.). Coerce everything to the right
+// shape so downstream .join() / .toUpperCase() can't crash.
+function normalizeCategories(raw: unknown[]): MeaningsCategory[] {
+  const VALID = new Set(['pain', 'need', 'trigger', 'objection'])
+  return raw.map((r) => {
+    const c = (r ?? {}) as Record<string, unknown>
+    const cw = c.customer_words
+    let words: string[] = []
+    if (Array.isArray(cw)) {
+      words = cw.map(v => String(v ?? '').trim()).filter(s => s.length > 0)
+    } else if (typeof cw === 'string') {
+      // Split a string into phrases by line breaks, pipes, or sentence ends
+      words = cw.split(/\s*[\n|]+|(?<=[.!?])\s+(?=[А-ЯA-Z«"])/)
+                .map(s => s.trim())
+                .filter(s => s.length > 3)
+    }
+    const rawType = String(c.type ?? '').toLowerCase().trim()
+    return {
+      type:          (VALID.has(rawType) ? rawType : 'pain') as MeaningsCategory['type'],
+      category:      String(c.category ?? '').trim() || 'Без названия',
+      customer_words: words,
+      deep_trigger:  String(c.deep_trigger ?? '').trim(),
+      objection:     String(c.objection ?? '').trim(),
+      content_idea:  String(c.content_idea ?? '').trim(),
+    }
+  })
 }
 
 // Stage 2 of map-reduce: merge partial maps from each batch into one clean map.
@@ -439,7 +472,7 @@ export async function POST(request: Request) {
           const raw = finalMsg.content
             .map(b => (b.type === 'text' ? b.text : ''))
             .join('\n')
-          const cats = parseMap(raw)
+          const cats = normalizeCategories(parseMap(raw))
 
           if (cats.length === 0) {
             const blockTypes = finalMsg.content.map(b => b.type).join(',') || 'НЕТ БЛОКОВ'
