@@ -216,6 +216,7 @@ export default function ContentPlanPage() {
   }, [week, loadPlanData])
 
   const handleGenerate = useCallback(async (day: number, contentType: ContentType, phase: WarmupPhase, theme?: string, additionalInstructions?: string) => {
+    const loadingToast = toast.loading(`Генерирую контент для дня ${day} — обычно 30-60 секунд. Не закрывай страницу.`)
     try {
       const res = await fetch('/api/ai/generate', {
         method: 'POST',
@@ -257,6 +258,7 @@ export default function ContentPlanPage() {
               setDays((prev) => prev.map((d) =>
                 d.day === day ? { ...d, items: [...d.items, data.item!] } : d
               ))
+              toast.dismiss(loadingToast)
               toast.success(`${contentType} для дня ${day} сгенерирован`)
               finished = true
               break
@@ -268,6 +270,7 @@ export default function ContentPlanPage() {
         if (done) break
       }
     } catch (e) {
+      toast.dismiss(loadingToast)
       const msg = e instanceof Error ? e.message : 'Ошибка создания контента'
       if (msg.includes('Лимит')) {
         toast.error(msg, {
@@ -336,11 +339,15 @@ export default function ContentPlanPage() {
       date: d.date,
       phase: d.phase,
       meaning: d.theme || '',
+      // pass the formats the user actually chose — the AI generates briefs
+      // only for these, not the post/stories/reels default
+      formats: (d.plannedTypes && d.plannedTypes.length > 0) ? d.plannedTypes : ['post', 'stories', 'reels'],
     }))
     if (!briefDays.length) {
       toast.error('Нет данных плана прогрева для этой недели')
       return
     }
+    const loadingToast = toast.loading('Составляю план недели — обычно 20-40 секунд. Не закрывай страницу.')
     try {
       const res = await fetch('/api/ai/generate-week-brief', {
         method: 'POST',
@@ -352,6 +359,7 @@ export default function ContentPlanPage() {
         let errData: { error?: string; hint?: string } = {}
         try { errData = JSON.parse(rawText) } catch { /* ignore */ }
         const msg = errData.error || `Ошибка ${res.status}`
+        toast.dismiss(loadingToast)
         if (errData.hint) {
           toast.error(msg, { description: errData.hint, duration: 6000 })
         } else {
@@ -363,6 +371,7 @@ export default function ContentPlanPage() {
       try {
         data = JSON.parse(rawText)
       } catch {
+        toast.dismiss(loadingToast)
         toast.error('AI вернул некорректный ответ, попробуй ещё раз')
         return
       }
@@ -371,18 +380,25 @@ export default function ContentPlanPage() {
         const next = prev.map(d => {
           const briefDay = data.days.find(b => b.day === d.day)
           if (!briefDay) return d
-          // Merge: set theme to main brief text, add types if missing
-          const newTheme = Object.values(briefDay.brief).join(' · ')
-          const addTypes = Object.keys(briefDay.brief) as ContentType[]
-          const existingTypes = d.plannedTypes || []
-          const mergedTypes = [...new Set([...existingTypes, ...addTypes])]
-          return { ...d, theme: newTheme, plannedTypes: mergedTypes, dayBriefs: briefDay.brief }
+          // Respect the user's format choice — keep only briefs for the
+          // formats they actually chose; do NOT re-add removed formats.
+          const chosen = (d.plannedTypes && d.plannedTypes.length > 0)
+            ? d.plannedTypes
+            : (Object.keys(briefDay.brief) as ContentType[])
+          const filteredBrief: Record<string, string> = {}
+          for (const f of chosen) {
+            if (briefDay.brief[f]) filteredBrief[f] = briefDay.brief[f]
+          }
+          const newTheme = Object.values(filteredBrief).join(' · ')
+          return { ...d, theme: newTheme, plannedTypes: chosen, dayBriefs: filteredBrief }
         })
         void persistPlan(next)
         return next
       })
+      toast.dismiss(loadingToast)
       toast.success('План недели готов и сохранён! Кликай на тип контента чтобы сгенерировать')
     } catch (e) {
+      toast.dismiss(loadingToast)
       toast.error(e instanceof Error ? e.message : 'Ошибка')
     }
   }, [id, days, persistPlan])

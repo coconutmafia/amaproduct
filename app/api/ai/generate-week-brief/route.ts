@@ -11,6 +11,7 @@ interface BriefDay {
   date: string
   phase: string
   meaning: string
+  formats?: string[] // content formats the user chose for this day
 }
 
 export async function POST(request: Request) {
@@ -91,8 +92,13 @@ export async function POST(request: Request) {
     return `--- ФАЗА «${phase.toUpperCase()}» ---\n${emotions}\n${schema}\n${cta}`
   }).join('\n\n')
 
+  // The user picks which content formats they want per day — generate briefs
+  // ONLY for those, never the post/stories/reels default.
+  const dayFormats = (d: BriefDay): string[] =>
+    (d.formats && d.formats.length > 0) ? d.formats : ['post', 'stories', 'reels']
+
   const daysText = days.map(d =>
-    `День ${d.day} (${d.date}) — фаза: ${d.phase}, смысл: ${d.meaning || 'не задан'}`
+    `День ${d.day} (${d.date}) — фаза: ${d.phase}, смысл: ${d.meaning || 'не задан'}, форматы: ${dayFormats(d).join(', ')}`
   ).join('\n')
 
   const blogLinesInstruction = blogLinesSummary ? `
@@ -120,14 +126,17 @@ ${phasePsychology}
 ДНИ НЕДЕЛИ:
 ${daysText}
 
-ЗАДАЧА: для каждого дня пропиши конкретную тему каждой единицы контента (1–2 предложения).
+ЗАДАЧА: для каждого дня пропиши конкретную тему (1–2 предложения) ТОЛЬКО для тех форматов, которые указаны в строке этого дня.
+- ВАЖНО: в объекте brief для дня должны быть ТОЛЬКО форматы из списка «форматы:» этого дня. Не добавляй форматы, которых там нет.
 - Тема должна соответствовать эмоциональной дуге своей фазы (см. выше)
 - Для поста — выбери подходящую схему контента из фазы и отрази её в теме
 - Используй конкретику из материалов проекта: реальные кейсы, цифры, истории
 - Если день строится на личной линии блога — начни с личной истории, смысл вытекает из неё
 
-JSON формат (строго):
-{"days":[{"day":1,"brief":{"post":"конкретная тема поста","stories":"конкретная тема сториз","reels":"конкретная тема рилса"}}]}`
+Возможные форматы: post, carousel, reels, stories, live, webinar, email.
+
+JSON формат (строго) — ключи в brief берутся из «форматы:» каждого дня:
+{"days":[{"day":1,"brief":{"post":"конкретная тема поста","reels":"конкретная тема рилса"}}]}`
 
   try {
     const response = await anthropic.messages.create({
