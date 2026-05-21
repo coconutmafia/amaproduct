@@ -1071,6 +1071,38 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
     return rows.map(r => r.map(esc).join(',')).join('\n')
   }
 
+  // Parses the meanings_map text format → CSV, grouped (sorted) by type.
+  // Block format: "[TYPE] Категория:\nФормулировки: …\nГлубинный триггер: …
+  // \nВозражение: …\nИдея контента: …", blocks separated by blank lines.
+  const meaningsMapToCsv = (text: string): string => {
+    const TYPE_RU: Record<string, string> = {
+      PAIN: 'Боль', NEED: 'Потребность', TRIGGER: 'Триггер', OBJECTION: 'Возражение',
+    }
+    const ORDER = ['PAIN', 'NEED', 'TRIGGER', 'OBJECTION']
+    type Row = { type: string; cat: string; words: string; trigger: string; obj: string; idea: string }
+    const parsed: Row[] = []
+    for (const block of text.split(/\n\s*\n+/)) {
+      const header = block.match(/^\[(.+?)\]\s*(.+?):?\s*$/m)
+      if (!header) continue
+      parsed.push({
+        type:    header[1].trim().toUpperCase(),
+        cat:     header[2].trim(),
+        words:   block.match(/Формулировки:\s*(.+)/)?.[1]?.trim() ?? '',
+        trigger: block.match(/Глубинный триггер:\s*(.+)/)?.[1]?.trim() ?? '',
+        obj:     block.match(/Возражение:\s*(.+)/)?.[1]?.trim() ?? '',
+        idea:    block.match(/Идея контента:\s*(.+)/)?.[1]?.trim() ?? '',
+      })
+    }
+    parsed.sort((a, b) => {
+      const ai = ORDER.indexOf(a.type), bi = ORDER.indexOf(b.type)
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi)
+    })
+    const rows: string[][] = [['Тип', 'Категория', 'Формулировки клиентов', 'Глубинный триггер', 'Возражение', 'Идея контента']]
+    for (const p of parsed) rows.push([TYPE_RU[p.type] ?? p.type, p.cat, p.words, p.trigger, p.obj, p.idea])
+    const esc = (s: string) => `"${s.replace(/"/g, '""')}"`
+    return rows.map(r => r.map(esc).join(',')).join('\n')
+  }
+
   const downloadMaterial = async (id: string, title: string, type?: string) => {
     setDownloadingId(id)
     try {
@@ -1081,18 +1113,20 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
       if (!content.trim()) { toast.error('В материале пока нет содержимого'); return }
       const safe = (title || 'material').replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().slice(0, 80) || 'material'
 
-      // Audience research → CSV (opens in Excel/Numbers). Others → .txt.
-      const isResearch = type === 'audience_research'
-      const csv = isResearch ? audienceResearchToCsv(content) : null
-      const mime = isResearch ? 'text/csv;charset=utf-8' : 'text/plain;charset=utf-8'
-      const ext  = isResearch ? 'csv' : 'txt'
-      const body = isResearch && csv && csv.split('\n').length > 1 ? csv : content
-      const finalExt = isResearch && csv && csv.split('\n').length > 1 ? 'csv' : ext
+      // Structured materials → CSV (opens in Excel/Numbers). Others → .txt.
+      let csv: string | null = null
+      if (type === 'audience_research') csv = audienceResearchToCsv(content)
+      else if (type === 'meanings_map') csv = meaningsMapToCsv(content)
 
-      const blob = new Blob(['﻿' + body], { type: finalExt === 'csv' ? 'text/csv;charset=utf-8' : mime })
+      const useCsv  = !!csv && csv.split('\n').length > 1
+      const body    = useCsv ? csv! : content
+      const ext     = useCsv ? 'csv' : 'txt'
+      const mime    = useCsv ? 'text/csv;charset=utf-8' : 'text/plain;charset=utf-8'
+
+      const blob = new Blob(['﻿' + body], { type: mime })
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
-      a.href = url; a.download = `${safe}.${finalExt}`; a.click()
+      a.href = url; a.download = `${safe}.${ext}`; a.click()
       URL.revokeObjectURL(url)
     } catch {
       toast.error('Не удалось скачать материал')
