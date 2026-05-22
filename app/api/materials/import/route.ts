@@ -41,42 +41,44 @@ export async function POST(request: Request) {
     const errors: string[] = []
 
     for (const source of sourceMaterials) {
-      // Create new material record in target project (same file_url, same content)
+      // Create new material record in target project. Column names must match
+      // the real schema: raw_content (not content_text), no file_size/chunk_count.
       const { data: newMaterial, error: insertError } = await supabase
         .from('project_materials')
         .insert({
-          project_id: targetProjectId,
-          material_type: source.material_type,
-          title: source.title,
-          file_url: source.file_url,
-          file_type: source.file_type,
-          file_size: source.file_size,
-          content_text: source.content_text,
+          project_id:        targetProjectId,
+          material_type:     source.material_type,
+          title:             source.title,
+          raw_content:       source.raw_content,
+          file_url:          source.file_url,
+          file_type:         source.file_type,
+          parsed_data:       source.parsed_data,
           processing_status: source.processing_status,
-          chunk_count: source.chunk_count,
         })
         .select('id')
         .single()
 
       if (insertError || !newMaterial) {
+        console.error('[materials/import] insert failed:', insertError)
         errors.push(source.title)
         continue
       }
 
-      // Copy chunks too (for RAG to work immediately)
+      // Copy chunks too (for RAG to work immediately). Real columns:
+      // chunk_text (not content), material_id, project_id, chunk_index.
       const { data: sourceChunks } = await supabase
         .from('project_chunks')
-        .select('content, chunk_index, metadata, embedding')
+        .select('chunk_text, chunk_index, metadata, embedding')
         .eq('material_id', source.id)
 
       if (sourceChunks && sourceChunks.length > 0) {
         const chunksToInsert = sourceChunks.map(c => ({
-          project_id: targetProjectId,
+          project_id:  targetProjectId,
           material_id: newMaterial.id,
-          content: c.content,
+          chunk_text:  c.chunk_text,
           chunk_index: c.chunk_index,
-          metadata: c.metadata,
-          embedding: c.embedding,
+          metadata:    c.metadata,
+          embedding:   c.embedding,
         }))
         await supabase.from('project_chunks').insert(chunksToInsert)
       }
