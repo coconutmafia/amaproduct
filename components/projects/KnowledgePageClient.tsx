@@ -243,8 +243,17 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
   }
 
   const handleUpload = async () => {
-    const pending = queue.filter(i => i.status === 'pending')
-    if (!pending.length) { toast.error('Нет файлов для загрузки'); return }
+    let pending = queue.filter(i => i.status === 'pending')
+    // Auto-include text typed/dictated but not yet added to the queue — the
+    // user shouldn't need a separate "Добавить в очередь" click first.
+    if (textContent.trim()) {
+      if (!textTitle.trim()) { toast.error('Введи название для текста'); return }
+      const textItem = { id: `t-${Date.now()}`, text: textContent.trim(), title: textTitle.trim(), status: 'pending' as const }
+      setQueue(prev => [...prev, textItem])
+      setTextTitle(''); setTextContent(''); setShowText(false)
+      pending = [...pending, textItem]
+    }
+    if (!pending.length) { toast.error('Добавь файл или текст для загрузки'); return }
     setIsUploading(true)
     const uploaded: Material[] = []
     let err = 0
@@ -385,8 +394,16 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
                   </button>
                 </div>
                 <Textarea placeholder="Вставь текст..." value={textContent} onChange={(e) => setTextContent(e.target.value)} rows={3} className="text-sm resize-none" />
+                {isRecording && (
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    🎤 Говори чётко и не торопись — короткими фразами с паузами. На iPhone текст появляется фразами после паузы — это нормально.
+                  </p>
+                )}
+                <p className="text-[11px] text-muted-foreground">
+                  Заполни название и текст — и жми «Загрузить» внизу. Кнопка ниже нужна, только если хочешь добавить сразу несколько текстов.
+                </p>
                 <Button size="sm" variant="outline" onClick={addText} className="w-full border-dashed">
-                  <Plus className="h-3.5 w-3.5 mr-1.5" /> Добавить в очередь
+                  <Plus className="h-3.5 w-3.5 mr-1.5" /> Добавить ещё один текст
                 </Button>
               </div>
             )}
@@ -395,7 +412,7 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
           {/* Actions */}
           <div className="flex gap-2">
             <Button variant="outline" className="flex-1" onClick={() => { setQueue([]); onClose() }} disabled={isUploading}>Отмена</Button>
-            <Button className="flex-1 gradient-accent text-white hover:opacity-90" onClick={handleUpload} disabled={isUploading || pending === 0}>
+            <Button className="flex-1 gradient-accent text-white hover:opacity-90" onClick={handleUpload} disabled={isUploading || (pending === 0 && !textContent.trim())}>
               {isUploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Загружаем...</> : <><Upload className="mr-2 h-4 w-4" />Загрузить{pending > 0 ? ` (${pending})` : ''}</>}
             </Button>
           </div>

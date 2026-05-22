@@ -176,6 +176,12 @@ export function VoiceTextarea({ value, onChange, placeholder, rows = 3, classNam
           </>
         )}
       </button>
+
+      {listening && (
+        <p className="text-[11px] text-muted-foreground text-center leading-snug">
+          🎤 Говори чётко и не торопись — короткими фразами с паузами. На iPhone текст появляется не по словам, а фразами после паузы — это нормально.
+        </p>
+      )}
     </div>
   )
 }
