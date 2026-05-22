@@ -690,12 +690,12 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Дата старта прогрева</Label>
                   <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                    className="h-10 text-sm border border-border bg-background" />
+                    className="h-10 text-sm w-full max-w-full appearance-none border border-border bg-background" />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Дата окончания прогрева</Label>
                   <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                    className="h-10 text-sm border border-border bg-background" />
+                    className="h-10 text-sm w-full max-w-full appearance-none border border-border bg-background" />
                 </div>
               </div>
               <div className="grid sm:grid-cols-2 gap-3">
@@ -703,13 +703,13 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                   <Label className="text-sm font-medium">Дата открытия продаж</Label>
                   <p className="text-xs text-muted-foreground">Когда открывается продажа — AI сделает специальный контент в этот день</p>
                   <Input type="date" value={salesOpenDate} onChange={e => setSalesOpenDate(e.target.value)}
-                    className="h-10 text-sm border border-border bg-background" />
+                    className="h-10 text-sm w-full max-w-full appearance-none border border-border bg-background" />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Дата запуска продукта</Label>
                   <p className="text-xs text-muted-foreground">AI усилит контент триггерами ажиотажа и ограниченности за несколько дней до и после этой даты</p>
                   <Input type="date" value={productStartDate} onChange={e => setProductStartDate(e.target.value)}
-                    className="h-10 text-sm border border-border bg-background" />
+                    className="h-10 text-sm w-full max-w-full appearance-none border border-border bg-background" />
                 </div>
               </div>
               {startDate && endDate && (
@@ -740,13 +740,13 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                     <Label className="text-sm font-medium">Дата открытия продаж</Label>
                     <p className="text-xs text-muted-foreground">AI сделает специальный контент в этот день</p>
                     <Input type="date" value={salesOpenDate} onChange={e => setSalesOpenDate(e.target.value)}
-                      className="h-10 text-sm border border-border bg-background" />
+                      className="h-10 text-sm w-full max-w-full appearance-none border border-border bg-background" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-sm font-medium">Дата запуска продукта</Label>
                     <p className="text-xs text-muted-foreground">AI усилит контент триггерами ажиотажа и ограниченности за несколько дней до и после этой даты</p>
                     <Input type="date" value={productStartDate} onChange={e => setProductStartDate(e.target.value)}
-                      className="h-10 text-sm border border-border bg-background" />
+                      className="h-10 text-sm w-full max-w-full appearance-none border border-border bg-background" />
                   </div>
                 </div>
               </div>
@@ -865,11 +865,11 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                     <div className="flex flex-col gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-sm">Название мероприятия</Label>
-                        <Input value={freeEventName} onChange={(e) => setFreeEventName(e.target.value)} placeholder="Вебинар «Как запустить за 30 дней»" className="h-10 text-sm w-full border border-border bg-background" />
+                        <Input value={freeEventName} onChange={(e) => setFreeEventName(e.target.value)} placeholder="Вебинар «Как запустить за 30 дней»" className="h-10 text-sm w-full max-w-full appearance-none border border-border bg-background" />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-sm">Дата мероприятия</Label>
-                        <Input type="date" value={freeEventDate} onChange={(e) => setFreeEventDate(e.target.value)} className="h-10 text-sm w-full border border-border bg-background" />
+                        <Input type="date" value={freeEventDate} onChange={(e) => setFreeEventDate(e.target.value)} className="h-10 text-sm w-full max-w-full appearance-none border border-border bg-background" />
                       </div>
                     </div>
                     <div className="space-y-2">
@@ -897,11 +897,11 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                     <div className="flex flex-col gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-sm">Название мероприятия</Label>
-                        <Input value={paidEventName} onChange={(e) => setPaidEventName(e.target.value)} placeholder="Интенсив «За 3 дня к первым продажам»" className="h-10 text-sm w-full border border-border bg-background" />
+                        <Input value={paidEventName} onChange={(e) => setPaidEventName(e.target.value)} placeholder="Интенсив «За 3 дня к первым продажам»" className="h-10 text-sm w-full max-w-full appearance-none border border-border bg-background" />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-sm">Дата мероприятия</Label>
-                        <Input type="date" value={paidEventDate} onChange={(e) => setPaidEventDate(e.target.value)} className="h-10 text-sm w-full border border-border bg-background" />
+                        <Input type="date" value={paidEventDate} onChange={(e) => setPaidEventDate(e.target.value)} className="h-10 text-sm w-full max-w-full appearance-none border border-border bg-background" />
                       </div>
                     </div>
                     <div className="space-y-2">
