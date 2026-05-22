@@ -1505,6 +1505,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
         <InstagramAccountDialog
           projectId={projectId}
           accountType={igDialogType}
+          remainingSlots={Math.max(1, (igDialogType === 'my_instagram' ? 1 : 5) - materials.filter(m => m.material_type === igDialogType).length)}
           open={!!igDialogType}
           onClose={() => setIgDialogType(null)}
           onSuccess={() => window.location.reload()}
