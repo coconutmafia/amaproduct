@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { ContentEditor } from '@/components/content/ContentEditor'
+import { StructuredContentView } from '@/components/content/StructuredContentView'
 import { ExportPanel } from '@/components/content/ExportPanel'
 import { AiEditChat } from '@/components/ai/AiEditChat'
 import { toast } from 'sonner'
@@ -403,14 +404,9 @@ export default function GeneratorPage() {
                   />
                 )}
 
-                {/* Structured data (carousel, reels, stories) */}
+                {/* Structured data (carousel, reels, stories) — readable view */}
                 {generated.structuredData && contentType !== 'post' && (
-                  <div className="rounded-xl border border-border bg-secondary/20 p-3">
-                    <p className="text-xs font-semibold text-muted-foreground mb-2">Структурированные данные ({contentType})</p>
-                    <pre className="text-xs text-foreground overflow-auto max-h-48 leading-relaxed">
-                      {JSON.stringify(generated.structuredData, null, 2)}
-                    </pre>
-                  </div>
+                  <StructuredContentView data={generated.structuredData} />
                 )}
 
                 {/* Hashtags */}

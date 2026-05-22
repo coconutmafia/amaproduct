@@ -30,6 +30,14 @@ interface Material {
   processing_status: string
 }
 
+// Reload the page but keep the scroll position — long AI operations end
+// with a reload to show the new material, and a plain reload jumps to the
+// top, forcing the user to scroll back down to the section they were in.
+function reloadKeepScroll() {
+  try { sessionStorage.setItem('ama_scroll_restore', String(window.scrollY)) } catch { /* ignore */ }
+  window.location.reload()
+}
+
 interface Props {
   projectId: string
   completenessScore: number
@@ -1024,6 +1032,15 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
   const [igDialogType, setIgDialogType] = useState<'my_instagram' | 'competitors' | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [materials, setMaterials] = useState(initialMaterials)
+  // Restore scroll position after a reloadKeepScroll() — so finishing a long
+  // AI operation drops the user back where they were, not at the top.
+  useEffect(() => {
+    const y = sessionStorage.getItem('ama_scroll_restore')
+    if (y) {
+      sessionStorage.removeItem('ama_scroll_restore')
+      requestAnimationFrame(() => window.scrollTo(0, parseInt(y, 10) || 0))
+    }
+  }, [])
   const [editingBlogLines, setEditingBlogLines] = useState<{ id: string; content: string } | null>(null)
   const [loadingEditId, setLoadingEditId] = useState<string | null>(null)
   // Live score — same shared formula and same ready-only filter as the
@@ -1164,7 +1181,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
       // Rollback on error — re-fetch would be ideal but we don't have the item anymore
       toast.error('Не удалось удалить материал')
       // Soft refresh to restore correct state
-      window.location.reload()
+      reloadKeepScroll()
     } finally {
       setDeletingId(null)
     }
@@ -1216,7 +1233,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
 
       toast.dismiss(loadingToast)
       toast.success('Карта смыслов готова и сохранена в материалы')
-      window.location.reload()
+      reloadKeepScroll()
     } catch (err) {
       toast.dismiss(loadingToast)
       toast.error(err instanceof Error ? err.message : 'Ошибка генерации карты смыслов', { duration: 60000 })
@@ -1489,7 +1506,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
         projectId={projectId}
         open={showInterview}
         onClose={() => setShowInterview(false)}
-        onSuccess={() => window.location.reload()}
+        onSuccess={() => reloadKeepScroll()}
       />
 
       {/* Tone of Voice from user's own content */}
@@ -1497,7 +1514,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
         projectId={projectId}
         open={showToneFromContent}
         onClose={() => setShowToneFromContent(false)}
-        onSuccess={() => window.location.reload()}
+        onSuccess={() => reloadKeepScroll()}
       />
 
       {/* Instagram account (own / competitor) scrape + analyze */}
@@ -1508,7 +1525,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
           remainingSlots={Math.max(1, (igDialogType === 'my_instagram' ? 1 : 5) - materials.filter(m => m.material_type === igDialogType).length)}
           open={!!igDialogType}
           onClose={() => setIgDialogType(null)}
-          onSuccess={() => window.location.reload()}
+          onSuccess={() => reloadKeepScroll()}
         />
       )}
 
