@@ -1150,8 +1150,9 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                       size="sm"
                       className="border-border text-xs h-9 px-2"
                       onClick={() => { setAiPlanData(null); setPlanApproved(false) }}
+                      title="Удалить этот план и заполнить параметры заново"
                     >
-                      <span className="truncate">Изменить настройки</span>
+                      <span className="truncate">Пересоздать с нуля</span>
                     </Button>
                   </div>
                 </div>

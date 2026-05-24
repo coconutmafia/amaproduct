@@ -205,9 +205,11 @@ ${contentType === 'email' ? `Напиши письмо для email-рассыл
         let hashtags: string[] = []
 
         if (contentType === 'post') {
-          bodyText = finalText
-          const hashtagMatch = finalText.match(/#\w[\wА-Яа-яЁё]*/g)
-          hashtags = hashtagMatch || []
+          // Strip any hashtags AI may have slipped in — the user's content
+          // style is no-hashtags. Remove tags + clean up double spaces /
+          // trailing whitespace they leave behind.
+          bodyText = finalText.replace(/#[\wА-Яа-яЁё]+/g, '').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
+          hashtags = []
         } else {
           try {
             const jsonMatch = generatedText.match(/\{[\s\S]*\}/)

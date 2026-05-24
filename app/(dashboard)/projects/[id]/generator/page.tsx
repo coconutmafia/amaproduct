@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { ContentEditor } from '@/components/content/ContentEditor'
 import { StructuredContentView } from '@/components/content/StructuredContentView'
+import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { ExportPanel } from '@/components/content/ExportPanel'
 import { AiEditChat } from '@/components/ai/AiEditChat'
 import { toast } from 'sonner'
@@ -79,7 +80,11 @@ export default function GeneratorPage() {
           dayNumber: parseInt(dayNumber),
           totalDays: parseInt(totalDays),
           phase,
-          additionalInstructions: additionalInstructions || undefined,
+          // The user's freeform input is the POST'S TOPIC, not a tweak.
+          // Passing it as dayMeaning makes the AI build the post around it
+          // (in the blogger's voice, anchored on materials) — without it the
+          // AI fell back to generic marketing prose.
+          dayMeaning: additionalInstructions.trim() || undefined,
         }),
       })
 
@@ -299,14 +304,14 @@ export default function GeneratorPage() {
                 )}
               </div>
 
-              {/* Additional */}
+              {/* Additional — with voice dictation */}
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Дополнительные инструкции (опционально)</Label>
-                <Textarea
-                  placeholder="Напр: сделай более провокационным / добавь юмор / укороти..."
+                <Label className="text-xs text-muted-foreground">О чём пост / дополнительные инструкции</Label>
+                <VoiceTextarea
+                  placeholder="Расскажи о чём пост, какая тема, мысль или история — словами или голосом. Например: «расскажи как ушла из найма и открыла своё дело»"
                   value={additionalInstructions}
-                  onChange={(e) => setAdditionalInstructions(e.target.value)}
-                  rows={3}
+                  onChange={setAdditionalInstructions}
+                  rows={4}
                   className="bg-input border-border resize-none text-sm"
                 />
               </div>
