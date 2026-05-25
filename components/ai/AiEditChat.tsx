@@ -21,6 +21,10 @@ interface AiEditChatProps {
   onPlanUpdate?: (updatedPlan: Record<string, unknown>) => void
   onContentUpdate?: (updatedText: string) => void
   disabled?: boolean
+  // Draft mode: editing an unsaved warmup plan in the wizard. When set,
+  // the route uses this plan_data instead of looking up a DB row by
+  // contextId, and returns the edited plan without persisting.
+  draftPlanData?: Record<string, unknown>
 }
 
 // ── Voice hook ────────────────────────────────────────────────────────────────
@@ -84,6 +88,7 @@ export function AiEditChat({
   onPlanUpdate,
   onContentUpdate,
   disabled = false,
+  draftPlanData,
 }: AiEditChatProps) {
   const [open, setOpen] = useState(false)
   const [input, setInput] = useState('')
@@ -145,6 +150,8 @@ export function AiEditChat({
           contextId,
           messages: apiMessages,
           instruction,
+          // When editing an unsaved plan in the wizard
+          ...(draftPlanData ? { draftPlanData } : {}),
         }),
       })
 
@@ -222,7 +229,7 @@ export function AiEditChat({
       setLoading(false)
       setStreamingText('')
     }
-  }, [input, loading, messages, projectId, contextType, contextId])
+  }, [input, loading, messages, projectId, contextType, contextId, draftPlanData])
 
   const handleApply = useCallback(() => {
     if (!pendingUpdate) return

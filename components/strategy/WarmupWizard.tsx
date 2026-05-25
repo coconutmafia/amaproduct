@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { AiEditChat } from '@/components/ai/AiEditChat'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -1123,6 +1124,24 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                   duration={computedDuration}
                 />
               </div>
+
+              {/* AI edit on the still-unsaved plan — say what to change in
+                  words/voice, AI rewrites the selected days right here.
+                  Edits stick: they persist into aiPlanData and become part
+                  of the plan that gets saved when you click «Сохранить». */}
+              {!planApproved && (
+                <AiEditChat
+                  projectId={projectId}
+                  contextType="warmup_plan"
+                  contextId="draft"
+                  contextLabel="План прогрева (черновик)"
+                  draftPlanData={aiPlanData as unknown as Record<string, unknown>}
+                  onPlanUpdate={(updated) => {
+                    const pd = (updated as { plan_data?: AIPlanData }).plan_data
+                    if (pd) setAiPlanData(pd)
+                  }}
+                />
+              )}
 
               {/* Task 7: stacked buttons, Approve first */}
               {!planApproved && (

@@ -35,10 +35,15 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
-  const { projectId, contextType, contextId, messages = [], instruction } = body
+  const { projectId, contextType, contextId, messages = [], instruction, draftPlanData } = body
 
-  if (!projectId || !contextType || !contextId || !instruction) {
+  if (!projectId || !contextType || !instruction) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+  }
+  // draftPlanData mode: editing an unsaved plan (in the wizard) — no contextId needed
+  const isDraft = !!draftPlanData && contextType === 'warmup_plan'
+  if (!isDraft && !contextId) {
+    return NextResponse.json({ error: 'Missing contextId' }, { status: 400 })
   }
 
   // Load project
@@ -54,7 +59,10 @@ export async function POST(request: Request) {
   // Load the document being edited
   let contextData: Record<string, unknown> = {}
 
-  if (contextType === 'warmup_plan') {
+  if (isDraft) {
+    // Draft mode — use the plan data the client sent; no DB row exists yet
+    contextData = { plan_data: draftPlanData }
+  } else if (contextType === 'warmup_plan') {
     const { data } = await supabase
       .from('warmup_plans')
       .select('*')
@@ -314,14 +322,20 @@ ${currentContent}
                 }
               }
 
-              const { data: updatedPlan } = await supabase
-                .from('warmup_plans')
-                .update({ plan_data: planData })
-                .eq('id', contextId)
-                .select()
-                .single()
+              if (isDraft) {
+                // Draft mode: nothing to save in DB — just return the
+                // edited plan so the wizard can update its local state.
+                send({ type: 'done', updatedData: { plan_data: planData }, changedDays: changeDays })
+              } else {
+                const { data: updatedPlan } = await supabase
+                  .from('warmup_plans')
+                  .update({ plan_data: planData })
+                  .eq('id', contextId)
+                  .select()
+                  .single()
 
-              send({ type: 'done', updatedData: updatedPlan, changedDays: changeDays })
+                send({ type: 'done', updatedData: updatedPlan, changedDays: changeDays })
+              }
             } catch {
               send({ type: 'done', updatedData: contextData, changedDays: [] })
             }
