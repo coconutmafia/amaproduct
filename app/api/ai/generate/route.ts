@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt, buildValidatorUserPrompt } from '@/lib/ai/prompts/system'
-import { getSchemaForPhase, getHookEngine, getEmotionalMechanics, getCTAEngine } from '@/lib/ai/prompts/content-brain'
+import { getSchemaForPhase, getHookEngine, getEmotionalMechanics, getCTAEngine, getViralReelsFramework } from '@/lib/ai/prompts/content-brain'
 import { checkAndConsumeGeneration, refundGeneration } from '@/lib/generations'
 import { NextResponse } from 'next/server'
 import type { WarmupPhase } from '@/types'
@@ -129,7 +129,7 @@ ${hookEngine}
 
 ${ctaGuidance}
 ─────────────────────────────────────────────────────────────
-
+${contentType === 'reels' ? `\n${getViralReelsFramework()}\n` : ''}
 ${additionalInstructions ? `ДОПОЛНИТЕЛЬНО: ${additionalInstructions}` : ''}
 
 ${contentType === 'reels' ? `Верни JSON в формате:
