@@ -219,7 +219,7 @@ ${contentType === 'email' ? `Напиши письмо для email-рассыл
               // No hashtags anywhere — the user's style has none. Drop the
               // hashtags array and strip any # tags the AI put in the
               // description_text / caption fields.
-              for (const fmt of Object.values(structuredData)) {
+              for (const fmt of Object.values(structuredData ?? {})) {
                 if (fmt && typeof fmt === 'object') {
                   const f = fmt as Record<string, unknown>
                   delete f.hashtags
