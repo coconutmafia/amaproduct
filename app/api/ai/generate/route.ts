@@ -133,7 +133,8 @@ ${contentType === 'reels' ? `\n${getViralReelsFramework()}\n` : ''}
 ${additionalInstructions ? `ДОПОЛНИТЕЛЬНО: ${additionalInstructions}` : ''}
 
 ${contentType === 'reels' ? `Верни JSON в формате:
-{"reels":{"title":"...","hook_text":"...","total_duration":"30-60 сек","scenes":[{"scene":1,"timing":"0-3 сек","type":"hook","visual":{"description":"...","camera":"...","action":"..."},"text_overlay":"...","audio":{"speech":"...","tone":"..."},"transition":"cut"}],"hashtags":["#тег"],"description_text":"..."}}` : ''}
+{"reels":{"title":"...","hook_text":"...","total_duration":"30-60 сек","scenes":[{"scene":1,"timing":"0-3 сек","type":"hook","visual":{"description":"...","camera":"...","action":"..."},"text_overlay":"...","audio":{"speech":"...","tone":"..."},"transition":"cut"}],"description_text":"..."}}
+ВАЖНО: НЕ добавляй хэштеги — ни в description_text, ни отдельным полем. У этого блогера хэштегов нет.` : ''}
 
 ${contentType === 'carousel' ? `Верни JSON в формате:
 {"carousel":{"total_slides":7,"cover":{"slide":1,"headline":"...","subheadline":"...","visual_description":"..."},"slides":[{"slide":2,"type":"problem","headline":"...","body":"...","emoji":""}],"last_slide":{"slide":7,"text":"...","action":"..."}}}` : ''}
@@ -215,17 +216,29 @@ ${contentType === 'email' ? `Напиши письмо для email-рассыл
             const jsonMatch = generatedText.match(/\{[\s\S]*\}/)
             if (jsonMatch) {
               structuredData = JSON.parse(jsonMatch[0])
-              if (structuredData?.reels?.hashtags) hashtags = structuredData.reels.hashtags as unknown as string[]
+              // No hashtags anywhere — the user's style has none. Drop the
+              // hashtags array and strip any # tags the AI put in the
+              // description_text / caption fields.
+              for (const fmt of Object.values(structuredData)) {
+                if (fmt && typeof fmt === 'object') {
+                  const f = fmt as Record<string, unknown>
+                  delete f.hashtags
+                  if (typeof f.description_text === 'string') {
+                    f.description_text = f.description_text.replace(/#[\wА-Яа-яЁё]+/g, '').replace(/[ \t]{2,}/g, ' ').trim()
+                  }
+                }
+              }
             } else {
               // AI returned plain text (not JSON) — save as body text
-              bodyText = generatedText
+              bodyText = generatedText.replace(/#[\wА-Яа-яЁё]+/g, '').replace(/[ \t]{2,}/g, ' ').trim()
             }
           } catch {
             // JSON parse failed — save raw text
-            bodyText = generatedText
+            bodyText = generatedText.replace(/#[\wА-Яа-яЁё]+/g, '').replace(/[ \t]{2,}/g, ' ').trim()
           }
           // Ensure at least body_text is set if structured_data is empty
           if (!structuredData && !bodyText) bodyText = generatedText
+          hashtags = [] // never store hashtags
         }
 
         const title = contentType === 'post'
