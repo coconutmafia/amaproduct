@@ -109,7 +109,7 @@ ${blogLinesSummary}
 Для таких дней тема поста НАЧИНАЕТСЯ с личного эпизода, а не с экспертного тезиса.
 ` : ''
 
-  const prompt = `Составь план контента на неделю для блогера. Верни ТОЛЬКО JSON, без markdown, без пояснений.
+  const prompt = `Составь план контента на неделю для блогера. Заполни инструмент week_brief: для каждого дня по одному элементу на каждый его формат.
 
 ПРОЕКТ: ${project.name}
 НИША: ${project.niche || 'не указана'}
@@ -147,49 +147,73 @@ ${daysText}
 
 Возможные форматы: post, carousel, reels, stories, live, webinar, email.
 
-JSON формат (строго) — ключи в brief берутся из «форматы:» каждого дня. Темы внутри одного дня должны быть про РАЗНЫЕ углы общей темы:
-{"days":[{"day":1,"brief":{"post":"тема поста — один угол","reels":"тема рилса — ДРУГОЙ угол той же темы"}}]}`
+ВАЖНО: для каждого дня в items добавь по одному элементу на КАЖДЫЙ формат из строки «форматы:» этого дня (и только на них). Темы внутри одного дня — про РАЗНЫЕ углы общей темы дня.`
 
   try {
+    // Use a forced tool call — guarantees valid JSON (no fragile string-repair
+    // of free-form output, which was throwing 'Expected , or ]' parse errors).
+    const toolDef = {
+      name: 'week_brief',
+      description: 'Темы контента по дням и форматам на неделю',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          days: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                day: { type: 'number' },
+                items: {
+                  type: 'array',
+                  description: 'По одному элементу на каждый формат этого дня',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      format: { type: 'string', description: 'post | carousel | reels | stories | live | webinar | email' },
+                      theme:  { type: 'string', description: 'конкретная тема под этот формат (свой угол общей темы дня)' },
+                    },
+                    required: ['format', 'theme'],
+                  },
+                },
+              },
+              required: ['day', 'items'],
+            },
+          },
+        },
+        required: ['days'],
+      },
+    }
+
     const response = await anthropic.messages.create({
       model: MODEL,
-      max_tokens: 4096,
+      max_tokens: 8000,
+      tools: [toolDef],
+      tool_choice: { type: 'tool' as const, name: 'week_brief' },
       messages: [{ role: 'user', content: prompt }],
     })
 
-    // Scan ALL text blocks — newer Claude models can emit a thinking block
-    // first, so content[0] is not reliably the text answer.
-    const text = response.content.map(b => (b.type === 'text' ? b.text : '')).join('\n')
+    const toolBlock = response.content.find(b => b.type === 'tool_use')
+    if (!toolBlock || toolBlock.type !== 'tool_use') throw new Error('AI не вернул план недели')
 
-    // Extract JSON block
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('AI не вернул JSON')
-
-    let jsonStr = jsonMatch[0]
-
-    // Repair: replace unescaped double-quotes inside string values
-    // Strategy: parse → if fails, try replacing inner quotes with curly quotes
-    let data: Record<string, unknown>
-    try {
-      data = JSON.parse(jsonStr)
-    } catch {
-      // Replace any " that appear inside string values (between : " ... ") with «»
-      jsonStr = jsonStr.replace(/:\s*"([\s\S]*?)"/g, (_match, inner: string) => {
-        const fixed = inner.replace(/(?<!\\)"/g, '\\"')
-        return `: "${fixed}"`
-      })
-      try {
-        data = JSON.parse(jsonStr)
-      } catch {
-        // Last resort: strip all non-ASCII-safe chars and retry
-        const safe = jsonStr.replace(/[^\x20-\x7EЀ-ӿ\n\r\t]/g, '')
-        data = JSON.parse(safe)
-      }
+    const input = toolBlock.input as { days?: Array<{ day: number; items?: Array<{ format: string; theme: string }> }> }
+    if (!input.days || !Array.isArray(input.days) || input.days.length === 0) {
+      throw new Error('AI вернул пустой план — попробуй ещё раз')
     }
 
-    return NextResponse.json(data)
+    // Reshape {day, items:[{format,theme}]} → {day, brief:{format: theme}}
+    const days = input.days.map(d => {
+      const brief: Record<string, string> = {}
+      for (const it of (Array.isArray(d.items) ? d.items : [])) {
+        if (it?.format && it?.theme) brief[it.format] = it.theme
+      }
+      return { day: d.day, brief }
+    })
+
+    return NextResponse.json({ days })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Ошибка AI'
+    console.error('[generate-week-brief] error:', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
