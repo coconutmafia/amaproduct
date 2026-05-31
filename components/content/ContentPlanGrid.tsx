@@ -398,28 +398,6 @@ export function ContentPlanGrid({
                 </div>
                 <div className="flex-1 min-w-0 space-y-2">
                   {day.theme && !day.dayBriefs && <p className="text-xs text-[#888]">{day.theme}</p>}
-                  {day.dayBriefs && Object.keys(day.dayBriefs).length > 0 && (() => {
-                    const types = (day.plannedTypes?.length ? day.plannedTypes : ['post', 'stories', 'reels']) as ContentType[]
-                    const entries = types.filter(t => day.dayBriefs?.[t])
-                    if (!entries.length) return null
-                    return (
-                      <div className="space-y-2.5">
-                        {entries.map(type => {
-                          const c = COLORS[type]
-                          if (!c) return null
-                          return (
-                            <div key={type} className="space-y-1">
-                              <span className="inline-flex text-[10px] font-bold px-2 py-0.5 rounded-md"
-                                style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
-                                {c.label.toUpperCase()}
-                              </span>
-                              <p className="text-[13px] text-[#333] leading-snug">{day.dayBriefs![type]}</p>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )
-                  })()}
                   <div className="flex flex-wrap gap-1.5 items-center">
                     {displayTypes.map(type => {
                       const c = COLORS[type]
@@ -491,6 +469,32 @@ export function ContentPlanGrid({
                       <button onClick={() => setAddingToDay(null)} className="px-2 py-1 text-xs text-[#aaa] hover:text-[#444]">Отмена</button>
                     </div>
                   )}
+
+                  {/* Per-format briefs — under the format chips so the
+                      controls (add/remove/generate) stay at the TOP, easy to
+                      reach, and the themes read below them. */}
+                  {day.dayBriefs && Object.keys(day.dayBriefs).length > 0 && (() => {
+                    const types = (day.plannedTypes?.length ? day.plannedTypes : ['post', 'stories', 'reels']) as ContentType[]
+                    const entries = types.filter(t => day.dayBriefs?.[t])
+                    if (!entries.length) return null
+                    return (
+                      <div className="space-y-2.5 pt-1">
+                        {entries.map(type => {
+                          const c = COLORS[type]
+                          if (!c) return null
+                          return (
+                            <div key={type} className="space-y-1">
+                              <span className="inline-flex text-[10px] font-bold px-2 py-0.5 rounded-md"
+                                style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
+                                {c.label.toUpperCase()}
+                              </span>
+                              <p className="text-[13px] text-[#333] leading-snug">{day.dayBriefs![type]}</p>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
 
