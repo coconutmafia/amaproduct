@@ -75,6 +75,31 @@ export async function POST(request: Request) {
 
   const TOV_TITLE = 'Tone of Voice (извлечён из твоих текстов)'
 
+  // ── Save the user's own posts as STYLE EXAMPLES (few-shot anchors) ─────────
+  // This is the strongest voice lever: the generator's "пиши ИМЕННО ТАК"
+  // section uses real approved posts. Pasting posts here previously only fed
+  // a TOV *description* — the actual texts were never used verbatim. Now each
+  // post becomes a style example, so generated content matches her real voice.
+  try {
+    // Refresh: drop previously imported "from texts" examples, re-add current set
+    await supabase.from('style_examples')
+      .delete()
+      .eq('project_id', projectId)
+      .eq('title', 'Мой текст (эталон стиля)')
+    const rows = clean.slice(0, 10).map(text => ({
+      project_id:        projectId,
+      content_type:      'post',
+      title:             'Мой текст (эталон стиля)',
+      body_text:         text,
+      performance_score: 100, // user's own writing — highest priority
+      is_active:         true,
+      is_system:         false,
+    }))
+    if (rows.length > 0) await supabase.from('style_examples').insert(rows)
+  } catch (e) {
+    console.error('[extract-tone-of-voice] style example save failed:', e)
+  }
+
   // Placeholder so the user sees the request reached the server. Survives
   // mobile drops, tab close, etc.
   try {
