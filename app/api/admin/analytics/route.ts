@@ -32,9 +32,9 @@ export async function GET() {
     const map = new Map<string, number>()
     if (ids.length === 0) return map
     const { data } = await supabase.from(table).select(col).in(col, ids)
-    for (const row of (data ?? []) as Record<string, string>[]) {
+    for (const row of (data ?? []) as unknown as Record<string, string>[]) {
       const k = row[col]
-      map.set(k, (map.get(k) ?? 0) + 1)
+      if (k) map.set(k, (map.get(k) ?? 0) + 1)
     }
     return map
   }
