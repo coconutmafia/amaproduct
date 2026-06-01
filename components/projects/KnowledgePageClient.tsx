@@ -1147,19 +1147,40 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
       if (!content.trim()) { toast.error('В материале пока нет содержимого'); return }
       const safe = (title || 'material').replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().slice(0, 80) || 'material'
 
-      // Structured materials → CSV (opens in Excel/Numbers). Others → .txt.
+      // Structured materials → CSV (opens in Excel/Numbers, normal font).
       let csv: string | null = null
       if (type === 'audience_research') csv = audienceResearchToCsv(content)
       else if (type === 'meanings_map') csv = meaningsMapToCsv(content)
+      const useCsv = !!csv && csv.split('\n').length > 1
 
-      const useCsv  = !!csv && csv.split('\n').length > 1
-      const body    = useCsv ? csv! : content
-      const ext     = useCsv ? 'csv' : 'txt'
-      const mime    = useCsv ? 'text/csv;charset=utf-8' : 'text/plain;charset=utf-8'
+      let blob: Blob, ext: string
+      if (useCsv) {
+        blob = new Blob(['﻿' + csv!], { type: 'text/csv;charset=utf-8' })
+        ext = 'csv'
+      } else {
+        // Text materials → styled HTML so it opens with a clean, readable
+        // font (not the monospace .txt viewer). Renders nicely on phone/desktop.
+        const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)}</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       max-width:720px;margin:0 auto;padding:28px 20px;color:#1a1a1a;line-height:1.6;font-size:16px;background:#fff}
+  h1{font-size:22px;font-weight:700;margin:0 0 6px}
+  .meta{color:#888;font-size:13px;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid #eee}
+  .content{white-space:pre-wrap}
+</style></head><body>
+<h1>${esc(title)}</h1>
+<div class="meta">Материал проекта · AMA</div>
+<div class="content">${esc(content)}</div>
+</body></html>`
+        blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+        ext = 'html'
+      }
 
-      const blob = new Blob(['﻿' + body], { type: mime })
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement('a')
+      const url = URL.createObjectURL(blob)
+      const a   = document.createElement('a')
       a.href = url; a.download = `${safe}.${ext}`; a.click()
       URL.revokeObjectURL(url)
     } catch {
