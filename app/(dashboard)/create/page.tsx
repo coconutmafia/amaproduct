@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, Sparkles, Loader2, Copy, Check, User, Square } from 'lucide-react'
 import { toast } from 'sonner'
+import { VoiceRecordButton } from '@/components/ui/VoiceRecordButton'
 
 interface ChatMessage { role: 'user' | 'assistant'; content: string }
 
@@ -21,9 +22,6 @@ export default function CreatePage() {
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const [listening, setListening] = useState(false)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null)
 
   useEffect(() => {
     requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }))
@@ -65,22 +63,6 @@ export default function CreatePage() {
     navigator.clipboard?.writeText(text).then(() => { setCopiedIdx(idx); setTimeout(() => setCopiedIdx(null), 1500) }).catch(() => toast.error('Не удалось'))
   }
 
-  const toggleVoice = () => {
-    if (listening) { recognitionRef.current?.stop(); setListening(false); return }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SR) { toast.error('Голосовой ввод недоступен'); return }
-    const rec = new SR(); rec.lang = 'ru-RU'; rec.continuous = true; rec.interimResults = true
-    let base = input
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rec.onresult = (e: any) => {
-      let f = '', it = ''
-      for (let i = e.resultIndex; i < e.results.length; i++) { if (e.results[i].isFinal) f += e.results[i][0].transcript; else it += e.results[i][0].transcript }
-      if (f) { base = base ? base + ' ' + f : f; setInput(base) } else setInput(base ? base + ' ' + it : it)
-    }
-    rec.onend = () => setListening(false); rec.onerror = () => setListening(false)
-    rec.start(); recognitionRef.current = rec; setListening(true)
-  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-0px)] max-w-3xl mx-auto">
@@ -142,16 +124,13 @@ export default function CreatePage() {
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) } }}
             placeholder="Опиши нишу/идею или попроси написать…" rows={1}
             className="flex-1 resize-none max-h-32 rounded-2xl border border-[#E0E0E0] px-3.5 py-2.5 text-sm focus:outline-none focus:border-primary/50 bg-background" />
-          <button onClick={toggleVoice} className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-all ${listening ? 'border-red-400 bg-red-50 text-red-500' : 'border-[#E0E0E0] text-muted-foreground'}`}>
-            {listening ? <Square className="h-4 w-4 fill-current" /> : <span className="text-base">🎤</span>}
-          </button>
+          <VoiceRecordButton onText={(t) => setInput(prev => (prev ? `${prev} ${t}` : t))} className="h-10 w-10" size={17} />
           {loading ? (
             <button onClick={stop} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary"><Square className="h-4 w-4 fill-current" /></button>
           ) : (
             <button onClick={() => send(input)} disabled={!input.trim()} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full gradient-accent text-white disabled:opacity-40"><Send className="h-4 w-4" /></button>
           )}
         </div>
-        {listening && <p className="text-[11px] text-muted-foreground text-center mt-1.5">🎤 Говори — на iPhone текст появляется фразами после паузы</p>}
       </div>
     </div>
   )

@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, X, Send, Mic, MicOff, Loader2, CheckCircle, ChevronDown } from 'lucide-react'
+import { Sparkles, X, Send, Loader2, CheckCircle, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
+import { VoiceRecordButton } from '@/components/ui/VoiceRecordButton'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Message {
@@ -25,80 +26,6 @@ interface AiEditChatProps {
   // the route uses this plan_data instead of looking up a DB row by
   // contextId, and returns the edited plan without persisting.
   draftPlanData?: Record<string, unknown>
-}
-
-// ── Voice hook ────────────────────────────────────────────────────────────────
-// Live dictation: continuous + interim results, append final chunks, auto-
-// restart after silence (iOS Safari stops after each pause). setText receives
-// the full text to display (base + recognized) so words appear as you speak.
-function useVoiceInput(setText: (value: string) => void) {
-  const [listening, setListening] = useState(false)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null)
-  const baseRef = useRef('')
-  const manualStopRef = useRef(false)
-
-  const startListening = useCallback((currentValue: string) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any
-    const SR = w.SpeechRecognition || w.webkitSpeechRecognition
-    if (!SR) { toast.error('Голосовой ввод не поддерживается в этом браузере'); return }
-
-    manualStopRef.current = false
-    baseRef.current = currentValue
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const recognition: any = new SR()
-    recognition.lang = 'ru-RU'
-    recognition.continuous = true
-    recognition.interimResults = true
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    recognition.onresult = (event: any) => {
-      let finalChunk = '', interimChunk = ''
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) finalChunk += event.results[i][0].transcript
-        else interimChunk += event.results[i][0].transcript
-      }
-      if (finalChunk) {
-        baseRef.current = baseRef.current ? `${baseRef.current} ${finalChunk}` : finalChunk
-        setText(baseRef.current)
-      } else {
-        setText(baseRef.current ? `${baseRef.current} ${interimChunk}` : interimChunk)
-      }
-    }
-    recognition.onend = () => {
-      // iOS stops after a pause — restart unless the user tapped stop
-      if (!manualStopRef.current && recognitionRef.current === recognition) {
-        setTimeout(() => {
-          if (!manualStopRef.current && recognitionRef.current === recognition) {
-            try { recognition.start() } catch { /* already running */ }
-          }
-        }, 150)
-        return
-      }
-      setListening(false)
-    }
-    recognition.onerror = (e: Event & { error?: string }) => {
-      const err = (e as { error?: string }).error
-      if (err === 'not-allowed' || err === 'aborted') {
-        manualStopRef.current = true; setListening(false)
-        if (err === 'not-allowed') toast.error('Нет доступа к микрофону. Разреши в настройках браузера.')
-      }
-      // other errors (no-speech, network) → onend auto-restarts
-    }
-
-    recognition.start()
-    recognitionRef.current = recognition
-    setListening(true)
-  }, [setText])
-
-  const stopListening = useCallback(() => {
-    manualStopRef.current = true
-    recognitionRef.current?.stop()
-    setListening(false)
-  }, [])
-
-  return { listening, startListening, stopListening }
 }
 
 // ── Strip tags from display text ──────────────────────────────────────────────
@@ -148,7 +75,6 @@ export function AiEditChat({
     }
   }, [open])
 
-  const { listening, startListening, stopListening } = useVoiceInput(setInput)
 
   const handleSend = useCallback(async () => {
     const instruction = input.trim()
@@ -480,22 +406,12 @@ export function AiEditChat({
                     />
                   </div>
 
-                  {/* Voice button */}
-                  <motion.button
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => listening ? stopListening() : startListening(input)}
-                    className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
-                      listening
-                        ? 'bg-red-500 text-white'
-                        : 'bg-secondary text-muted-foreground hover:text-foreground border border-border'
-                    }`}
-                  >
-                    {listening ? (
-                      <MicOff className="h-4 w-4" />
-                    ) : (
-                      <Mic className="h-4 w-4" />
-                    )}
-                  </motion.button>
+                  {/* Voice button — records audio + Whisper (works in webviews) */}
+                  <VoiceRecordButton
+                    onText={(t) => setInput(prev => (prev ? `${prev} ${t}` : t))}
+                    className="h-10 w-10"
+                    size={16}
+                  />
 
                   {/* Send button */}
                   <motion.button

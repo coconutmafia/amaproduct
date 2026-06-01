@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback, use } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Send, Sparkles, Loader2, Copy, Check, User, Square } from 'lucide-react'
 import { toast } from 'sonner'
+import { VoiceRecordButton } from '@/components/ui/VoiceRecordButton'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -28,9 +29,6 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
   const abortRef = useRef<AbortController | null>(null)
 
   // Voice input
-  const [listening, setListening] = useState(false)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null)
 
   // Where the back arrow goes (content-plan when opened from there)
   const [backHref, setBackHref] = useState(`/projects/${id}`)
@@ -119,28 +117,6 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
   }
 
   // ── Voice ──
-  const toggleVoice = () => {
-    if (listening) { recognitionRef.current?.stop(); setListening(false); return }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SR) { toast.error('Голосовой ввод недоступен в этом браузере'); return }
-    const rec = new SR()
-    rec.lang = 'ru-RU'; rec.continuous = true; rec.interimResults = true
-    let base = input
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rec.onresult = (e: any) => {
-      let finalT = '', interimT = ''
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) finalT += e.results[i][0].transcript
-        else interimT += e.results[i][0].transcript
-      }
-      if (finalT) { base = (base ? base + ' ' : '') + finalT; setInput(base) }
-      else setInput((base ? base + ' ' : '') + interimT)
-    }
-    rec.onend = () => setListening(false)
-    rec.onerror = () => setListening(false)
-    rec.start(); recognitionRef.current = rec; setListening(true)
-  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-0px)] max-w-3xl mx-auto">
@@ -234,12 +210,7 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
             rows={1}
             className="flex-1 resize-none max-h-32 rounded-2xl border border-[#E0E0E0] px-3.5 py-2.5 text-sm focus:outline-none focus:border-primary/50 bg-background"
           />
-          <button onClick={toggleVoice}
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-all ${
-              listening ? 'border-red-400 bg-red-50 text-red-500' : 'border-[#E0E0E0] text-muted-foreground hover:text-foreground'
-            }`}>
-            {listening ? <Square className="h-4 w-4 fill-current" /> : <span className="text-base">🎤</span>}
-          </button>
+          <VoiceRecordButton onText={(t) => setInput(prev => (prev ? `${prev} ${t}` : t))} className="h-10 w-10" size={17} />
           {loading ? (
             <button onClick={stop} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary text-foreground">
               <Square className="h-4 w-4 fill-current" />
@@ -251,7 +222,6 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
             </button>
           )}
         </div>
-        {listening && <p className="text-[11px] text-muted-foreground text-center mt-1.5">🎤 Говори — на iPhone текст появляется фразами после паузы</p>}
       </div>
     </div>
   )
