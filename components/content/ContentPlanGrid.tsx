@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -225,7 +226,8 @@ export function ContentPlanGrid({
   const [pendingBadge, setPendingBadge] = useState<{ day: number; type: ContentType; phase: WarmupPhase; theme?: string } | null>(null)
   const [extraContext, setExtraContext] = useState('')
 
-  void projectId; void warmupPlanId
+  void warmupPlanId
+  const router = useRouter()
 
   // Two-step flow: a content unit can only be generated AFTER the week plan
   // (per-format themes / briefs) has been generated for that day. Otherwise
@@ -233,6 +235,17 @@ export function ContentPlanGrid({
   const briefReady = (day: DayContent) =>
     !!day.dayBriefs && Object.keys(day.dayBriefs).length > 0
   const weekHasBrief = days.some(briefReady)
+
+  // Generate a content unit by opening the AI assistant chat pre-loaded with
+  // this day's theme/brief. The user gets it in a ChatGPT-like conversation —
+  // copy it, or refine it by voice — then returns to the content plan.
+  function openInChat(day: DayContent, type: ContentType) {
+    const brief = day.dayBriefs?.[type] || day.theme || ''
+    const label = (COLORS[type]?.label || type).toLowerCase()
+    const phase = day.phase ? PHASE_NAMES[day.phase] ?? day.phase : ''
+    const prompt = `Напиши ${label} для моего блога${brief ? ` на тему: «${brief}»` : ''}. Сделай готовый к публикации текст в моём голосе.${phase ? ` Это день ${day.day} прогрева, фаза «${phase}».` : ''}`
+    router.push(`/projects/${projectId}/assistant?back=content-plan&prompt=${encodeURIComponent(prompt)}`)
+  }
 
   const activeDay = pendingBadge?.day ?? (viewingKey ? parseInt(viewingKey.split('-')[0]) : null)
 
@@ -398,103 +411,111 @@ export function ContentPlanGrid({
                 </div>
                 <div className="flex-1 min-w-0 space-y-2">
                   {day.theme && !day.dayBriefs && <p className="text-xs text-[#888]">{day.theme}</p>}
-                  <div className="flex flex-wrap gap-1.5 items-center">
-                    {displayTypes.map(type => {
-                      const c = COLORS[type]
-                      if (!c) return null
-                      const existing = day.items.find(i => i.content_type === type)
-                      const genKey = `${day.day}-${type}`
-                      const isGenerating = generatingDay === genKey
-                      const isViewing = viewingKey === genKey
-                      const isPending = pendingBadge?.day === day.day && pendingBadge?.type === type
-                      const bgColor = existing || isPending ? c.bgDone : c.bg
-                      const bColor  = existing || isPending ? c.borderDone : c.border
-                      const tColor  = existing || isPending ? c.textDone : c.text
-                      return (
-                        <div key={type} className="flex items-center gap-1">
-                          <button
-                            onClick={() => {
-                              if (isGenerating) return
-                              if (existing) { setViewingKey(isViewing ? null : genKey); setAddingToDay(null); return }
-                              // Gate: must generate the week plan (per-format
-                              // themes) before generating any content unit
-                              if (!briefReady(day)) {
-                                toast.error('Сначала нажми «Сгенерировать план» вверху — AI распишет тему под каждый формат', { duration: 5000 })
-                                return
-                              }
-                              if (isPending) { setPendingBadge(null); setExtraContext('') }
-                              else { setPendingBadge({ day: day.day, type, phase: day.phase || 'awareness', theme: day.dayBriefs?.[type] || day.theme }); setViewingKey(null); setAddingToDay(null) }
-                            }}
-                            className="flex items-center gap-1 pl-2.5 pr-2 py-1 rounded-lg text-xs font-medium transition-all"
-                            style={{ backgroundColor: bgColor, color: tColor, border: `1.5px solid ${bColor}`, boxShadow: isViewing || isPending ? `0 0 0 2px ${bColor}` : undefined }}
-                          >
-                            {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" />
-                              : existing ? (isViewing ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />)
-                              : <Sparkles className="h-3 w-3" />}
-                            {c.label}
-                            {existing && !isViewing && <Check className="h-2.5 w-2.5 ml-0.5 text-green-600" />}
-                          </button>
-                          {onRemoveType && !existing && !isGenerating && (
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); onRemoveType(day.day, type) }}
-                              aria-label="Убрать формат"
-                              className="ml-1 flex h-8 w-8 items-center justify-center rounded-full text-[#888] bg-white border border-[#E8E8E8] active:bg-red-50 active:text-red-500 hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-all shadow-sm shrink-0 touch-manipulation">
-                              <X className="h-4 w-4" />
-                            </button>
-                          )}
-                        </div>
-                      )
-                    })}
-                    {onAddType && available.length > 0 && (
-                      <button onClick={() => setAddingToDay(isAddOpen ? null : day.day)}
-                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs border border-dashed border-[#D4D4D4] text-[#BBB] hover:border-[#D44E7E]/50 hover:text-[#D44E7E] transition-all">
-                        <Plus className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-                  {isAddOpen && available.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 pt-1 border-t border-[#F0F0F0]">
-                      <span className="text-[10px] text-[#aaa] self-center">Добавить:</span>
-                      {available.map(t => {
-                        const c = COLORS[t]
-                        return (
-                          <button key={t} onClick={() => { onAddType!(day.day, t); setAddingToDay(null) }}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium"
-                            style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
-                            <Plus className="h-2.5 w-2.5" />{c.label}
-                          </button>
-                        )
-                      })}
-                      <button onClick={() => setAddingToDay(null)} className="px-2 py-1 text-xs text-[#aaa] hover:text-[#444]">Отмена</button>
-                    </div>
-                  )}
-
-                  {/* Per-format briefs — under the format chips so the
-                      controls (add/remove/generate) stay at the TOP, easy to
-                      reach, and the themes read below them. */}
-                  {day.dayBriefs && Object.keys(day.dayBriefs).length > 0 && (() => {
-                    const types = (day.plannedTypes?.length ? day.plannedTypes : ['post', 'stories', 'reels']) as ContentType[]
-                    const entries = types.filter(t => day.dayBriefs?.[t])
-                    if (!entries.length) return null
-                    return (
-                      <div className="space-y-2.5 pt-1">
-                        {entries.map(type => {
+                  {!briefReady(day) ? (
+                    /* BEFORE plan: pick which formats this day should have */
+                    <>
+                      <div className="flex flex-wrap gap-1.5 items-center">
+                        {displayTypes.map(type => {
                           const c = COLORS[type]
                           if (!c) return null
                           return (
-                            <div key={type} className="space-y-1">
-                              <span className="inline-flex text-[10px] font-bold px-2 py-0.5 rounded-md"
-                                style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
-                                {c.label.toUpperCase()}
+                            <div key={type} className="flex items-center gap-1">
+                              <span className="flex items-center gap-1 pl-2.5 pr-2 py-1 rounded-lg text-xs font-medium"
+                                style={{ backgroundColor: c.bg, color: c.text, border: `1.5px solid ${c.border}` }}>
+                                {c.label}
                               </span>
-                              <p className="text-[13px] text-[#333] leading-snug">{day.dayBriefs![type]}</p>
+                              {onRemoveType && (
+                                <button type="button" onClick={() => onRemoveType(day.day, type)} aria-label="Убрать формат"
+                                  className="flex h-7 w-7 items-center justify-center rounded-full text-[#888] bg-white border border-[#E8E8E8] active:bg-red-50 active:text-red-500 hover:bg-red-50 hover:text-red-500 transition-all shrink-0 touch-manipulation">
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              )}
                             </div>
                           )
                         })}
+                        {onAddType && available.length > 0 && (
+                          <button onClick={() => setAddingToDay(isAddOpen ? null : day.day)}
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs border border-dashed border-[#D4D4D4] text-[#BBB] hover:border-[#D44E7E]/50 hover:text-[#D44E7E] transition-all">
+                            <Plus className="h-3 w-3" />
+                          </button>
+                        )}
                       </div>
-                    )
-                  })()}
+                      {isAddOpen && available.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-1 border-t border-[#F0F0F0]">
+                          <span className="text-[10px] text-[#aaa] self-center">Добавить:</span>
+                          {available.map(t => {
+                            const c = COLORS[t]
+                            return (
+                              <button key={t} onClick={() => { onAddType!(day.day, t); setAddingToDay(null) }}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium"
+                                style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
+                                <Plus className="h-2.5 w-2.5" />{c.label}
+                              </button>
+                            )
+                          })}
+                          <button onClick={() => setAddingToDay(null)} className="px-2 py-1 text-xs text-[#aaa] hover:text-[#444]">Отмена</button>
+                        </div>
+                      )}
+                      <p className="text-[11px] text-[#aaa]">Выбери форматы и нажми «Сгенерировать план» вверху — AI распишет тему под каждый.</p>
+                    </>
+                  ) : (
+                    /* AFTER plan: each format's brief + a button that opens
+                       the AI chat pre-loaded with this theme */
+                    <div className="space-y-2.5">
+                      {(() => {
+                        const types = (day.plannedTypes?.length ? day.plannedTypes : ['post', 'stories', 'reels']) as ContentType[]
+                        const entries = types.filter(t => day.dayBriefs?.[t])
+                        return entries.map(type => {
+                          const c = COLORS[type]
+                          if (!c) return null
+                          return (
+                            <div key={type} className="rounded-lg border border-[#F0F0F0] p-2.5 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="inline-flex text-[10px] font-bold px-2 py-0.5 rounded-md"
+                                  style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
+                                  {c.label.toUpperCase()}
+                                </span>
+                                {onRemoveType && (
+                                  <button type="button" onClick={() => onRemoveType(day.day, type)} aria-label="Убрать формат"
+                                    className="flex h-6 w-6 items-center justify-center rounded-full text-[#bbb] hover:text-red-500 hover:bg-red-50 transition-all shrink-0">
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                              <p className="text-[13px] text-[#333] leading-snug">{day.dayBriefs![type]}</p>
+                              <button onClick={() => openInChat(day, type)}
+                                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-white gradient-accent active:opacity-90 transition-opacity">
+                                <Sparkles className="h-3.5 w-3.5" /> Сгенерировать {c.label.toLowerCase()}
+                              </button>
+                            </div>
+                          )
+                        })
+                      })()}
+                      {onAddType && available.length > 0 && (
+                        <>
+                          <button onClick={() => setAddingToDay(isAddOpen ? null : day.day)}
+                            className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] border border-dashed border-[#D4D4D4] text-[#BBB] hover:border-[#D44E7E]/50 hover:text-[#D44E7E] transition-all">
+                            <Plus className="h-3 w-3" /> Добавить формат
+                          </button>
+                          {isAddOpen && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {available.map(t => {
+                                const c = COLORS[t]
+                                return (
+                                  <button key={t} onClick={() => { onAddType!(day.day, t); setAddingToDay(null) }}
+                                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium"
+                                    style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
+                                    <Plus className="h-2.5 w-2.5" />{c.label}
+                                  </button>
+                                )
+                              })}
+                              <button onClick={() => setAddingToDay(null)} className="px-2 py-1 text-xs text-[#aaa] hover:text-[#444]">Отмена</button>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 

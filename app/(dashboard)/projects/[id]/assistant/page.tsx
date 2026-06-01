@@ -32,6 +32,9 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
 
+  // Where the back arrow goes (content-plan when opened from there)
+  const [backHref, setBackHref] = useState(`/projects/${id}`)
+
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }))
   }, [])
@@ -89,6 +92,23 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, messages, loading])
 
+  // On mount: if opened with ?prompt=… (e.g. from the content plan), set the
+  // back link and auto-send the seeded prompt so the chat starts on that theme.
+  const seededRef = useRef(false)
+  useEffect(() => {
+    if (seededRef.current) return
+    seededRef.current = true
+    const sp = new URLSearchParams(window.location.search)
+    if (sp.get('back') === 'content-plan') setBackHref(`/projects/${id}/content-plan`)
+    const seed = sp.get('prompt')
+    if (seed) {
+      // strip the query so a refresh doesn't re-send
+      window.history.replaceState({}, '', window.location.pathname)
+      setTimeout(() => send(seed), 100)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const stop = () => { abortRef.current?.abort() }
 
   const copyMsg = (text: string, idx: number) => {
@@ -126,7 +146,7 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
     <div className="flex flex-col h-[calc(100vh-0px)] max-w-3xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-[#ECECEC] bg-white/95 backdrop-blur sticky top-0 z-10">
-        <Link href={`/projects/${id}`} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-secondary">
+        <Link href={backHref} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-secondary">
           <ArrowLeft className="h-4 w-4" />
         </Link>
         <div className="flex items-center gap-2">
