@@ -230,8 +230,14 @@
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
 }
+/* Voice recording equalizer bars (ChatGPT-style) */
+@keyframes voicebar {
+  0%, 100% { transform: scaleY(0.35); }
+  50%      { transform: scaleY(1); }
+}
 
 /* Animation utility classes */
+.voicebar { width: 2.5px; border-radius: 9999px; background: currentColor; transform-origin: center; animation: voicebar 0.9s ease-in-out infinite; }
 .animate-float { animation: float 7s ease-in-out infinite; }
 .animate-float-reverse { animation: float-reverse 9s ease-in-out infinite; }
 .animate-float-slow { animation: float 12s ease-in-out infinite; }

@@ -81,17 +81,26 @@ export function VoiceRecordButton({ onText, className, size = 18, label = false 
       disabled={state === 'transcribing'}
       title={state === 'recording' ? 'Остановить' : 'Надиктовать'}
       className={cn(
-        'flex items-center justify-center rounded-full border transition-all shrink-0',
-        state === 'recording' ? 'border-red-400 bg-red-50 text-red-500 animate-pulse'
-        : state === 'transcribing' ? 'border-[#E0E0E0] text-muted-foreground'
+        'flex items-center justify-center gap-2 rounded-full border transition-all shrink-0',
+        state === 'recording' ? 'border-red-400 bg-red-500 text-white'
+        : state === 'transcribing' ? 'border-primary/40 bg-primary/5 text-primary'
         : 'border-[#E0E0E0] text-muted-foreground hover:text-foreground',
         className,
       )}
     >
-      {state === 'transcribing' ? <Loader2 style={{ width: size, height: size }} className="animate-spin" />
-        : state === 'recording' ? <Square style={{ width: size - 2, height: size - 2 }} className="fill-current" />
+      {state === 'transcribing'
+        ? <Loader2 style={{ width: size, height: size }} className="animate-spin" />
+        : state === 'recording'
+        ? (
+          // Animated equalizer — clear "listening" feedback like ChatGPT
+          <span className="flex items-end gap-[2px]" style={{ height: size }}>
+            {[0, 1, 2, 3].map(i => (
+              <span key={i} className="voicebar" style={{ height: size, animationDelay: `${i * 0.12}s` }} />
+            ))}
+          </span>
+        )
         : <Mic style={{ width: size, height: size }} />}
-      {label && <span>{state === 'transcribing' ? 'Распознаю…' : state === 'recording' ? 'Идёт запись — нажми, чтобы остановить' : 'Надиктовать голосом'}</span>}
+      {label && <span>{state === 'transcribing' ? 'Распознаю речь…' : state === 'recording' ? 'Идёт запись — нажми чтобы остановить' : 'Надиктовать голосом'}</span>}
     </button>
   )
 }
