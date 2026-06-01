@@ -1,20 +1,23 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Sparkles, Loader2, Copy, Check, User, Square } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { Send, Sparkles, Loader2, Copy, Check, User, Square, FolderOpen, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { VoiceRecordButton } from '@/components/ui/VoiceRecordButton'
 
 interface ChatMessage { role: 'user' | 'assistant'; content: string }
+interface ProjectLite { id: string; name: string }
 
 const SUGGESTIONS = [
-  'Подбери мне нишу для блога — задай вопросы и предложи варианты',
   'Напиши вирусный рилз-сценарий на тему: …',
-  'Накидай 5 идей постов для эксперта в нише …',
+  'Накидай 5 идей постов на эту неделю',
+  'Придумай сторителлинг-пост из моей истории',
   'Помоги протестировать гипотезу: зайдёт ли тема …',
 ]
 
 export default function CreatePage() {
+  const supabase = createClient()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -22,6 +25,23 @@ export default function CreatePage() {
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  // Project data toggle: use a project's full context (voice, niche, cases,
+  // funnel, competitors, ToV) or none (methodology-only).
+  const [projects, setProjects] = useState<ProjectLite[]>([])
+  const [projectId, setProjectId] = useState<string | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  useEffect(() => {
+    supabase.from('projects').select('id, name').order('updated_at', { ascending: false }).then(({ data }) => {
+      const list = (data ?? []) as ProjectLite[]
+      setProjects(list)
+      // Default to the most recent project — most users want their own voice/data
+      if (list.length > 0) setProjectId(list[0].id)
+    })
+  }, [supabase])
+
+  const activeProject = projects.find(p => p.id === projectId) || null
 
   useEffect(() => {
     requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }))
@@ -38,7 +58,9 @@ export default function CreatePage() {
     try {
       const res = await fetch('/api/ai/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: next, conversationType: 'standalone' }), // no projectId = standalone
+        // projectId set → full project context (voice, niche, cases, funnel,
+        // competitors, ToV). null → methodology-only standalone.
+        body: JSON.stringify({ messages: next, projectId: projectId || undefined, conversationType: 'create' }),
         signal: controller.signal,
       })
       if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error ?? 'Ошибка') }
@@ -56,7 +78,7 @@ export default function CreatePage() {
       setStreaming('')
     } finally { setLoading(false); abortRef.current = null }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, loading])
+  }, [messages, loading, projectId])
 
   const stop = () => abortRef.current?.abort()
   const copyMsg = (text: string, idx: number) => {
@@ -66,11 +88,44 @@ export default function CreatePage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-0px)] max-w-3xl mx-auto">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-[#ECECEC] bg-white/95 backdrop-blur sticky top-0 z-10">
-        <div className="flex h-8 w-8 items-center justify-center rounded-xl gradient-accent"><Sparkles className="h-4 w-4 text-white" /></div>
-        <div>
-          <p className="text-sm font-bold text-foreground leading-tight">Быстрая генерация</p>
-          <p className="text-[11px] text-muted-foreground leading-tight">Контент без проекта · на нашей методологии</p>
+      <div className="border-b border-[#ECECEC] bg-white/95 backdrop-blur sticky top-0 z-20">
+        <div className="flex items-center gap-2 px-4 py-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl gradient-accent"><Sparkles className="h-4 w-4 text-white" /></div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-foreground leading-tight">Быстрая генерация</p>
+            <p className="text-[11px] text-muted-foreground leading-tight truncate">
+              {activeProject ? `Пишет под проект «${activeProject.name}» — твой голос и данные` : 'Без проекта · на нашей методологии'}
+            </p>
+          </div>
+        </div>
+
+        {/* Project data selector — use a project's voice/niche/cases/competitors, or none */}
+        <div className="px-4 pb-2.5 relative">
+          <button onClick={() => setPickerOpen(o => !o)}
+            className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-all ${
+              activeProject ? 'border-primary/40 bg-primary/5 text-primary' : 'border-border bg-secondary/40 text-muted-foreground'
+            }`}>
+            <span className="flex items-center gap-1.5 truncate">
+              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+              {activeProject ? `Данные проекта: ${activeProject.name}` : 'Без данных проекта'}
+            </span>
+            <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {pickerOpen && (
+            <div className="absolute left-4 right-4 mt-1 rounded-xl border border-border bg-white shadow-lg z-30 overflow-hidden max-h-64 overflow-y-auto">
+              <button onClick={() => { setProjectId(null); setPickerOpen(false) }}
+                className={`w-full text-left px-3 py-2.5 text-xs hover:bg-secondary/60 ${!projectId ? 'text-primary font-semibold' : 'text-foreground'}`}>
+                Без данных проекта <span className="text-muted-foreground">· только методология</span>
+              </button>
+              {projects.map(p => (
+                <button key={p.id} onClick={() => { setProjectId(p.id); setPickerOpen(false) }}
+                  className={`w-full text-left px-3 py-2.5 text-xs border-t border-[#F0F0F0] hover:bg-secondary/60 ${projectId === p.id ? 'text-primary font-semibold' : 'text-foreground'}`}>
+                  {p.name} <span className="text-muted-foreground">· голос, ниша, кейсы, конкуренты</span>
+                </button>
+              ))}
+              {projects.length === 0 && <p className="px-3 py-2.5 text-xs text-muted-foreground">Проектов пока нет</p>}
+            </div>
+          )}
         </div>
       </div>
 
@@ -80,7 +135,11 @@ export default function CreatePage() {
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl gradient-accent"><Sparkles className="h-7 w-7 text-white" /></div>
             <div>
               <p className="font-semibold text-foreground">Сгенерируем контент прямо здесь</p>
-              <p className="text-sm text-muted-foreground mt-1 max-w-xs">Без настройки проекта. Подбор ниши, тест гипотез, посты и сценарии — на нашей методологии прогревов.</p>
+              <p className="text-sm text-muted-foreground mt-1 max-w-xs">
+                {activeProject
+                  ? `Пишу под проект «${activeProject.name}»: твой голос, ниша, кейсы, воронка и что зашло у конкурентов. Просто попроси.`
+                  : 'Подбор ниши, тест гипотез, посты и сценарии на нашей методологии. Выбери проект выше — и пиши под твои данные и голос.'}
+              </p>
             </div>
             <div className="w-full max-w-md space-y-2">
               {SUGGESTIONS.map((s, i) => (
