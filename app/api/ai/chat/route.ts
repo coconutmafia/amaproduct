@@ -14,11 +14,56 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { messages, projectId, conversationType }: {
+    const { messages, projectId }: {
       messages: Message[]
-      projectId: string
-      conversationType: string
+      projectId?: string
+      conversationType?: string
     } = await request.json()
+
+    // ── Standalone mode (no projectId): a content assistant powered by the
+    // methodology/knowledge base, for bloggers without a project yet —
+    // testing hypotheses, picking a niche, drafting content. ───────────────
+    if (!projectId) {
+      const lastMessage = messages[messages.length - 1]?.content || ''
+      let sysKnowledge = ''
+      try {
+        const rag = await buildRAGContext(lastMessage, '00000000-0000-0000-0000-000000000000')
+        sysKnowledge = rag.systemKnowledge.map(c => c.chunk_text).join('\n\n').slice(0, 4000)
+      } catch { /* no system knowledge */ }
+
+      const standaloneSystem = `Ты — AI-ассистент по контенту и запускам для блогеров и экспертов, построенный на проверенной методологии прогревов и продаж в блоге.
+
+ТВОЯ РОЛЬ:
+- Помогаешь любому блогеру/эксперту: подобрать нишу, протестировать гипотезу контента, придумать и НАПИСАТЬ пост/рилз/сторис/сценарий, собрать прогрев, разобрать идею.
+- Когда просят написать — даёшь СРАЗУ готовый, живой контент (не «вот советы»), по законам залетающего контента: сильный хук в первые секунды, конкретика, эмоция, чёткий призыв.
+- Отвечаешь живым человеческим языком, без воды и канцелярита, без хэштегов.
+- Если не хватает вводных (ниша, продукт, аудитория) — задай 1-2 уточняющих вопроса, потом делай.
+
+Ты сильнее обычного ChatGPT в контенте, потому что работаешь по конкретной методологии прогревов (ниже) и думаешь как продюсер запусков, а не как универсальный бот.
+
+${sysKnowledge ? `═══ МЕТОДОЛОГИЯ (опирайся на неё) ═══\n${sysKnowledge}` : ''}`
+
+      const stream = await anthropic.messages.stream({
+        model: MODEL,
+        max_tokens: 4000,
+        system: standaloneSystem,
+        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      })
+      const encoder = new TextEncoder()
+      const readable = new ReadableStream({
+        async start(controller) {
+          for await (const chunk of stream) {
+            if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+              controller.enqueue(encoder.encode(chunk.delta.text))
+            }
+          }
+          controller.close()
+        },
+      })
+      return new Response(readable, {
+        headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' },
+      })
+    }
 
     const { data: project } = await supabase
       .from('projects')

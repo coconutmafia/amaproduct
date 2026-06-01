@@ -28,42 +28,72 @@ interface AiEditChatProps {
 }
 
 // ── Voice hook ────────────────────────────────────────────────────────────────
-function useVoiceInput(onResult: (text: string) => void) {
+// Live dictation: continuous + interim results, append final chunks, auto-
+// restart after silence (iOS Safari stops after each pause). setText receives
+// the full text to display (base + recognized) so words appear as you speak.
+function useVoiceInput(setText: (value: string) => void) {
   const [listening, setListening] = useState(false)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
+  const baseRef = useRef('')
+  const manualStopRef = useRef(false)
 
-  const startListening = useCallback(() => {
+  const startListening = useCallback((currentValue: string) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any
     const SR = w.SpeechRecognition || w.webkitSpeechRecognition
-    if (!SR) {
-      toast.error('Голосовой ввод не поддерживается в этом браузере')
-      return
-    }
+    if (!SR) { toast.error('Голосовой ввод не поддерживается в этом браузере'); return }
+
+    manualStopRef.current = false
+    baseRef.current = currentValue
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const recognition: any = new SR()
-    recognitionRef.current = recognition
     recognition.lang = 'ru-RU'
-    recognition.continuous = false
-    recognition.interimResults = false
+    recognition.continuous = true
+    recognition.interimResults = true
 
-    recognition.onstart = () => setListening(true)
-    recognition.onend = () => setListening(false)
-    recognition.onerror = () => setListening(false)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onresult = (event: any) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const transcript = Array.from(event.results as any[])
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .map((r: any) => r[0].transcript)
-        .join('')
-      onResult(transcript)
+      let finalChunk = '', interimChunk = ''
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) finalChunk += event.results[i][0].transcript
+        else interimChunk += event.results[i][0].transcript
+      }
+      if (finalChunk) {
+        baseRef.current = baseRef.current ? `${baseRef.current} ${finalChunk}` : finalChunk
+        setText(baseRef.current)
+      } else {
+        setText(baseRef.current ? `${baseRef.current} ${interimChunk}` : interimChunk)
+      }
     }
+    recognition.onend = () => {
+      // iOS stops after a pause — restart unless the user tapped stop
+      if (!manualStopRef.current && recognitionRef.current === recognition) {
+        setTimeout(() => {
+          if (!manualStopRef.current && recognitionRef.current === recognition) {
+            try { recognition.start() } catch { /* already running */ }
+          }
+        }, 150)
+        return
+      }
+      setListening(false)
+    }
+    recognition.onerror = (e: Event & { error?: string }) => {
+      const err = (e as { error?: string }).error
+      if (err === 'not-allowed' || err === 'aborted') {
+        manualStopRef.current = true; setListening(false)
+        if (err === 'not-allowed') toast.error('Нет доступа к микрофону. Разреши в настройках браузера.')
+      }
+      // other errors (no-speech, network) → onend auto-restarts
+    }
+
     recognition.start()
-  }, [onResult])
+    recognitionRef.current = recognition
+    setListening(true)
+  }, [setText])
 
   const stopListening = useCallback(() => {
+    manualStopRef.current = true
     recognitionRef.current?.stop()
     setListening(false)
   }, [])
@@ -118,11 +148,7 @@ export function AiEditChat({
     }
   }, [open])
 
-  const handleVoiceResult = useCallback((text: string) => {
-    setInput((prev) => prev ? `${prev} ${text}` : text)
-  }, [])
-
-  const { listening, startListening, stopListening } = useVoiceInput(handleVoiceResult)
+  const { listening, startListening, stopListening } = useVoiceInput(setInput)
 
   const handleSend = useCallback(async () => {
     const instruction = input.trim()
@@ -457,7 +483,7 @@ export function AiEditChat({
                   {/* Voice button */}
                   <motion.button
                     whileTap={{ scale: 0.9 }}
-                    onClick={listening ? stopListening : startListening}
+                    onClick={() => listening ? stopListening() : startListening(input)}
                     className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
                       listening
                         ? 'bg-red-500 text-white'

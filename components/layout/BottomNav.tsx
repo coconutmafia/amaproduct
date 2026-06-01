@@ -8,13 +8,8 @@ import { LayoutDashboard, FolderKanban, Sparkles, Settings } from 'lucide-react'
 export function BottomNav() {
   const pathname = usePathname()
 
-  // Detect current project for deep-linking Generate
-  const projectMatch = pathname.match(/\/projects\/([a-zA-Z0-9_-]+)/)
-  const projectId = projectMatch?.[1]
-  const isSpecialRoute = projectId === 'new'
-  const generateHref = projectId && !isSpecialRoute
-    ? `/projects/${projectId}/generator`
-    : '/projects'
+  // "Создать" → standalone quick-generation chat (works without a project)
+  const generateHref = '/create'
 
   const tabs = [
     {
@@ -35,7 +30,7 @@ export function BottomNav() {
       href: generateHref,
       icon: Sparkles,
       label: 'Создать',
-      isActive: (p: string) => p.includes('/generator'),
+      isActive: (p: string) => p === '/create',
       accent: true,
     },
     {
