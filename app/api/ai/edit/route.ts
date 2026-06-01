@@ -170,14 +170,19 @@ export async function POST(request: Request) {
             return
           }
 
-          // Format plan as readable lines grouped by phase
+          // Format plan as readable lines grouped by phase, incl. per-format briefs
           const planLines: string[] = []
           for (const phase of planPhasesArr) {
             const phaseLabel = PHASE_LABELS[phase.phase] || phase.label || phase.phase
             for (const day of (Array.isArray(phase.daily_plan) ? phase.daily_plan : [])) {
               const d = day as unknown as Record<string, unknown>
               const meaning = (d.meaning as string) || (d.theme as string) || '—'
-              planLines.push(`День ${day.day} [${phaseLabel}]: ${meaning}`)
+              let line = `День ${day.day} [${phaseLabel}]: ${meaning}`
+              const briefs = d.briefs as Record<string, string> | undefined
+              if (briefs && Object.keys(briefs).length > 0) {
+                line += `\n  Темы по форматам → ${Object.entries(briefs).map(([f, t]) => `${f}: ${t}`).join(' | ')}`
+              }
+              planLines.push(line)
             }
           }
 
@@ -223,7 +228,10 @@ ${planLines.join('\n')}
 5. Голос в теме дня — живой, из TOV. Не рекламный.
 6. Кратко (1-2 предложения) объясни что меняешь и ПОЧЕМУ это лучше.
 7. Верни изменённые дни СТРОГО в этом формате (одна строка, без переносов внутри тегов):
-<changes>{"days":[{"day":N,"meaning":"новая тема дня"}]}</changes>
+<changes>{"days":[{"day":N,"meaning":"новая тема дня","briefs":{"stories":"новая тема сторис","reels":"новая тема рилз"}}]}</changes>
+   - "meaning" — общая тема дня (опционально, меняй если просят про весь день).
+   - "briefs" — новые темы под КОНКРЕТНЫЕ форматы (post/stories/reels/carousel/email). Если пользователь просит изменить тему конкретного формата (например «другую тему для сторис на вторник») — меняй ИМЕННО его бриф в "briefs" (ключ — формат на латинице), а не общий meaning.
+   - Можно вернуть только "briefs" без "meaning", или наоборот.
 8. Если пользователь просто спрашивает или обсуждает — отвечай без блока <changes>.`
 
           chatMessages = [
@@ -305,7 +313,7 @@ ${currentContent}
           if (changesMatch) {
             try {
               const changes = JSON.parse(changesMatch[1].trim()) as {
-                days?: Array<{ day: number; meaning: string }>
+                days?: Array<{ day: number; meaning?: string; briefs?: Record<string, string> }>
               }
               const planData = contextData.plan_data as WarmupPlanData
               const phases = Array.isArray(planData?.warmup_plan?.phases) ? planData.warmup_plan.phases : []
@@ -316,7 +324,12 @@ ${currentContent}
                   const dayEntry = (Array.isArray(phase.daily_plan) ? phase.daily_plan : []).find((d) => d.day === change.day)
                   if (dayEntry) {
                     const d = dayEntry as unknown as Record<string, unknown>
-                    d.meaning = change.meaning
+                    if (typeof change.meaning === 'string' && change.meaning.trim()) d.meaning = change.meaning
+                    // Per-format brief edits — what the content plan actually displays
+                    if (change.briefs && typeof change.briefs === 'object') {
+                      const cur = (d.briefs as Record<string, string> | undefined) ?? {}
+                      d.briefs = { ...cur, ...change.briefs }
+                    }
                     break
                   }
                 }

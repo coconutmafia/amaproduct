@@ -29,10 +29,15 @@ interface AiEditChatProps {
 }
 
 // ── Strip tags from display text ──────────────────────────────────────────────
+// Also hides a still-OPEN <changes>/<content> block while it streams in (before
+// the closing tag arrives) — otherwise raw JSON flashes on screen mid-stream.
 function stripTags(text: string): string {
   return text
     .replace(/<changes>[\s\S]*?<\/changes>/g, '')
     .replace(/<content>[\s\S]*?<\/content>/g, '')
+    .replace(/<changes>[\s\S]*$/g, '')      // dangling open block (streaming)
+    .replace(/<content>[\s\S]*$/g, '')
+    .replace(/<\/?[a-z]*$/gi, '')            // a partial tag like "<chan" at the very end
     .trim()
 }
 
