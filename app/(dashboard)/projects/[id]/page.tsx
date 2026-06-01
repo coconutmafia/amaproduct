@@ -10,6 +10,7 @@ import {
   ArrowLeft,
   BookOpen,
   Calendar,
+  CalendarDays,
   Sparkles,
   Grid3X3,
   Globe as Instagram,
@@ -182,6 +183,7 @@ export default async function ProjectPage({ params }: Props) {
               {[
                 { href: `/projects/${id}/assistant`, icon: MessageCircle, label: 'AI-ассистент', color: 'text-pink-400 bg-pink-400/10', desc: 'Чат: знает проект, пишет твоим голосом' },
                 { href: `/projects/${id}/content-plan`, icon: Grid3X3, label: 'Контент-план', color: 'text-yellow-400 bg-yellow-400/10', desc: 'Расписание по дням' },
+                { href: `/projects/${id}/calendar`, icon: CalendarDays, label: 'Календарь', color: 'text-teal-400 bg-teal-400/10', desc: 'Визуальный месяц' },
                 { href: `/projects/${id}/generator`, icon: Sparkles, label: 'Сделать контент', color: 'text-purple-400 bg-purple-400/10', desc: 'AI пишет пост / рилс' },
                 { href: `/projects/${id}/knowledge`, icon: BookOpen, label: 'Материалы', color: 'text-blue-400 bg-blue-400/10', desc: 'База знаний' },
                 { href: `/projects/${id}/strategy`, icon: Calendar, label: 'План прогрева', color: 'text-green-400 bg-green-400/10', desc: 'Стратегия запуска' },
