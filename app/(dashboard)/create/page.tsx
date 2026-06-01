@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Send, Sparkles, Loader2, Copy, Check, User, Square, FolderOpen, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { VoiceRecordButton } from '@/components/ui/VoiceRecordButton'
+import { cleanMarkdown } from '@/lib/cleanText'
 
 interface ChatMessage { role: 'user' | 'assistant'; content: string }
 interface ProjectLite { id: string; name: string }
@@ -42,10 +43,16 @@ export default function CreatePage() {
   }, [supabase])
 
   const activeProject = projects.find(p => p.id === projectId) || null
+  const lastUserRef = useRef<HTMLDivElement>(null)
 
+  // ChatGPT-style: when a message is sent, pin the user's message to the TOP
+  // of the viewport so the answer streams BELOW it and you read top→bottom.
+  // (Not auto-scroll-to-bottom, which hid the question.)
   useEffect(() => {
-    requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }))
-  }, [messages, streaming])
+    if (messages[messages.length - 1]?.role === 'user') {
+      requestAnimationFrame(() => lastUserRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
+    }
+  }, [messages])
 
   const send = useCallback(async (text: string) => {
     const content = text.trim()
@@ -148,25 +155,28 @@ export default function CreatePage() {
             </div>
           </div>
         )}
-        {messages.map((m, i) => (
-          <div key={i} className={`flex gap-2.5 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
+        {messages.map((m, i) => {
+          const isLastUser = m.role === 'user' && i === messages.length - 1
+          const text = m.role === 'assistant' ? cleanMarkdown(m.content) : m.content
+          return (
+          <div key={i} ref={isLastUser ? lastUserRef : undefined} className={`flex gap-2.5 ${m.role === 'user' ? 'flex-row-reverse' : ''} ${isLastUser ? 'scroll-mt-2' : ''}`}>
             <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${m.role === 'user' ? 'bg-secondary' : 'gradient-accent'}`}>
               {m.role === 'user' ? <User className="h-3.5 w-3.5 text-muted-foreground" /> : <Sparkles className="h-3.5 w-3.5 text-white" />}
             </div>
             <div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-primary/10' : 'bg-secondary/50'} text-foreground`}>
-              {m.content}
+              {text}
               {m.role === 'assistant' && (
-                <button onClick={() => copyMsg(m.content, i)} className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary">
+                <button onClick={() => copyMsg(text, i)} className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary">
                   {copiedIdx === i ? <><Check className="h-3 w-3" /> Скопировано</> : <><Copy className="h-3 w-3" /> Копировать</>}
                 </button>
               )}
             </div>
           </div>
-        ))}
+        )})}
         {streaming && (
           <div className="flex gap-2.5">
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full gradient-accent"><Sparkles className="h-3.5 w-3.5 text-white" /></div>
-            <div className="max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap bg-secondary/50 text-foreground">{streaming}<span className="inline-block w-1.5 h-3.5 ml-0.5 align-middle bg-primary/60 animate-pulse rounded-sm" /></div>
+            <div className="max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap bg-secondary/50 text-foreground">{cleanMarkdown(streaming)}<span className="inline-block w-1.5 h-3.5 ml-0.5 align-middle bg-primary/60 animate-pulse rounded-sm" /></div>
           </div>
         )}
         {loading && !streaming && (
