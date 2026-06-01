@@ -19,6 +19,7 @@ import {
   Users,
   TrendingUp,
   BarChart3,
+  Film,
 } from 'lucide-react'
 import { useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -274,6 +275,24 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
           >
             <BarChart3 className="h-4 w-4 shrink-0" />
             Аналитика
+            <span className="ml-auto text-[10px] bg-[#F5A84A]/20 text-[#D44E7E] px-1.5 py-0.5 rounded-full">Admin</span>
+          </Link>
+        )}
+
+        {/* Admin: viral reels */}
+        {isAdmin && (
+          <Link
+            href="/admin/viral-reels"
+            onClick={() => onNavigate?.()}
+            className={cn(
+              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+              pathname === '/admin/viral-reels'
+                ? 'bg-primary/20 text-primary font-medium'
+                : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+            )}
+          >
+            <Film className="h-4 w-4 shrink-0" />
+            Виральные рилз
             <span className="ml-auto text-[10px] bg-[#F5A84A]/20 text-[#D44E7E] px-1.5 py-0.5 rounded-full">Admin</span>
           </Link>
         )}

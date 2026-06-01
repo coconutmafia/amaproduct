@@ -112,6 +112,33 @@ ${relevant.map(t => `• ${t.title}${t.format_type !== 'any' ? ` (${t.format_typ
     }
   } catch { /* table missing or error — skip trends */ }
 
+  // ── Viral reel references (real залетевшие reels, analysed) ────────────────
+  // System reels matching the niche + this project's own reels → weave a
+  // similar reel format into a day.
+  let reelsBlock = ''
+  try {
+    const niche = (project.niche || '').toLowerCase()
+    const { data: sysReels } = await supabase
+      .from('viral_reels').select('reel_type, analysis, niches')
+      .eq('scope', 'system').eq('is_active', true).limit(20)
+    const { data: projReels } = await supabase
+      .from('viral_reels').select('reel_type, analysis, niches')
+      .eq('scope', 'project').eq('project_id', projectId).limit(10)
+    const matchedSys = (sysReels ?? []).filter(r => {
+      const ns = r.niches as string[] | null
+      if (!ns || ns.length === 0) return true
+      return ns.some(n => niche.includes(n.toLowerCase()) || n.toLowerCase().includes(niche))
+    })
+    const all = [...(projReels ?? []), ...matchedSys].slice(0, 4)
+    if (all.length > 0) {
+      reelsBlock = `
+─── ВИРАЛЬНЫЕ РИЛЗ-РЕФЕРЕНСЫ (реальные, что залетели) ───────
+Это реальные успешные рилз. Впиши 1–2 РИЛЗ-дня по их формату — возьми ПРИНЦИП (хук, структуру, почему зашло) и адаптируй под нишу и голос этого блогера. Не копируй дословно.
+${all.map(r => `• ${r.reel_type}: ${(r.analysis ?? '').slice(0, 400)}`).join('\n')}
+────────────────────────────────────────────────────────────`
+    }
+  } catch { /* table missing — skip */ }
+
   // Group unique phases in this week for content brain injection
   const uniquePhases = [...new Set(days.map(d => d.phase))]
   const phasePsychology = uniquePhases.map(phase => {
@@ -149,6 +176,7 @@ ${myInstagramSummary ? `АНАЛИЗ МОЕГО INSTAGRAM (опирайся на
 ${competitorsSummary ? `АНАЛИЗ INSTAGRAM КОНКУРЕНТОВ (что у них «заходит»; отстраивайся, не копируй):\n${competitorsSummary}\n` : ''}
 ${blogLinesInstruction}
 ${trendsBlock}
+${reelsBlock}
 ─── ПСИХОЛОГИЯ КОНТЕНТА ПО ФАЗАМ ───────────────────────────
 ${phasePsychology}
 ────────────────────────────────────────────────────────────

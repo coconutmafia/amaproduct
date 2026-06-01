@@ -12,6 +12,7 @@ import {
   Calendar,
   CalendarDays,
   TrendingUp,
+  Film,
   Sparkles,
   Grid3X3,
   Globe as Instagram,
@@ -191,6 +192,7 @@ export default async function ProjectPage({ params }: Props) {
                 { href: `/projects/${id}/research`, icon: Users, label: 'Исследование', color: 'text-teal-400 bg-teal-400/10', desc: 'Интервью → карта смыслов' },
                 { href: `/projects/${id}/style-bank`, icon: Sparkles, label: 'Мой стиль', color: 'text-orange-400 bg-orange-400/10', desc: 'Одобренный контент' },
                 { href: `/projects/${id}/results`, icon: TrendingUp, label: 'Результаты', color: 'text-rose-400 bg-rose-400/10', desc: 'Охваты → AI учится' },
+                { href: `/projects/${id}/viral-reels`, icon: Film, label: 'Виральные рилз', color: 'text-fuchsia-400 bg-fuchsia-400/10', desc: 'Залетевшие рилз → в твой план' },
               ].map(({ href, icon: Icon, label, color, desc }) => (
                 <Link key={href} href={href}>
                   <Card className="border-border bg-card hover:bg-card/80 hover:border-primary/30 transition-all cursor-pointer h-full">
