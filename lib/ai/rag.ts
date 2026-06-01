@@ -129,14 +129,25 @@ export async function buildRAGContext(
   // materials (my_instagram, competitors, meanings_map, …) are never embedded
   // into project_chunks, so the vector-search branch would otherwise drop
   // them entirely. We pull raw_content directly and merge on top, deduped.
+  // Every substantive material the user uploads must reach generation — not
+  // just the voice set. Previously cases/funnel/strategy/tactics were left to
+  // the embedding match (unreliable), so the AI often said "у меня нет кейсов".
   const ALWAYS_INCLUDE = [
-    'my_instagram',     // own IG profile + posts analysis
-    'competitors',      // competitor IG accounts analysis
-    'tone_of_voice',    // explicit ToV
-    'meanings_map',     // audience language map
-    'unpacking_map',    // personality / story
-    'blog_lines',       // narrative lines
-    'audience_research',// research tables / audience analysis
+    'my_instagram',        // own IG profile + posts analysis
+    'competitors',         // competitor IG accounts analysis
+    'tone_of_voice',       // explicit ToV
+    'meanings_map',        // audience language map
+    'unpacking_map',       // personality / story
+    'blog_lines',          // narrative lines
+    'audience_research',   // research tables / audience analysis
+    'audience_survey',     // survey results
+    'cases_reviews',       // client cases & reviews  ← was missing
+    'funnel_description',  // sales funnel            ← was missing
+    'marketing_strategy',  // marketing strategy      ← was missing
+    'marketing_tactics',   // marketing tactics       ← was missing
+    'product_description', // product                 ← was missing
+    'content_reference',   // reference content
+    'chatbot_description', // chatbots
   ]
   const { data: alwaysMats } = await supabase
     .from('project_materials')
@@ -149,7 +160,9 @@ export async function buildRAGContext(
     for (const m of alwaysMats) {
       const raw = (m.raw_content ?? '').toString()
       if (!raw.trim()) continue
-      const chunk_text = `[${m.material_type}] ${m.title}:\n${raw.slice(0, 1500)}`
+      // Cases/funnel/strategy hold multiple items — give them more room so a
+      // full case actually reaches the model (3000 ≈ a few cases).
+      const chunk_text = `[${m.material_type}] ${m.title}:\n${raw.slice(0, 3000)}`
       const key = `${m.material_type}::${chunk_text.slice(0, 60)}`
       if (seen.has(key)) continue
       seen.add(key)
