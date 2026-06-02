@@ -2,9 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Send, Sparkles, Loader2, Copy, Check, User, Square, FolderOpen, ChevronDown } from 'lucide-react'
+import { Sparkles, Loader2, Copy, Check, User, FolderOpen, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
-import { VoiceRecordButton } from '@/components/ui/VoiceRecordButton'
+import { ChatComposer } from '@/components/ui/ChatComposer'
 import { cleanMarkdown } from '@/lib/cleanText'
 
 interface ChatMessage { role: 'user' | 'assistant'; content: string }
@@ -46,12 +46,17 @@ export default function CreatePage() {
   const lastUserRef = useRef<HTMLDivElement>(null)
 
   // ChatGPT-style: when a message is sent, pin the user's message to the TOP
-  // of the viewport so the answer streams BELOW it and you read top→bottom.
-  // (Not auto-scroll-to-bottom, which hid the question.)
+  // of the scroll area so the answer streams BELOW it and you read top→bottom.
+  // Computed explicitly (not scrollIntoView, which overshoots on mobile webviews
+  // and pushed the question off-screen).
   useEffect(() => {
-    if (messages[messages.length - 1]?.role === 'user') {
-      requestAnimationFrame(() => lastUserRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
-    }
+    if (messages[messages.length - 1]?.role !== 'user') return
+    requestAnimationFrame(() => {
+      const c = scrollRef.current, el = lastUserRef.current
+      if (!c || !el) return
+      const top = el.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop - 12
+      c.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+    })
   }, [messages])
 
   const send = useCallback(async (text: string) => {
@@ -185,22 +190,12 @@ export default function CreatePage() {
             <div className="rounded-2xl px-3.5 py-2.5 bg-secondary/50 text-sm text-muted-foreground">Думаю…</div>
           </div>
         )}
+        {/* Spacer so the just-sent question can always pin to the top, even when the answer is short */}
+        {messages.length > 0 && <div aria-hidden className="min-h-[45vh] shrink-0" />}
       </div>
 
-      <div className="border-t border-[#ECECEC] bg-white px-3 py-3" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
-        <div className="flex items-end gap-2">
-          <textarea value={input} onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) } }}
-            placeholder="Опиши нишу/идею или попроси написать…" rows={1}
-            className="flex-1 resize-none max-h-32 rounded-2xl border border-[#E0E0E0] px-3.5 py-2.5 text-sm focus:outline-none focus:border-primary/50 bg-background" />
-          <VoiceRecordButton onText={(t) => setInput(prev => (prev ? `${prev} ${t}` : t))} className="h-10 w-10" size={17} />
-          {loading ? (
-            <button onClick={stop} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary"><Square className="h-4 w-4 fill-current" /></button>
-          ) : (
-            <button onClick={() => send(input)} disabled={!input.trim()} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full gradient-accent text-white disabled:opacity-40"><Send className="h-4 w-4" /></button>
-          )}
-        </div>
-      </div>
+      <ChatComposer value={input} onChange={setInput} onSend={() => send(input)}
+        loading={loading} onStop={stop} placeholder="Опиши нишу/идею или попроси написать…" />
     </div>
   )
 }

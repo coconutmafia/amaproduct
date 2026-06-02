@@ -1,9 +1,8 @@
 'use client'
 
-import { useRef, useState, useEffect } from 'react'
 import { Mic, Square, Loader2 } from 'lucide-react'
-import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { useVoiceRecorder, formatVoiceTime } from '@/lib/useVoiceRecorder'
 
 interface Props {
   onText: (text: string) => void   // called with transcribed text (caller appends)
@@ -22,9 +21,9 @@ const BARS = [
   { h: 0.55, delay: '0.25s', dur: '0.85s' },
 ]
 
-function Waveform({ size, color }: { size: number; color?: string }) {
+function Waveform({ size }: { size: number }) {
   return (
-    <span className="flex items-center gap-[2.5px]" style={{ height: size, color }}>
+    <span className="flex items-center gap-[2.5px]" style={{ height: size }}>
       {BARS.map((b, i) => (
         <span key={i} className="voicebar"
           style={{ height: Math.round(size * b.h), animationDelay: b.delay, animationDuration: b.dur }} />
@@ -34,81 +33,17 @@ function Waveform({ size, color }: { size: number; color?: string }) {
 }
 
 /**
- * Records audio (MediaRecorder) and transcribes via Whisper (/api/ai/transcribe-voice).
- * Works in in-app webviews and iOS Safari where the Web Speech API is unreliable.
- * Tap to start → tap to stop → text inserted. While recording it shows a
- * ChatGPT-style live waveform + running timer.
+ * Tap-to-record voice button. While recording it shows a live waveform + timer.
+ * For the chat composer (full-width recording bar) see ChatComposer; this is the
+ * compact button used inside VoiceTextarea and other forms.
  */
 export function VoiceRecordButton({ onText, className, size = 18, label = false }: Props) {
-  const [state, setState] = useState<'idle' | 'recording' | 'transcribing'>('idle')
-  const [seconds, setSeconds] = useState(0)
-  const recorderRef = useRef<MediaRecorder | null>(null)
-  const chunksRef = useRef<Blob[]>([])
-  const streamRef = useRef<MediaStream | null>(null)
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  const clearTimer = () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null } }
-  // Stop the mic timer when recording ends (and on unmount).
-  useEffect(() => {
-    if (state !== 'recording') clearTimer()
-    return clearTimer
-  }, [state])
-
-  const stopTracks = () => { streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null }
-
-  const start = async () => {
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      toast.error('Запись недоступна в этом браузере. Открой в Safari или используй клавиатуру.')
-      return
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
-      // Pick a mime the browser supports
-      const mime = ['audio/webm', 'audio/mp4', 'audio/ogg'].find(m => MediaRecorder.isTypeSupported?.(m)) || ''
-      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
-      chunksRef.current = []
-      rec.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
-      rec.onstop = async () => {
-        stopTracks()
-        const blob = new Blob(chunksRef.current, { type: rec.mimeType || 'audio/webm' })
-        if (blob.size < 800) { setState('idle'); return } // too short / silence
-        setState('transcribing')
-        try {
-          const fd = new FormData()
-          fd.append('audio', blob, `voice.${(rec.mimeType || 'webm').includes('mp4') ? 'mp4' : 'webm'}`)
-          const res = await fetch('/api/ai/transcribe-voice', { method: 'POST', body: fd })
-          const data = await res.json().catch(() => ({})) as { text?: string; error?: string }
-          if (!res.ok || data.error) throw new Error(data.error ?? 'Ошибка расшифровки')
-          if (data.text) onText(data.text)
-          else toast.message('Ничего не распознал — попробуй ещё раз')
-        } catch (err) {
-          toast.error(err instanceof Error ? err.message : 'Ошибка расшифровки')
-        } finally {
-          setState('idle')
-        }
-      }
-      rec.start()
-      recorderRef.current = rec
-      setSeconds(0)
-      clearTimer()
-      timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000)
-      setState('recording')
-    } catch {
-      stopTracks()
-      toast.error('Нет доступа к микрофону. Разреши в настройках браузера.')
-      setState('idle')
-    }
-  }
-
-  const stop = () => { try { recorderRef.current?.stop() } catch { /* ignore */ } }
+  const { state, seconds, start, stop } = useVoiceRecorder(onText)
 
   const onClick = () => {
     if (state === 'recording') stop()
     else if (state === 'idle') start()
   }
-
-  const mmss = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 
   return (
     <button
@@ -137,10 +72,9 @@ export function VoiceRecordButton({ onText, className, size = 18, label = false 
         </>
       ) : state === 'recording' ? (
         <>
-          {/* pulsing dot + live waveform + timer — ChatGPT-style */}
           <span className="h-2 w-2 rounded-full bg-white/90 animate-pulse shrink-0" />
           <Waveform size={size} />
-          <span className="text-xs font-semibold tabular-nums">{mmss}</span>
+          <span className="text-xs font-semibold tabular-nums">{formatVoiceTime(seconds)}</span>
           {label
             ? <span className="ml-0.5">Идёт запись — нажми, чтобы остановить</span>
             : <Square className="h-3 w-3 fill-current shrink-0" />}
