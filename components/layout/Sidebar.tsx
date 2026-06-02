@@ -20,6 +20,7 @@ import {
   TrendingUp,
   BarChart3,
   Film,
+  Bookmark,
 } from 'lucide-react'
 import { useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -62,6 +63,16 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
       href: '/dashboard',
       icon: LayoutDashboard,
       label: 'Главная',
+    },
+    {
+      href: '/create',
+      icon: Sparkles,
+      label: 'Создать',
+    },
+    {
+      href: '/library',
+      icon: Bookmark,
+      label: 'Готовое',
     },
   ]
 

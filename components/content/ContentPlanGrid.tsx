@@ -8,8 +8,10 @@ import { Badge } from '@/components/ui/badge'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import {
   Sparkles, ChevronLeft, ChevronRight, Download, Loader2,
-  Plus, X, Eye, EyeOff, RefreshCw, Check, Calendar, List, Zap,
+  Plus, X, Eye, EyeOff, RefreshCw, Check, Calendar, List, Zap, Copy,
 } from 'lucide-react'
+import { SaveButton } from '@/components/content/SaveButton'
+import { contentItemToText } from '@/lib/contentToText'
 import { toast } from 'sonner'
 import type { ContentItem, ContentType, WarmupPhase } from '@/types'
 
@@ -480,7 +482,15 @@ export function ContentPlanGrid({
 
                               {/* Generated content — shows INLINE right under this card */}
                               {isViewing && existing && (
-                                <div className="rounded-lg border border-[#ECECEC] bg-white p-3 max-h-[60vh] overflow-y-auto">
+                                <div className="rounded-lg border border-[#ECECEC] bg-white p-3 space-y-2 max-h-[60vh] overflow-y-auto">
+                                  <div className="flex items-center gap-3 pb-1.5 border-b border-[#F0F0F0]">
+                                    <button onClick={() => { navigator.clipboard?.writeText(contentItemToText(existing)).then(() => toast.success('Скопировано')).catch(() => {}) }}
+                                      className="flex items-center gap-1 text-[11px] text-[#888] hover:text-primary transition-colors">
+                                      <Copy className="h-3 w-3" /> Копировать
+                                    </button>
+                                    <SaveButton body={contentItemToText(existing)} title={existing.title} contentType={type} projectId={projectId}
+                                      className="text-[11px] text-[#888] hover:text-primary" />
+                                  </div>
                                   {renderContent(existing)}
                                 </div>
                               )}

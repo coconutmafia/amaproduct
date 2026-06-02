@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { LayoutDashboard, FolderKanban, Sparkles, Settings } from 'lucide-react'
+import { LayoutDashboard, FolderKanban, Sparkles, Settings, Bookmark } from 'lucide-react'
 
 export function BottomNav() {
   const pathname = usePathname()
@@ -32,6 +32,13 @@ export function BottomNav() {
       label: 'Создать',
       isActive: (p: string) => p === '/create',
       accent: true,
+    },
+    {
+      href: '/library',
+      icon: Bookmark,
+      label: 'Готовое',
+      isActive: (p: string) => p.startsWith('/library'),
+      accent: false,
     },
     {
       href: '/settings',

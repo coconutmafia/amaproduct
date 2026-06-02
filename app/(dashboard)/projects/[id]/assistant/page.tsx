@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft, Sparkles, Loader2, Copy, Check, User } from 'lucide-react'
 import { toast } from 'sonner'
 import { ChatComposer } from '@/components/ui/ChatComposer'
+import { SaveButton } from '@/components/content/SaveButton'
 import { useChatPin } from '@/lib/useChatPin'
 import { cleanMarkdown } from '@/lib/cleanText'
 
@@ -167,13 +168,16 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
             <div className={`group max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
               m.role === 'user' ? 'bg-primary/10 text-foreground' : 'bg-secondary/50 text-foreground'
             }`}>
-              {text}
               {m.role === 'assistant' && (
-                <button onClick={() => copyMsg(text, i)}
-                  className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors">
-                  {copiedIdx === i ? <><Check className="h-3 w-3" /> Скопировано</> : <><Copy className="h-3 w-3" /> Копировать</>}
-                </button>
+                <div className="flex items-center gap-3 mb-2 pb-1.5 border-b border-black/[0.06]">
+                  <button onClick={() => copyMsg(text, i)}
+                    className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors">
+                    {copiedIdx === i ? <><Check className="h-3 w-3" /> Скопировано</> : <><Copy className="h-3 w-3" /> Копировать</>}
+                  </button>
+                  <SaveButton body={text} projectId={id} className="text-[11px] text-muted-foreground hover:text-primary" />
+                </div>
               )}
+              {text}
             </div>
           </div>
         )})}

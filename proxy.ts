@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 // Защищённые маршруты
-const PROTECTED = ['/dashboard', '/projects', '/knowledge-vault', '/settings', '/referral', '/pricing', '/admin']
+const PROTECTED = ['/dashboard', '/projects', '/knowledge-vault', '/settings', '/referral', '/pricing', '/admin', '/library']
 
 // Публичные маршруты (всегда доступны)
 const PUBLIC = ['/login', '/register', '/auth']
