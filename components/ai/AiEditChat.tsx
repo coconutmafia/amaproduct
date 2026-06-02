@@ -32,6 +32,12 @@ interface AiEditChatProps {
     week: number
     days: Array<{ day: number; date?: string; dayOfWeek?: string; phase?: string; briefs?: Record<string, string> }>
   }
+  // Controlled-open mode + hide the built-in floating button. Lets a parent put
+  // the trigger in its own toolbar (so it never overlaps content). Defaults to
+  // the self-contained floating FAB.
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  hideFab?: boolean
 }
 
 // ── Strip tags from display text ──────────────────────────────────────────────
@@ -58,8 +64,14 @@ export function AiEditChat({
   disabled = false,
   draftPlanData,
   weekContext,
+  open: openProp,
+  onOpenChange,
+  hideFab = false,
 }: AiEditChatProps) {
-  const [open, setOpen] = useState(false)
+  const [openInternal, setOpenInternal] = useState(false)
+  // Controlled when `open` prop is passed; otherwise self-managed.
+  const open = openProp ?? openInternal
+  const setOpen = (o: boolean) => { if (onOpenChange) onOpenChange(o); else setOpenInternal(o) }
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(false)
@@ -228,17 +240,19 @@ export function AiEditChat({
 
   return (
     <>
-      {/* Floating button */}
-      <motion.button
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        onClick={() => setOpen(true)}
-        className="fixed bottom-24 right-4 z-30 flex items-center gap-2 px-4 py-2.5 rounded-full gradient-accent text-white text-sm font-semibold shadow-lg shadow-[#E86BA0]/30 hover:opacity-90 transition-opacity lg:bottom-6"
-        style={{ display: open ? 'none' : 'flex' }}
-      >
-        <Sparkles className="h-4 w-4" />
-        AI-правка
-      </motion.button>
+      {/* Floating button — hidden when the parent supplies its own trigger */}
+      {!hideFab && (
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setOpen(true)}
+          className="fixed bottom-24 right-4 z-30 flex items-center gap-2 px-4 py-2.5 rounded-full gradient-accent text-white text-sm font-semibold shadow-lg shadow-[#E86BA0]/30 hover:opacity-90 transition-opacity lg:bottom-6"
+          style={{ display: open ? 'none' : 'flex' }}
+        >
+          <Sparkles className="h-4 w-4" />
+          AI-правка
+        </motion.button>
+      )}
 
       {/* Overlay */}
       <AnimatePresence>

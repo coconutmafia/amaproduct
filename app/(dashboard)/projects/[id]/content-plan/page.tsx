@@ -130,6 +130,7 @@ export default function ContentPlanPage() {
   const [loading, setLoading] = useState(true)
   const [generatingQuickPlan, setGeneratingQuickPlan] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
+  const [editorOpen, setEditorOpen] = useState(false) // AI-правка panel (trigger lives in the header now)
 
   // Load warmup plan data
   const loadPlanData = useCallback(async (weekNum: number) => {
@@ -424,7 +425,7 @@ export default function ContentPlanPage() {
   }
 
   return (
-    <div className="p-4 md:p-6 pb-28 max-w-6xl mx-auto space-y-6">
+    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" asChild className="h-8 w-8">
           <Link href={`/projects/${id}`}><ArrowLeft className="h-4 w-4" /></Link>
@@ -449,6 +450,12 @@ export default function ContentPlanPage() {
               Создать стратегию
             </Button>
           </Link>
+        )}
+        {hasPlan && warmupPlanId && (
+          <button onClick={() => setEditorOpen(true)}
+            className="shrink-0 flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-xs font-semibold text-white gradient-accent active:opacity-90 transition-opacity whitespace-nowrap">
+            <Sparkles className="h-3.5 w-3.5" /> AI-правка
+          </button>
         )}
       </div>
 
@@ -570,6 +577,10 @@ export default function ContentPlanPage() {
               day: d.day, date: d.date, dayOfWeek: d.dayOfWeek, phase: d.phase, briefs: d.dayBriefs,
             })),
           }}
+          // Trigger lives in the page header (no floating button overlapping cards).
+          open={editorOpen}
+          onOpenChange={setEditorOpen}
+          hideFab
           onPlanUpdate={() => {
             // Reload the current week to reflect updated day themes
             loadPlanData(week)
