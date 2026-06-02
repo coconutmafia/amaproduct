@@ -20,16 +20,17 @@ export function useVoiceRecorder(onText: (text: string) => void) {
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const streamRef = useRef<MediaStream | null>(null)
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const discardRef = useRef(false)
 
-  const clearTimer = () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null } }
   const stopTracks = () => { streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null }
 
-  // Stop the timer whenever we leave the recording state (and on unmount).
+  // Run the seconds counter WHILE recording. Driving the interval from the effect
+  // (not from start()) is what makes it actually tick — setting it inside start()
+  // before setState got it cleared immediately by this effect's cleanup.
   useEffect(() => {
-    if (state !== 'recording') clearTimer()
-    return clearTimer
+    if (state !== 'recording') return
+    const id = setInterval(() => setSeconds(s => s + 1), 1000)
+    return () => clearInterval(id)
   }, [state])
 
   const start = useCallback(async () => {
@@ -68,9 +69,7 @@ export function useVoiceRecorder(onText: (text: string) => void) {
       rec.start()
       recorderRef.current = rec
       setSeconds(0)
-      clearTimer()
-      timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000)
-      setState('recording')
+      setState('recording') // the effect above starts the seconds timer
     } catch {
       stopTracks()
       toast.error('Нет доступа к микрофону. Разреши в настройках браузера.')

@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Sparkles, Loader2, Copy, Check, User, FolderOpen, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { ChatComposer } from '@/components/ui/ChatComposer'
+import { useChatPin } from '@/lib/useChatPin'
 import { cleanMarkdown } from '@/lib/cleanText'
 
 interface ChatMessage { role: 'user' | 'assistant'; content: string }
@@ -24,7 +25,6 @@ export default function CreatePage() {
   const [loading, setLoading] = useState(false)
   const [streaming, setStreaming] = useState('')
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   // Project data toggle: use a project's full context (voice, niche, cases,
@@ -43,21 +43,11 @@ export default function CreatePage() {
   }, [supabase])
 
   const activeProject = projects.find(p => p.id === projectId) || null
-  const lastUserRef = useRef<HTMLDivElement>(null)
 
-  // ChatGPT-style: when a message is sent, pin the user's message to the TOP
-  // of the scroll area so the answer streams BELOW it and you read top→bottom.
-  // Computed explicitly (not scrollIntoView, which overshoots on mobile webviews
-  // and pushed the question off-screen).
-  useEffect(() => {
-    if (messages[messages.length - 1]?.role !== 'user') return
-    requestAnimationFrame(() => {
-      const c = scrollRef.current, el = lastUserRef.current
-      if (!c || !el) return
-      const top = el.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop - 12
-      c.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-    })
-  }, [messages])
+  // ChatGPT-style: pin the just-sent question to the top + dynamic tail spacer.
+  const { scrollRef, lastUserRef, endRef, tailSpace } = useChatPin(messages, streaming)
+  // The LAST user message (not the last message overall — that's the answer).
+  const lastUserIdx = messages.map(m => m.role).lastIndexOf('user')
 
   const send = useCallback(async (text: string) => {
     const content = text.trim()
@@ -161,7 +151,7 @@ export default function CreatePage() {
           </div>
         )}
         {messages.map((m, i) => {
-          const isLastUser = m.role === 'user' && i === messages.length - 1
+          const isLastUser = i === lastUserIdx
           const text = m.role === 'assistant' ? cleanMarkdown(m.content) : m.content
           return (
           <div key={i} ref={isLastUser ? lastUserRef : undefined} className={`flex gap-2.5 ${m.role === 'user' ? 'flex-row-reverse' : ''} ${isLastUser ? 'scroll-mt-2' : ''}`}>
@@ -190,8 +180,10 @@ export default function CreatePage() {
             <div className="rounded-2xl px-3.5 py-2.5 bg-secondary/50 text-sm text-muted-foreground">Думаю…</div>
           </div>
         )}
-        {/* Spacer so the just-sent question can always pin to the top, even when the answer is short */}
-        {messages.length > 0 && <div aria-hidden className="min-h-[45vh] shrink-0" />}
+        {/* End marker + dynamic spacer: lets the question pin to the top, fills
+            empty space below a short answer, collapses to 0 for a long one. */}
+        <div ref={endRef} />
+        <div aria-hidden style={{ height: tailSpace }} />
       </div>
 
       <ChatComposer value={input} onChange={setInput} onSend={() => send(input)}
