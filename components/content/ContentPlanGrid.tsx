@@ -201,11 +201,12 @@ export function ContentPlanGrid({
     const key = `${pendingBadge.day}-${pendingBadge.type}`
     setGeneratingDay(key); setViewingKey(null)
     const { day: dayNum, type, phase, theme } = pendingBadge
-    setPendingBadge(null)
-    const extra = extraContext.trim(); setExtraContext('')
+    const extra = extraContext.trim()
     try {
       await onGenerate(dayNum, type, phase, theme, extra || undefined)
-      setViewingKey(key)
+      // Close the details panel and reveal the result only on success — on
+      // error the panel stays open so the user can retry without re-typing.
+      setPendingBadge(null); setExtraContext(''); setViewingKey(key)
     } finally { setGeneratingDay(null) }
   }
 
@@ -407,11 +408,14 @@ export function ContentPlanGrid({
                           const c = COLORS[type]
                           if (!c) return null
                           const existing = day.items.find(i => i.content_type === type)
-                          // Open the details panel FIRST (dictate / type extra context),
-                          // then "Создать" generates. The panel renders right below this
-                          // day card (pendingBadge block).
+                          const isPending = pendingBadge?.day === day.day && pendingBadge?.type === type
+                          const isViewing = viewingKey === `${day.day}-${type}`
+                          const isGen = generatingDay === `${day.day}-${type}`
+                          const brief = day.dayBriefs?.[type]
+                          // Open the details panel (dictate / type extra context) right
+                          // under THIS card, then "Создать" generates.
                           const openDetails = () => {
-                            setPendingBadge({ day: day.day, type, phase: day.phase || 'awareness', theme: day.dayBriefs?.[type] || day.theme })
+                            setPendingBadge({ day: day.day, type, phase: day.phase || 'awareness', theme: brief || day.theme })
                             setViewingKey(null); setAddingToDay(null); setExtraContext('')
                           }
                           return (
@@ -429,12 +433,12 @@ export function ContentPlanGrid({
                                   </button>
                                 )}
                               </div>
-                              <p className="text-[13px] text-[#333] leading-snug">{day.dayBriefs![type]}</p>
+                              <p className="text-[13px] text-[#333] leading-snug">{brief}</p>
                               {existing ? (
                                 <div className="flex items-center gap-2">
-                                  <button onClick={() => { setViewingKey(`${day.day}-${type}`); setPendingBadge(null); setAddingToDay(null) }}
+                                  <button onClick={() => { setViewingKey(isViewing ? null : `${day.day}-${type}`); setPendingBadge(null); setAddingToDay(null) }}
                                     className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold border border-[#E0E0E0] text-[#444] active:bg-[#F5F5F5] transition-colors">
-                                    <Eye className="h-3.5 w-3.5" /> Посмотреть
+                                    <Eye className="h-3.5 w-3.5" /> {isViewing ? 'Скрыть' : 'Посмотреть'}
                                   </button>
                                   <button onClick={openDetails}
                                     className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-white gradient-accent active:opacity-90 transition-opacity">
@@ -446,6 +450,39 @@ export function ContentPlanGrid({
                                   className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-white gradient-accent active:opacity-90 transition-opacity">
                                   <Sparkles className="h-3.5 w-3.5" /> Сгенерировать {c.label.toLowerCase()}
                                 </button>
+                              )}
+
+                              {/* Details panel — opens INLINE right under this card */}
+                              {isPending && (
+                                <div className="rounded-lg border border-[#E8E8E8] bg-[#FAFAFA] p-3 space-y-2.5">
+                                  {brief && (
+                                    <div className="rounded-lg border border-[#D44E7E]/15 bg-[#FFF5F8] p-2.5">
+                                      <p className="text-[10px] font-bold text-[#D44E7E]/70 uppercase tracking-wide mb-0.5">Тема</p>
+                                      <p className="text-[13px] text-[#333]">{brief}</p>
+                                    </div>
+                                  )}
+                                  <div className="space-y-1">
+                                    <p className="text-[11px] font-medium text-[#888]">Детали для AI <span className="text-[#bbb]">(по желанию)</span> — надиктуй или впиши историю, кейс, цифры:</p>
+                                    <VoiceTextarea value={extraContext} onChange={setExtraContext}
+                                      placeholder="Например: история клиентки Ани, выросла с 800 до 5000 за 2 месяца..." rows={2} />
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Button size="sm" className="gradient-accent text-white hover:opacity-90 gap-1.5 flex-1"
+                                      onClick={handlePendingGenerate} disabled={!!generatingDay}>
+                                      {isGen ? <><Loader2 className="h-3 w-3 animate-spin" /> Создаю...</>
+                                        : existing ? <><RefreshCw className="h-3 w-3" /> Обновить</> : <><Sparkles className="h-3 w-3" /> Создать</>}
+                                    </Button>
+                                    <button onClick={() => { setPendingBadge(null); setExtraContext('') }}
+                                      className="text-xs text-[#aaa] hover:text-[#444] px-2">Отмена</button>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Generated content — shows INLINE right under this card */}
+                              {isViewing && existing && (
+                                <div className="rounded-lg border border-[#ECECEC] bg-white p-3 max-h-[60vh] overflow-y-auto">
+                                  {renderContent(existing)}
+                                </div>
                               )}
                             </div>
                           )
@@ -478,88 +515,6 @@ export function ContentPlanGrid({
                   )}
                 </div>
               </div>
-
-              {/* Pending panel (list mode) */}
-              {pendingBadge?.day === day.day && (() => {
-                const c = COLORS[pendingBadge.type]
-                if (!c) return null
-                const typeBrief = day.dayBriefs?.[pendingBadge.type]
-                const isRegen = day.items.some(i => i.content_type === pendingBadge.type)
-                return (
-                  <div className="border-t border-[#F0F0F0] bg-[#FAFAFA] p-4 space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-md"
-                        style={{ backgroundColor: c.bgDone, color: c.textDone, border: `1.5px solid ${c.borderDone}` }}>
-                        {isRegen ? `Обновить ${c.label}` : c.label} · День {day.day}
-                      </span>
-                      <button onClick={() => { setPendingBadge(null); setExtraContext('') }}
-                        className="flex h-7 w-7 items-center justify-center rounded-md border border-[#E8E8E8] text-[#aaa] hover:text-[#444]">
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                    {typeBrief && (
-                      <div className="rounded-lg border border-[#D44E7E]/15 bg-[#FFF5F8] p-3">
-                        <p className="text-[10px] font-bold text-[#D44E7E]/70 uppercase tracking-wide mb-1">Тема</p>
-                        <p className="text-sm text-[#333]">{typeBrief}</p>
-                      </div>
-                    )}
-                    <div className="space-y-1">
-                      <p className="text-[11px] font-medium text-[#888]">Детали для AI <span className="text-[#bbb]">(по желанию)</span> — надиктуй или впиши историю, кейс, имя клиента, цифры:</p>
-                      <VoiceTextarea value={extraContext} onChange={setExtraContext}
-                        placeholder={typeBrief ? "Например: история клиентки Ани, выросла с 800 до 5000 за 2 месяца..." : "Например: кейс, продукт, конкретные цифры..."}
-                        rows={2} />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button size="sm" className="gradient-accent text-white hover:opacity-90 gap-1.5 flex-1"
-                        onClick={handlePendingGenerate} disabled={!!generatingDay}>
-                        {generatingDay === `${pendingBadge.day}-${pendingBadge.type}`
-                          ? <><Loader2 className="h-3 w-3 animate-spin" /> Создаю...</>
-                          : isRegen ? <><RefreshCw className="h-3 w-3" /> Обновить</> : <><Sparkles className="h-3 w-3" /> Создать</>}
-                      </Button>
-                      <button onClick={() => { setPendingBadge(null); setExtraContext('') }}
-                        className="text-xs text-[#aaa] hover:text-[#444] px-2">Отмена</button>
-                    </div>
-                  </div>
-                )
-              })()}
-
-              {/* Viewer (list mode) */}
-              {viewingKey?.startsWith(`${day.day}-`) && (() => {
-                const type = viewingKey.replace(`${day.day}-`, '') as ContentType
-                const item = day.items.find(i => i.content_type === type)
-                const c = COLORS[type]
-                if (!item || !c) return null
-                return (
-                  <div className="border-t border-[#F0F0F0] bg-[#FAFAFA] p-4 space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-md"
-                        style={{ backgroundColor: c.bgDone, color: c.textDone, border: `1.5px solid ${c.borderDone}` }}>
-                        {c.label} · День {day.day}
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <Button size="sm" variant="outline" className="h-7 text-xs border-[#E8E8E8] px-2 gap-1"
-                          onClick={() => { setViewingKey(null); setPendingBadge({ day: day.day, type, phase: day.phase || 'awareness', theme: day.dayBriefs?.[type] || day.theme }); setExtraContext('') }}>
-                          <RefreshCw className="h-3 w-3" /><span className="hidden sm:inline">Обновить</span>
-                        </Button>
-                        <button onClick={() => setViewingKey(null)}
-                          className="flex h-7 w-7 items-center justify-center rounded-md border border-[#E8E8E8] text-[#aaa] hover:text-[#444]">
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="rounded-lg border border-[#ECECEC] bg-white p-3 max-h-[60vh] overflow-y-auto">
-                      {renderContent(item)}
-                    </div>
-                    {item.hashtags && item.hashtags.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {item.hashtags.map((h, i) => (
-                          <span key={i} className="text-[10px] text-[#D44E7E]/70 bg-[#FFF0F5] border border-[#D44E7E]/15 rounded px-1.5 py-0.5">{h}</span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
             </div>
           )
         })}
