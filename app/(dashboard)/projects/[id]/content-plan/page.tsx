@@ -216,6 +216,13 @@ export default function ContentPlanPage() {
     loadPlanData(week)
   }, [week, loadPlanData])
 
+  // Open on the week passed in the URL (?week=N) — e.g. returning from the AI
+  // chat back to the exact week the user generated from.
+  useEffect(() => {
+    const w = parseInt(new URLSearchParams(window.location.search).get('week') || '', 10)
+    if (Number.isFinite(w) && w >= 1) setWeek(w)
+  }, [])
+
   // Defaults are seeded at day construction (buildDaysFromWarmupPlan), so
   // plannedTypes is never empty unless the user deliberately emptied it.
   // Add/remove operate on the literal current array — an empty array stays

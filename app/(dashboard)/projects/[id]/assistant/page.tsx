@@ -74,8 +74,9 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
-  // Where the back arrow goes (content-plan when opened from there)
+  // Where the back arrow goes (content-plan when opened from there) + its label
   const [backHref, setBackHref] = useState(`/projects/${id}`)
+  const [backLabel, setBackLabel] = useState<string | null>(null)
   // Set when opened from the content plan to generate a specific day/format —
   // enables the «В план» save button on generated answers.
   const [genContext, setGenContext] = useState<GenContext | null>(null)
@@ -102,7 +103,7 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: id, conversationType: 'assistant', messages: next }),
+        body: JSON.stringify({ projectId: id, conversationType: 'assistant', messages: next, ...(genContext ? { genFormat: genContext.type } : {}) }),
         signal: controller.signal,
       })
       if (!res.ok) {
@@ -134,7 +135,7 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
       abortRef.current = null
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, messages, loading])
+  }, [id, messages, loading, genContext])
 
   // On mount: if opened with ?prompt=… (e.g. from the content plan), set the
   // back link and auto-send the seeded prompt so the chat starts on that theme.
@@ -143,7 +144,12 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
     if (seededRef.current) return
     seededRef.current = true
     const sp = new URLSearchParams(window.location.search)
-    if (sp.get('back') === 'content-plan') setBackHref(`/projects/${id}/content-plan`)
+    // Return to the content plan ON THE SAME WEEK the user came from.
+    if (sp.get('back') === 'content-plan') {
+      const wk = sp.get('week')
+      setBackHref(`/projects/${id}/content-plan${wk ? `?week=${wk}` : ''}`)
+      setBackLabel('Контент-план')
+    }
 
     // Generation handoff from the content plan: open with the AI stating the
     // topic and WAIT for the user's details (don't auto-generate).
@@ -182,8 +188,10 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
     <div className="flex flex-col h-full max-w-3xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-[#ECECEC] bg-white/95 backdrop-blur sticky top-0 z-10">
-        <Link href={backHref} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-secondary">
-          <ArrowLeft className="h-4 w-4" />
+        <Link href={backHref}
+          className={`flex items-center justify-center rounded-lg hover:bg-secondary shrink-0 ${backLabel ? 'gap-1 px-2 h-8' : 'h-8 w-8'}`}>
+          <ArrowLeft className="h-4 w-4 shrink-0" />
+          {backLabel && <span className="text-xs font-medium whitespace-nowrap">{backLabel}</span>}
         </Link>
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-xl gradient-accent">

@@ -65,10 +65,13 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { messages, projectId }: {
+    const { messages, projectId, genFormat }: {
       messages: Message[]
       projectId?: string
       conversationType?: string
+      // Set when generating a content-plan unit — makes the AI return ONLY the
+      // clean content (no «Окей, вот пост:» lead-in that would get saved with it).
+      genFormat?: string
     } = await request.json()
 
     // ── Standalone mode (no projectId): a content assistant powered by the
@@ -140,6 +143,13 @@ ${sysKnowledge ? `═══ МЕТОДОЛОГИЯ (опирайся на неё
 4. Ты НЕ универсальный чат-бот «обо всём». Ты ассистент по контенту ЭТОГО проекта.
 5. НЕ используй markdown: никаких **звёздочек**, ## решёток, --- разделителей, * списков, \`кода\`. Только чистый текст с пустыми строками между блоками, как реальный пост.
 6. Если просят несколько штук («5 рилзов», «10 идей») — выдай РОВНО столько, сколько просят, каждую полностью и пронумерованно (1., 2., …). Не останавливайся на середине и не спрашивай «продолжать?» — доводи до конца.
+${genFormat ? `
+═══ РЕЖИМ ГЕНЕРАЦИИ ЕДИНИЦЫ КОНТЕНТА (${genFormat}) ═══
+Этот текст пользователь сохранит и опубликует как есть. Поэтому:
+- Выдавай СРАЗУ только сам готовый текст контента, ничего лишнего.
+- НЕ начинай со вводных фраз («Окей», «Конечно», «Вот», «Держи», «Делаем», «Готово», «Отлично») и НЕ повторяй тему/задание перед текстом.
+- НЕ добавляй комментарии после текста («Готово!», «Если нужно — поправлю», «Хочешь иначе?»).
+- Первая строка ответа = первая строка контента. Последняя строка ответа = последняя строка контента.` : ''}
 
 ${baseSystem}`
 

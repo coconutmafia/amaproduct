@@ -105,7 +105,8 @@ export function ContentPlanGrid({
   function openInChat(day: DayContent, type: ContentType) {
     const brief = day.dayBriefs?.[type] || day.theme || ''
     const params = new URLSearchParams({
-      gen: '1', day: String(day.day), type, phase: day.phase || 'awareness', brief, back: 'content-plan',
+      gen: '1', day: String(day.day), type, phase: day.phase || 'awareness', brief,
+      back: 'content-plan', week: String(weekNumber), // so the back button returns to THIS week
     })
     router.push(`/projects/${projectId}/assistant?${params.toString()}`)
   }
