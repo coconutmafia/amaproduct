@@ -12,7 +12,7 @@ import {
 import { NextResponse } from 'next/server'
 import type { WarmupPlanData } from '@/types'
 
-export const maxDuration = 60
+export const maxDuration = 300
 
 // ── Banned phrases — merged with content brain anti-patterns ──────────────────
 const BANNED_PHRASES = `
@@ -35,7 +35,13 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
-  const { projectId, contextType, contextId, messages = [], instruction, draftPlanData } = body
+  const { projectId, contextType, contextId, messages = [], instruction, draftPlanData, weekContext } = body
+  // weekContext = which week of the content plan the user is currently viewing,
+  // with the weekday→day-number mapping + current per-format briefs. Lets the AI
+  // resolve relative references ("change Wednesday's stories") to the right
+  // absolute day instead of guessing a number.
+  type WeekDay = { day: number; date?: string; dayOfWeek?: string; phase?: string; briefs?: Record<string, string> }
+  const wc = weekContext as { week?: number; days?: WeekDay[] } | undefined
 
   if (!projectId || !contextType || !instruction) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -194,6 +200,28 @@ export async function POST(request: Request) {
             return `[${ph.toUpperCase()}] ${getEmotionalMechanics(ph)}\n${getSchemaForPhase(ph, 'post')}\n${getCTAEngine(ph)}`
           }).join('\n\n')
 
+          // Current-week focus: weekday → day-number mapping so relative day
+          // references ("change Wednesday's stories") resolve to the week the
+          // user is actually looking at, instead of the AI guessing a number.
+          let weekViewBlock = ''
+          if (wc && Array.isArray(wc.days) && wc.days.length > 0) {
+            const dayLines = wc.days.map((d) => {
+              const briefs = d.briefs && Object.keys(d.briefs).length > 0
+                ? Object.entries(d.briefs).map(([f, t]) => `${f}: «${t}»`).join(' | ')
+                : '—'
+              return `${d.dayOfWeek ?? ''} ${d.date ?? ''} = День ${d.day} → ${briefs}`
+            }).join('\n')
+            weekViewBlock = `
+═══════════════════════════════════════
+ТЕКУЩИЙ ВИД ПОЛЬЗОВАТЕЛЯ — ОРИЕНТИРУЙСЯ НА НЕГО
+═══════════════════════════════════════
+Пользователь СЕЙЧАС открыл НЕДЕЛЮ ${wc.week ?? '?'} контент-плана. Дни этой недели (день недели = номер дня + текущие темы по форматам):
+${dayLines}
+
+КРИТИЧНО: если пользователь называет день недели (понедельник/вторник/среда/…) или говорит «эта неделя», «эту среду», «в среду», «сегодня» БЕЗ номера дня — это дни ТЕКУЩЕЙ недели из списка выше. Возьми соответствующий «День N» из этого списка и меняй ИМЕННО его. НЕ угадывай номер дня и НЕ бери день из другой недели. Если запрошенного дня недели нет в списке текущей недели — скажи об этом, а не подставляй чужой день.
+`
+          }
+
           systemPrompt = `Ты — AI-редактор плана прогрева. Ты досконально знаешь этого эксперта — его голос, его истории, его продукт — и вносишь правки, опираясь на реальные материалы, а не выдумывая.
 
 ${BANNED_PHRASES}
@@ -217,7 +245,7 @@ ${HUMANIZATION_ENGINE}
 ${contextData.strategic_summary ? `СТРАТЕГИЯ: ${contextData.strategic_summary}\n` : ''}ПЛАН «${contextData.name}» (${contextData.duration_days} дней):
 
 ${planLines.join('\n')}
-
+${weekViewBlock}
 ═══════════════════════════════════════
 ПРАВИЛА РЕДАКТИРОВАНИЯ
 ═══════════════════════════════════════

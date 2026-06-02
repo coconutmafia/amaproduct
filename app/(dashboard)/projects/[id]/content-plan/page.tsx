@@ -634,6 +634,14 @@ export default function ContentPlanPage() {
           contextType="warmup_plan"
           contextId={warmupPlanId}
           contextLabel={planName ?? 'Контент-план'}
+          // Tell the editor which week is on screen + the weekday→day mapping, so
+          // "change Wednesday's stories" edits the right day in THIS week.
+          weekContext={{
+            week,
+            days: days.map(d => ({
+              day: d.day, date: d.date, dayOfWeek: d.dayOfWeek, phase: d.phase, briefs: d.dayBriefs,
+            })),
+          }}
           onPlanUpdate={() => {
             // Reload the current week to reflect updated day themes
             loadPlanData(week)

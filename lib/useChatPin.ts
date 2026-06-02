@@ -49,7 +49,10 @@ export function useChatPin(messages: { role: string }[], streaming: string) {
       const c = scrollRef.current, q = lastUserRef.current
       if (!c || !q) return
       const top = q.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop - 12
-      c.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+      // Instant (not smooth): a smooth animation is still running when the answer
+      // starts streaming and the dynamic spacer resizes, which made it land on the
+      // wrong part of a long message. Instant completes before that.
+      c.scrollTo({ top: Math.max(0, top), behavior: 'auto' })
     })
   }, [count, lastRole])
 

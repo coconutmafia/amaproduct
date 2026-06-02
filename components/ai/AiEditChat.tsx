@@ -26,6 +26,12 @@ interface AiEditChatProps {
   // the route uses this plan_data instead of looking up a DB row by
   // contextId, and returns the edited plan without persisting.
   draftPlanData?: Record<string, unknown>
+  // The week the user is currently viewing in the content plan, with the
+  // weekday→day-number mapping so "change Wednesday's stories" hits the right day.
+  weekContext?: {
+    week: number
+    days: Array<{ day: number; date?: string; dayOfWeek?: string; phase?: string; briefs?: Record<string, string> }>
+  }
 }
 
 // ── Strip tags from display text ──────────────────────────────────────────────
@@ -51,6 +57,7 @@ export function AiEditChat({
   onContentUpdate,
   disabled = false,
   draftPlanData,
+  weekContext,
 }: AiEditChatProps) {
   const [open, setOpen] = useState(false)
   const [input, setInput] = useState('')
@@ -109,6 +116,8 @@ export function AiEditChat({
           instruction,
           // When editing an unsaved plan in the wizard
           ...(draftPlanData ? { draftPlanData } : {}),
+          // Which week is on screen → lets the AI resolve "Wednesday" to a real day
+          ...(weekContext ? { weekContext } : {}),
         }),
       })
 
@@ -186,18 +195,23 @@ export function AiEditChat({
       setLoading(false)
       setStreamingText('')
     }
-  }, [input, loading, messages, projectId, contextType, contextId, draftPlanData])
+  }, [input, loading, messages, projectId, contextType, contextId, draftPlanData, weekContext])
 
   const handleApply = useCallback(() => {
     if (!pendingUpdate) return
 
     if (contextType === 'warmup_plan' && onPlanUpdate) {
       onPlanUpdate(pendingUpdate.updatedData)
-      const count = pendingUpdate.changedDays?.length ?? 0
+      const days = pendingUpdate.changedDays ?? []
+      const count = days.length
       toast.success(`Изменено ${count} ${count === 1 ? 'день' : count < 5 ? 'дня' : 'дней'} плана ✓`)
+      // In-chat confirmation so it's obvious the change landed (not just a toast).
+      const which = count > 0 ? ` Обновлено: ${days.map((d) => `День ${d.day}`).join(', ')}.` : ''
+      setMessages((prev) => [...prev, { role: 'assistant', content: `✅ Готово — изменения применены и сохранены в плане.${which} Закрой редактор, чтобы увидеть.` }])
     } else if (contextType === 'content_item' && onContentUpdate && pendingUpdate.updatedText) {
       onContentUpdate(pendingUpdate.updatedText)
       toast.success('Контент обновлён ✓')
+      setMessages((prev) => [...prev, { role: 'assistant', content: '✅ Готово — текст обновлён.' }])
     }
 
     setPendingUpdate(null)
