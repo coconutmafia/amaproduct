@@ -91,7 +91,7 @@ export default function CreatePage() {
 
 
   return (
-    <div className="flex flex-col h-[calc(100vh-0px)] max-w-3xl mx-auto">
+    <div className="flex flex-col h-full max-w-3xl mx-auto">
       <div className="border-b border-[#ECECEC] bg-white/95 backdrop-blur sticky top-0 z-20">
         <div className="flex items-center gap-2 px-4 py-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-xl gradient-accent"><Sparkles className="h-4 w-4 text-white" /></div>

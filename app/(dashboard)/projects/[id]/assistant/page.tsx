@@ -179,7 +179,7 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
   // ── Voice ──
 
   return (
-    <div className="flex flex-col h-[calc(100vh-0px)] max-w-3xl mx-auto">
+    <div className="flex flex-col h-full max-w-3xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-[#ECECEC] bg-white/95 backdrop-blur sticky top-0 z-10">
         <Link href={backHref} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-secondary">
@@ -271,7 +271,8 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
       </div>
 
       <ChatComposer value={input} onChange={setInput} onSend={() => send(input)}
-        loading={loading} onStop={stop} placeholder="Спроси или попроси написать…" />
+        loading={loading} onStop={stop}
+        placeholder={genContext ? 'Напиши детали или просто «давай»…' : 'Спроси или попроси написать…'} />
     </div>
   )
 }
