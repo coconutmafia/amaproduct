@@ -1,14 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
 import { StructuredContentView } from '@/components/content/StructuredContentView'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import {
   Sparkles, ChevronLeft, ChevronRight, Download, Loader2,
-  Plus, X, Eye, EyeOff, RefreshCw, Check, Calendar, List, Zap, Copy,
+  Plus, X, Eye, RefreshCw, Check, Copy,
 } from 'lucide-react'
 import { SaveButton } from '@/components/content/SaveButton'
 import { contentItemToText } from '@/lib/contentToText'
@@ -78,12 +77,6 @@ const PHASE_NAMES: Record<string, string> = {
   activation: 'Активация',
   phase_1: 'Прогрев на нишу', phase_2: 'Прогрев на эксперта', phase_3: 'Прогрев на продукт', phase_4: 'Отработка возражений',
 }
-const PHASE_COLORS: Record<string, string> = {
-  awareness: '#60A5FA', trust: '#818CF8', desire: '#F472B6', close: '#F87171',
-  niche: '#60A5FA', expert: '#818CF8', product: '#F472B6', objections: '#F87171',
-  activation: '#4ADE80',
-  phase_1: '#60A5FA', phase_2: '#818CF8', phase_3: '#F472B6', phase_4: '#F87171',
-}
 
 // ── Content renderer ──────────────────────────────────────────────────────────
 // Posts render as plain text; every structured type (reels / stories / carousel /
@@ -96,81 +89,12 @@ function renderContent(item: ContentItem) {
   return <div className="whitespace-pre-wrap text-sm leading-relaxed text-[#222]">{item.body_text || '(нет текста)'}</div>
 }
 
-// ── Calendar content card ─────────────────────────────────────────────────────
-interface CardProps {
-  type: ContentType
-  day: DayContent
-  isGenerating: boolean
-  isViewing: boolean
-  isGenerated: boolean
-  isPending: boolean
-  brief?: string
-  onClickGenerate: () => void
-  onClickView: () => void
-  onRemove?: () => void
-}
-
-function ContentCard({ type, day, isGenerating, isViewing, isGenerated, isPending, brief, onClickGenerate, onClickView, onRemove }: CardProps) {
-  const c = COLORS[type]
-  if (!c) return null
-
-  const isActive = isViewing || isPending
-  const bg     = isGenerated || isActive ? c.bgDone  : c.bg
-  const border = isGenerated || isActive ? c.borderDone : c.border
-  const text   = isGenerated || isActive ? c.textDone   : c.text
-  const shortTheme = (brief || day.theme || '').slice(0, 52) + ((brief || day.theme || '').length > 52 ? '…' : '')
-
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, scale: 0.93 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="relative group cursor-pointer rounded-xl p-2.5 transition-all"
-      style={{
-        backgroundColor: bg,
-        border: `1.5px solid ${border}`,
-        boxShadow: isActive ? `0 0 0 2px ${border}` : undefined,
-      }}
-      onClick={isGenerated ? onClickView : onClickGenerate}
-    >
-      <div className="flex items-center justify-between gap-1 mb-1">
-        <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: text }}>
-          {c.label}
-        </span>
-        {isGenerating ? (
-          <Loader2 className="h-3 w-3 animate-spin" style={{ color: text }} />
-        ) : isGenerated ? (
-          isViewing
-            ? <EyeOff className="h-3 w-3" style={{ color: text }} />
-            : <Check className="h-3 w-3 text-green-600" />
-        ) : (
-          <Sparkles className="h-3 w-3 opacity-50" style={{ color: text }} />
-        )}
-      </div>
-      {shortTheme && (
-        <p className="text-[11px] leading-tight line-clamp-2" style={{ color: text, opacity: 0.75 }}>
-          {shortTheme}
-        </p>
-      )}
-      {onRemove && !isGenerated && !isGenerating && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onRemove() }}
-          className="absolute -top-1.5 -right-1.5 hidden group-hover:flex h-4 w-4 items-center justify-center rounded-full bg-white border border-[#DDD] text-[#999] hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-all shadow-sm"
-        >
-          <X className="h-2.5 w-2.5" />
-        </button>
-      )}
-    </motion.div>
-  )
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
 export function ContentPlanGrid({
   projectId, warmupPlanId, weekNumber, days,
   onWeekChange, onGenerate, onGenerateWeekBrief, onExport,
   onRemoveType, onAddType, loading,
 }: ContentPlanGridProps) {
-  const viewMode = 'list' as const
   const [generatingDay, setGeneratingDay] = useState<string | null>(null)
   const [generatingWeekBrief, setGeneratingWeekBrief] = useState(false)
   const [addingToDay, setAddingToDay] = useState<number | null>(null)
@@ -186,17 +110,6 @@ export function ContentPlanGrid({
   const briefReady = (day: DayContent) =>
     !!day.dayBriefs && Object.keys(day.dayBriefs).length > 0
   const weekHasBrief = days.some(briefReady)
-
-  const activeDay = pendingBadge?.day ?? (viewingKey ? parseInt(viewingKey.split('-')[0]) : null)
-
-  async function handleGenerate(day: DayContent, contentType: ContentType, additionalInstructions?: string) {
-    const key = `${day.day}-${contentType}`
-    setGeneratingDay(key); setViewingKey(null); setPendingBadge(null); setExtraContext('')
-    try {
-      await onGenerate(day.day, contentType, day.phase || 'awareness', day.dayBriefs?.[contentType] || day.theme, additionalInstructions || undefined)
-      setViewingKey(key)
-    } finally { setGeneratingDay(null) }
-  }
 
   async function handlePendingGenerate() {
     if (!pendingBadge) return
@@ -216,117 +129,6 @@ export function ContentPlanGrid({
     if (!onGenerateWeekBrief) return
     setGeneratingWeekBrief(true)
     try { await onGenerateWeekBrief() } finally { setGeneratingWeekBrief(false) }
-  }
-
-  // ── Week grid view ──────────────────────────────────────────────────────────
-  function WeekView() {
-    return (
-      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-        <div className="min-w-[560px] sm:min-w-[680px]">
-          {/* Day headers */}
-          <div className="grid grid-cols-7 gap-2 mb-2">
-            {days.map((day) => {
-              const phaseColor = day.phase ? PHASE_COLORS[day.phase] : '#CBD5E1'
-              const isActive = day.day === activeDay
-              return (
-                <div key={day.day} className="text-center py-2.5 rounded-xl transition-colors"
-                  style={{ backgroundColor: isActive ? '#FDF2F7' : undefined }}>
-                  <p className="text-xs font-bold uppercase tracking-wider"
-                    style={{ color: isActive ? '#D44E7E' : '#888' }}>
-                    {day.dayOfWeek}
-                  </p>
-                  <p className="text-[10px] text-[#aaa] mt-0.5">{day.date.slice(0, 5)}</p>
-                  {day.phase && (
-                    <div className="flex items-center justify-center gap-1 mt-1.5">
-                      <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: phaseColor }} />
-                      <span className="text-[9px] text-[#aaa] truncate max-w-[58px]">{PHASE_NAMES[day.phase]}</span>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Card columns */}
-          <div className="grid grid-cols-7 gap-2">
-            {days.map((day) => {
-              const displayTypes = day.plannedTypes ?? []
-              const available = DISPLAY_TYPES.filter(t => !displayTypes.includes(t))
-              const isAddOpen = addingToDay === day.day
-
-              return (
-                <div key={day.day} className="space-y-1.5 min-h-[120px]">
-                  {displayTypes.map((type) => {
-                    const existing = day.items.find(i => i.content_type === type)
-                    const genKey = `${day.day}-${type}`
-                    return (
-                      <ContentCard
-                        key={type} type={type} day={day}
-                        isGenerating={generatingDay === genKey}
-                        isViewing={viewingKey === genKey}
-                        isGenerated={!!existing}
-                        isPending={pendingBadge?.day === day.day && pendingBadge?.type === type}
-                        brief={day.dayBriefs?.[type]}
-                        onClickGenerate={() => {
-                          if (generatingDay === genKey) return
-                          const isPending = pendingBadge?.day === day.day && pendingBadge?.type === type
-                          if (isPending) { setPendingBadge(null); setExtraContext(''); return }
-                          if (!briefReady(day)) {
-                            toast.error('Сначала нажми «Сгенерировать план» вверху — AI распишет тему под каждый формат', { duration: 5000 })
-                            return
-                          }
-                          setPendingBadge({ day: day.day, type, phase: day.phase || 'awareness', theme: day.dayBriefs?.[type] || day.theme })
-                          setViewingKey(null); setAddingToDay(null)
-                        }}
-                        onClickView={() => {
-                          if (generatingDay === genKey) return
-                          setViewingKey(viewingKey === genKey ? null : genKey)
-                          setPendingBadge(null); setAddingToDay(null)
-                        }}
-                        onRemove={onRemoveType ? () => onRemoveType(day.day, type) : undefined}
-                      />
-                    )
-                  })}
-
-                  {/* Add type */}
-                  {onAddType && available.length > 0 && (
-                    <div className="relative">
-                      <button
-                        onClick={() => setAddingToDay(isAddOpen ? null : day.day)}
-                        className="w-full flex items-center justify-center py-1.5 rounded-xl text-[10px] border border-dashed border-[#D4D4D4] text-[#BBB] hover:border-[#D44E7E]/50 hover:text-[#D44E7E] transition-all"
-                      >
-                        <Plus className="h-2.5 w-2.5" />
-                      </button>
-                      {isAddOpen && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -4 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="absolute top-full mt-1 left-0 right-0 p-1.5 rounded-xl border border-[#E8E8E8] bg-white shadow-xl z-30 space-y-1"
-                        >
-                          {available.map(t => {
-                            const c = COLORS[t]
-                            return (
-                              <button key={t}
-                                onClick={() => { onAddType(day.day, t); setAddingToDay(null) }}
-                                className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded-lg text-[10px] font-semibold transition-all"
-                                style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}
-                              >
-                                <Plus className="h-2.5 w-2.5" />{c.label}
-                              </button>
-                            )
-                          })}
-                          <button onClick={() => setAddingToDay(null)} className="text-[10px] text-[#aaa] w-full text-center py-1">✕</button>
-                        </motion.div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      </div>
-    )
   }
 
   // ── List view ───────────────────────────────────────────────────────────────
@@ -530,99 +332,6 @@ export function ContentPlanGrid({
         })}
       </div>
     )
-  }
-
-  // ── Active panel (calendar mode) ────────────────────────────────────────────
-  function ActivePanel() {
-    if (pendingBadge) {
-      const day = days.find(d => d.day === pendingBadge.day)
-      if (!day) return null
-      const c = COLORS[pendingBadge.type]
-      if (!c) return null
-      const typeBrief = day.dayBriefs?.[pendingBadge.type]
-      const isRegen = day.items.some(i => i.content_type === pendingBadge.type)
-      return (
-        <motion.div key="pending" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
-          className="rounded-2xl border border-[#E8E8E8] bg-white shadow-md p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-bold px-2.5 py-1 rounded-lg"
-                style={{ backgroundColor: c.bgDone, color: c.textDone, border: `1.5px solid ${c.borderDone}` }}>
-                {c.label}
-              </span>
-              <span className="text-sm text-[#888]">{day.dayOfWeek}, {day.date}</span>
-              {day.phase && <span className="text-[10px] text-[#aaa]">{PHASE_NAMES[day.phase]}</span>}
-            </div>
-            <button onClick={() => { setPendingBadge(null); setExtraContext('') }}
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#E8E8E8] text-[#aaa] hover:text-[#444]">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          {typeBrief && (
-            <div className="rounded-xl border border-[#D44E7E]/15 bg-[#FFF5F8] p-3">
-              <p className="text-[10px] font-bold text-[#D44E7E]/60 uppercase tracking-wide mb-1">Тема дня</p>
-              <p className="text-sm text-[#333]">{typeBrief}</p>
-            </div>
-          )}
-          <VoiceTextarea value={extraContext} onChange={setExtraContext}
-            placeholder="Надиктуй детали: кейс, историю, имя клиента — AI вплетёт в контент..."
-            rows={2} />
-          <div className="flex gap-2">
-            <Button className="gradient-accent text-white hover:opacity-90 gap-1.5 flex-1"
-              onClick={handlePendingGenerate} disabled={!!generatingDay}>
-              {generatingDay === `${pendingBadge.day}-${pendingBadge.type}`
-                ? <><Loader2 className="h-4 w-4 animate-spin" /> Создаю...</>
-                : isRegen ? <><RefreshCw className="h-4 w-4" /> Обновить</> : <><Sparkles className="h-4 w-4" /> Создать</>}
-            </Button>
-            <button onClick={() => { setPendingBadge(null); setExtraContext('') }}
-              className="text-sm text-[#aaa] hover:text-[#444] px-3">Отмена</button>
-          </div>
-        </motion.div>
-      )
-    }
-    if (viewingKey) {
-      const [dayNum, type] = viewingKey.split('-')
-      const day = days.find(d => d.day === parseInt(dayNum))
-      const contentType = type as ContentType
-      const item = day?.items.find(i => i.content_type === contentType)
-      const c = COLORS[contentType]
-      if (!item || !c || !day) return null
-      return (
-        <motion.div key="viewer" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
-          className="rounded-2xl border border-[#E8E8E8] bg-white shadow-md p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold px-2.5 py-1 rounded-lg"
-                style={{ backgroundColor: c.bgDone, color: c.textDone, border: `1.5px solid ${c.borderDone}` }}>
-                {c.label}
-              </span>
-              <span className="text-sm text-[#888]">{day.dayOfWeek}, {day.date}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Button size="sm" variant="outline" className="h-8 text-xs border-[#E8E8E8] gap-1"
-                onClick={() => { setViewingKey(null); setPendingBadge({ day: day.day, type: contentType, phase: day.phase || 'awareness', theme: day.dayBriefs?.[contentType] || day.theme }); setExtraContext('') }}>
-                <RefreshCw className="h-3.5 w-3.5" /> Обновить
-              </Button>
-              <button onClick={() => setViewingKey(null)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8E8E8] text-[#aaa] hover:text-[#444]">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-          <div className="rounded-xl border border-[#ECECEC] bg-[#FAFAFA] p-4 max-h-[55vh] overflow-y-auto">
-            {renderContent(item)}
-          </div>
-          {item.hashtags && item.hashtags.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {item.hashtags.map((h, i) => (
-                <span key={i} className="text-[10px] text-[#D44E7E]/70 bg-[#FFF0F5] border border-[#D44E7E]/15 rounded px-1.5 py-0.5">{h}</span>
-              ))}
-            </div>
-          )}
-        </motion.div>
-      )
-    }
-    return null
   }
 
   return (
