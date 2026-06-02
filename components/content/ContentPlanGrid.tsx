@@ -1,9 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { StructuredContentView } from '@/components/content/StructuredContentView'
-import { Button } from '@/components/ui/button'
-import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import {
   Sparkles, ChevronLeft, ChevronRight, Download, Loader2,
   Plus, X, Eye, RefreshCw, Check, Copy,
@@ -30,7 +29,6 @@ interface ContentPlanGridProps {
   weekNumber: number
   days: DayContent[]
   onWeekChange: (delta: number) => void
-  onGenerate: (day: number, contentType: ContentType, phase: WarmupPhase, theme?: string, additionalInstructions?: string) => void
   onGenerateWeekBrief?: () => Promise<void>
   onExport: () => void
   onRemoveType?: (dayNum: number, type: ContentType) => void
@@ -91,17 +89,26 @@ function renderContent(item: ContentItem) {
 // ── Main component ────────────────────────────────────────────────────────────
 export function ContentPlanGrid({
   projectId, warmupPlanId, weekNumber, days,
-  onWeekChange, onGenerate, onGenerateWeekBrief, onExport,
+  onWeekChange, onGenerateWeekBrief, onExport,
   onRemoveType, onAddType, loading,
 }: ContentPlanGridProps) {
-  const [generatingDay, setGeneratingDay] = useState<string | null>(null)
   const [generatingWeekBrief, setGeneratingWeekBrief] = useState(false)
   const [addingToDay, setAddingToDay] = useState<number | null>(null)
   const [viewingKey, setViewingKey] = useState<string | null>(null)
-  const [pendingBadge, setPendingBadge] = useState<{ day: number; type: ContentType; phase: WarmupPhase; theme?: string } | null>(null)
-  const [extraContext, setExtraContext] = useState('')
 
+  const router = useRouter()
   void warmupPlanId
+
+  // Generating a unit opens the AI chat (ChatGPT-style) pre-loaded with this
+  // day's topic. There the user adds details, the AI writes it, and it can be
+  // saved to «Готовое» and/or back into the plan. (Replaced the inline panel.)
+  function openInChat(day: DayContent, type: ContentType) {
+    const brief = day.dayBriefs?.[type] || day.theme || ''
+    const params = new URLSearchParams({
+      gen: '1', day: String(day.day), type, phase: day.phase || 'awareness', brief, back: 'content-plan',
+    })
+    router.push(`/projects/${projectId}/assistant?${params.toString()}`)
+  }
 
   // Two-step flow: a content unit can only be generated AFTER the week plan
   // (per-format themes / briefs) has been generated for that day. Otherwise
@@ -109,20 +116,6 @@ export function ContentPlanGrid({
   const briefReady = (day: DayContent) =>
     !!day.dayBriefs && Object.keys(day.dayBriefs).length > 0
   const weekHasBrief = days.some(briefReady)
-
-  async function handlePendingGenerate() {
-    if (!pendingBadge) return
-    const key = `${pendingBadge.day}-${pendingBadge.type}`
-    setGeneratingDay(key); setViewingKey(null)
-    const { day: dayNum, type, phase, theme } = pendingBadge
-    const extra = extraContext.trim()
-    try {
-      await onGenerate(dayNum, type, phase, theme, extra || undefined)
-      // Close the details panel and reveal the result only on success — on
-      // error the panel stays open so the user can retry without re-typing.
-      setPendingBadge(null); setExtraContext(''); setViewingKey(key)
-    } finally { setGeneratingDay(null) }
-  }
 
   async function handleGenerateWeekBriefClick() {
     if (!onGenerateWeekBrief) return
@@ -211,16 +204,8 @@ export function ContentPlanGrid({
                           const c = COLORS[type]
                           if (!c) return null
                           const existing = day.items.find(i => i.content_type === type)
-                          const isPending = pendingBadge?.day === day.day && pendingBadge?.type === type
                           const isViewing = viewingKey === `${day.day}-${type}`
-                          const isGen = generatingDay === `${day.day}-${type}`
                           const brief = day.dayBriefs?.[type]
-                          // Open the details panel (dictate / type extra context) right
-                          // under THIS card, then "Создать" generates.
-                          const openDetails = () => {
-                            setPendingBadge({ day: day.day, type, phase: day.phase || 'awareness', theme: brief || day.theme })
-                            setViewingKey(null); setAddingToDay(null); setExtraContext('')
-                          }
                           return (
                             <div key={type} className="rounded-lg border border-[#F0F0F0] p-2.5 space-y-2">
                               <div className="flex items-center justify-between gap-2">
@@ -239,46 +224,20 @@ export function ContentPlanGrid({
                               <p className="text-[13px] text-[#333] leading-snug">{brief}</p>
                               {existing ? (
                                 <div className="flex items-center gap-2">
-                                  <button onClick={() => { setViewingKey(isViewing ? null : `${day.day}-${type}`); setPendingBadge(null); setAddingToDay(null) }}
+                                  <button onClick={() => { setViewingKey(isViewing ? null : `${day.day}-${type}`); setAddingToDay(null) }}
                                     className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold border border-[#E0E0E0] text-[#444] active:bg-[#F5F5F5] transition-colors">
                                     <Eye className="h-3.5 w-3.5" /> {isViewing ? 'Скрыть' : 'Посмотреть'}
                                   </button>
-                                  <button onClick={openDetails}
+                                  <button onClick={() => openInChat(day, type)}
                                     className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-white gradient-accent active:opacity-90 transition-opacity">
                                     <RefreshCw className="h-3.5 w-3.5" /> Обновить
                                   </button>
                                 </div>
                               ) : (
-                                <button onClick={openDetails}
+                                <button onClick={() => openInChat(day, type)}
                                   className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-white gradient-accent active:opacity-90 transition-opacity">
                                   <Sparkles className="h-3.5 w-3.5" /> Сгенерировать {c.label.toLowerCase()}
                                 </button>
-                              )}
-
-                              {/* Details panel — opens INLINE right under this card */}
-                              {isPending && (
-                                <div className="rounded-lg border border-[#E8E8E8] bg-[#FAFAFA] p-3 space-y-2.5">
-                                  {brief && (
-                                    <div className="rounded-lg border border-[#D44E7E]/15 bg-[#FFF5F8] p-2.5">
-                                      <p className="text-[10px] font-bold text-[#D44E7E]/70 uppercase tracking-wide mb-0.5">Тема</p>
-                                      <p className="text-[13px] text-[#333]">{brief}</p>
-                                    </div>
-                                  )}
-                                  <div className="space-y-1">
-                                    <p className="text-[11px] font-medium text-[#888]">Детали для AI <span className="text-[#bbb]">(по желанию)</span> — надиктуй или впиши историю, кейс, цифры:</p>
-                                    <VoiceTextarea value={extraContext} onChange={setExtraContext}
-                                      placeholder="Например: история клиентки Ани, выросла с 800 до 5000 за 2 месяца..." rows={2} />
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <Button size="sm" className="gradient-accent text-white hover:opacity-90 gap-1.5 flex-1"
-                                      onClick={handlePendingGenerate} disabled={!!generatingDay}>
-                                      {isGen ? <><Loader2 className="h-3 w-3 animate-spin" /> Создаю...</>
-                                        : existing ? <><RefreshCw className="h-3 w-3" /> Обновить</> : <><Sparkles className="h-3 w-3" /> Создать</>}
-                                    </Button>
-                                    <button onClick={() => { setPendingBadge(null); setExtraContext('') }}
-                                      className="text-xs text-[#aaa] hover:text-[#444] px-2">Отмена</button>
-                                  </div>
-                                </div>
                               )}
 
                               {/* Generated content — shows INLINE right under this card */}

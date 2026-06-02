@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, use } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Sparkles, Loader2, Copy, Check, User } from 'lucide-react'
+import { ArrowLeft, Sparkles, Loader2, Copy, Check, User, CalendarPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { ChatComposer } from '@/components/ui/ChatComposer'
 import { SaveButton } from '@/components/content/SaveButton'
@@ -12,7 +12,11 @@ import { cleanMarkdown } from '@/lib/cleanText'
 interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
+  opener?: boolean   // the AI's intro stating the day's topic — no action buttons
 }
+
+// Generation request handed over from the content plan.
+interface GenContext { day: number; type: string; phase: string }
 
 const SUGGESTIONS = [
   'Напиши пост на тему сегодняшнего дня',
@@ -20,6 +24,46 @@ const SUGGESTIONS = [
   'Придумай сторителлинг-пост из моей личной линии',
   'Помоги переписать этот текст моим голосом: …',
 ]
+
+const TYPE_RU: Record<string, string> = {
+  post: 'пост', stories: 'сторис', reels: 'рилз', carousel: 'карусель', email: 'письмо', live: 'эфир',
+}
+const FORMAT_HINT: Record<string, string> = {
+  stories: 'Сделаю серию коротких сторис — на экране минимум текста, суть голосом и интерактивом.',
+  reels: 'Напишу сценарий рилза — рубленый, по секундам, мощный хук в первые 3 секунды.',
+  post: 'Напишу пост целиком в твоём голосе.',
+  carousel: 'Сделаю карусель — обложка + слайды, одна мысль на слайд.',
+}
+function buildOpener(type: string, day: number, brief: string): string {
+  const ru = TYPE_RU[type] || type
+  const hint = FORMAT_HINT[type] || 'Напишу в твоём голосе.'
+  return `Окей, делаем ${ru}${day ? ` на день ${day}` : ''}.\n\n${brief ? `Тема: «${brief}»\n\n` : ''}${hint}\n\nРасскажи детали — историю, кейс, цифры, имя клиента — или просто напиши «давай», и я напишу.`
+}
+
+// Saves the generated message straight into the content plan (the day's unit).
+function SaveToPlanButton({ projectId, ctx, text }: { projectId: string; ctx: GenContext; text: string }) {
+  const [state, setState] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const save = async () => {
+    if (state !== 'idle') return
+    setState('saving')
+    try {
+      const res = await fetch('/api/content-items', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, contentType: ctx.type, dayNumber: ctx.day, phase: ctx.phase, bodyText: text }),
+      })
+      if (!res.ok) { const j = await res.json().catch(() => ({})) as { error?: string }; throw new Error(j.error || 'Ошибка') }
+      setState('saved'); toast.success('Сохранено в контент-план ✓')
+    } catch (e) { setState('idle'); toast.error(e instanceof Error ? e.message : 'Не удалось') }
+  }
+  return (
+    <button onClick={save} disabled={state !== 'idle'}
+      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors">
+      {state === 'saving' ? <><Loader2 className="h-3 w-3 animate-spin" /> Сохраняю…</>
+        : state === 'saved' ? <><Check className="h-3 w-3" /> В плане</>
+        : <><CalendarPlus className="h-3 w-3" /> В план</>}
+    </button>
+  )
+}
 
 export default function AssistantPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -32,6 +76,9 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
 
   // Where the back arrow goes (content-plan when opened from there)
   const [backHref, setBackHref] = useState(`/projects/${id}`)
+  // Set when opened from the content plan to generate a specific day/format —
+  // enables the «В план» save button on generated answers.
+  const [genContext, setGenContext] = useState<GenContext | null>(null)
 
   // ChatGPT-style: pin the just-sent question to the top + dynamic tail spacer.
   const { scrollRef, lastUserRef, endRef, tailSpace } = useChatPin(messages, streaming)
@@ -97,6 +144,20 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
     seededRef.current = true
     const sp = new URLSearchParams(window.location.search)
     if (sp.get('back') === 'content-plan') setBackHref(`/projects/${id}/content-plan`)
+
+    // Generation handoff from the content plan: open with the AI stating the
+    // topic and WAIT for the user's details (don't auto-generate).
+    if (sp.get('gen') === '1') {
+      const day = parseInt(sp.get('day') || '0', 10)
+      const type = sp.get('type') || 'post'
+      const phase = sp.get('phase') || 'awareness'
+      const brief = sp.get('brief') || ''
+      setGenContext({ day, type, phase })
+      setMessages([{ role: 'assistant', opener: true, content: buildOpener(type, day, brief) }])
+      window.history.replaceState({}, '', window.location.pathname)
+      return
+    }
+
     const seed = sp.get('prompt')
     if (seed) {
       // strip the query so a refresh doesn't re-send
@@ -168,13 +229,14 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
             <div className={`group max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
               m.role === 'user' ? 'bg-primary/10 text-foreground' : 'bg-secondary/50 text-foreground'
             }`}>
-              {m.role === 'assistant' && (
-                <div className="flex items-center gap-3 mb-2 pb-1.5 border-b border-black/[0.06]">
+              {m.role === 'assistant' && !m.opener && (
+                <div className="flex items-center gap-3 mb-2 pb-1.5 border-b border-black/[0.06] flex-wrap">
                   <button onClick={() => copyMsg(text, i)}
                     className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors">
                     {copiedIdx === i ? <><Check className="h-3 w-3" /> Скопировано</> : <><Copy className="h-3 w-3" /> Копировать</>}
                   </button>
                   <SaveButton body={text} projectId={id} className="text-[11px] text-muted-foreground hover:text-primary" />
+                  {genContext && <SaveToPlanButton projectId={id} ctx={genContext} text={text} />}
                 </div>
               )}
               {text}

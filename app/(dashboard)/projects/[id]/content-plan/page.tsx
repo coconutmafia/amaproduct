@@ -215,74 +215,6 @@ export default function ContentPlanPage() {
     loadPlanData(week)
   }, [week, loadPlanData])
 
-  const handleGenerate = useCallback(async (day: number, contentType: ContentType, phase: WarmupPhase, theme?: string, additionalInstructions?: string) => {
-    const loadingToast = toast.loading(`Генерирую контент для дня ${day} — обычно 30-60 секунд. Не закрывай страницу.`)
-    try {
-      const res = await fetch('/api/ai/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId: id,
-          contentType,
-          dayNumber: day,
-          totalDays,
-          phase,
-          dayMeaning: theme || undefined,
-          additionalInstructions: additionalInstructions || undefined,
-        }),
-      })
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
-        throw new Error((errData as { error?: string }).error || 'Generation failed')
-      }
-
-      // Read SSE stream — wait for 'done' event
-      const reader = res.body?.getReader()
-      if (!reader) throw new Error('Нет потока')
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        // Process value BEFORE checking done — last chunk may arrive with done:true
-        if (value) {
-          buffer += decoder.decode(value, { stream: !done })
-          const parts = buffer.split('\n\n')
-          buffer = parts.pop() ?? ''
-          let finished = false
-          for (const part of parts) {
-            if (!part.startsWith('data: ')) continue
-            let data: { type: string; item?: ContentItem; message?: string }
-            try { data = JSON.parse(part.slice(6)) } catch { continue }
-            if (data.type === 'done' && data.item) {
-              setDays((prev) => prev.map((d) =>
-                d.day === day ? { ...d, items: [...d.items, data.item!] } : d
-              ))
-              toast.dismiss(loadingToast)
-              toast.success(`${contentType} для дня ${day} сгенерирован`)
-              finished = true
-              break
-            }
-            if (data.type === 'error') throw new Error(data.message || 'Ошибка')
-          }
-          if (finished) return
-        }
-        if (done) break
-      }
-    } catch (e) {
-      toast.dismiss(loadingToast)
-      const msg = e instanceof Error ? e.message : 'Ошибка создания контента'
-      if (msg.includes('Лимит')) {
-        toast.error(msg, {
-          description: 'Пригласи друга (+10 запросов) или перейди на платный тариф',
-          duration: 6000,
-        })
-      } else {
-        toast.error(msg)
-      }
-    }
-  }, [id, totalDays])
-
   // Defaults are seeded at day construction (buildDaysFromWarmupPlan), so
   // plannedTypes is never empty unless the user deliberately emptied it.
   // Add/remove operate on the literal current array — an empty array stays
@@ -615,10 +547,6 @@ export default function ContentPlanPage() {
           weekNumber={week}
           days={days}
           onWeekChange={handleWeekChange}
-          onGenerate={(day, contentType, phase, theme, additionalInstructions) => {
-            const dayData = days.find(d => d.day === day)
-            return handleGenerate(day, contentType, phase, theme || dayData?.theme, additionalInstructions)
-          }}
           onGenerateWeekBrief={handleGenerateWeekBrief}
           onExport={handleExport}
           onRemoveType={handleRemoveType}
