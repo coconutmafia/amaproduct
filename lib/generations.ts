@@ -58,10 +58,12 @@ export async function refundGeneration(userId: string): Promise<void> {
   try {
     const supabase = await createClient()
     const { data: profile } = await supabase
-      .from('profiles').select('role, bonus_generations').eq('id', userId).single()
+      .from('profiles').select('role').eq('id', userId).single()
     if (profile?.role === 'admin') return
-    const current = profile?.bonus_generations ?? 0
-    await supabase.from('profiles').update({ bonus_generations: current + 1 }).eq('id', userId)
+    // Atomic increment via RPC — avoids the lost-update race a read-modify-write
+    // had under concurrent generations (the content plan fires several at once).
+    // Mirrors the atomic consume_generation; bonus is spent first → full refund.
+    await supabase.rpc('add_bonus_generations', { p_user_id: userId, p_amount: 1 })
   } catch (e) {
     console.error('refundGeneration failed:', e)
   }

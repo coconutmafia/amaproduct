@@ -45,9 +45,14 @@ function streamingChatResponse(
         controller.close()
       } catch (err) {
         console.error('Chat stream error:', err)
-        // Keep whatever already streamed; only hard-fail if nothing was sent.
-        if (acc.length > 0) { try { controller.close() } catch { /* already closed */ } }
-        else { try { controller.error(err) } catch { /* already errored */ } }
+        if (acc.length > 0) {
+          // Don't present a truncated answer as complete — append a visible note,
+          // then close so the partial text is kept.
+          try { controller.enqueue(encoder.encode('\n\n⚠️ Ответ прервался — нажми отправить ещё раз, чтобы продолжить.')) } catch { /* ignore */ }
+          try { controller.close() } catch { /* already closed */ }
+        } else {
+          try { controller.error(err) } catch { /* already errored */ }
+        }
       }
     },
   })
