@@ -48,6 +48,16 @@ export function useChatPin(messages: { role: string }[], streaming: string) {
     requestAnimationFrame(() => {
       const c = scrollRef.current, q = lastUserRef.current
       if (!c || !q) return
+      // The dashboard <main> can double-scroll on mobile (the chat root is taller
+      // than <main>, esp. after the keyboard opens/closes). When <main> is left
+      // scrolled, the sticky chat header overlaps the pinned message and you only
+      // see its bottom sliver. Reset ancestor scrollers so ONLY the inner
+      // messages container scrolls — the composer is fully visible at main top 0.
+      for (let p = c.parentElement; p; p = p.parentElement) {
+        if (p.scrollHeight > p.clientHeight + 1 && getComputedStyle(p).overflowY !== 'visible') {
+          p.scrollTop = 0
+        }
+      }
       const top = q.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop - 12
       // Instant (not smooth): a smooth animation is still running when the answer
       // starts streaming and the dynamic spacer resizes, which made it land on the
