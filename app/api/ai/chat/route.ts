@@ -5,8 +5,54 @@ import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt } from '@/lib/ai/prompts/system'
 import type { Message } from '@/types'
 
-// Required for AI responses — Claude can take 30-60 seconds
-export const maxDuration = 60
+// Vercel Pro allows up to 300s. Multi-item answers ("5 рилзов") on top of a
+// large RAG system prompt routinely take well over 60s — the old 60s cap was
+// killing the function mid-stream, so the answer arrived truncated (e.g. 2 of 5
+// reels). 300s + the continuation loop below guarantees the full answer.
+export const maxDuration = 300
+
+const STREAM_HEADERS = {
+  'Content-Type': 'text/plain; charset=utf-8',
+  'Cache-Control': 'no-cache',
+  'X-Accel-Buffering': 'no',
+} as const
+
+// Stream a chat completion as plain text. If Claude hits the token ceiling
+// mid-answer (stop_reason === 'max_tokens') — likely on "5 рилзов"-style
+// requests — automatically continue from where it stopped (a trailing assistant
+// turn makes Claude resume the same text) so nothing is ever cut off.
+function streamingChatResponse(
+  system: string,
+  messages: { role: 'user' | 'assistant'; content: string }[],
+) {
+  const encoder = new TextEncoder()
+  const readable = new ReadableStream({
+    async start(controller) {
+      let acc = ''
+      try {
+        for (let round = 0; round < 4; round++) {
+          const convo = round === 0 ? messages : [...messages, { role: 'assistant' as const, content: acc }]
+          const stream = anthropic.messages.stream({ model: MODEL, max_tokens: 8000, system, messages: convo })
+          for await (const chunk of stream) {
+            if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+              acc += chunk.delta.text
+              controller.enqueue(encoder.encode(chunk.delta.text))
+            }
+          }
+          const final = await stream.finalMessage()
+          if (final.stop_reason !== 'max_tokens') break
+        }
+        controller.close()
+      } catch (err) {
+        console.error('Chat stream error:', err)
+        // Keep whatever already streamed; only hard-fail if nothing was sent.
+        if (acc.length > 0) { try { controller.close() } catch { /* already closed */ } }
+        else { try { controller.error(err) } catch { /* already errored */ } }
+      }
+    },
+  })
+  return new Response(readable, { headers: STREAM_HEADERS })
+}
 
 export async function POST(request: Request) {
   try {
@@ -44,31 +90,13 @@ export async function POST(request: Request) {
 - Пиши чистым текстом, как реальный пост/сообщение. Разделяй смысловые блоки пустой строкой (воздух).
 - Если нужен список — нумеруй просто «1.», «2.» с новой строки, без звёздочек.
 - Заголовки выделяй просто КАПСОМ или эмодзи, а не ## и **.
+- Если просят НЕСКОЛЬКО штук («5 рилзов», «10 идей») — выдай РОВНО столько, каждую полностью и пронумерованно. Не останавливайся на половине, не пиши «продолжить?» — доводи список до конца.
 
 Ты сильнее обычного ChatGPT в контенте, потому что работаешь по конкретной методологии прогревов (ниже) и думаешь как продюсер запусков, а не как универсальный бот.
 
 ${sysKnowledge ? `═══ МЕТОДОЛОГИЯ (опирайся на неё) ═══\n${sysKnowledge}` : ''}`
 
-      const stream = await anthropic.messages.stream({
-        model: MODEL,
-        max_tokens: 4000,
-        system: standaloneSystem,
-        messages: messages.map((m) => ({ role: m.role, content: m.content })),
-      })
-      const encoder = new TextEncoder()
-      const readable = new ReadableStream({
-        async start(controller) {
-          for await (const chunk of stream) {
-            if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-              controller.enqueue(encoder.encode(chunk.delta.text))
-            }
-          }
-          controller.close()
-        },
-      })
-      return new Response(readable, {
-        headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' },
-      })
+      return streamingChatResponse(standaloneSystem, messages.map((m) => ({ role: m.role, content: m.content })))
     }
 
     const { data: project } = await supabase
@@ -106,35 +134,11 @@ ${sysKnowledge ? `═══ МЕТОДОЛОГИЯ (опирайся на неё
 3. Любой текст пиши голосом этого блогера (его словечки, ритм, воздух между абзацами), а не нейтральным «AI-языком». Без хэштегов.
 4. Ты НЕ универсальный чат-бот «обо всём». Ты ассистент по контенту ЭТОГО проекта.
 5. НЕ используй markdown: никаких **звёздочек**, ## решёток, --- разделителей, * списков, \`кода\`. Только чистый текст с пустыми строками между блоками, как реальный пост.
+6. Если просят несколько штук («5 рилзов», «10 идей») — выдай РОВНО столько, сколько просят, каждую полностью и пронумерованно (1., 2., …). Не останавливайся на середине и не спрашивай «продолжать?» — доводи до конца.
 
 ${baseSystem}`
 
-    const stream = await anthropic.messages.stream({
-      model: MODEL,
-      max_tokens: 4000,
-      system: systemPrompt,
-      messages: messages.map((m) => ({ role: m.role, content: m.content })),
-    })
-
-    const encoder = new TextEncoder()
-    const readable = new ReadableStream({
-      async start(controller) {
-        for await (const chunk of stream) {
-          if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-            controller.enqueue(encoder.encode(chunk.delta.text))
-          }
-        }
-        controller.close()
-      },
-    })
-
-    return new Response(readable, {
-      headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Cache-Control': 'no-cache',
-        'X-Accel-Buffering': 'no',
-      },
-    })
+    return streamingChatResponse(systemPrompt, messages.map((m) => ({ role: m.role, content: m.content })))
   } catch (error) {
     console.error('Chat error:', error)
     const msg = error instanceof Error ? error.message : String(error)

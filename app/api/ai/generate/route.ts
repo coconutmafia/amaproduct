@@ -101,17 +101,26 @@ export async function POST(request: Request) {
           email: `ФОРМАТ EMAIL: Личное письмо, не рекламная рассылка. Тема письма — интригует, не продаёт. Начни с истории или наблюдения. Один чёткий CTA в конце. Тон как будто пишешь другу.`,
         }
 
+        // Normalize phase → content-brain keys. Warmup plans may store generic
+        // phase_1..4; map them to the semantic keys that have dedicated schemas /
+        // emotional arcs / CTA (niche → expert → product → objections), so a raw
+        // "phase_1" never reaches the model or falls back to a weaker schema.
+        const PHASE_CONTENT_MAP: Record<string, string> = {
+          phase_1: 'niche', phase_2: 'expert', phase_3: 'product', phase_4: 'objections',
+        }
+        const contentPhase = PHASE_CONTENT_MAP[phase as string] ?? phase
+
         // ── Content Brain layers (phase + type specific) ─────────────────
-        const contentSchema = getSchemaForPhase(phase, contentType)
+        const contentSchema = getSchemaForPhase(contentPhase, contentType)
         const hookEngine    = getHookEngine(contentType)
-        const emotionalArc  = getEmotionalMechanics(phase)
-        const ctaGuidance   = getCTAEngine(phase)
+        const emotionalArc  = getEmotionalMechanics(contentPhase)
+        const ctaGuidance   = getCTAEngine(contentPhase)
 
         const userPrompt = `Создай ${contentTypeLabel[contentType] || contentType} для блогера.
 
 ПАРАМЕТРЫ:
 - День прогрева: ${dayNumber} из ${totalDays || 45}
-- Фаза: ${phaseLabel[phase] || phase}
+- Фаза: ${phaseLabel[contentPhase] || phaseLabel[phase] || contentPhase}
 - Блогер: ${project.name}
 - Ниша: ${project.niche || 'не указана'}
 ${dayMeaning ? `- Смысл дня (из плана прогрева): ${dayMeaning}` : ''}

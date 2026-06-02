@@ -35,6 +35,8 @@ export function StructuredContentView({ data }: { data: Dict }) {
   const reels   = data.reels as Dict | undefined
   const carousel = data.carousel as Dict | undefined
   const stories = (data.stories_series ?? data.stories) as Dict | undefined
+  const email   = data.email as Dict | undefined
+  const live    = data.live as Dict | undefined
 
   // ── Reels ─────────────────────────────────────────────────────────────────
   if (reels) {
@@ -125,6 +127,39 @@ export function StructuredContentView({ data }: { data: Dict }) {
             </Card>
           )
         })}
+      </div>
+    )
+  }
+
+  // ── Email ───────────────────────────────────────────────────────────────
+  if (email) {
+    return (
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-muted-foreground">Письмо для рассылки</p>
+        <Field label="Тема" value={email.subject} />
+        <Field label="Прехедер" value={email.preheader} />
+        {str(email.body) && <p className="text-[13px] leading-relaxed whitespace-pre-wrap text-foreground mt-1">{str(email.body)}</p>}
+        <Field label="Кнопка" value={email.cta_text} />
+        <Field label="P.S." value={email.ps} />
+      </div>
+    )
+  }
+
+  // ── Live (эфир) ─────────────────────────────────────────────────────────
+  if (live) {
+    const structure = arr(live.structure)
+    return (
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-muted-foreground">Сценарий эфира{str(live.duration_min) ? ` · ${str(live.duration_min)} мин` : ''}</p>
+        {str(live.title) && <p className="text-sm font-bold text-foreground">{str(live.title)}</p>}
+        {str(live.goal) && <Field label="Цель" value={live.goal} />}
+        {structure.map((b, i) => (
+          <Card key={i} tag={`${str(b.block) || `Блок ${i + 1}`}${str(b.duration_min) ? ` · ${str(b.duration_min)} мин` : ''}`}>
+            <Field label="Содержание" value={b.content} />
+            <Field label="Интерактив" value={b.interactive} />
+          </Card>
+        ))}
+        {str(live.promo_text) && <Field label="Промо" value={live.promo_text} />}
       </div>
     )
   }

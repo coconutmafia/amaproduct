@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
+import { StructuredContentView } from '@/components/content/StructuredContentView'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
@@ -67,81 +67,31 @@ const COLORS: Record<ContentType, TypeColors> = {
   email:   { label: 'Email',   bg: '#FEF9C3', bgDone: '#FDE68A', border: '#FDE047', borderDone: '#CA8A04', text: '#713F12', textDone: '#78350F' },
 }
 
+// Human-readable phase labels. Plans store phases under several conventions
+// (canonical awareness/trust/…, semantic niche/expert/…, or generic phase_1..4) —
+// map ALL of them so a raw "phase_1" never leaks into the UI.
 const PHASE_NAMES: Record<string, string> = {
-  niche: 'Ниша', expert: 'Эксперт', product: 'Продукт', objections: 'Возражения',
-  activation: 'Активация', awareness: 'Знакомство', trust: 'Доверие', desire: 'Желание', close: 'Закрытие',
+  awareness: 'Прогрев на нишу', trust: 'Прогрев на эксперта', desire: 'Прогрев на продукт', close: 'Отработка возражений',
+  niche: 'Прогрев на нишу', expert: 'Прогрев на эксперта', product: 'Прогрев на продукт', objections: 'Отработка возражений',
+  activation: 'Активация',
+  phase_1: 'Прогрев на нишу', phase_2: 'Прогрев на эксперта', phase_3: 'Прогрев на продукт', phase_4: 'Отработка возражений',
 }
 const PHASE_COLORS: Record<string, string> = {
   awareness: '#60A5FA', trust: '#818CF8', desire: '#F472B6', close: '#F87171',
-  niche: '#34D399', expert: '#22D3EE', product: '#FBBF24', objections: '#FB923C',
+  niche: '#60A5FA', expert: '#818CF8', product: '#F472B6', objections: '#F87171',
   activation: '#4ADE80',
+  phase_1: '#60A5FA', phase_2: '#818CF8', phase_3: '#F472B6', phase_4: '#F87171',
 }
 
 // ── Content renderer ──────────────────────────────────────────────────────────
+// Posts render as plain text; every structured type (reels / stories / carousel /
+// email / live) goes through the shared StructuredContentView so the layout
+// always matches the current AI output schema (e.g. stories use
+// headline/subtext/voiceover, not the old main_text field).
 function renderContent(item: ContentItem) {
   const sd = item.structured_data as Record<string, unknown> | null
-  if (item.content_type === 'post' || item.body_text) {
-    return <div className="whitespace-pre-wrap text-sm leading-relaxed text-[#222]">{item.body_text || '(нет текста)'}</div>
-  }
-  if (item.content_type === 'reels' && sd?.reels) {
-    const r = sd.reels as Record<string, unknown>
-    const scenes = (r.scenes as Record<string, unknown>[] | undefined) || []
-    return (
-      <div className="space-y-3 text-sm">
-        {!!r.title && <p className="font-semibold">{String(r.title)}</p>}
-        {!!r.hook_text && <p className="text-[#666] italic">Крючок: {String(r.hook_text)}</p>}
-        {scenes.map((s, i) => (
-          <div key={i} className="border border-[#E8E8E8] rounded-lg p-3 bg-[#F7F7F7] space-y-1">
-            <p className="text-xs font-bold text-[#888]">Сцена {String(s.scene)} · {String(s.timing)}</p>
-            {!!(s.visual as Record<string, unknown>)?.action && <p>{String((s.visual as Record<string, unknown>).action)}</p>}
-            {!!(s.audio as Record<string, unknown>)?.speech && <p className="text-[#D44E7E] text-xs">💬 {String((s.audio as Record<string, unknown>).speech)}</p>}
-          </div>
-        ))}
-      </div>
-    )
-  }
-  if (item.content_type === 'stories' && sd?.stories_series) {
-    const series = sd.stories_series as Record<string, unknown>
-    const stories = (series.stories as Record<string, unknown>[] | undefined) || []
-    return (
-      <div className="space-y-3 text-sm">
-        {stories.map((s, i) => (
-          <div key={i} className="border border-[#E8E8E8] rounded-lg p-3 bg-[#F7F7F7]">
-            <p className="text-xs font-bold text-[#888] mb-1">Сториз {String(s.story_number)}</p>
-            {!!(s.text as Record<string, unknown>)?.main_text && <p>{String((s.text as Record<string, unknown>).main_text)}</p>}
-          </div>
-        ))}
-      </div>
-    )
-  }
-  if (item.content_type === 'carousel' && sd?.carousel) {
-    const c = sd.carousel as Record<string, unknown>
-    const cover = c.cover as Record<string, unknown> | undefined
-    const slides = (c.slides as Record<string, unknown>[] | undefined) || []
-    return (
-      <div className="space-y-3 text-sm">
-        {cover && <div className="border border-[#D44E7E]/20 rounded-lg p-3 bg-[#FFF0F5]"><p className="font-semibold">{String(cover.headline ?? '')}</p></div>}
-        {slides.map((s, i) => (
-          <div key={i} className="border border-[#E8E8E8] rounded-lg p-3 bg-[#F7F7F7]">
-            <p className="text-xs font-bold text-[#888] mb-1">Слайд {String(s.slide)}</p>
-            <p className="font-medium">{String(s.headline ?? '')}</p>
-          </div>
-        ))}
-      </div>
-    )
-  }
-  if (sd) {
-    const email = (sd as Record<string, unknown>).email as Record<string, unknown> | undefined
-    if (email) {
-      return (
-        <div className="space-y-2 text-sm">
-          {!!email.subject && <p><span className="text-xs text-[#888]">Тема: </span><span className="font-semibold">{String(email.subject)}</span></p>}
-          {!!email.body && <p className="whitespace-pre-wrap leading-relaxed mt-2">{String(email.body)}</p>}
-        </div>
-      )
-    }
-  }
-  return <div className="text-sm text-[#888] whitespace-pre-wrap">{JSON.stringify(sd || item.body_text, null, 2)}</div>
+  if (sd && Object.keys(sd).length > 0) return <StructuredContentView data={sd} />
+  return <div className="whitespace-pre-wrap text-sm leading-relaxed text-[#222]">{item.body_text || '(нет текста)'}</div>
 }
 
 // ── Calendar content card ─────────────────────────────────────────────────────
@@ -227,7 +177,6 @@ export function ContentPlanGrid({
   const [extraContext, setExtraContext] = useState('')
 
   void warmupPlanId
-  const router = useRouter()
 
   // Two-step flow: a content unit can only be generated AFTER the week plan
   // (per-format themes / briefs) has been generated for that day. Otherwise
@@ -235,17 +184,6 @@ export function ContentPlanGrid({
   const briefReady = (day: DayContent) =>
     !!day.dayBriefs && Object.keys(day.dayBriefs).length > 0
   const weekHasBrief = days.some(briefReady)
-
-  // Generate a content unit by opening the AI assistant chat pre-loaded with
-  // this day's theme/brief. The user gets it in a ChatGPT-like conversation —
-  // copy it, or refine it by voice — then returns to the content plan.
-  function openInChat(day: DayContent, type: ContentType) {
-    const brief = day.dayBriefs?.[type] || day.theme || ''
-    const label = (COLORS[type]?.label || type).toLowerCase()
-    const phase = day.phase ? PHASE_NAMES[day.phase] ?? day.phase : ''
-    const prompt = `Напиши ${label} для моего блога${brief ? ` на тему: «${brief}»` : ''}. Сделай готовый к публикации текст в моём голосе.${phase ? ` Это день ${day.day} прогрева, фаза «${phase}».` : ''}`
-    router.push(`/projects/${projectId}/assistant?back=content-plan&prompt=${encodeURIComponent(prompt)}`)
-  }
 
   const activeDay = pendingBadge?.day ?? (viewingKey ? parseInt(viewingKey.split('-')[0]) : null)
 
@@ -468,12 +406,21 @@ export function ContentPlanGrid({
                         return entries.map(type => {
                           const c = COLORS[type]
                           if (!c) return null
+                          const existing = day.items.find(i => i.content_type === type)
+                          // Open the details panel FIRST (dictate / type extra context),
+                          // then "Создать" generates. The panel renders right below this
+                          // day card (pendingBadge block).
+                          const openDetails = () => {
+                            setPendingBadge({ day: day.day, type, phase: day.phase || 'awareness', theme: day.dayBriefs?.[type] || day.theme })
+                            setViewingKey(null); setAddingToDay(null); setExtraContext('')
+                          }
                           return (
                             <div key={type} className="rounded-lg border border-[#F0F0F0] p-2.5 space-y-2">
                               <div className="flex items-center justify-between gap-2">
-                                <span className="inline-flex text-[10px] font-bold px-2 py-0.5 rounded-md"
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md"
                                   style={{ backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
                                   {c.label.toUpperCase()}
+                                  {existing && <Check className="h-3 w-3 text-green-600" />}
                                 </span>
                                 {onRemoveType && (
                                   <button type="button" onClick={() => onRemoveType(day.day, type)} aria-label="Убрать формат"
@@ -483,10 +430,23 @@ export function ContentPlanGrid({
                                 )}
                               </div>
                               <p className="text-[13px] text-[#333] leading-snug">{day.dayBriefs![type]}</p>
-                              <button onClick={() => openInChat(day, type)}
-                                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-white gradient-accent active:opacity-90 transition-opacity">
-                                <Sparkles className="h-3.5 w-3.5" /> Сгенерировать {c.label.toLowerCase()}
-                              </button>
+                              {existing ? (
+                                <div className="flex items-center gap-2">
+                                  <button onClick={() => { setViewingKey(`${day.day}-${type}`); setPendingBadge(null); setAddingToDay(null) }}
+                                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold border border-[#E0E0E0] text-[#444] active:bg-[#F5F5F5] transition-colors">
+                                    <Eye className="h-3.5 w-3.5" /> Посмотреть
+                                  </button>
+                                  <button onClick={openDetails}
+                                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-white gradient-accent active:opacity-90 transition-opacity">
+                                    <RefreshCw className="h-3.5 w-3.5" /> Обновить
+                                  </button>
+                                </div>
+                              ) : (
+                                <button onClick={openDetails}
+                                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-white gradient-accent active:opacity-90 transition-opacity">
+                                  <Sparkles className="h-3.5 w-3.5" /> Сгенерировать {c.label.toLowerCase()}
+                                </button>
+                              )}
                             </div>
                           )
                         })
@@ -543,9 +503,12 @@ export function ContentPlanGrid({
                         <p className="text-sm text-[#333]">{typeBrief}</p>
                       </div>
                     )}
-                    <VoiceTextarea value={extraContext} onChange={setExtraContext}
-                      placeholder={typeBrief ? "Надиктуй детали: историю, кейс, имя клиента..." : "Надиктуй детали: кейс, продукт..."}
-                      rows={2} />
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-medium text-[#888]">Детали для AI <span className="text-[#bbb]">(по желанию)</span> — надиктуй или впиши историю, кейс, имя клиента, цифры:</p>
+                      <VoiceTextarea value={extraContext} onChange={setExtraContext}
+                        placeholder={typeBrief ? "Например: история клиентки Ани, выросла с 800 до 5000 за 2 месяца..." : "Например: кейс, продукт, конкретные цифры..."}
+                        rows={2} />
+                    </div>
                     <div className="flex items-center gap-2">
                       <Button size="sm" className="gradient-accent text-white hover:opacity-90 gap-1.5 flex-1"
                         onClick={handlePendingGenerate} disabled={!!generatingDay}>
