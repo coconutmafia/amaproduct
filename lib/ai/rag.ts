@@ -140,7 +140,9 @@ export async function buildRAGContext(
     'unpacking_map',       // personality / story
     'blog_lines',          // narrative lines
     'audience_research',   // research tables / audience analysis
+    'interview_transcript',// raw customer-interview quotes — prime audience language
     'audience_survey',     // survey results
+    'additional',          // user-uploaded extra materials
     'cases_reviews',       // client cases & reviews  ← was missing
     'funnel_description',  // sales funnel            ← was missing
     'marketing_strategy',  // marketing strategy      ← was missing

@@ -49,6 +49,7 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
 
     const controller = new AbortController()
     abortRef.current = controller
+    let acc = ''
 
     try {
       const res = await fetch('/api/ai/chat', {
@@ -65,7 +66,6 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
-      let acc = ''
       while (true) {
         const { value, done } = await reader.read()
         if (done) break
@@ -77,7 +77,7 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
         // user stopped — keep whatever streamed
-        if (streaming.trim()) setMessages(prev => [...prev, { role: 'assistant', content: streaming }])
+        if (acc.trim()) setMessages(prev => [...prev, { role: 'assistant', content: acc }])
       } else {
         toast.error(err instanceof Error ? err.message : 'Ошибка ассистента')
       }

@@ -33,13 +33,22 @@ const PHASE_SCHEMAS: Record<string, (keyof typeof SCHEMAS)[]> = {
   activation:  ['educational', 'myth_bust', 'before_after'],
 }
 
+// Warmup plans may store generic phase_1..4; map them to the semantic keys that
+// have dedicated schemas / arcs / CTA so they never silently fall back to the
+// generic "awareness" default (which weakened briefs/edits for product &
+// objection days on plans that use the phase_1..4 convention).
+const PHASE_ALIAS: Record<string, string> = {
+  phase_1: 'niche', phase_2: 'expert', phase_3: 'product', phase_4: 'objections',
+}
+const normPhase = (p: string) => PHASE_ALIAS[p] ?? p
+
 /**
  * Returns the best-fit content schema for a given phase.
  * For post/carousel/email — full schema text.
  * For reels/stories — adapted visual/dialogue hint.
  */
 export function getSchemaForPhase(phase: string, contentType: string): string {
-  const keys = PHASE_SCHEMAS[phase] ?? PHASE_SCHEMAS.awareness
+  const keys = PHASE_SCHEMAS[normPhase(phase)] ?? PHASE_SCHEMAS.awareness
   const primary = SCHEMAS[keys[0]]
   const fallback = SCHEMAS[keys[1]] ?? ''
 
@@ -142,7 +151,7 @@ const PHASE_EMOTIONS: Record<string, string> = {
 }
 
 export function getEmotionalMechanics(phase: string): string {
-  return PHASE_EMOTIONS[phase] ?? PHASE_EMOTIONS.awareness
+  return PHASE_EMOTIONS[normPhase(phase)] ?? PHASE_EMOTIONS.awareness
 }
 
 // ── CTA ENGINE BY PHASE ──────────────────────────────────────────────────────
@@ -160,7 +169,7 @@ const CTA_ENGINE: Record<string, string> = {
 }
 
 export function getCTAEngine(phase: string): string {
-  return CTA_ENGINE[phase] ?? CTA_ENGINE.awareness
+  return CTA_ENGINE[normPhase(phase)] ?? CTA_ENGINE.awareness
 }
 
 // ── NICHE EMOTIONAL DICTIONARY ────────────────────────────────────────────────

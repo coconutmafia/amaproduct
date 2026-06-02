@@ -214,7 +214,9 @@ export interface StyleExample {
 
 // ===== REFERRAL SYSTEM =====
 export type ReferralStatus = 'registered' | 'active' | 'rewarded' | 'expired'
-export type SubscriptionTier = 'free' | 'pro' | 'agency'
+// Keep in sync with SubscriptionPlan in lib/generations-config.ts (the limit
+// source of truth) — 'starter' was missing here and diverged from PLAN_CONFIG.
+export type SubscriptionTier = 'free' | 'starter' | 'pro' | 'agency'
 
 export interface Referral {
   id: string

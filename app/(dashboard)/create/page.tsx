@@ -58,6 +58,7 @@ export default function CreatePage() {
     setMessages(next)
     setLoading(true); setStreaming('')
     const controller = new AbortController(); abortRef.current = controller
+    let acc = ''
     try {
       const res = await fetch('/api/ai/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -68,7 +69,7 @@ export default function CreatePage() {
       })
       if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error ?? 'Ошибка') }
       if (!res.body) throw new Error('Нет ответа')
-      const reader = res.body.getReader(); const decoder = new TextDecoder(); let acc = ''
+      const reader = res.body.getReader(); const decoder = new TextDecoder()
       while (true) {
         const { value, done } = await reader.read()
         if (done) break
@@ -76,7 +77,7 @@ export default function CreatePage() {
       }
       setMessages(prev => [...prev, { role: 'assistant', content: acc }]); setStreaming('')
     } catch (err) {
-      if ((err as Error).name === 'AbortError') { if (streaming.trim()) setMessages(prev => [...prev, { role: 'assistant', content: streaming }]) }
+      if ((err as Error).name === 'AbortError') { if (acc.trim()) setMessages(prev => [...prev, { role: 'assistant', content: acc }]) }
       else toast.error(err instanceof Error ? err.message : 'Ошибка')
       setStreaming('')
     } finally { setLoading(false); abortRef.current = null }
