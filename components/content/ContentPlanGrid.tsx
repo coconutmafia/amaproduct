@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { StructuredContentView } from '@/components/content/StructuredContentView'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import {
   Sparkles, ChevronLeft, ChevronRight, Download, Loader2,
