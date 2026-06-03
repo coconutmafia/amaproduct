@@ -8,6 +8,7 @@ import {
   getCTAEngine,
   HUMANIZATION_ENGINE,
   CONTENT_BRAIN_ANTI_PATTERNS,
+  AI_TELLS_TO_AVOID,
 } from '@/lib/ai/prompts/content-brain'
 import { NextResponse } from 'next/server'
 import type { WarmupPlanData } from '@/types'
@@ -27,6 +28,8 @@ const BANNED_PHRASES = `
 ❌ Использование слова "эксперт" для описания самого блогера
 ❌ Любые формулировки которые звучат как реклама, а не как разговор
 ${CONTENT_BRAIN_ANTI_PATTERNS}
+
+${AI_TELLS_TO_AVOID}
 `.trim()
 
 export async function POST(request: Request) {

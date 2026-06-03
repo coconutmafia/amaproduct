@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt } from '@/lib/ai/prompts/system'
+import { AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
 import type { Message } from '@/types'
 
 // Vercel Pro allows up to 300s. Multi-item answers ("5 рилзов") on top of a
@@ -101,6 +102,8 @@ export async function POST(request: Request) {
 - Если просят НЕСКОЛЬКО штук («5 рилзов», «10 идей») — выдай РОВНО столько, каждую полностью и пронумерованно. Не останавливайся на половине, не пиши «продолжить?» — доводи список до конца.
 
 Ты сильнее обычного ChatGPT в контенте, потому что работаешь по конкретной методологии прогревов (ниже) и думаешь как продюсер запусков, а не как универсальный бот.
+
+${AI_TELLS_TO_AVOID}
 
 ${sysKnowledge ? `═══ МЕТОДОЛОГИЯ (опирайся на неё) ═══\n${sysKnowledge}` : ''}`
 
