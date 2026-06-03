@@ -1,14 +1,14 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
+import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import {
-  Mic, MicOff, ChevronRight, ChevronLeft, CheckCircle2,
+  ChevronRight, ChevronLeft, CheckCircle2,
   Loader2, Download, Sparkles, MessageSquare,
 } from 'lucide-react'
 
@@ -59,107 +59,12 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
   const [step, setStep] = useState(0) // 0 = intro, 1..N = questions, N+1 = done
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [currentText, setCurrentText] = useState('')
-  const [isRecording, setIsRecording] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
-  const recognitionRef = useRef<unknown>(null)
-  const shouldRecordRef = useRef(false)
-  const restartCountRef = useRef(0)
-  const noSpeechCountRef = useRef(0)
-  const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'paused'>('idle')
 
   const currentQ = step >= 1 && step <= QUESTIONS.length ? QUESTIONS[step - 1] : null
   const totalSteps = QUESTIONS.length
   const progress = step === 0 ? 0 : Math.round((step / totalSteps) * 100)
-
-  // ── Voice recording ────────────────────────────────────────────────────────
-  // iOS Safari stops SpeechRecognition after each utterance even with continuous=true.
-  // Workaround: restart on onend while shouldRecordRef is true.
-  // Safety: restartCountRef prevents infinite loops on error.
-  const stopRecording = useCallback(() => {
-    shouldRecordRef.current = false
-    restartCountRef.current = 0
-    noSpeechCountRef.current = 0
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(recognitionRef.current as any)?.stop()
-    setIsRecording(false)
-    setRecordingState('idle')
-  }, [])
-
-  const startRecognitionSession = useCallback(() => {
-    if (!shouldRecordRef.current) return
-    if (restartCountRef.current > 60) { stopRecording(); return }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SR) return
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const r = new SR()
-    r.lang = 'ru-RU'
-    r.continuous = true
-    r.interimResults = true
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    r.onresult = (e: any) => {
-      restartCountRef.current = 0
-      noSpeechCountRef.current = 0
-      setRecordingState('recording')
-      let finalText = ''
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) finalText += e.results[i][0].transcript
-      }
-      if (finalText) setCurrentText(prev => prev ? prev + ' ' + finalText : finalText)
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    r.onerror = (e: any) => {
-      if (e.error === 'no-speech') {
-        noSpeechCountRef.current++
-        setRecordingState('paused')
-        // Auto-stop after ~8 seconds of silence (4 consecutive no-speech events)
-        if (noSpeechCountRef.current >= 4) {
-          stopRecording()
-          toast.info('Запись остановлена — долгая пауза')
-        }
-        return
-      }
-      shouldRecordRef.current = false
-      setIsRecording(false)
-      setRecordingState('idle')
-      if (e.error === 'not-allowed') toast.error('Нет доступа к микрофону. Разреши в настройках браузера.')
-    }
-    r.onend = () => {
-      if (shouldRecordRef.current) {
-        restartCountRef.current++
-        setRecordingState('paused')
-        setTimeout(() => { if (shouldRecordRef.current) startRecognitionSession() }, 200)
-      } else {
-        setIsRecording(false)
-        setRecordingState('idle')
-      }
-    }
-    recognitionRef.current = r
-    try { r.start(); setRecordingState('recording') } catch {
-      shouldRecordRef.current = false
-      setIsRecording(false)
-      setRecordingState('idle')
-    }
-  }, [stopRecording])
-
-  const toggleRecording = useCallback(() => {
-    if (isRecording) {
-      stopRecording()
-      return
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SR) {
-      toast.error('Голосовой ввод не поддерживается в этом браузере')
-      return
-    }
-    noSpeechCountRef.current = 0
-    restartCountRef.current = 0
-    shouldRecordRef.current = true
-    startRecognitionSession()
-    setIsRecording(true)
-  }, [isRecording, startRecognitionSession, stopRecording])
 
   // ── Navigation ─────────────────────────────────────────────────────────────
   const saveCurrentAnswer = useCallback(() => {
@@ -169,11 +74,6 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
   }, [currentQ, currentText])
 
   const goNext = useCallback(() => {
-    if (isRecording) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(recognitionRef.current as any)?.stop()
-      setIsRecording(false)
-    }
     saveCurrentAnswer()
     if (step < totalSteps) {
       const nextId = QUESTIONS[step]?.id
@@ -183,7 +83,7 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
       // All done — go to review
       setStep(totalSteps + 1)
     }
-  }, [isRecording, saveCurrentAnswer, step, totalSteps, answers])
+  }, [saveCurrentAnswer, step, totalSteps, answers])
 
   const goPrev = useCallback(() => {
     saveCurrentAnswer()
@@ -329,39 +229,14 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
 
             {/* Voice + Text */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Твой ответ</span>
-                <button
-                  onClick={toggleRecording}
-                  className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${
-                    recordingState === 'recording'
-                      ? 'border-red-400/50 bg-red-400/10 text-red-400'
-                      : recordingState === 'paused'
-                      ? 'border-yellow-400/50 bg-yellow-400/10 text-yellow-500'
-                      : 'border-border text-muted-foreground hover:text-primary hover:border-primary/40'
-                  }`}
-                >
-                  {recordingState === 'recording'
-                    ? <><MicOff className="h-3.5 w-3.5 animate-pulse" /> Остановить</>
-                    : recordingState === 'paused'
-                    ? <><Mic className="h-3.5 w-3.5 animate-pulse" /> Пауза...</>
-                    : <><Mic className="h-3.5 w-3.5" /> Надиктовать</>
-                  }
-                </button>
-              </div>
-              <Textarea
+              <span className="text-xs text-muted-foreground">Твой ответ</span>
+              <VoiceTextarea
                 placeholder="Напиши ответ или надиктуй голосом..."
                 value={currentText}
-                onChange={e => setCurrentText(e.target.value)}
+                onChange={setCurrentText}
                 rows={5}
                 className="resize-none text-sm"
               />
-              {recordingState === 'recording' && (
-                <p className="text-xs text-red-400 animate-pulse">🎙 Говори — текст появится автоматически...</p>
-              )}
-              {recordingState === 'paused' && (
-                <p className="text-xs text-yellow-500">⏸ Пауза — продолжи говорить или нажми «Остановить»</p>
-              )}
             </div>
 
             {/* Navigation */}

@@ -1,11 +1,10 @@
 'use client'
 
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ProgressIndicator } from '@/components/shared/ProgressIndicator'
@@ -18,7 +17,7 @@ import Link from 'next/link'
 import { computeCompleteness } from '@/lib/completeness'
 import {
   CheckCircle2, Circle, Loader, AlertCircle, Upload, BookOpen,
-  X, File, Loader2, Plus, FileText, Mic, ChevronDown, ChevronUp,
+  X, File, Loader2, Plus, FileText, ChevronDown, ChevronUp,
   Info, MessageSquare, Sparkles, Trash2, Copy, Check, Pencil, AudioLines,
   Download,
 } from 'lucide-react'
@@ -156,11 +155,6 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
   const [showText, setShowText] = useState(false)
   const [textTitle, setTextTitle] = useState('')
   const [textContent, setTextContent] = useState('')
-  const [isRecording, setIsRecording] = useState(false)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null)
-  const shouldRecordRef = useRef(false)
-  const restartCountRef = useRef(0)
 
   const addFiles = (files: FileList | File[]) => {
     const arr = Array.from(files)
@@ -182,59 +176,6 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
     if (!textTitle.trim()) { toast.error('Введите название'); return }
     setQueue(prev => [...prev, { id: `t-${Date.now()}`, text: textContent.trim(), title: textTitle.trim(), status: 'pending' }])
     setTextTitle(''); setTextContent(''); setShowText(false)
-  }
-
-  const startRecognitionSession = () => {
-    if (!shouldRecordRef.current) return
-    if (restartCountRef.current > 60) { shouldRecordRef.current = false; setIsRecording(false); return }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SR) return
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const r = new SR()
-    r.lang = 'ru-RU'; r.continuous = true; r.interimResults = true
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    r.onresult = (ev: any) => {
-      restartCountRef.current = 0
-      let finalText = ''
-      for (let i = ev.resultIndex; i < ev.results.length; i++) {
-        if (ev.results[i].isFinal) finalText += ev.results[i][0].transcript
-      }
-      if (finalText) setTextContent(p => p ? p + ' ' + finalText : finalText)
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    r.onerror = (e: any) => {
-      if (e.error === 'no-speech') return
-      shouldRecordRef.current = false; setIsRecording(false)
-      if (e.error === 'not-allowed') toast.error('Нет доступа к микрофону. Разреши в настройках браузера.')
-    }
-    r.onend = () => {
-      if (shouldRecordRef.current) {
-        restartCountRef.current++
-        setTimeout(() => { if (shouldRecordRef.current) startRecognitionSession() }, 200)
-      } else {
-        setIsRecording(false)
-      }
-    }
-    recognitionRef.current = r
-    try { r.start() } catch { shouldRecordRef.current = false; setIsRecording(false) }
-  }
-
-  const toggleRecording = () => {
-    if (isRecording) {
-      shouldRecordRef.current = false
-      restartCountRef.current = 0
-      recognitionRef.current?.stop()
-      setIsRecording(false)
-      return
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SR) { toast.error('Голосовой ввод не поддерживается'); return }
-    shouldRecordRef.current = true
-    restartCountRef.current = 0
-    startRecognitionSession()
-    setIsRecording(true)
   }
 
   const uploadOne = async (item: QueueItem): Promise<{ materialId: string; processingStatus: string }> => {
@@ -394,19 +335,8 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
             {showText && (
               <div className="px-4 pb-4 pt-3 space-y-2 border-t border-border">
                 <Input placeholder="Название *" value={textTitle} onChange={(e) => setTextTitle(e.target.value)} className="text-sm" />
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-muted-foreground">Текст</Label>
-                  <button onClick={toggleRecording} className={`flex items-center gap-1 text-xs ${isRecording ? 'text-red-400' : 'text-muted-foreground'}`}>
-                    <Mic className={`h-3 w-3 ${isRecording ? 'animate-pulse' : ''}`} />
-                    {isRecording ? 'Стоп' : 'Голос'}
-                  </button>
-                </div>
-                <Textarea placeholder="Вставь текст..." value={textContent} onChange={(e) => setTextContent(e.target.value)} rows={3} className="text-sm resize-none" />
-                {isRecording && (
-                  <p className="text-[11px] text-muted-foreground leading-snug">
-                    🎤 Говори чётко и не торопись — короткими фразами с паузами. На iPhone текст появляется фразами после паузы — это нормально.
-                  </p>
-                )}
+                <Label className="text-xs text-muted-foreground">Текст — вставь или надиктуй голосом</Label>
+                <VoiceTextarea placeholder="Вставь текст... или надиктуй голосом" value={textContent} onChange={setTextContent} rows={3} className="text-sm resize-none" />
                 <p className="text-[11px] text-muted-foreground">
                   Заполни название и текст — и жми «Загрузить» внизу. Кнопка ниже нужна, только если хочешь добавить сразу несколько текстов.
                 </p>

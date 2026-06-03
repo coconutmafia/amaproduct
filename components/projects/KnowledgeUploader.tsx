@@ -5,13 +5,13 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
+import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import {
-  Upload, FileText, Mic, Plus, X, Loader2,
+  Upload, FileText, Plus, X, Loader2,
   CheckCircle2, AlertCircle, File, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import type { MaterialType } from '@/types'
@@ -64,13 +64,10 @@ interface KnowledgeUploaderProps {
 export function KnowledgeUploader({ projectId, onUploadComplete, isSystemVault = false }: KnowledgeUploaderProps) {
   const router = useRouter()
   const fileRef = useRef<HTMLInputElement>(null)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null)
 
   const [open, setOpen] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
-  const [isRecording, setIsRecording] = useState(false)
 
   // Тип для всех файлов в этой сессии загрузки
   const [globalType, setGlobalType] = useState<string>(isSystemVault ? 'methodology' : 'tone_of_voice')
@@ -180,30 +177,6 @@ export function KnowledgeUploader({ projectId, onUploadComplete, isSystemVault =
       onUploadComplete?.()
       router.refresh()
     }
-  }
-
-  const toggleRecording = () => {
-    if (isRecording) {
-      recognitionRef.current?.stop()
-      setIsRecording(false)
-      return
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SpeechAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SpeechAPI) { toast.error('Голосовой ввод не поддерживается'); return }
-    const r = new SpeechAPI()
-    r.lang = 'ru-RU'; r.continuous = true; r.interimResults = false
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    r.onresult = (e: any) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const t = Array.from(e.results as any[]).map((x: any) => x[0].transcript).join('')
-      setTextContent(prev => prev + ' ' + t)
-    }
-    r.onerror = () => setIsRecording(false)
-    r.onend = () => setIsRecording(false)
-    recognitionRef.current = r
-    r.start()
-    setIsRecording(true)
   }
 
   const statusIcon = (status: UploadStatus) => {
@@ -380,22 +353,11 @@ export function KnowledgeUploader({ projectId, onUploadComplete, isSystemVault =
                   className="bg-input border-border text-sm"
                 />
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs text-muted-foreground">Вставьте текст</Label>
-                    <button
-                      onClick={toggleRecording}
-                      className={`flex items-center gap-1 text-xs transition-colors ${
-                        isRecording ? 'text-red-400' : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      <Mic className={`h-3 w-3 ${isRecording ? 'animate-pulse' : ''}`} />
-                      {isRecording ? 'Стоп' : 'Голос'}
-                    </button>
-                  </div>
-                  <Textarea
-                    placeholder="Скопируй и вставь текст из PDF, Google Docs, Word..."
+                  <Label className="text-xs text-muted-foreground">Вставьте или надиктуйте текст</Label>
+                  <VoiceTextarea
+                    placeholder="Скопируй и вставь текст из PDF, Google Docs, Word... или надиктуй голосом"
                     value={textContent}
-                    onChange={(e) => setTextContent(e.target.value)}
+                    onChange={setTextContent}
                     rows={4}
                     className="bg-input border-border resize-none text-sm"
                   />
