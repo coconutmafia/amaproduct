@@ -37,6 +37,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ru" className={inter.variable} suppressHydrationWarning>
       <body className="min-h-screen bg-background text-foreground antialiased">
+        {/* Anti-flash: apply the saved theme class on <html> BEFORE paint.
+            Server-rendered inline script (Next-sanctioned) — no React 19
+            "script tag while rendering" warning, unlike next-themes. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem('theme');if(t!=='light'&&t!=='dark')t='light';var e=document.documentElement;e.classList.remove('light','dark');e.classList.add(t);e.style.colorScheme=t;}catch(e){}`,
+          }}
+        />
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
           {children}
           <Toaster richColors position="top-right" />

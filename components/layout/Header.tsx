@@ -1,7 +1,7 @@
 'use client'
 
 import { Moon, Sun, Bell, Search } from 'lucide-react'
-import { useTheme } from 'next-themes'
+import { useTheme } from '@/components/shared/ThemeProvider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MobileNav } from './MobileNav'
