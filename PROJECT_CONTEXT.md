@@ -147,6 +147,12 @@ DDL ассистент применить НЕ может — даёт SQL, вл
   `aiPlanData`+`planApproved`, возвращает на экран одобрения), `ProjectWizard` (`/projects/new`, ключ
   `ama_new_project_draft`), `UnpackingInterview` (ответы интервью). НЕ убирать этот паттерн; новые многошаговые
   формы делать так же. Очистка черновика — на успешном сохранении (`localStorage.removeItem`).
+- **Тема: свой провайдер вместо `next-themes`** (коммит `d9db4bf`, июнь 2026): `next-themes` рендерил свой
+  анти-флэш `<script>` ВНУТРИ клиентского компонента → React 19 спамил в консоль «Encountered a script tag while
+  rendering React component» (dev-only, в проде вырезается, но засоряло). Заменено на лёгкий `ThemeProvider`+`useTheme`
+  в `components/shared/ThemeProvider.tsx` (класс `light`/`dark` на `<html>` + localStorage, БЕЗ рендера `<script>`).
+  Анти-флэш `<script>` теперь в server-layout `app/layout.tsx` (санкционированное место по докам Next — см. json-ld).
+  `next-themes` больше нигде не импортируется (оставлен в package.json, безвреден). НЕ возвращать next-themes-провайдер.
 
 ### Аудит сервиса (июнь 2026) — исправлено, НЕ переоткрывать
 - **maxDuration=300 на `/api/ai/generate`** (был 60 — тот же баг таймаута, что чинили в chat: убивало
