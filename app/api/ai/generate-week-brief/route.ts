@@ -260,15 +260,28 @@ ${daysText}
     const toolBlock = response.content.find(b => b.type === 'tool_use')
     if (!toolBlock || toolBlock.type !== 'tool_use') throw new Error('AI не вернул план недели')
 
-    const input = toolBlock.input as { days?: Array<{ day: number; items?: Array<{ format: string; theme: string }> }> }
-    if (!input.days || !Array.isArray(input.days) || input.days.length === 0) {
+    // Sonnet usually returns `days` as a native array, but it INTERMITTENTLY
+    // serializes the nested array (or a single day's `items`) as a JSON STRING
+    // instead. Without this, a perfectly good response 500s as "пустой план".
+    // Accept both shapes everywhere we expect an array.
+    const toArray = (v: unknown): unknown[] => {
+      if (Array.isArray(v)) return v
+      if (typeof v === 'string') {
+        try { const p = JSON.parse(v); return Array.isArray(p) ? p : [] } catch { return [] }
+      }
+      return []
+    }
+
+    const input = toolBlock.input as { days?: unknown }
+    const rawDays = toArray(input.days) as Array<{ day: number; items?: unknown }>
+    if (rawDays.length === 0) {
       throw new Error('AI вернул пустой план — попробуй ещё раз')
     }
 
     // Reshape {day, items:[{format,theme}]} → {day, brief:{format: theme}}
-    const days = input.days.map(d => {
+    const days = rawDays.map(d => {
       const brief: Record<string, string> = {}
-      for (const it of (Array.isArray(d.items) ? d.items : [])) {
+      for (const it of toArray(d.items) as Array<{ format?: string; theme?: string }>) {
         if (it?.format && it?.theme) brief[it.format] = it.theme
       }
       return { day: d.day, brief }

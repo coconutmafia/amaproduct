@@ -443,14 +443,26 @@ ${isEvergreen ? `
             send({ type: 'error', message: 'AI не вернул план. Попробуй ещё раз.' })
           } else {
             const planJson = JSON.stringify(toolBlock.input)
-            const input = toolBlock.input as { strategy_summary?: string; phases?: unknown[] }
+            const input = toolBlock.input as { strategy_summary?: string; phases?: unknown }
+            // Sonnet INTERMITTENTLY serializes the nested `phases` array (and a
+            // phase's `daily_plan`) as a JSON STRING instead of a native array.
+            // Accept both, otherwise a valid plan is wrongly rejected as
+            // "incomplete". No-op when arrays come through normally.
+            const toArray = (v: unknown): unknown[] => {
+              if (Array.isArray(v)) return v
+              if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : [] } catch { return [] } }
+              return []
+            }
+            const phases = (toArray(input.phases) as Array<Record<string, unknown>>)
+              .map(ph => ({ ...ph, daily_plan: toArray(ph.daily_plan) }))
             // Validate plan completeness — truncated output (max_tokens hit) produces empty phases
-            if (!input.phases || !Array.isArray(input.phases) || input.phases.length === 0) {
+            if (phases.length === 0) {
               console.error(`[warmup-plan] Incomplete plan (stop_reason=${finalMessage.stop_reason}), phases=${JSON.stringify(input.phases)}, size=${planJson.length}`)
               send({ type: 'error', message: 'AI не успел сформировать полный план. Попробуй ещё раз.' })
             } else {
-              console.log(`[warmup-plan] Done, phases=${input.phases.length}, plan size=${planJson.length} bytes, stop_reason=${finalMessage.stop_reason}`)
-              send({ type: 'done', planData: toolBlock.input })
+              const planData = { ...input, phases }
+              console.log(`[warmup-plan] Done, phases=${phases.length}, plan size=${planJson.length} bytes, stop_reason=${finalMessage.stop_reason}`)
+              send({ type: 'done', planData })
             }
           }
         } catch (err) {
