@@ -105,10 +105,18 @@ DDL ассистент применить НЕ может — даёт SQL, вл
   `/projects/[id]/viral-reels` пользовательские) → вплетаются в контент-планы по нише. Бэкенд `/api/viral-reels`
   (Apify скрейп рилз → Whisper расшифровка → AI-разбор → сохранение).
 - **Админ-аналитика** (`/admin/analytics`) — по юзерам + кнопка «Триал 2 мес».
-- Голос везде через **запись→Whisper** (логика в хуке `lib/useVoiceRecorder.ts`). В чатах (`/create`,
-  ассистент) — общий `components/ui/ChatComposer.tsx`: запись разворачивается в **панель во всю ширину**
-  (отмена · живая волна + таймер · подтвердить), как «Release to send» у ChatGPT. В формах — компактная
-  `components/ui/VoiceRecordButton`. Web Speech не работал в webview/iOS — поэтому только запись→Whisper.
+- Голос везде через **запись→Whisper** (хук `lib/useVoiceRecorder.ts`: пишет полное аудио → ОДИН вызов
+  `/api/ai/transcribe-voice` на стопе → текст возвращается ЦЕЛИКОМ). Никакого пофразового вывода и потери хвоста.
+  В чатах (`/create`, ассистент) — `components/ui/ChatComposer.tsx`: запись разворачивается в **панель во всю
+  ширину** (отмена · живая волна + таймер · подтвердить), как «Release to send» у ChatGPT.
+  - **`components/ui/VoiceTextarea.tsx`** — поле для всех форм: во время записи textarea ЗАМЕНЯЕТСЯ на in-field
+    панель (волна+таймер+отмена/✓), как в ChatComposer; затем «Распознаю речь…»; затем текст вставляется разом.
+    Используется в style-bank, generator, trends, knowledge, warmup-wizard, admin. `VoiceRecordButton` — компактная
+    кнопка (AiEditChat).
+  - **Web Speech API ПОЛНОСТЬЮ УДАЛЁН** (июнь 2026, коммит `48f2e7a`). Раньше материалы/знания
+    (`UnpackingInterview`, `KnowledgeUploader`, `KnowledgePageClient`) использовали `SpeechRecognition` →
+    отставание, пофразовость, потеря последних фраз при остановке (фидбэк владельца). Переведены на `VoiceTextarea`.
+    НЕ возвращать Web Speech — он не работает в webview/iOS и теряет хвост.
 - Чат: читается сверху вниз. Логика пина — хук `lib/useChatPin.ts`: вопрос пинится к верху явным `scrollTo`
   (rect-based, НЕ scrollIntoView — тот промахивался на мобиле) + **динамический** нижний спейсер (заполняет
   пустоту под коротким ответом, схлопывается в 0 под длинным). КЛЮЧЕВОЕ: `lastUserRef` вешается на ПОСЛЕДНЕЕ
