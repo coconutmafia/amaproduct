@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
+// Verify the CALLER is an admin (their own profile row is always readable under RLS).
 async function requireAdmin() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
   if (profile?.role !== 'admin') return null
-  return { supabase, user }
+  return { user }
 }
 
 // Rough cost estimate per generation (Claude tokens with large RAG context).
@@ -17,7 +19,9 @@ const COST_PER_GENERATION_USD = 0.18
 export async function GET() {
   const ctx = await requireAdmin()
   if (!ctx) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  const { supabase } = ctx
+  // Service-role client → read EVERY user's data. With the user-session client,
+  // RLS limited the admin to their own profile row, so analytics showed 1 user.
+  const supabase = createAdminClient()
 
   const { data: profiles } = await supabase
     .from('profiles')
@@ -102,6 +106,7 @@ export async function GET() {
 export async function PATCH(request: Request) {
   const ctx = await requireAdmin()
   if (!ctx) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const supabase = createAdminClient() // grant/revoke a trial on ANY user's profile
 
   const body = await request.json() as { userId?: string; months?: number }
   if (!body.userId) return NextResponse.json({ error: 'userId обязателен' }, { status: 400 })
@@ -116,7 +121,7 @@ export async function PATCH(request: Request) {
     patch = { subscription_tier: 'trial', subscription_expires_at: ends.toISOString() }
   }
 
-  const { data, error } = await ctx.supabase
+  const { data, error } = await supabase
     .from('profiles')
     .update(patch)
     .eq('id', body.userId)
