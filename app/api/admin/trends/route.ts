@@ -19,6 +19,7 @@ export async function GET() {
   const { data, error } = await ctx.supabase
     .from('content_trends')
     .select('*')
+    .eq('scope', 'system') // admin page manages only system trends (clients keep their own)
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -48,6 +49,7 @@ export async function POST(request: Request) {
   const { data, error } = await ctx.supabase
     .from('content_trends')
     .insert({
+      scope:       'system',
       title:       body.title.trim(),
       description: body.description.trim(),
       example:     body.example?.trim() || null,

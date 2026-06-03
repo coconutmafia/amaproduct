@@ -88,19 +88,25 @@ export async function POST(request: Request) {
   // the week. Defensive: if the table doesn't exist yet, just skip.
   let trendsBlock = ''
   try {
-    const { data: trends } = await supabase
+    const niche = (project.niche || '').toLowerCase()
+    // System trends (owner-curated, matched by niche) + this project's own trends.
+    const { data: sysTrends } = await supabase
       .from('content_trends')
       .select('title, description, example, format_type, niches')
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(12)
-    if (trends && trends.length > 0) {
-      const niche = (project.niche || '').toLowerCase()
-      const relevant = trends.filter(t => {
+      .eq('scope', 'system').eq('is_active', true)
+      .order('created_at', { ascending: false }).limit(12)
+    const { data: projTrends } = await supabase
+      .from('content_trends')
+      .select('title, description, example, format_type, niches')
+      .eq('scope', 'project').eq('project_id', projectId).eq('is_active', true)
+      .order('created_at', { ascending: false }).limit(10)
+    {
+      const matchedSys = (sysTrends ?? []).filter(t => {
         const ns = (t.niches as string[] | null)
         if (!ns || ns.length === 0) return true // all niches
         return ns.some(n => niche.includes(n.toLowerCase()) || n.toLowerCase().includes(niche))
-      }).slice(0, 4)
+      })
+      const relevant = [...(projTrends ?? []), ...matchedSys].slice(0, 5) // project's own first
       if (relevant.length > 0) {
         trendsBlock = `
 ─── АКТУАЛЬНЫЕ ТРЕНДЫ / ФОРМАТЫ МЕСЯЦА ──────────────────────
