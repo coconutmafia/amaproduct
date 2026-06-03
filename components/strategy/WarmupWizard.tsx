@@ -259,17 +259,23 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   // ── Draft: auto-save to localStorage ─────────────────────────────────────
   const DRAFT_KEY = `warmup_draft_${projectId}`
   const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null)
-  const [hasDraft, setHasDraft] = useState(false)
   const [draftRestored, setDraftRestored] = useState(false)
+  const [draftAutoRestored, setDraftAutoRestored] = useState(false)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Check for existing draft on mount
+  // On mount: AUTO-restore any unfinished work so it's never lost when the user
+  // navigates away and comes back. Previously the generated plan + the inputs
+  // typed before «Создать план» were gone (the reported bug) because restore was
+  // a manual banner that was easy to miss and didn't even save the plan.
+  // The user can still start fresh via «Начать заново».
   useEffect(() => {
     try {
       const raw = localStorage.getItem(DRAFT_KEY)
-      if (raw) {
-        const draft = JSON.parse(raw)
-        if (draft?.step && draft.step > 1) setHasDraft(true)
+      if (!raw) return
+      const draft = JSON.parse(raw)
+      if (draft && (draft.aiPlanData || (draft.step && draft.step > 1) || draft.selectedProductId)) {
+        restoreDraft()
+        setDraftAutoRestored(true)
       }
     } catch { /* ignore */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -312,12 +318,17 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     extraHooks,
     competitorNotes,
     extraCompetitors,
+    // The AI-generated plan itself — without this, a generated-but-unapproved
+    // plan was lost the moment the user navigated away (the reported bug).
+    aiPlanData,
+    planApproved,
   }), [
     step, selectedProductId, warmupType, startDate, endDate, salesOpenDate, productStartDate, evergreenDays,
     coldFunnelId, coldFunnelCustom, coldAudienceType,
     warmAudienceTypes, freeEventName, freeEventDate, freeEventTypes,
     paidEventName, paidEventDate, paidEventTypes,
     useCases, extraCasesText, selectedHooks, hookTexts, extraHooks, competitorNotes, extraCompetitors,
+    aiPlanData, planApproved,
   ])
 
   // Auto-save with 1.5s debounce after any change
@@ -327,10 +338,9 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     saveTimerRef.current = setTimeout(() => {
       try {
         const state = getDraftState()
-        if (state.step <= 1 && !state.selectedProductId) return // не сохраняем пустой черновик
+        if (state.step <= 1 && !state.selectedProductId && !state.aiPlanData) return // не сохраняем пустой черновик
         localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...state, savedAt: new Date().toISOString() }))
         setDraftSavedAt(new Date())
-        setHasDraft(true)
       } catch { /* ignore */ }
     }, 1500)
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
@@ -342,7 +352,9 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       const raw = localStorage.getItem(DRAFT_KEY)
       if (!raw) return
       const d = JSON.parse(raw)
-      if (d.step) setStep(d.step > 7 ? 7 : d.step)
+      // If a generated plan was saved, land back on the approval screen (step 8)
+      // so the user sees their plan; otherwise cap at the last input step.
+      if (d.step) setStep(d.aiPlanData ? d.step : (d.step > 7 ? 7 : d.step))
       if (d.selectedProductId) setSelectedProductId(d.selectedProductId)
       if (d.warmupType) setWarmupType(d.warmupType)
       if (d.startDate !== undefined) setStartDate(d.startDate)
@@ -367,23 +379,45 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       if (d.extraHooks !== undefined) setExtraHooks(d.extraHooks)
       if (d.competitorNotes !== undefined) setCompetitorNotes(d.competitorNotes)
       if (d.extraCompetitors !== undefined) setExtraCompetitors(d.extraCompetitors)
+      if (d.aiPlanData) setAiPlanData(d.aiPlanData)
+      if (d.planApproved) setPlanApproved(d.planApproved)
       setDraftRestored(true)
       setTimeout(() => setDraftRestored(false), 2000)
-      setHasDraft(false)
-      toast.success('Черновик восстановлен!')
+      toast.success(d.aiPlanData ? 'Восстановили твой план — можешь одобрить или изменить' : 'Черновик восстановлен')
     } catch {
       toast.error('Не удалось восстановить черновик')
     }
   }
 
-  function clearDraft() {
-    try {
-      localStorage.removeItem(DRAFT_KEY)
-      setHasDraft(false)
-      setDraftSavedAt(null)
-      toast.success('Черновик удалён')
-    } catch { /* ignore */ }
+  // Drop the saved draft and reset the wizard to a blank state.
+  function startOver() {
+    try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
+    setDraftSavedAt(null); setDraftAutoRestored(false)
+    setStep(1)
+    setAiPlanData(null); setPlanApproved(false)
+    setSelectedProductId(null)
+    setWarmupType('launch')
+    setStartDate(''); setEndDate(''); setSalesOpenDate(''); setProductStartDate('')
+    setEvergreenDays(30)
+    setColdFunnelId(null); setColdFunnelCustom(''); setColdAudienceType('existing_funnel')
+    setWarmAudienceTypes(['content_only'])
+    setFreeEventName(''); setFreeEventDate(''); setFreeEventTypes([])
+    setPaidEventName(''); setPaidEventDate(''); setPaidEventTypes([])
+    setUseCases(true); setExtraCasesText('')
+    setSelectedHooks([]); setHookTexts({}); setExtraHooks('')
+    setCompetitorNotes(''); setExtraCompetitors('')
   }
+
+  // Warn before closing/refreshing the tab with unsaved (unapproved) work.
+  // In-app navigation no longer loses data (auto-saved + auto-restored on
+  // return); this covers hard reloads and closing the tab.
+  useEffect(() => {
+    const hasUnsavedWork = !planSaved && (!!aiPlanData || step > 1 || !!selectedProductId)
+    if (!hasUnsavedWork) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [planSaved, aiPlanData, step, selectedProductId])
 
   function toggleWarmType(value: string) {
     setWarmAudienceTypes((prev) =>
@@ -533,7 +567,6 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       const { planId } = await res.json() as { planId: string }
       // Черновик больше не нужен — план создан
       try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
-      setHasDraft(false)
       setDraftSavedAt(null)
       toast.success('План прогрева создан!')
       router.refresh()
@@ -548,32 +581,23 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
   return (
     <div className="space-y-4">
-      {/* Draft restore banner — показывается только если есть несохранённый черновик */}
-      {hasDraft && step === 1 && (
+      {/* Your work was auto-restored — nothing is lost on navigation. Offer a
+          clear way to start fresh. */}
+      {draftAutoRestored && !planSaved && (
         <div className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/8 px-4 py-3">
           <RotateCcw className="h-4 w-4 text-amber-400 shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-amber-300">Найден незавершённый черновик</p>
-            <p className="text-[10px] text-amber-400/70">Продолжить с того места где остановился?</p>
+            <p className="text-xs font-medium text-amber-300">Восстановили твой черновик</p>
+            <p className="text-[10px] text-amber-400/70">Сохранили всё, что ты заполнял. Можно продолжить или начать заново.</p>
           </div>
-          <div className="flex gap-2 shrink-0">
-            <Button
-              size="sm"
-              className="h-7 text-xs bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30"
-              variant="outline"
-              onClick={restoreDraft}
-            >
-              Восстановить
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 text-xs text-amber-500/60 hover:text-amber-400"
-              onClick={clearDraft}
-            >
-              Удалить
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs text-amber-500/70 hover:text-amber-300 shrink-0"
+            onClick={startOver}
+          >
+            Начать заново
+          </Button>
         </div>
       )}
 

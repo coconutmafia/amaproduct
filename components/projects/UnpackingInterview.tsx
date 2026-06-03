@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
@@ -61,6 +61,45 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
   const [currentText, setCurrentText] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
+
+  // ── Draft: never lose interview answers if the user closes or navigates away
+  //    mid-way (mirrors the warmup wizard). Auto-saved to localStorage and
+  //    restored when the interview is reopened.
+  const DRAFT_KEY = `unpacking_draft_${projectId}`
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const restoredRef = useRef(false)
+
+  // Restore saved answers when the interview opens.
+  useEffect(() => {
+    if (!open || restoredRef.current) return
+    restoredRef.current = true
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY)
+      if (!raw) return
+      const d = JSON.parse(raw) as { step?: number; answers?: Record<string, string>; currentText?: string }
+      const hasContent = (d.answers && Object.keys(d.answers).length > 0) || (d.currentText && d.currentText.trim())
+      if (!hasContent) return
+      if (d.answers) setAnswers(d.answers)
+      if (typeof d.currentText === 'string') setCurrentText(d.currentText)
+      if (typeof d.step === 'number' && d.step > 0) setStep(d.step)
+      toast.success('Восстановили твои ответы — продолжай с того же места')
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  // Auto-save (debounced) so answers survive navigation / closing the tab.
+  useEffect(() => {
+    if (!open) return
+    const hasContent = Object.keys(answers).length > 0 || currentText.trim().length > 0
+    if (!hasContent || step === 0) return
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => {
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ step, answers, currentText, savedAt: new Date().toISOString() }))
+      } catch { /* ignore */ }
+    }, 1000)
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
+  }, [open, step, answers, currentText, DRAFT_KEY])
 
   const currentQ = step >= 1 && step <= QUESTIONS.length ? QUESTIONS[step - 1] : null
   const totalSteps = QUESTIONS.length
@@ -125,6 +164,7 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
         const d = await res.json().catch(() => ({}))
         throw new Error(d.error || 'Ошибка сохранения')
       }
+      try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
       toast.success('Распаковка сохранена в материалы проекта! 🎉')
       router.refresh()
       onSuccess()
@@ -134,7 +174,7 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
     } finally {
       setIsSaving(false)
     }
-  }, [buildDocument, projectId, router, onSuccess, onClose])
+  }, [buildDocument, projectId, router, onSuccess, onClose, DRAFT_KEY])
 
   // ── Download ───────────────────────────────────────────────────────────────
   const handleDownload = useCallback(() => {

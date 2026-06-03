@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -14,7 +14,7 @@ import { toast } from 'sonner'
 import {
   ChevronRight, ChevronLeft, MessageCircle, Globe,
   Plus, X, Check, Loader2, Package, GitBranch,
-  Play, Users, Target, Sparkles, Bot, CalendarDays, Wallet, Wand2,
+  Play, Users, Target, Sparkles, Bot, CalendarDays, Wallet, Wand2, RotateCcw,
 } from 'lucide-react'
 
 interface Product {
@@ -72,6 +72,86 @@ export function ProjectWizard() {
 
   // ── Autofill (product URL) — per product index ────
   const [productFillLoading, setProductFillLoading] = useState<Record<number, boolean>>({})
+
+  // ── Draft: never lose a half-filled new-project form on navigation ─────────
+  const DRAFT_KEY = 'ama_new_project_draft'
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const draftLoadedRef = useRef(false)
+  const [draftRestored, setDraftRestored] = useState(false)
+
+  // Auto-restore on mount so a partially-filled project isn't lost.
+  useEffect(() => {
+    if (draftLoadedRef.current) return
+    draftLoadedRef.current = true
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY)
+      if (!raw) return
+      const d = JSON.parse(raw)
+      const meaningful = d.name || d.niche || d.description || d.targetAudience || d.contentGoals ||
+        (typeof d.step === 'number' && d.step > 1) || (Array.isArray(d.products) && d.products.some((p: Product) => p.name))
+      if (!meaningful) return
+      if (typeof d.step === 'number') setStep(d.step)
+      if (d.name !== undefined) setName(d.name)
+      if (d.niche !== undefined) setNiche(d.niche)
+      if (d.description !== undefined) setDescription(d.description)
+      if (d.targetAudience !== undefined) setTargetAudience(d.targetAudience)
+      if (d.contentGoals !== undefined) setContentGoals(d.contentGoals)
+      if (d.instagramUrl !== undefined) setInstagramUrl(d.instagramUrl)
+      if (d.vkUrl !== undefined) setVkUrl(d.vkUrl)
+      if (d.telegramUrl !== undefined) setTelegramUrl(d.telegramUrl)
+      if (d.youtubeUrl !== undefined) setYoutubeUrl(d.youtubeUrl)
+      if (d.salesType) setSalesType(d.salesType)
+      if (d.launchDate !== undefined) setLaunchDate(d.launchDate)
+      if (d.launchBudget !== undefined) setLaunchBudget(d.launchBudget)
+      if (d.launchCurrency) setLaunchCurrency(d.launchCurrency)
+      if (Array.isArray(d.products) && d.products.length) setProducts(d.products)
+      if (Array.isArray(d.funnels) && d.funnels.length) setFunnels(d.funnels)
+      if (d.aiName !== undefined) setAiName(d.aiName)
+      setDraftRestored(true)
+      toast.success('Восстановили твою заготовку проекта')
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Auto-save (debounced) — survives navigation and closing the tab.
+  useEffect(() => {
+    const meaningful = !!(name || niche || description || targetAudience || contentGoals || step > 1 || products.some(p => p.name))
+    if (!meaningful) return
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current)
+    draftTimerRef.current = setTimeout(() => {
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({
+          step, name, niche, description, targetAudience, contentGoals,
+          instagramUrl, vkUrl, telegramUrl, youtubeUrl,
+          salesType, launchDate, launchBudget, launchCurrency,
+          products, funnels, aiName, savedAt: new Date().toISOString(),
+        }))
+      } catch { /* ignore */ }
+    }, 1500)
+    return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current) }
+  }, [step, name, niche, description, targetAudience, contentGoals, instagramUrl, vkUrl, telegramUrl, youtubeUrl, salesType, launchDate, launchBudget, launchCurrency, products, funnels, aiName])
+
+  // Warn before closing/refreshing the tab with a half-filled project.
+  useEffect(() => {
+    const meaningful = !!(name || niche || description || targetAudience || contentGoals || products.some(p => p.name))
+    if (!meaningful) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [name, niche, description, targetAudience, contentGoals, products])
+
+  // Drop the draft and reset the wizard to a blank state.
+  function startOverProject() {
+    try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
+    setDraftRestored(false)
+    setStep(1)
+    setName(''); setNiche(''); setDescription(''); setTargetAudience(''); setContentGoals('')
+    setInstagramUrl(''); setVkUrl(''); setTelegramUrl(''); setYoutubeUrl('')
+    setSalesType('launch'); setLaunchDate(''); setLaunchBudget(''); setLaunchCurrency('RUB')
+    setProducts([{ name: '', product_type: 'курс', price: '', currency: 'RUB', description: '', sales_page_url: '' }])
+    setFunnels([{ name: '', funnel_type: 'cold', description: '', chatbot_link: '' }])
+    setAiName('')
+  }
 
   const handleAutofill = async () => {
     if (!instagramUrl.trim() && !telegramUrl.trim()) {
@@ -220,6 +300,7 @@ export function ProjectWizard() {
         if (funnelError) console.error('Funnels insert error:', funnelError.message)
       }
 
+      try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
       toast.success('Проект создан! 🎉')
 
       // Auto-scrape all social profiles in background — fire and forget
@@ -261,6 +342,24 @@ export function ProjectWizard() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-10">
+
+      {/* Draft auto-restored — nothing is lost on navigation; offer a fresh start */}
+      {draftRestored && (
+        <div className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/8 px-4 py-3">
+          <RotateCcw className="h-4 w-4 text-amber-400 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-amber-300">Восстановили твою заготовку</p>
+            <p className="text-[10px] text-amber-400/70">Сохранили всё, что ты заполнял. Можно продолжить или начать заново.</p>
+          </div>
+          <button
+            type="button"
+            onClick={startOverProject}
+            className="h-7 px-2.5 text-xs rounded-lg text-amber-500/70 hover:text-amber-300 shrink-0"
+          >
+            Начать заново
+          </button>
+        </div>
+      )}
 
       {/* Steps indicator */}
       <div className="flex items-center justify-between">
