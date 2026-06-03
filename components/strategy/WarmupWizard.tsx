@@ -27,7 +27,9 @@ import {
   RefreshCw,
   Save,
   RotateCcw,
+  Download,
 } from 'lucide-react'
+import { downloadPlanCsv } from '@/lib/planCsv'
 import type { Product, Funnel } from '@/types'
 
 // ── AI Plan types ────────────────────────────────────────────────────────────
@@ -1148,6 +1150,14 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                   duration={computedDuration}
                 />
               </div>
+
+              <button
+                type="button"
+                onClick={() => downloadPlanCsv(`Прогрев ${computedDuration} дней — ${selectedProduct?.name || 'продукт'}`, aiPlanData)}
+                className="flex items-center justify-center gap-1.5 w-full h-9 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
+              >
+                <Download className="h-3.5 w-3.5" /> Скачать в таблицу (CSV)
+              </button>
 
               {/* AI edit on the still-unsaved plan — say what to change in
                   words/voice, AI rewrites the selected days right here.

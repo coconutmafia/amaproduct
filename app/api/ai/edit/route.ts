@@ -11,9 +11,21 @@ import {
   AI_TELLS_TO_AVOID,
 } from '@/lib/ai/prompts/content-brain'
 import { NextResponse } from 'next/server'
-import type { WarmupPlanData } from '@/types'
+import type { WarmupPlanData, WarmupPhaseData } from '@/types'
 
 export const maxDuration = 300
+
+// A warmup plan reaches this route in two shapes:
+//   • saved / content-plan:   { warmup_plan: { phases: [...] }, meta }
+//   • wizard draft (aiPlanData): { strategy_summary, phases: [...] }
+// Read the phases from wherever they live so the DRAFT editor (on the approval
+// screen) doesn't wrongly report a perfectly good plan as «повреждён или пуст».
+function getPlanPhases(planData: unknown): WarmupPhaseData[] {
+  const pd = planData as { warmup_plan?: { phases?: unknown }; phases?: unknown } | null
+  if (pd && Array.isArray(pd.warmup_plan?.phases)) return pd.warmup_plan!.phases as WarmupPhaseData[]
+  if (pd && Array.isArray(pd.phases)) return pd.phases as WarmupPhaseData[]
+  return []
+}
 
 // ── Banned phrases — merged with content brain anti-patterns ──────────────────
 const BANNED_PHRASES = `
@@ -169,10 +181,9 @@ export async function POST(request: Request) {
             desire: 'Желание', close: 'Закрытие', activation: 'Активация',
           }
 
-          // Guard: plan_data may be malformed / missing the expected shape
-          const planPhasesArr = Array.isArray(planData?.warmup_plan?.phases)
-            ? planData.warmup_plan.phases
-            : []
+          // Guard: plan_data may be malformed / missing the expected shape.
+          // Accept both the saved shape and the wizard-draft shape (see getPlanPhases).
+          const planPhasesArr = getPlanPhases(planData)
           if (planPhasesArr.length === 0) {
             send({ type: 'error', message: 'План прогрева повреждён или пуст — пересоздай его в разделе «Стратегия».' })
             controller.close()
@@ -347,7 +358,7 @@ ${currentContent}
                 days?: Array<{ day: number; meaning?: string; briefs?: Record<string, string> }>
               }
               const planData = contextData.plan_data as WarmupPlanData
-              const phases = Array.isArray(planData?.warmup_plan?.phases) ? planData.warmup_plan.phases : []
+              const phases = getPlanPhases(planData)
               const changeDays = Array.isArray(changes.days) ? changes.days : []
 
               for (const change of changeDays) {
