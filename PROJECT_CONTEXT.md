@@ -190,7 +190,14 @@ DDL ассистент применить НЕ может — даёт SQL, вл
   возвращала JSON. Теперь кормим `contentItemToText`, промпт ЗАПРЕЩАЕТ JSON/скобки/markdown, вывод чистится
   `cleanMarkdown`, и айтем становится текстовым (`structured_data` обнуляется; генератор убирает карточки после
   правки). (3) `StructuredContentView` fallback вместо `<pre>{JSON.stringify}</pre>` рисует читаемые строки.
-  ИНВАРИАНТ: пользователь не должен видеть `{`, `"key":`, `\n`, markdown. НЕ возвращать `JSON.stringify` в UI/промпт.
+  **Полный аудит всех поверхностей контента** (коммит `540b56d`): закрыты ещё два места — чаты (`cleanMarkdown`
+  теперь режет ```-фенсы и флэттенит JSON-блоб через `jsonBlobToText`, no-op на обычном тексте; чат-промпт явно
+  запрещает JSON) и экспорт (`lib/utils/export.ts` копирование/PDF/DOCX через `contentItemToText`, а не `body_text||''`).
+  Общий хелпер `objectToReadableText` (в `lib/contentToText.ts`) — рекурсивный читаемый рендер любой формы.
+  Проверено: генератор, AI-редактор, `StructuredContentView` (единственный рендерер `structured_data`), контент-план,
+  библиотека, стиль-банк — чисто; календарь рисует только точки. Чат `/create` вживую → карусель «СЛАЙД 1 …» текстом.
+  ИНВАРИАНТ: пользователь НИКОГДА не видит `{`, `"key":`, ```-фенсы, markdown — только готовый текст. НЕ возвращать
+  `JSON.stringify` в UI/промпт; любой контент в UI/экспорт/буфер — через `contentItemToText`/`cleanMarkdown`.
 - Низкий приоритет (не сделано): `refundGeneration` неатомарен (select+update); мёртвый код WeekView/ActivePanel
   в ContentPlanGrid; chat-стрим не сигналит об ошибке посреди потока (молча обрывает). На будущее.
 
