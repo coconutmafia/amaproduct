@@ -82,5 +82,40 @@ export function contentItemToText(item: {
     return out.join('\n').trim()
   }
 
-  return ''
+  // Unknown structured shape — still flatten it readably (never return JSON).
+  return objectToReadableText(sd)
+}
+
+// Recursively flatten ANY object/array into readable labeled text — no braces,
+// quotes or escaped \n. Used as the last-resort renderer so the user never sees
+// raw JSON for a shape we don't have a dedicated layout for.
+export function objectToReadableText(value: unknown, depth = 0): string {
+  const lines: string[] = []
+  const walk = (v: unknown, d: number) => {
+    const pad = '  '.repeat(d)
+    if (v == null || v === '') return
+    if (typeof v !== 'object') { lines.push(`${pad}${String(v)}`); return }
+    if (Array.isArray(v)) { v.forEach(x => walk(x, d)); return }
+    for (const [k, val] of Object.entries(v as Dict)) {
+      if (val == null || val === '') continue
+      const label = k.replace(/_/g, ' ')
+      if (typeof val === 'object') { lines.push(`${pad}${label}:`); walk(val, d + 1) }
+      else lines.push(`${pad}${label}: ${String(val)}`)
+    }
+  }
+  walk(value, depth)
+  return lines.join('\n').trim()
+}
+
+// If `text` is a JSON content blob (the model occasionally returns one in chat),
+// render it as readable text; otherwise return the text unchanged.
+export function jsonBlobToText(text: string): string {
+  const t = text.trim()
+  if (!t.startsWith('{') || !t.endsWith('}')) return text
+  let obj: unknown
+  try { obj = JSON.parse(t) } catch { return text }
+  const known = contentItemToText({ structured_data: obj })
+  if (known.trim()) return known
+  const flat = objectToReadableText(obj)
+  return flat || text
 }

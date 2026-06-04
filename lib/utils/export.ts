@@ -1,8 +1,8 @@
 import type { ContentItem } from '@/types'
+import { contentItemToText } from '@/lib/contentToText'
 
 export async function copyToClipboard(content: ContentItem): Promise<void> {
-  const text = content.body_text || ''
-  await navigator.clipboard.writeText(text)
+  await navigator.clipboard.writeText(contentItemToText(content))
 }
 
 export async function exportToPDF(content: ContentItem): Promise<void> {
@@ -16,7 +16,7 @@ export async function exportToPDF(content: ContentItem): Promise<void> {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(11)
 
-  const text = content.body_text || ''
+  const text = contentItemToText(content)
   const lines = doc.splitTextToSize(text, 170)
   doc.text(lines, 20, 35)
 
@@ -39,7 +39,7 @@ export async function exportToDOCX(content: ContentItem): Promise<void> {
       text: content.title || 'Контент',
       heading: HeadingLevel.HEADING_1,
     }),
-    ...(content.body_text || '').split('\n').map(
+    ...contentItemToText(content).split('\n').map(
       (line) => new Paragraph({ children: [new TextRun(line)] })
     ),
   ]
