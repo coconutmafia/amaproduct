@@ -6,3 +6,6 @@ export const anthropic = new Anthropic({
 
 export const MODEL = 'claude-sonnet-4-6'
 export const MODEL_OPUS = 'claude-opus-4-6'
+// Fast/cheap model — used for web search research (Haiku does web search in
+// ~7s vs ~80s+ on Sonnet) and other light tasks.
+export const MODEL_HAIKU = 'claude-haiku-4-5'

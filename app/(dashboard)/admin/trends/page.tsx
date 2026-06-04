@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import { Plus, Trash2, Loader2, TrendingUp, Eye, EyeOff } from 'lucide-react'
+import { Plus, Trash2, Loader2, TrendingUp, Eye, EyeOff, Wand2, Check, Globe, Sparkles } from 'lucide-react'
 
 interface Trend {
   id: string
@@ -19,6 +19,13 @@ interface Trend {
   niches: string[] | null
   is_active: boolean
   created_at: string
+}
+
+interface Candidate {
+  title: string
+  description: string
+  example: string | null
+  format_type: string
 }
 
 const FORMATS = [
@@ -37,6 +44,14 @@ export default function AdminTrendsPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const [form, setForm] = useState({ title: '', description: '', example: '', format_type: 'any', niches: '' })
+
+  // AI-подбор системных трендов
+  const [suggestNiche, setSuggestNiche] = useState('')
+  const [suggesting, setSuggesting] = useState(false)
+  const [candidates, setCandidates] = useState<Candidate[]>([])
+  const [picked, setPicked] = useState<Set<number>>(new Set())
+  const [grounded, setGrounded] = useState<{ web?: boolean; reels?: boolean }>({})
+  const [adopting, setAdopting] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -71,6 +86,49 @@ export default function AdminTrendsPage() {
       toast.success('Тренд добавлен')
     } catch (err) { toast.error(err instanceof Error ? err.message : 'Ошибка') }
     finally { setCreating(false) }
+  }
+
+  const suggest = async () => {
+    if (suggesting) return
+    setSuggesting(true); setCandidates([]); setPicked(new Set())
+    try {
+      const res = await fetch('/api/ai/suggest-trends', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: 'system', niche: suggestNiche.trim() }),
+      })
+      const data = await res.json() as { trends?: Candidate[]; grounded?: typeof grounded; error?: string }
+      if (!res.ok || data.error) throw new Error(data.error || 'Не удалось подобрать')
+      setCandidates(data.trends ?? [])
+      setGrounded(data.grounded ?? {})
+      if ((data.trends ?? []).length === 0) toast.message('Ничего не подобралось — попробуй ещё раз')
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Ошибка') }
+    finally { setSuggesting(false) }
+  }
+
+  const togglePick = (i: number) => setPicked(prev => {
+    const next = new Set(prev); if (next.has(i)) next.delete(i); else next.add(i); return next
+  })
+
+  const adoptSelected = async () => {
+    if (adopting || picked.size === 0) return
+    setAdopting(true)
+    const niches = suggestNiche.split(',').map(s => s.trim()).filter(Boolean)
+    const chosen = [...picked].map(i => candidates[i]).filter(Boolean)
+    let ok = 0
+    try {
+      for (const c of chosen) {
+        const res = await fetch('/api/admin/trends', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: c.title, description: c.description, example: c.example ?? '', format_type: c.format_type, niches }),
+        })
+        const data = await res.json()
+        if (res.ok && data.trend) { setTrends(prev => [data.trend, ...prev]); ok++ }
+      }
+      toast.success(`Добавлено трендов: ${ok}`)
+      setCandidates(prev => prev.filter((_, i) => !picked.has(i)))
+      setPicked(new Set())
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Ошибка') }
+    finally { setAdopting(false) }
   }
 
   const toggle = async (t: Trend) => {
@@ -114,6 +172,56 @@ export default function AdminTrendsPage() {
           затем обнови страницу.
         </div>
       )}
+
+      {/* AI-подбор */}
+      <Card className="border-primary/25 bg-primary/5">
+        <CardHeader><CardTitle className="text-base flex items-center gap-2"><Wand2 className="h-4 w-4 text-primary" /> Подобрать тренды автоматически</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground -mt-1">AI найдёт свежие тренды в интернете + по залетевшим рилз и предложит кандидатов. Выбери — добавятся как системные для всех.</p>
+          <div className="flex items-end gap-2">
+            <div className="flex-1 space-y-1">
+              <Label className="text-xs">Ниша (пусто = общие тренды)</Label>
+              <Input value={suggestNiche} onChange={e => setSuggestNiche(e.target.value)} placeholder="напр. нутрициология, фитнес, психология" className="text-sm" />
+            </div>
+            <Button onClick={suggest} disabled={suggesting} className="gradient-accent text-white shrink-0">
+              {suggesting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Подбираю…</> : <><Wand2 className="h-4 w-4 mr-2" /> Подобрать</>}
+            </Button>
+          </div>
+          {suggesting && <p className="text-[11px] text-muted-foreground">Ищу свежие тренды в интернете — обычно до 1-2 минут.</p>}
+
+          {candidates.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 flex-wrap text-[10px] text-muted-foreground">
+                {grounded.web && <span className="inline-flex items-center gap-1 bg-secondary rounded-full px-2 py-0.5"><Globe className="h-3 w-3" /> из интернета</span>}
+                {grounded.reels && <span className="inline-flex items-center gap-1 bg-secondary rounded-full px-2 py-0.5"><Sparkles className="h-3 w-3" /> по рилз</span>}
+              </div>
+              {candidates.map((c, i) => {
+                const sel = picked.has(i)
+                return (
+                  <button key={i} onClick={() => togglePick(i)}
+                    className={`w-full text-left rounded-xl border p-3 space-y-1.5 transition-all ${sel ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/40'}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-semibold text-foreground flex-1">{c.title}</p>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge variant="outline" className="text-[10px]">{FORMATS.find(f => f.value === c.format_type)?.label ?? c.format_type}</Badge>
+                        <span className={`flex h-5 w-5 items-center justify-center rounded-md border ${sel ? 'bg-primary border-primary text-white' : 'border-border text-transparent'}`}><Check className="h-3 w-3" /></span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-foreground/80 leading-snug">{c.description}</p>
+                    {c.example && <p className="text-xs text-muted-foreground italic leading-snug">Пример: {c.example}</p>}
+                  </button>
+                )
+              })}
+              <div className="flex items-center gap-2 pt-1">
+                <Button onClick={adoptSelected} disabled={adopting || picked.size === 0} className="gradient-accent text-white">
+                  {adopting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Добавляю…</> : <><Plus className="h-4 w-4 mr-2" /> Добавить выбранные{picked.size > 0 ? ` (${picked.size})` : ''}</>}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => { setCandidates([]); setPicked(new Set()) }}>Скрыть</Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Create form */}
       <Card className="border-border bg-card">
