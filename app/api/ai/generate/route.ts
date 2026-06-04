@@ -4,6 +4,7 @@ import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt, buildValidatorUserPrompt } from '@/lib/ai/prompts/system'
 import { getSchemaForPhase, getHookEngine, getEmotionalMechanics, getCTAEngine, getViralReelsFramework } from '@/lib/ai/prompts/content-brain'
 import { checkAndConsumeGeneration, refundGeneration } from '@/lib/generations'
+import { contentItemToText } from '@/lib/contentToText'
 import { NextResponse } from 'next/server'
 import type { WarmupPhase } from '@/types'
 
@@ -263,6 +264,14 @@ ${contentType === 'email' ? `Напиши письмо для email-рассыл
           }
           // Ensure at least body_text is set if structured_data is empty
           if (!structuredData && !bodyText) bodyText = generatedText
+          // Always keep a CLEAN readable text version alongside structured_data,
+          // so the editor / library / export never surface raw JSON (the user
+          // was seeing the streamed JSON as "код"). structured_data still drives
+          // the pretty StructuredContentView.
+          if (structuredData && (!bodyText || !bodyText.trim())) {
+            const flat = contentItemToText({ structured_data: structuredData })
+            if (flat.trim()) bodyText = flat
+          }
           hashtags = [] // never store hashtags
         }
 

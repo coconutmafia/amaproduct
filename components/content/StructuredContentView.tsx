@@ -9,6 +9,27 @@ type Dict = Record<string, unknown>
 const str = (v: unknown): string => (typeof v === 'string' ? v : v == null ? '' : String(v))
 const arr = (v: unknown): Dict[] => (Array.isArray(v) ? (v as Dict[]) : [])
 
+// Generic readable renderer for shapes we don't have a dedicated layout for —
+// labels + text, never a raw JSON dump (the user must never see «код»).
+function readableLines(value: unknown, depth = 0): string[] {
+  const pad = '  '.repeat(depth)
+  if (value == null || value === '') return []
+  if (typeof value !== 'object') return [`${pad}${String(value)}`]
+  if (Array.isArray(value)) return value.flatMap(v => readableLines(v, depth))
+  const lines: string[] = []
+  for (const [k, v] of Object.entries(value as Dict)) {
+    if (v == null || v === '') continue
+    const label = k.replace(/_/g, ' ')
+    if (typeof v === 'object') {
+      lines.push(`${pad}${label}:`)
+      lines.push(...readableLines(v, depth + 1))
+    } else {
+      lines.push(`${pad}${label}: ${String(v)}`)
+    }
+  }
+  return lines
+}
+
 function Field({ label, value }: { label: string; value: unknown }) {
   const s = str(value).trim()
   if (!s) return null
@@ -164,11 +185,12 @@ export function StructuredContentView({ data }: { data: Dict }) {
     )
   }
 
-  // Unknown shape — fall back to a tidy JSON view
+  // Unknown shape — render readable labeled lines, NEVER a raw JSON dump.
   return (
-    <div className="rounded-xl border border-border bg-secondary/20 p-3">
-      <p className="text-xs font-semibold text-muted-foreground mb-2">Структурированные данные</p>
-      <pre className="text-xs text-foreground overflow-auto max-h-48 leading-relaxed">{JSON.stringify(data, null, 2)}</pre>
+    <div className="rounded-xl border border-border bg-secondary/20 p-3 space-y-0.5">
+      {readableLines(data).map((line, i) => (
+        <p key={i} className="text-[13px] leading-snug text-foreground whitespace-pre-wrap">{line}</p>
+      ))}
     </div>
   )
 }

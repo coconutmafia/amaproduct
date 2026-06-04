@@ -16,8 +16,9 @@ export function contentItemToText(item: {
 
   const reels = sd.reels as Dict | undefined
   if (reels) {
-    if (s(reels.title)) out.push(s(reels.title))
+    if (s(reels.title)) out.push(s(reels.title), '')
     if (s(reels.hook_text)) out.push(`Хук: ${s(reels.hook_text)}`)
+    if (s(reels.total_duration)) out.push(`Длительность: ${s(reels.total_duration)}`)
     arr(reels.scenes).forEach((sc, i) => {
       const audio = sc.audio as Dict | undefined
       const visual = sc.visual as Dict | undefined
@@ -26,6 +27,7 @@ export function contentItemToText(item: {
       if (audio && s(audio.speech)) out.push(`Озвучка: ${s(audio.speech)}`)
       if (visual && s(visual.action)) out.push(`Действие: ${s(visual.action)}`)
     })
+    if (s(reels.description_text)) out.push(`\nОписание под видео:\n${s(reels.description_text)}`)
     return out.join('\n').trim()
   }
 
@@ -45,10 +47,24 @@ export function contentItemToText(item: {
   const carousel = sd.carousel as Dict | undefined
   if (carousel) {
     const cover = carousel.cover as Dict | undefined
-    if (cover && s(cover.headline)) out.push(`Обложка: ${s(cover.headline)}`)
+    if (cover) {
+      out.push('Обложка:')
+      if (s(cover.headline)) out.push(s(cover.headline))
+      if (s(cover.subheadline)) out.push(s(cover.subheadline))
+      out.push('')
+    }
     arr(carousel.slides).forEach((sl, i) => {
-      out.push(`Слайд ${s(sl.slide) || i + 2}: ${s(sl.headline)}${sl.body ? ` — ${s(sl.body)}` : ''}`)
+      out.push(`Слайд ${s(sl.slide) || i + 2}:`)
+      if (s(sl.headline)) out.push(s(sl.headline))
+      if (s(sl.body)) out.push(s(sl.body))
+      out.push('')
     })
+    const lastSlide = carousel.last_slide as Dict | undefined
+    if (lastSlide) {
+      out.push('Финальный слайд:')
+      if (s(lastSlide.text)) out.push(s(lastSlide.text))
+      if (s(lastSlide.action)) out.push(s(lastSlide.action))
+    }
     return out.join('\n').trim()
   }
 

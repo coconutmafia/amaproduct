@@ -400,8 +400,11 @@ export default function GeneratorPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Post text */}
-                {(contentType === 'post' || editedText) && (
+                {/* Text editor — for posts, and for structured content only AFTER
+                    it's been edited into plain text (structuredData cleared). A
+                    freshly generated carousel/reels shows the readable card view
+                    below instead of a wall of text. */}
+                {(contentType === 'post' || (editedText && !generated.structuredData)) && (
                   <ContentEditor
                     content={editedText}
                     onChange={setEditedText}
@@ -494,6 +497,9 @@ export default function GeneratorPage() {
           contextLabel={generated.item.title || `${contentType} · День ${generated.item.day_number}`}
           onContentUpdate={(updatedText) => {
             setEditedText(updatedText)
+            // The edit turned this into a clean-text item — drop the (now stale)
+            // structured view so the user sees only their edited readable text.
+            setGenerated(g => g ? { ...g, structuredData: undefined } : g)
             setApproved(false)
           }}
         />

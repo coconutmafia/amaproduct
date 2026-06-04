@@ -10,6 +10,8 @@ import {
   CONTENT_BRAIN_ANTI_PATTERNS,
   AI_TELLS_TO_AVOID,
 } from '@/lib/ai/prompts/content-brain'
+import { contentItemToText } from '@/lib/contentToText'
+import { cleanMarkdown } from '@/lib/cleanText'
 import { NextResponse } from 'next/server'
 import type { WarmupPlanData, WarmupPhaseData } from '@/types'
 
@@ -289,11 +291,14 @@ ${weekViewBlock}
           // Use full system prompt (voice + methodology + examples)
           const voicePrompt = buildSystemPrompt(ragContext, project)
 
-          const currentContent =
-            (contextData.body_text as string) ||
-            (contextData.structured_data
-              ? JSON.stringify(contextData.structured_data, null, 2)
-              : '')
+          // Feed the AI a CLEAN readable text version — never raw JSON. Editing
+          // against JSON.stringify(structured_data) made the model echo JSON/markdown
+          // back (the "код" the user saw). contentItemToText flattens carousel /
+          // reels / stories into plain readable text.
+          const currentContent = contentItemToText({
+            body_text: contextData.body_text as string | null | undefined,
+            structured_data: contextData.structured_data,
+          })
 
           // Infer what phase/day this content belongs to for context
           const phaseCtx = contextData.warmup_phase
@@ -318,7 +323,9 @@ ${currentContent}
 КРИТИЧНО:
 - Меняй ТОЛЬКО то, что просит пользователь. Всё остальное — сохраняй дословно.
 - Голос автора неприкосновенен — не «улучшай» стиль, который не просили трогать.
-- Если текст содержит хештеги — сохрани их в конце.`
+- Если текст содержит хештеги — сохрани их в конце.
+- 🚫 Пиши ОБЫЧНЫМ ЧИТАЕМЫМ ТЕКСТОМ. НИКАКОГО JSON, фигурных скобок {}, кавычек-ключей "key":, markdown (**жирный**, ## заголовки, --- разделители, \`код\`). Пользователь видит этот текст как есть.
+- Если это структурный контент (карусель / рилз / сторис) — разбивай на понятные блоки обычным текстом, каждый с новой строки и пустой строкой между блоками. Например: «Слайд 1:» затем заголовок и текст слайда; «Сцена 1 (0-3 сек):» затем что на экране и озвучка. Читаемо, как для человека, а не как данные.`
 
           chatMessages = [
             ...messages.map((m: { role: string; content: string }) => ({
@@ -401,10 +408,13 @@ ${currentContent}
         } else if (contextType === 'content_item') {
           const contentMatch = fullText.match(/<content>([\s\S]*?)<\/content>/)
           if (contentMatch) {
-            const updatedText = contentMatch[1].trim()
+            // Safety net: strip any markdown the model slipped in (the user sees
+            // this text raw). The edit turns the item into a clean-text item, so
+            // drop structured_data — body_text is now the source of truth.
+            const updatedText = cleanMarkdown(contentMatch[1].trim())
             const { data: updatedItem } = await supabase
               .from('content_items')
-              .update({ body_text: updatedText })
+              .update({ body_text: updatedText, structured_data: null })
               .eq('id', contextId)
               .select()
               .single()
