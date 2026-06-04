@@ -182,6 +182,15 @@ DDL ассистент применить НЕ может — даёт SQL, вл
   forced-tool-call строкой, а не массивом. `generate-week-brief` (`days`) и `warmup-plan` (`phases`+`daily_plan`)
   теперь нормализуют через `toArray()` (массив ИЛИ JSON-строка). НЕ откатывать обратно на голый `Array.isArray`.
   Это единственные два роута с tool_use; `/api/ai/generate` парсит free-form JSON отдельно.
+- **Контент НИКОГДА не показывается сырым JSON** (коммит `f96116f`, июнь 2026, фидбэк тест-юзера — «вижу весь код»):
+  структурный контент (карусель/рилз/сторис) утекал JSON в трёх местах. (1) `generate`: для структурного контента
+  `body_text` был null → генератор показывал `editedText = accText` = сырой стримленный JSON. Теперь `generate`
+  всегда пишет чистый флэттен `body_text = contentItemToText(...)` рядом со `structured_data` (карточки рисует
+  `StructuredContentView`). (2) `/api/ai/edit` content_item кормил модель `JSON.stringify(structured_data)` → она
+  возвращала JSON. Теперь кормим `contentItemToText`, промпт ЗАПРЕЩАЕТ JSON/скобки/markdown, вывод чистится
+  `cleanMarkdown`, и айтем становится текстовым (`structured_data` обнуляется; генератор убирает карточки после
+  правки). (3) `StructuredContentView` fallback вместо `<pre>{JSON.stringify}</pre>` рисует читаемые строки.
+  ИНВАРИАНТ: пользователь не должен видеть `{`, `"key":`, `\n`, markdown. НЕ возвращать `JSON.stringify` в UI/промпт.
 - Низкий приоритет (не сделано): `refundGeneration` неатомарен (select+update); мёртвый код WeekView/ActivePanel
   в ContentPlanGrid; chat-стрим не сигналит об ошибке посреди потока (молча обрывает). На будущее.
 
