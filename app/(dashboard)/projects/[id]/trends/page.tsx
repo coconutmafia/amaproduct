@@ -49,6 +49,7 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
   const [formatType, setFormatType] = useState('any')
 
   // AI-подбор трендов
+  const [suggestMode, setSuggestMode] = useState<'niche' | 'popular'>('niche')
   const [suggesting, setSuggesting] = useState(false)
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [picked, setPicked] = useState<Set<number>>(new Set())
@@ -108,7 +109,7 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
     try {
       const res = await fetch('/api/ai/suggest-trends', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: id, scope: 'project' }),
+        body: JSON.stringify({ projectId: id, scope: 'project', mode: suggestMode }),
       })
       const data = await res.json() as { trends?: Candidate[]; grounded?: typeof grounded; error?: string }
       if (!res.ok || data.error) throw new Error(data.error || 'Не удалось подобрать тренды')
@@ -176,6 +177,21 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
             {suggesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />} {suggesting ? 'Подбираю…' : 'Подобрать'}
           </button>
         </div>
+
+        {/* На основе чего подбирать — как селектор в «Создать» */}
+        <div className="inline-flex rounded-lg border border-[#E0E0E0] bg-white p-0.5 text-xs">
+          <button onClick={() => setSuggestMode('niche')} disabled={suggesting}
+            className={`px-3 py-1.5 rounded-md font-medium transition-colors ${suggestMode === 'niche' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'}`}>
+            По моей нише
+          </button>
+          <button onClick={() => setSuggestMode('popular')} disabled={suggesting}
+            className={`px-3 py-1.5 rounded-md font-medium transition-colors ${suggestMode === 'popular' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'}`}>
+            Популярные сейчас
+          </button>
+        </div>
+        <p className="text-[10px] text-muted-foreground -mt-1">
+          {suggestMode === 'niche' ? 'Тренды под твою тему, конкурентов и залетевшие рилз.' : 'Популярные тренды в целом — попробовать что-то новое, не из своей ниши.'}
+        </p>
 
         {suggesting && (
           <p className="text-[11px] text-muted-foreground">Ищу свежие тренды в интернете и анализирую нишу — обычно до 1-2 минут. Не закрывай страницу.</p>
