@@ -26,6 +26,8 @@ import {
   ChevronRight,
   Users,
   Flame,
+  Palette,
+  Images,
 } from 'lucide-react'
 import { ProjectInfoSection } from '@/components/projects/ProjectInfoSection'
 
@@ -195,6 +197,8 @@ export default async function ProjectPage({ params }: Props) {
                 { href: `/projects/${id}/results`, icon: TrendingUp, label: 'Результаты', color: 'text-rose-400 bg-rose-400/10', desc: 'Охваты → AI учится' },
                 { href: `/projects/${id}/viral-reels`, icon: Film, label: 'Виральные рилз', color: 'text-fuchsia-400 bg-fuchsia-400/10', desc: 'Залетевшие рилз → в твой план' },
                 { href: `/projects/${id}/trends`, icon: Flame, label: 'Тренды месяца', color: 'text-amber-500 bg-amber-500/10', desc: 'Актуальные форматы → в твой план' },
+                { href: `/projects/${id}/brand`, icon: Palette, label: 'Фирменный стиль', color: 'text-violet-400 bg-violet-400/10', desc: 'Стиль из примеров → слайды в нём' },
+                { href: `/projects/${id}/stories`, icon: Images, label: 'Оформление сторис', color: 'text-cyan-400 bg-cyan-400/10', desc: 'Фото + сценарий → сторис в стиле' },
               ].map(({ href, icon: Icon, label, color, desc }) => (
                 <Link key={href} href={href}>
                   <Card className="border-border bg-card hover:bg-card/80 hover:border-primary/30 transition-all cursor-pointer h-full">
