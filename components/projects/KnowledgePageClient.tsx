@@ -15,6 +15,8 @@ import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import { computeCompleteness } from '@/lib/completeness'
+import { audienceResearchToAoa, meaningsMapToAoa } from '@/lib/researchTables'
+import { downloadXlsx } from '@/lib/utils/xlsxTable'
 import {
   CheckCircle2, Circle, Loader, AlertCircle, Upload, BookOpen,
   X, File, Loader2, Plus, FileText, ChevronDown, ChevronUp,
@@ -1014,59 +1016,6 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
 
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
-  // Parses the audience_research text format saved by research-analyze →
-  // CSV rows. The format is: "Участник: NAME (SEGMENT)\n\n  Вопрос: ...\n
-  // Ответ: ...\n  Цитаты: a | b\n  Тон: ...\n\n  ...\n\n---\n\n Участник: ..."
-  const audienceResearchToCsv = (text: string): string => {
-    const rows: string[][] = [['Участник', 'Сегмент', 'Вопрос', 'Ответ', 'Ключевые цитаты', 'Тон']]
-    const sections = text.split(/\n---\n/)
-    for (const sec of sections) {
-      const header = sec.match(/Участник:\s*(.+?)(?:\s*\((.+?)\))?\s*$/m)
-      if (!header) continue
-      const name    = header[1].trim()
-      const segment = (header[2] ?? '').trim()
-      const re = /\s*Вопрос:\s*(.+?)\s*\n\s*Ответ:\s*([\s\S]+?)\n\s*Цитаты:\s*(.+?)\n\s*Тон:\s*(.+?)(?=\n\s*\n|\n\s*Вопрос:|$)/g
-      let m: RegExpExecArray | null
-      while ((m = re.exec(sec)) !== null) {
-        rows.push([name, segment, m[1].trim(), m[2].trim(), m[3].trim(), m[4].trim()])
-      }
-    }
-    const esc = (s: string) => `"${s.replace(/"/g, '""')}"`
-    return rows.map(r => r.map(esc).join(',')).join('\n')
-  }
-
-  // Parses the meanings_map text format → CSV, grouped (sorted) by type.
-  // Block format: "[TYPE] Категория:\nФормулировки: …\nГлубинный триггер: …
-  // \nВозражение: …\nИдея контента: …", blocks separated by blank lines.
-  const meaningsMapToCsv = (text: string): string => {
-    const TYPE_RU: Record<string, string> = {
-      PAIN: 'Боль', NEED: 'Потребность', TRIGGER: 'Триггер', OBJECTION: 'Возражение',
-    }
-    const ORDER = ['PAIN', 'NEED', 'TRIGGER', 'OBJECTION']
-    type Row = { type: string; cat: string; words: string; trigger: string; obj: string; idea: string }
-    const parsed: Row[] = []
-    for (const block of text.split(/\n\s*\n+/)) {
-      const header = block.match(/^\[(.+?)\]\s*(.+?):?\s*$/m)
-      if (!header) continue
-      parsed.push({
-        type:    header[1].trim().toUpperCase(),
-        cat:     header[2].trim(),
-        words:   block.match(/Формулировки:\s*(.+)/)?.[1]?.trim() ?? '',
-        trigger: block.match(/Глубинный триггер:\s*(.+)/)?.[1]?.trim() ?? '',
-        obj:     block.match(/Возражение:\s*(.+)/)?.[1]?.trim() ?? '',
-        idea:    block.match(/Идея контента:\s*(.+)/)?.[1]?.trim() ?? '',
-      })
-    }
-    parsed.sort((a, b) => {
-      const ai = ORDER.indexOf(a.type), bi = ORDER.indexOf(b.type)
-      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi)
-    })
-    const rows: string[][] = [['Тип', 'Категория', 'Формулировки клиентов', 'Глубинный триггер', 'Возражение', 'Идея контента']]
-    for (const p of parsed) rows.push([TYPE_RU[p.type] ?? p.type, p.cat, p.words, p.trigger, p.obj, p.idea])
-    const esc = (s: string) => `"${s.replace(/"/g, '""')}"`
-    return rows.map(r => r.map(esc).join(',')).join('\n')
-  }
-
   const downloadMaterial = async (id: string, title: string, type?: string) => {
     setDownloadingId(id)
     try {
@@ -1077,21 +1026,20 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
       if (!content.trim()) { toast.error('В материале пока нет содержимого'); return }
       const safe = (title || 'material').replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().slice(0, 80) || 'material'
 
-      // Structured materials → CSV (opens in Excel/Numbers, normal font).
-      let csv: string | null = null
-      if (type === 'audience_research') csv = audienceResearchToCsv(content)
-      else if (type === 'meanings_map') csv = meaningsMapToCsv(content)
-      const useCsv = !!csv && csv.split('\n').length > 1
+      // Structured research materials → real XLSX (true columns; comma-CSV
+      // showed as one column in RU Excel / iOS). Pivoted/restructured per spec.
+      let aoa: string[][] | null = null
+      if (type === 'audience_research') aoa = audienceResearchToAoa(content)
+      else if (type === 'meanings_map') aoa = meaningsMapToAoa(content)
+      if (aoa && aoa.length > 1) {
+        await downloadXlsx(safe, type === 'audience_research' ? 'Исследование' : 'Карта смыслов', aoa)
+        return
+      }
 
-      let blob: Blob, ext: string
-      if (useCsv) {
-        blob = new Blob(['﻿' + csv!], { type: 'text/csv;charset=utf-8' })
-        ext = 'csv'
-      } else {
-        // Text materials → styled HTML so it opens with a clean, readable
-        // font (not the monospace .txt viewer). Renders nicely on phone/desktop.
-        const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8">
+      // Text materials → styled HTML so it opens with a clean, readable font
+      // (not the monospace .txt viewer). Renders nicely on phone/desktop.
+      const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
 <style>
@@ -1105,13 +1053,11 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
 <div class="meta">Материал проекта · AMA</div>
 <div class="content">${esc(content)}</div>
 </body></html>`
-        blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-        ext = 'html'
-      }
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
 
       const url = URL.createObjectURL(blob)
       const a   = document.createElement('a')
-      a.href = url; a.download = `${safe}.${ext}`; a.click()
+      a.href = url; a.download = `${safe}.html`; a.click()
       URL.revokeObjectURL(url)
     } catch {
       toast.error('Не удалось скачать материал')

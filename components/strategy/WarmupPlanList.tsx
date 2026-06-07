@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Download } from 'lucide-react'
 import { DeletePlanButton } from './DeletePlanButton'
 import { AiEditChat } from '@/components/ai/AiEditChat'
-import { downloadPlanCsv } from '@/lib/planCsv'
+import { downloadPlanXlsx } from '@/lib/planCsv'
 import type { WarmupPlanData } from '@/types'
 
 const PHASE_LABELS: Record<string, string> = {
@@ -78,10 +78,10 @@ export function WarmupPlanList({ initialPlans, projectId }: WarmupPlanListProps)
                   ✦ AI-правка
                 </button>
 
-                {/* Download as a spreadsheet (CSV) */}
+                {/* Download as a spreadsheet (XLSX) */}
                 <button
-                  onClick={() => downloadPlanCsv(plan.name, plan.plan_data)}
-                  title="Скачать план в таблицу (CSV — Excel / Google Sheets)"
+                  onClick={() => { void downloadPlanXlsx(plan.name, plan.plan_data) }}
+                  title="Скачать план в таблицу (Excel / Google Sheets)"
                   className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border border-border text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all"
                 >
                   <Download className="h-3 w-3" /> Таблица
