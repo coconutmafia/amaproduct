@@ -34,10 +34,13 @@ const FORMAT_HINT: Record<string, string> = {
   post: 'Напишу пост целиком в твоём голосе.',
   carousel: 'Сделаю карусель — обложка + слайды, одна мысль на слайд.',
 }
-function buildOpener(type: string, day: number, brief: string): string {
+function openerHead(type: string, day: number, brief: string): string {
   const ru = TYPE_RU[type] || type
   const hint = FORMAT_HINT[type] || 'Напишу в твоём голосе.'
-  return `Окей, делаем ${ru}${day ? ` на день ${day}` : ''}.\n\n${brief ? `Тема: «${brief}»\n\n` : ''}${hint}\n\nРасскажи детали — историю, кейс, цифры, имя клиента — или просто напиши «давай», и я напишу.`
+  return `Окей, делаем ${ru}${day ? ` на день ${day}` : ''}.\n\n${brief ? `Тема: «${brief}»\n\n` : ''}${hint}`
+}
+function buildOpener(type: string, day: number, brief: string): string {
+  return `${openerHead(type, day, brief)}\n\nРасскажи детали — историю, кейс, цифры, имя клиента — или просто напиши «давай», и я напишу.`
 }
 
 // Saves the generated message straight into the content plan (the day's unit).
@@ -159,8 +162,22 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
       const phase = sp.get('phase') || 'awareness'
       const brief = sp.get('brief') || ''
       setGenContext({ day, type, phase })
-      setMessages([{ role: 'assistant', opener: true, content: buildOpener(type, day, brief) }])
+      const head = openerHead(type, day, brief)
+      // Show the topic immediately, then proactively propose angles/formats/trends.
+      setMessages([{ role: 'assistant', opener: true, content: `${head}\n\nСекунду — подберу пару вариантов, с чего зайти…` }])
       window.history.replaceState({}, '', window.location.pathname)
+      ;(async () => {
+        try {
+          const res = await fetch('/api/ai/suggest-angles', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId: id, type, brief, phase, day }),
+          })
+          const d = (await res.json().catch(() => ({}))) as { text?: string }
+          setMessages([{ role: 'assistant', opener: true, content: res.ok && d.text ? `${head}\n\n${d.text}` : buildOpener(type, day, brief) }])
+        } catch {
+          setMessages([{ role: 'assistant', opener: true, content: buildOpener(type, day, brief) }])
+        }
+      })()
       return
     }
 
