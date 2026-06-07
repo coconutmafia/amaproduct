@@ -34,7 +34,7 @@ function Card({ tag, children }: { tag: string; children: React.ReactNode }) {
   )
 }
 
-export function StructuredContentView({ data }: { data: Dict }) {
+export function StructuredContentView({ data, projectId }: { data: Dict; projectId?: string }) {
   const reels   = data.reels as Dict | undefined
   const carousel = data.carousel as Dict | undefined
   const stories = (data.stories_series ?? data.stories) as Dict | undefined
@@ -98,7 +98,7 @@ export function StructuredContentView({ data }: { data: Dict }) {
             <Field label="Призыв" value={last.action} />
           </Card>
         )}
-        <CarouselSlides carousel={carousel} />
+        <CarouselSlides carousel={carousel} projectId={projectId} />
       </div>
     )
   }

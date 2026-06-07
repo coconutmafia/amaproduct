@@ -12,8 +12,10 @@ type Dict = Record<string, unknown>
 interface Brand {
   accentColor?: string
   bg?: string
+  text?: string
   bgStyle?: 'paper' | 'solid' | 'gradient'
   handle?: string
+  logoUrl?: string
 }
 
 function slideCount(carousel: Dict): number {
@@ -42,23 +44,24 @@ function download(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 4000)
 }
 
-export function CarouselSlides({ carousel, brand }: { carousel: Dict; brand?: Brand }) {
+export function CarouselSlides({ carousel, projectId, brand }: { carousel: Dict; projectId?: string; brand?: Brand }) {
   const total = slideCount(carousel)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [slides, setSlides] = useState<{ url: string; blob: Blob }[]>([])
   const [zipping, setZipping] = useState(false)
+  const [effBrand, setEffBrand] = useState<Brand | undefined>(brand)
 
   if (total === 0) return null
 
-  async function generate() {
+  async function generate(useBrand?: Brand) {
     setBusy(true)
     setErr(null)
     slides.forEach((s) => URL.revokeObjectURL(s.url))
     setSlides([])
     try {
-      const blobs = await Promise.all(Array.from({ length: total }, (_, i) => renderSlide(carousel, i, brand)))
+      const blobs = await Promise.all(Array.from({ length: total }, (_, i) => renderSlide(carousel, i, useBrand ?? effBrand)))
       setSlides(blobs.map((blob) => ({ blob, url: URL.createObjectURL(blob) })))
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Не удалось сгенерировать слайды')
@@ -67,9 +70,23 @@ export function CarouselSlides({ carousel, brand }: { carousel: Dict; brand?: Br
     }
   }
 
-  function openModal() {
+  // Load the project's saved brand kit so slides render in the creator's style;
+  // fall back to the default theme if none is set.
+  async function openModal() {
     setOpen(true)
-    if (slides.length === 0) void generate()
+    if (slides.length > 0) return
+    let b = brand
+    if (!b && projectId) {
+      try {
+        const r = await fetch(`/api/brand-kit?projectId=${projectId}`)
+        const d = await r.json()
+        if (r.ok && (d.accentColor || d.bg || d.handle || d.logoUrl)) {
+          b = { accentColor: d.accentColor, bg: d.bg, text: d.text, bgStyle: d.bgStyle, handle: d.handle, logoUrl: d.logoUrl }
+        }
+      } catch { /* default theme */ }
+    }
+    setEffBrand(b)
+    void generate(b)
   }
 
   async function downloadZip() {
@@ -107,6 +124,9 @@ export function CarouselSlides({ carousel, brand }: { carousel: Dict; brand?: Br
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <p className="text-sm font-bold text-foreground">Слайды карусели{total ? ` · ${total}` : ''}</p>
               <div className="flex items-center gap-2">
+                {projectId && (
+                  <a href={`/projects/${projectId}/brand`} className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary/40">🎨 Стиль</a>
+                )}
                 <button
                   type="button"
                   onClick={downloadZip}
@@ -126,7 +146,7 @@ export function CarouselSlides({ carousel, brand }: { carousel: Dict; brand?: Br
               {err && (
                 <div className="py-6 text-center">
                   <p className="text-sm text-red-500">{err}</p>
-                  <button type="button" onClick={generate} className="mt-2 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-secondary/40">
+                  <button type="button" onClick={() => generate()} className="mt-2 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-secondary/40">
                     Повторить
                   </button>
                 </div>

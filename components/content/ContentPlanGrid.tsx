@@ -80,9 +80,9 @@ const PHASE_NAMES: Record<string, string> = {
 // email / live) goes through the shared StructuredContentView so the layout
 // always matches the current AI output schema (e.g. stories use
 // headline/subtext/voiceover, not the old main_text field).
-function renderContent(item: ContentItem) {
+function renderContent(item: ContentItem, projectId?: string) {
   const sd = item.structured_data as Record<string, unknown> | null
-  if (sd && Object.keys(sd).length > 0) return <StructuredContentView data={sd} />
+  if (sd && Object.keys(sd).length > 0) return <StructuredContentView data={sd} projectId={projectId} />
   return <div className="whitespace-pre-wrap text-sm leading-relaxed text-[#222]">{item.body_text || '(нет текста)'}</div>
 }
 
@@ -252,7 +252,7 @@ export function ContentPlanGrid({
                                     <SaveButton body={contentItemToText(existing)} title={existing.title} contentType={type} projectId={projectId}
                                       className="text-[11px] text-[#888] hover:text-primary" />
                                   </div>
-                                  {renderContent(existing)}
+                                  {renderContent(existing, projectId)}
                                 </div>
                               )}
                             </div>

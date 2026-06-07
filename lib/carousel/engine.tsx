@@ -66,14 +66,34 @@ export interface BrandInput {
   paperUrl?: string | null
 }
 
+function hexLum(hex?: string): number {
+  const h = (hex || '').replace('#', '')
+  if (h.length < 6) return 1
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16)
+  if ([r, g, b].some(Number.isNaN)) return 1
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+}
+function lighten(hex: string, amt: number): string {
+  const h = hex.replace('#', '')
+  if (h.length < 6) return hex
+  const ch = (i: number) => {
+    const v = parseInt(h.slice(i, i + 2), 16)
+    return Math.round(v + (255 - v) * amt).toString(16).padStart(2, '0')
+  }
+  return `#${ch(0)}${ch(2)}${ch(4)}`
+}
+
 export function themeFromBrand(brand?: BrandInput): CarouselTheme {
+  const bg = brand?.bg?.trim() || DEFAULT_THEME.bg
+  const dark = hexLum(bg) < 0.5 // dark brand → white text + light-on-dark muted
   return {
     ...DEFAULT_THEME,
     accent: brand?.accentColor?.trim() || DEFAULT_THEME.accent,
-    bg: brand?.bg?.trim() || DEFAULT_THEME.bg,
-    bgAlt: brand?.bgAlt?.trim() || DEFAULT_THEME.bgAlt,
-    bgStyle: brand?.bgStyle || DEFAULT_THEME.bgStyle,
-    text: brand?.text?.trim() || DEFAULT_THEME.text,
+    bg,
+    bgAlt: brand?.bgAlt?.trim() || (dark ? lighten(bg, 0.14) : DEFAULT_THEME.bgAlt),
+    bgStyle: brand?.bgStyle || (dark ? 'solid' : DEFAULT_THEME.bgStyle),
+    text: brand?.text?.trim() || (dark ? '#FFFFFF' : DEFAULT_THEME.text),
+    textMuted: dark ? 'rgba(255,255,255,0.62)' : DEFAULT_THEME.textMuted,
     handle: (brand?.handle || '').trim(),
     logoUrl: brand?.logoUrl || undefined,
     paperUrl: brand?.paperUrl || undefined,
@@ -181,11 +201,8 @@ export function RichText({ text, o }: { text: string; o: RichOpts }): ReactEleme
 function Backdrop({ theme, size }: { theme: CarouselTheme; size: Size }): ReactElement {
   const base =
     theme.bgStyle === 'gradient'
-      ? { backgroundImage: `linear-gradient(150deg, ${theme.bg} 0%, ${theme.bgAlt} 100%)` }
-      : {
-          backgroundColor: theme.bg,
-          backgroundImage: `radial-gradient(circle at 18% 12%, ${theme.bgAlt} 0%, rgba(251,248,243,0) 46%), radial-gradient(circle at 86% 90%, #EBE2D6 0%, rgba(235,226,214,0) 52%)`,
-        }
+      ? { backgroundImage: `linear-gradient(155deg, ${theme.bg} 0%, ${theme.bgAlt} 100%)` }
+      : { backgroundColor: theme.bg }
   return (
     <div style={{ position: 'absolute', top: 0, left: 0, width: size.w, height: size.h, display: 'flex', ...base }}>
       {theme.bgStyle === 'paper' && theme.paperUrl ? (

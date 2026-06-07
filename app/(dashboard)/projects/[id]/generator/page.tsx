@@ -414,7 +414,7 @@ export default function GeneratorPage() {
 
                 {/* Structured data (carousel, reels, stories) — readable view */}
                 {generated.structuredData && contentType !== 'post' && (
-                  <StructuredContentView data={generated.structuredData} />
+                  <StructuredContentView data={generated.structuredData} projectId={id} />
                 )}
 
                 {/* Hashtags */}
