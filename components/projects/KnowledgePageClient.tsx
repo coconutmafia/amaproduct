@@ -11,6 +11,7 @@ import { ProgressIndicator } from '@/components/shared/ProgressIndicator'
 import { UnpackingInterview } from '@/components/projects/UnpackingInterview'
 import { ToneFromContentDialog } from '@/components/projects/ToneFromContentDialog'
 import { InstagramAccountDialog } from '@/components/projects/InstagramAccountDialog'
+import { CompetitorAnalysis } from '@/components/projects/CompetitorAnalysis'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -1339,6 +1340,9 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                             <Upload className="h-3 w-3 mr-1.5" />
                             {hasItems ? 'Добавить ещё' : 'Загрузить'}
                           </Button>
+                        )}
+                        {type === 'competitors' && hasItems && (
+                          <CompetitorAnalysis projectId={projectId} />
                         )}
                       </div>
                     </div>
