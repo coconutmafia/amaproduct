@@ -60,6 +60,55 @@ function streamingChatResponse(
   return new Response(readable, { headers: STREAM_HEADERS })
 }
 
+const SAVED_TYPE_RU: Record<string, string> = { post: 'пост', carousel: 'карусель', reels: 'рилз', stories: 'сторис', email: 'письмо', live: 'эфир' }
+
+// Pull the user's saved "Готовое" library into context so the assistant can
+// reference and edit it directly instead of asking the user to paste the text
+// (a real pain point: "you saved it, why do you ask me for it?").
+async function buildSavedBlock(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  projectId?: string,
+): Promise<string> {
+  try {
+    const { data } = await supabase
+      .from('saved_content')
+      .select('content_type, title, body, created_at, project_id')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(40)
+    let rows = data ?? []
+    if (rows.length === 0) return ''
+    // This project's saves first, then the rest (global / other projects).
+    if (projectId) rows = [...rows.filter((r) => r.project_id === projectId), ...rows.filter((r) => r.project_id !== projectId)]
+
+    let budget = 9000 // char budget so we never blow up the prompt
+    const parts: string[] = []
+    let n = 0
+    for (const r of rows) {
+      const body = String(r.body ?? '').trim()
+      if (!body) continue
+      const type = SAVED_TYPE_RU[String(r.content_type ?? '')] || 'контент'
+      const title = (String(r.title ?? '') || body.split('\n')[0] || '').slice(0, 80)
+      const entry = `[${n + 1}] ${type} — «${title}»\n${body}`
+      if (parts.length > 0 && entry.length > budget) break
+      parts.push(entry.length > 4000 ? entry.slice(0, 4000) + '…' : entry)
+      budget -= entry.length
+      n++
+      if (budget <= 0) break
+    }
+    if (parts.length === 0) return ''
+    return `
+
+═══ СОХРАНЁННЫЙ КОНТЕНТ ПОЛЬЗОВАТЕЛЯ («Готовое») ═══
+Ниже — контент, который пользователь УЖЕ сохранил в библиотеку «Готовое». Если он ссылается на ранее сохранённый/готовый рилз, пост, карусель, сторис и т.п. — НАЙДИ его в этом списке и работай с его текстом напрямую (покажи, поправь, перепиши, используй как основу). НЕ проси пользователя прислать текст, который уже есть здесь. Если нужного действительно нет — скажи, что не нашёл в «Готовом», и попроси уточнить.
+
+${parts.join('\n\n———\n\n')}`
+  } catch {
+    return ''
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
@@ -86,6 +135,8 @@ export async function POST(request: Request) {
         sysKnowledge = rag.systemKnowledge.map(c => c.chunk_text).join('\n\n').slice(0, 4000)
       } catch { /* no system knowledge */ }
 
+      const savedBlock = await buildSavedBlock(supabase, user.id)
+
       const standaloneSystem = `Ты — AI-ассистент по контенту и запускам для блогеров и экспертов, построенный на проверенной методологии прогревов и продаж в блоге.
 
 ТВОЯ РОЛЬ:
@@ -105,7 +156,7 @@ export async function POST(request: Request) {
 
 ${AI_TELLS_TO_AVOID}
 
-${sysKnowledge ? `═══ МЕТОДОЛОГИЯ (опирайся на неё) ═══\n${sysKnowledge}` : ''}`
+${sysKnowledge ? `═══ МЕТОДОЛОГИЯ (опирайся на неё) ═══\n${sysKnowledge}` : ''}${savedBlock}`
 
       return streamingChatResponse(standaloneSystem, messages.map((m) => ({ role: m.role, content: m.content })))
     }
@@ -128,6 +179,7 @@ ${sysKnowledge ? `═══ МЕТОДОЛОГИЯ (опирайся на неё
     }
 
     const baseSystem = buildSystemPrompt(ragContext, project)
+    const savedBlock = await buildSavedBlock(supabase, user.id, projectId)
 
     // Wrap the content-generation system prompt with an ASSISTANT framing.
     // Personal content assistant for THIS blogger — grounded only in the
@@ -155,7 +207,7 @@ ${genFormat ? `
 - НЕ добавляй комментарии после текста («Готово!», «Если нужно — поправлю», «Хочешь иначе?»).
 - Первая строка ответа = первая строка контента. Последняя строка ответа = последняя строка контента.` : ''}
 
-${baseSystem}`
+${baseSystem}${savedBlock}`
 
     return streamingChatResponse(systemPrompt, messages.map((m) => ({ role: m.role, content: m.content })))
   } catch (error) {
