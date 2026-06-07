@@ -143,6 +143,7 @@ export default function BrandPage() {
       </Link>
       <h1 className="text-xl font-bold text-foreground">Фирменный стиль</h1>
       <p className="mt-1 text-sm text-muted-foreground">Загрузи примеры своего оформления — AI распознает цвета, фон и настроение, и твои карусели/посты/сторис будут в твоём стиле.</p>
+      <Link href={`/projects/${projectId}/stories`} className="mt-2 inline-block text-sm text-primary underline">Оформить сторис по фото →</Link>
 
       {/* 1. Samples + analyze */}
       <section className="mt-6 rounded-2xl border border-border bg-card p-4">
