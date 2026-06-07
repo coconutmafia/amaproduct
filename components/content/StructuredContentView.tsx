@@ -5,6 +5,7 @@
 // AI output varies, so we guard everything.
 
 import { objectToReadableText } from '@/lib/contentToText'
+import { CarouselSlides } from '@/components/carousel/CarouselSlides'
 
 type Dict = Record<string, unknown>
 
@@ -97,6 +98,7 @@ export function StructuredContentView({ data }: { data: Dict }) {
             <Field label="Призыв" value={last.action} />
           </Card>
         )}
+        <CarouselSlides carousel={carousel} />
       </div>
     )
   }
