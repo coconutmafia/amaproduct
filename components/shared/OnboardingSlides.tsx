@@ -98,22 +98,16 @@ export function OnboardingSlides({ userId, onComplete }: Props) {
   const current = SLIDES[slide]
   const isLast  = slide === SLIDES.length - 1
 
-  // Persist the "don't show again" choice only when the user ticks the box;
-  // otherwise it simply closes for this session and shows again next entry.
-  const persistOptOut = async () => {
-    if (dontShow) await supabase.from('profiles').update({ onboarding_done: true }).eq('id', userId)
+  // Ticking "больше не показывать" persists IMMEDIATELY (real opt-out — it will
+  // genuinely never show again, however the modal is closed). Closing without
+  // ticking just hides it for this session; it returns on the next entry.
+  const toggleDontShow = async (checked: boolean) => {
+    setDontShow(checked)
+    try { await supabase.from('profiles').update({ onboarding_done: checked }).eq('id', userId) } catch { /* ignore */ }
   }
 
-  const finish = async () => {
-    setClosing(true)
-    await persistOptOut()
-    onComplete()
-  }
-
-  const skip = async () => {
-    await persistOptOut()
-    onComplete()
-  }
+  const finish = () => { setClosing(true); onComplete() }
+  const skip = () => { onComplete() }
 
   const Icon = current.icon
 
@@ -164,7 +158,7 @@ export function OnboardingSlides({ userId, onComplete }: Props) {
 
           {/* Opt-out: shown every entry, this stops it permanently */}
           <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
-            <input type="checkbox" checked={dontShow} onChange={(e) => setDontShow(e.target.checked)} className="h-4 w-4 rounded border-border accent-primary" />
+            <input type="checkbox" checked={dontShow} onChange={(e) => toggleDontShow(e.target.checked)} className="h-4 w-4 rounded border-border accent-primary" />
             Больше не показывать
           </label>
 
