@@ -264,10 +264,11 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
                   </button>
                   <SaveButton body={text} projectId={id} className="text-[11px] text-muted-foreground hover:text-primary" />
                   {genContext && <SaveToPlanButton projectId={id} ctx={genContext} text={text} />}
-                  {(genContext?.type === 'carousel' || /слайд\s*\d/i.test(text)) && (
+                  {(genContext?.type === 'carousel' || /слайд\s*\d/i.test(text)) ? (
                     <CarouselSlides sourceText={text} type="carousel" projectId={id} />
-                  )}
-                  {genContext?.type === 'post' && <PostImage text={text} projectId={id} />}
+                  ) : (genContext?.type === 'post' || text.length > 150) ? (
+                    <PostImage text={text} projectId={id} />
+                  ) : null}
                 </div>
               )}
               {text}
