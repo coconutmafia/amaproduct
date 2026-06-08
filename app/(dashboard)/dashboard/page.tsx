@@ -46,7 +46,9 @@ export default async function DashboardPage() {
 
   const name = profile?.full_name || user.email?.split('@')[0] || 'Блогер'
   const aiName = (profile as { ai_assistant_name?: string | null })?.ai_assistant_name
-  const onboardingDone = (profile as { onboarding_done?: boolean })?.onboarding_done ?? true
+  // Show onboarding on every entry until the user ticks "больше не показывать"
+  // (only then is onboarding_done persisted). Default false → new users see it.
+  const onboardingDone = (profile as { onboarding_done?: boolean })?.onboarding_done ?? false
   const greeting = aiName ? `${aiName} готов к работе` : 'Твой AI SMM-щик готов к работе'
 
   return (

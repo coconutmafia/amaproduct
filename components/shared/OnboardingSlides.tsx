@@ -91,18 +91,27 @@ interface Props {
 export function OnboardingSlides({ userId, onComplete }: Props) {
   const [slide, setSlide]     = useState(0)
   const [closing, setClosing] = useState(false)
+  // Onboarding now shows on every entry (people forget) — the checkbox lets the
+  // user opt out permanently. We only persist onboarding_done when they opt out.
+  const [dontShow, setDontShow] = useState(false)
   const supabase = createClient()
   const current = SLIDES[slide]
   const isLast  = slide === SLIDES.length - 1
 
+  // Persist the "don't show again" choice only when the user ticks the box;
+  // otherwise it simply closes for this session and shows again next entry.
+  const persistOptOut = async () => {
+    if (dontShow) await supabase.from('profiles').update({ onboarding_done: true }).eq('id', userId)
+  }
+
   const finish = async () => {
     setClosing(true)
-    await supabase.from('profiles').update({ onboarding_done: true }).eq('id', userId)
+    await persistOptOut()
     onComplete()
   }
 
   const skip = async () => {
-    await supabase.from('profiles').update({ onboarding_done: true }).eq('id', userId)
+    await persistOptOut()
     onComplete()
   }
 
@@ -152,6 +161,12 @@ export function OnboardingSlides({ userId, onComplete }: Props) {
           <div className="rounded-xl bg-secondary/50 border border-border p-3 text-xs text-muted-foreground">
             {current.tip}
           </div>
+
+          {/* Opt-out: shown every entry, this stops it permanently */}
+          <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+            <input type="checkbox" checked={dontShow} onChange={(e) => setDontShow(e.target.checked)} className="h-4 w-4 rounded border-border accent-primary" />
+            Больше не показывать
+          </label>
 
           {/* Progress dots */}
           <div className="flex items-center justify-between">
