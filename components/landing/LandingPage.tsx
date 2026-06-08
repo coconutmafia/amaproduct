@@ -41,56 +41,56 @@ import {
 // ── Валюты ───────────────────────────────────────────────────────────────────
 type Currency = 'RUB' | 'USD' | 'EUR'
 const CURRENCY_CONFIG: Record<Currency, { symbol: string; prices: [number, number, number] }> = {
-  RUB: { symbol: '₽', prices: [0, 2990, 5990] },
-  USD: { symbol: '$', prices: [0, 29, 59] },
-  EUR: { symbol: '€', prices: [0, 27, 54] },
+  RUB: { symbol: '₽', prices: [4900, 14900, 29900] },
+  USD: { symbol: '$', prices: [49, 149, 299] },
+  EUR: { symbol: '€', prices: [45, 139, 279] },
 }
 
 // ── Тарифы ───────────────────────────────────────────────────────────────────
 const PLANS = [
   {
-    name: 'Старт',
-    period: 'навсегда бесплатно',
-    popular: false,
-    features: [
-      { text: '1 прогрев в месяц', ok: true },
-      { text: '30 AI-генераций постов', ok: true },
-      { text: 'База знаний до 3 материалов', ok: true },
-      { text: 'Контент-план на месяц', ok: false },
-      { text: 'Приоритетная поддержка', ok: false },
-      { text: 'Рилс и сториз', ok: false },
-    ],
-    cta: 'Начать бесплатно',
-    href: '/register',
-    gradient: false,
-  },
-  {
-    name: 'Про',
-    period: 'в месяц · 14 дней бесплатно',
+    name: 'Соло',
+    period: '2 месяца бесплатно · без карты',
     popular: true,
     features: [
-      { text: 'Безлимитные прогревы', ok: true },
-      { text: 'Безлимитные AI-генерации', ok: true },
-      { text: 'База знаний без ограничений', ok: true },
-      { text: 'Контент-план на месяц', ok: true },
-      { text: 'Рилс, сториз, карусели', ok: true },
-      { text: 'Выделенный менеджер', ok: false },
+      { text: '1 проект (твой блог)', ok: true },
+      { text: '~300 генераций в месяц', ok: true },
+      { text: 'Посты, рилз, карусели, сторис', ok: true },
+      { text: 'Слайды-картинки + сторис в твоём стиле', ok: true },
+      { text: 'План прогрева, ассистент, тренды', ok: true },
+      { text: 'Анализ конкурентов', ok: true },
     ],
-    cta: 'Попробовать 14 дней',
+    cta: 'Начать бесплатно',
     href: '/register',
     gradient: true,
   },
   {
-    name: 'Эксперт',
+    name: 'Про',
+    period: 'в месяц · 2 месяца бесплатно',
+    popular: false,
+    features: [
+      { text: 'Всё из Соло', ok: true },
+      { text: 'До 3 проектов', ok: true },
+      { text: 'Безлимит генераций', ok: true },
+      { text: '+1 место для команды', ok: true },
+      { text: 'Приоритет + ранний доступ к видео', ok: true },
+      { text: 'Автопостинг (при запуске)', ok: true },
+    ],
+    cta: 'Попробовать',
+    href: '/register',
+    gradient: false,
+  },
+  {
+    name: 'Продюсер',
     period: 'в месяц',
     popular: false,
     features: [
-      { text: 'Всё из тарифа Про', ok: true },
-      { text: 'Несколько проектов / ниш', ok: true },
-      { text: 'Аналитика контента', ok: true },
-      { text: 'Выделенный менеджер', ok: true },
-      { text: 'Обучение команды (до 3 чел.)', ok: true },
-      { text: 'White-label опция', ok: true },
+      { text: 'Всё из Про', ok: true },
+      { text: 'До 10 проектов-клиентов', ok: true },
+      { text: 'Команда + клиентский доступ', ok: true },
+      { text: 'Приоритетная поддержка + менеджер', ok: true },
+      { text: 'Доп. проекты пакетами', ok: true },
+      { text: 'Для продюсеров и агентств', ok: true },
     ],
     cta: 'Подключить',
     href: '/register',
@@ -493,10 +493,11 @@ function MarqueeBar() {
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
 function StatsSection() {
+  // Honest, verifiable stats (no fabricated user counts).
   const STATS = [
-    { value: 2847, suffix: '+', label: 'экспертов уже используют' },
-    { value: 8, suffix: '', label: 'минут на первый план прогрева' },
-    { value: 47, suffix: '', label: 'минут экономится каждый день' },
+    { value: 8, suffix: ' мин', label: 'на первый план прогрева' },
+    { value: 5, suffix: '', label: 'форматов: посты, рилз, карусели, сторис, визуал' },
+    { value: 2, suffix: ' мес', label: 'бесплатно — попробуй без карты' },
   ]
 
   return (
@@ -923,7 +924,7 @@ function PricingSection() {
                       className="absolute -top-3.5 left-1/2 -translate-x-1/2"
                     >
                       <span className="px-4 py-1.5 rounded-full text-[10px] font-black text-white gradient-animated uppercase tracking-wider shadow-lg">
-                        ✦ ПОПУЛЯРНЫЙ
+                        ✦ ОПТИМАЛЬНЫЙ
                       </span>
                     </motion.div>
                   )}
@@ -1046,7 +1047,7 @@ function Footer() {
           </div>
         </div>
         <div className="text-gray-600 text-xs sm:text-right">
-          © 2025 AMA. Сделано с ❤️ для экспертов.
+          © 2026 AMA. Сделано с ❤️ для экспертов.
         </div>
       </div>
     </footer>
