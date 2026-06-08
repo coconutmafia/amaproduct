@@ -1,10 +1,11 @@
 'use client'
 
-import { use, useState, useEffect, useCallback } from 'react'
+import { use, useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { ArrowLeft, TrendingUp, Plus, Trash2, Loader2, Sparkles, Wand2, Check, Globe, Users } from 'lucide-react'
+import { ArrowLeft, TrendingUp, Plus, Trash2, Loader2, Sparkles, Wand2, Check, Globe, Users, Film } from 'lucide-react'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
+import { ViralReelsManager } from '@/components/projects/ViralReelsManager'
 import { toast } from 'sonner'
 
 interface Trend {
@@ -55,6 +56,8 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
   const [picked, setPicked] = useState<Set<number>>(new Set())
   const [grounded, setGrounded] = useState<{ web?: boolean; competitors?: boolean; reels?: boolean }>({})
   const [adopting, setAdopting] = useState(false)
+  const mineRef = useRef<HTMLDivElement>(null)
+  const [flash, setFlash] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -72,6 +75,14 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
 
   useEffect(() => { load() }, [load])
 
+  // After adding trends, scroll to "Мои тренды" and flash it so it's obvious
+  // where they landed (the small toast alone was easy to miss).
+  const highlightMine = () => {
+    setFlash(true)
+    setTimeout(() => mineRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120)
+    setTimeout(() => setFlash(false), 2200)
+  }
+
   const add = async () => {
     if (!title.trim() || !description.trim() || saving) return
     setSaving(true)
@@ -87,8 +98,8 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
         throw new Error(error.message)
       }
       setTitle(''); setDescription(''); setExample(''); setFormatType('any')
-      toast.success('Тренд добавлен — AI вплетёт его в план')
-      load()
+      toast.success('Добавлено в «Мои тренды» — AI вплетёт его в контент-план')
+      load(); highlightMine()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось') }
     finally { setSaving(false) }
   }
@@ -138,11 +149,11 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
       }))
       const { error } = await supabase.from('content_trends').insert(rows)
       if (error) throw new Error(error.message)
-      toast.success(`Добавлено трендов: ${rows.length}`)
+      toast.success(`Добавлено в «Мои тренды»: ${rows.length}. AI вплетёт их в контент-план 👇`)
       // Drop the adopted ones from the candidate list
       setCandidates(prev => prev.filter((_, i) => !picked.has(i)))
       setPicked(new Set())
-      load()
+      load(); highlightMine()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось добавить') }
     finally { setAdopting(false) }
   }
@@ -155,7 +166,7 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
         <Link href={`/projects/${id}`} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-secondary shrink-0"><ArrowLeft className="h-4 w-4" /></Link>
         <div>
           <h1 className="text-lg font-bold text-foreground flex items-center gap-2"><TrendingUp className="h-4 w-4 text-primary" /> Тренды месяца</h1>
-          <p className="text-xs text-muted-foreground">Актуальные форматы и темы → AI вплетёт их в твой контент-план</p>
+          <p className="text-xs text-muted-foreground">Тренды, форматы и залетевшие рилз → AI вплетёт их в твой контент-план</p>
         </div>
       </div>
 
@@ -261,7 +272,7 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
       ) : (
         <div className="space-y-6">
           {/* My trends */}
-          <div className="space-y-2.5">
+          <div ref={mineRef} className={`space-y-2.5 scroll-mt-4 rounded-2xl transition-all duration-500 ${flash ? 'ring-2 ring-primary/60 ring-offset-4 ring-offset-background' : ''}`}>
             <h2 className="text-sm font-bold text-foreground">Мои тренды <span className="text-[11px] font-medium text-muted-foreground bg-secondary rounded-full px-2 py-0.5">{mine.length}</span></h2>
             {mine.length === 0 && <p className="text-sm text-muted-foreground">Пока пусто. Добавь тренд выше — он будет вплетаться в твой контент-план.</p>}
             {mine.map(t => (
@@ -304,6 +315,15 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
           )}
         </div>
       )}
+
+      {/* Viral reels — merged in (was a separate "Виральные рилз" section) */}
+      <div className="space-y-2.5 pt-3 border-t border-[#ECECEC]">
+        <div>
+          <h2 className="text-sm font-bold text-foreground flex items-center gap-1.5"><Film className="h-3.5 w-3.5 text-primary" /> Залетевшие рилз — референсы</h2>
+          <p className="text-[11px] text-muted-foreground mt-0.5">Вставь ссылку на чужой залетевший рилз — AI разберёт, почему он зашёл, и вплетёт такой формат в твой план.</p>
+        </div>
+        <ViralReelsManager scope="project" projectId={id} />
+      </div>
     </div>
   )
 }
