@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import {
   Bot, Upload, Zap, BarChart3, ChevronRight,
-  Users, Sparkles, Target, Gift, X, Palette,
+  Users, Sparkles, Target, X, Palette,
 } from 'lucide-react'
 
 const SLIDES = [
@@ -65,21 +65,9 @@ const SLIDES = [
     points: [
       'Анализ Instagram-аккаунта и конкурентов',
       'Рекомендации по контент-стратегии',
-      'Style Bank: сохраняй лучшие форматы',
+      'Готовое: AI учится на твоём лучшем контенте',
     ],
     tip: '📊 Попробуй «Анализ аккаунта» в меню своего проекта',
-  },
-  {
-    icon: Gift,
-    gradient: 'from-pink-500 to-rose-500',
-    title: 'Приглашай — получай бонусные запросы',
-    subtitle: 'Поделись сервисом с коллегами и получай бонусы',
-    points: [
-      'Твой реферал регистрируется → +10 бонусных запросов тебе',
-      'Твой реферал оплачивает → +25 запросов тебе',
-      '2-й уровень: если твой реферал кого-то пригласил — ты тоже получаешь',
-    ],
-    tip: '🔗 Твоя реферальная ссылка в разделе «Твои бонусы»',
   },
 ]
 
