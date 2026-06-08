@@ -24,8 +24,13 @@ export default function LibraryPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
+    // When opened from a project ("Готовое" tile → /library?project=ID), scope to
+    // that project so the user sees this blog's library, not everything.
+    const projectFilter = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('project') : null
+    const base = supabase.from('saved_content').select('*')
+    const scoped = projectFilter ? base.eq('project_id', projectFilter) : base
     const [{ data: rows, error }, { data: projs }] = await Promise.all([
-      supabase.from('saved_content').select('*').order('created_at', { ascending: false }),
+      scoped.order('created_at', { ascending: false }),
       supabase.from('projects').select('id, name'),
     ])
     if (error) {
@@ -69,6 +74,14 @@ export default function LibraryPage() {
           <h1 className="text-xl font-bold text-foreground leading-tight">Готовый контент</h1>
           <p className="text-sm text-muted-foreground leading-tight">Сохранённое — бери и публикуй</p>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-primary/25 bg-primary/5 p-3.5 text-sm text-foreground flex items-start gap-2.5">
+        <span className="text-base leading-none mt-0.5">🎯</span>
+        <p className="leading-snug">
+          <b>AI учится на этом контенте.</b> Добавляй сюда свои лучшие посты — и ассистент будет писать твоим голосом.
+          Каждый проект учится на своём «Готовом»; данные одного проекта не попадают в другой.
+        </p>
       </div>
 
       {loading ? (

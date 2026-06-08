@@ -173,8 +173,12 @@ export async function buildRAGContext(
   }
 
   // ── Style examples (approved content for few-shot learning) ──────────────
-  // Priority: project personal examples → system examples as fallback
+  // Priority: explicit style bank → the project's saved "Готовое" library →
+  // system examples. Each source is in its own try so one failing table never
+  // drops the examples already gathered.
   let styleExamples: StyleExample[] = []
+
+  // 1. Explicit style bank (style_examples) — highest priority
   try {
     const personalQuery = supabase
       .from('style_examples')
@@ -190,9 +194,58 @@ export async function buildRAGContext(
 
     const { data: personalData } = await personalQuery
     styleExamples = (personalData as StyleExample[]) || []
+  } catch {
+    // style_examples unavailable
+  }
 
-    // If fewer than 3 personal examples, supplement with system-level examples
-    if (styleExamples.length < 3) {
+  // 2. Supplement with the project's saved "Готовое" library (saved_content).
+  //    Content the user keeps as "готовое" IS what the AI should learn the voice
+  //    from — the same promise the user sees in the library badge. Deduped, ≤5.
+  if (styleExamples.length < 5) {
+    try {
+      const needed = 5 - styleExamples.length
+      const savedQuery = supabase
+        .from('saved_content')
+        .select('id, project_id, content_type, title, body, created_at')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false })
+        .limit(needed + 4)
+
+      if (contentType) {
+        savedQuery.eq('content_type', contentType)
+      }
+
+      const { data: savedData } = await savedQuery
+      const seen = new Set(styleExamples.map(e => (e.body_text || '').slice(0, 80)))
+      for (const s of (savedData as Array<{ id: string; project_id: string | null; content_type: string | null; title: string | null; body: string; created_at: string }>) || []) {
+        if (styleExamples.length >= 5) break
+        const body = (s.body || '').trim()
+        if (body.length < 40) continue
+        const key = body.slice(0, 80)
+        if (seen.has(key)) continue
+        seen.add(key)
+        styleExamples.push({
+          id: s.id,
+          project_id: s.project_id ?? projectId,
+          content_type: (s.content_type ?? 'post') as StyleExample['content_type'],
+          title: s.title ?? null,
+          body_text: body,
+          warmup_phase: null,
+          performance_score: 0,
+          tags: ['saved'],
+          is_active: true,
+          source_content_item_id: null,
+          created_at: s.created_at,
+        })
+      }
+    } catch {
+      // saved_content unavailable (e.g. migration not applied) — skip silently
+    }
+  }
+
+  // 3. Still thin? Supplement with system-level examples.
+  if (styleExamples.length < 3) {
+    try {
       const needed = 5 - styleExamples.length
       const systemQuery = supabase
         .from('style_examples')
@@ -209,9 +262,9 @@ export async function buildRAGContext(
       const { data: systemData } = await systemQuery
       const systemExamples = (systemData as StyleExample[]) || []
       styleExamples = [...styleExamples, ...systemExamples]
+    } catch {
+      // system examples unavailable
     }
-  } catch {
-    // Style examples unavailable
   }
 
   return { systemKnowledge: systemChunks, projectContext: projectChunks, styleExamples }
