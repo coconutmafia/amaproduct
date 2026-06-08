@@ -1,9 +1,10 @@
 'use client'
 
-// "Сделать слайды" — turns a carousel's structured_data into real slide images.
-// Renders each slide via /api/carousel/render (one request per slide), previews
-// them, and offers per-slide download + "download all" as a ZIP (jszip).
-// Drop-in: needs only the `carousel` object (cover/slides[]/last_slide).
+// "Сделать слайды" — turns a carousel into real slide images. Works two ways:
+//  • carousel: a structured carousel object (generator / saved items)
+//  • sourceText: raw chat-generated text → structured on open via /api/carousel/structure
+// Renders each slide via /api/carousel/render, previews them, and offers per-slide
+// + ZIP download. Loads the project's brand kit so slides match the creator's style.
 
 import { useState } from 'react'
 
@@ -44,49 +45,82 @@ function download(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 4000)
 }
 
-export function CarouselSlides({ carousel, projectId, brand }: { carousel: Dict; projectId?: string; brand?: Brand }) {
-  const total = slideCount(carousel)
+export function CarouselSlides({
+  carousel: initialCarousel,
+  sourceText,
+  type = 'carousel',
+  projectId,
+  brand,
+}: {
+  carousel?: Dict
+  sourceText?: string
+  type?: string
+  projectId?: string
+  brand?: Brand
+}) {
+  const [carousel, setCarousel] = useState<Dict | undefined>(initialCarousel)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const [slides, setSlides] = useState<{ url: string; blob: Blob }[]>([])
   const [zipping, setZipping] = useState(false)
   const [effBrand, setEffBrand] = useState<Brand | undefined>(brand)
 
-  if (total === 0) return null
+  // Nothing to work with → render nothing. (Structured-but-empty also hides.)
+  if (!initialCarousel && !sourceText) return null
+  if (initialCarousel && slideCount(initialCarousel) === 0) return null
 
-  async function generate(useBrand?: Brand) {
-    setBusy(true)
-    setErr(null)
+  async function generate(c: Dict, b?: Brand) {
+    setStatus('Рисую слайды…')
     slides.forEach((s) => URL.revokeObjectURL(s.url))
     setSlides([])
+    const n = slideCount(c)
+    const blobs = await Promise.all(Array.from({ length: n }, (_, i) => renderSlide(c, i, b ?? effBrand)))
+    setSlides(blobs.map((blob) => ({ blob, url: URL.createObjectURL(blob) })))
+  }
+
+  async function openModal() {
+    setOpen(true)
+    if (slides.length > 0) return
+    setBusy(true)
+    setErr(null)
     try {
-      const blobs = await Promise.all(Array.from({ length: total }, (_, i) => renderSlide(carousel, i, useBrand ?? effBrand)))
-      setSlides(blobs.map((blob) => ({ blob, url: URL.createObjectURL(blob) })))
+      // 1) brand kit (so slides match the creator's style)
+      let b = brand
+      if (!b && projectId) {
+        try {
+          const r = await fetch(`/api/brand-kit?projectId=${projectId}`)
+          const d = await r.json()
+          if (r.ok && (d.accentColor || d.bg || d.handle || d.logoUrl)) {
+            b = { accentColor: d.accentColor, bg: d.bg, text: d.text, bgStyle: d.bgStyle, handle: d.handle, logoUrl: d.logoUrl }
+          }
+        } catch { /* default theme */ }
+      }
+      setEffBrand(b)
+
+      // 2) resolve the carousel — structure raw text on demand if needed
+      let c = carousel
+      if (!c && sourceText) {
+        setStatus('Раскладываю на слайды…')
+        const r = await fetch('/api/carousel/structure', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text: sourceText, type }),
+        })
+        const d = await r.json()
+        if (!r.ok) throw new Error(d.error || 'Не удалось разложить на слайды')
+        c = d.carousel as Dict
+        setCarousel(c)
+      }
+      if (!c) throw new Error('Нет данных карусели')
+
+      await generate(c, b)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Не удалось сгенерировать слайды')
     } finally {
       setBusy(false)
+      setStatus('')
     }
-  }
-
-  // Load the project's saved brand kit so slides render in the creator's style;
-  // fall back to the default theme if none is set.
-  async function openModal() {
-    setOpen(true)
-    if (slides.length > 0) return
-    let b = brand
-    if (!b && projectId) {
-      try {
-        const r = await fetch(`/api/brand-kit?projectId=${projectId}`)
-        const d = await r.json()
-        if (r.ok && (d.accentColor || d.bg || d.handle || d.logoUrl)) {
-          b = { accentColor: d.accentColor, bg: d.bg, text: d.text, bgStyle: d.bgStyle, handle: d.handle, logoUrl: d.logoUrl }
-        }
-      } catch { /* default theme */ }
-    }
-    setEffBrand(b)
-    void generate(b)
   }
 
   async function downloadZip() {
@@ -96,14 +130,15 @@ export function CarouselSlides({ carousel, projectId, brand }: { carousel: Dict;
       const { default: JSZip } = await import('jszip')
       const zip = new JSZip()
       slides.forEach((s, i) => zip.file(`slide-${String(i + 1).padStart(2, '0')}.png`, s.blob))
-      const out = await zip.generateAsync({ type: 'blob' })
-      download(out, 'carousel-slides.zip')
+      download(await zip.generateAsync({ type: 'blob' }), 'carousel-slides.zip')
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Не удалось собрать ZIP')
     } finally {
       setZipping(false)
     }
   }
+
+  const count = slides.length || (carousel ? slideCount(carousel) : 0)
 
   return (
     <>
@@ -117,12 +152,9 @@ export function CarouselSlides({ carousel, projectId, brand }: { carousel: Dict;
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setOpen(false)}>
-          <div
-            className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <p className="text-sm font-bold text-foreground">Слайды карусели{total ? ` · ${total}` : ''}</p>
+              <p className="text-sm font-bold text-foreground">Слайды карусели{count ? ` · ${count}` : ''}</p>
               <div className="flex items-center gap-2">
                 {projectId && (
                   <a href={`/projects/${projectId}/brand`} className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary/40">🎨 Стиль</a>
@@ -142,11 +174,11 @@ export function CarouselSlides({ carousel, projectId, brand }: { carousel: Dict;
             </div>
 
             <div className="overflow-auto p-4">
-              {busy && <p className="py-10 text-center text-sm text-muted-foreground">Рисую {total} слайдов…</p>}
+              {busy && <p className="py-10 text-center text-sm text-muted-foreground">{status || 'Готовлю…'}</p>}
               {err && (
                 <div className="py-6 text-center">
                   <p className="text-sm text-red-500">{err}</p>
-                  <button type="button" onClick={() => generate()} className="mt-2 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-secondary/40">
+                  <button type="button" onClick={openModal} className="mt-2 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-secondary/40">
                     Повторить
                   </button>
                 </div>

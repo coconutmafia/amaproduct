@@ -6,6 +6,7 @@ import { ArrowLeft, Sparkles, Loader2, Copy, Check, User, CalendarPlus } from 'l
 import { toast } from 'sonner'
 import { ChatComposer } from '@/components/ui/ChatComposer'
 import { SaveButton } from '@/components/content/SaveButton'
+import { CarouselSlides } from '@/components/carousel/CarouselSlides'
 import { useChatPin } from '@/lib/useChatPin'
 import { cleanMarkdown } from '@/lib/cleanText'
 
@@ -262,6 +263,9 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
                   </button>
                   <SaveButton body={text} projectId={id} className="text-[11px] text-muted-foreground hover:text-primary" />
                   {genContext && <SaveToPlanButton projectId={id} ctx={genContext} text={text} />}
+                  {(genContext?.type === 'carousel' || /слайд\s*\d/i.test(text)) && (
+                    <CarouselSlides sourceText={text} type="carousel" projectId={id} />
+                  )}
                 </div>
               )}
               {text}
