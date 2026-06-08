@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { anthropic, MODEL } from '@/lib/ai/client'
+import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt } from '@/lib/ai/prompts/system'
 import { AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
@@ -33,7 +33,7 @@ function streamingChatResponse(
       try {
         for (let round = 0; round < 4; round++) {
           const convo = round === 0 ? messages : [...messages, { role: 'assistant' as const, content: acc }]
-          const stream = anthropic.messages.stream({ model: MODEL, max_tokens: 8000, system, messages: convo })
+          const stream = anthropic.messages.stream({ model: MODEL, max_tokens: 8000, system: buildCachedSystem(system), messages: convo })
           for await (const chunk of stream) {
             if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
               acc += chunk.delta.text

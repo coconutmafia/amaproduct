@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { anthropic, MODEL } from '@/lib/ai/client'
+import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt, buildValidatorUserPrompt } from '@/lib/ai/prompts/system'
 import { getSchemaForPhase, getHookEngine, getEmotionalMechanics, getCTAEngine, getViralReelsFramework } from '@/lib/ai/prompts/content-brain'
@@ -178,7 +178,7 @@ ${contentType === 'email' ? `Напиши письмо для email-рассыл
           // low ceiling truncates the JSON, JSON.parse fails, and we'd save a
           // broken blob as plain text. Give it real headroom; posts stay modest.
           max_tokens: isJsonType ? 8192 : 2000,
-          system: systemPrompt,
+          system: buildCachedSystem(systemPrompt),
           messages: [{ role: 'user', content: userPrompt }],
         })
 
@@ -206,7 +206,7 @@ ${contentType === 'email' ? `Напиши письмо для email-рассыл
           const validatorStream = anthropic.messages.stream({
             model: MODEL,
             max_tokens: 1500,
-            system: systemPrompt, // same full context — validator knows TOV, niche, methodology
+            system: buildCachedSystem(systemPrompt), // same full context — validator knows TOV, niche, methodology
             messages: [{ role: 'user', content: buildValidatorUserPrompt(generatedText) }],
           })
 
