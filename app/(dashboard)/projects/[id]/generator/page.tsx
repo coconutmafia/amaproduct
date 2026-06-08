@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { ContentEditor } from '@/components/content/ContentEditor'
 import { StructuredContentView } from '@/components/content/StructuredContentView'
+import { PostImage } from '@/components/carousel/PostImage'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { ExportPanel } from '@/components/content/ExportPanel'
 import { AiEditChat } from '@/components/ai/AiEditChat'
@@ -410,6 +411,9 @@ export default function GeneratorPage() {
                     onChange={setEditedText}
                     placeholder="Текст контента..."
                   />
+                )}
+                {(contentType === 'post' || (editedText && !generated.structuredData)) && editedText.trim().length > 20 && (
+                  <PostImage text={editedText} projectId={id} />
                 )}
 
                 {/* Structured data (carousel, reels, stories) — readable view */}
