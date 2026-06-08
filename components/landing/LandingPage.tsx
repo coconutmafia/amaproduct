@@ -3,8 +3,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import {
-  Check, Minus, Star, Sparkles, Zap,
-  BookOpen, Calendar, Mic2, ChevronRight, Menu, X, ArrowRight,
+  Check, Minus, Sparkles, Zap,
+  BookOpen, Calendar, Mic2, ChevronRight, Menu, X, ArrowRight, Palette, Users,
 } from 'lucide-react'
 
 // ── Декоративная пальма ───────────────────────────────────────────────────────
@@ -95,30 +95,6 @@ const PLANS = [
     cta: 'Подключить',
     href: '/register',
     gradient: false,
-  },
-]
-
-const REVIEWS = [
-  {
-    name: 'Анна К.',
-    role: 'Коуч по отношениям',
-    text: 'За 8 минут получила полный план прогрева на 45 дней. Раньше на такое уходила неделя. AMA пишет именно в моём голосе — подписчики не замечают разницы.',
-    stars: 5,
-    avatar: 'А',
-  },
-  {
-    name: 'Михаил Р.',
-    role: 'Эксперт по инвестициям',
-    text: 'Наконец-то нейросеть, которая понимает специфику моей ниши. Загрузил материалы — и она пишет как я думаю. Контент-план на запуск готов за несколько минут.',
-    stars: 5,
-    avatar: 'М',
-  },
-  {
-    name: 'Ольга С.',
-    role: 'Нутрициолог',
-    text: 'Раньше тратила 3 часа на один пост. Сейчас — 15 минут. AMA помнит все мои кейсы, мой тон и аудиторию. Каждый запуск теперь идёт по чёткой системе.',
-    stars: 5,
-    avatar: 'О',
   },
 ]
 
@@ -429,8 +405,8 @@ function HeroSection() {
           transition={{ delay: 1.1, duration: 0.6 }}
           className="text-[#555] text-xl sm:text-2xl max-w-2xl mx-auto leading-relaxed"
         >
-          AMA изучает твой голос, нишу и аудиторию — и создаёт контент,
-          который звучит именно как ты. Plan прогрева за{' '}
+          AMA изучает твой голос, нишу и аудиторию — и создаёт твой контент:
+          тексты и визуал, которые звучат и выглядят как ты. План прогрева за{' '}
           <span className="font-bold text-[#1A1A1A]">8 минут</span>.
         </motion.p>
 
@@ -474,7 +450,7 @@ function HeroSection() {
 
 // ── Бегущая строка ────────────────────────────────────────────────────────────
 function MarqueeBar() {
-  const items = ['AI SMM-щик', 'Контент-план', 'Прогрев', 'Рилсы', 'Сториз', 'Посты', 'Карусели', 'Голос бренда']
+  const items = ['AI SMM-щик', 'Контент-план', 'Прогрев', 'Рилсы', 'Сториз', 'Посты', 'Карусели', 'Слайды-картинки', 'Фирменный стиль', 'Анализ конкурентов', 'Голос бренда']
   const repeated = [...items, ...items]
 
   return (
@@ -746,6 +722,44 @@ function FeaturesSection() {
                 <p className="text-xs text-[#888]">AI помнит всё. Качество текстов растёт автоматически.</p>
               </motion.div>
             </TiltCard>
+
+            {/* Визуал в стиле бренда */}
+            <TiltCard>
+              <motion.div variants={fadeUp} custom={4} className="p-8 rounded-2xl bg-white border border-[#C5CBA5] space-y-5 shadow-md h-full">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 mb-2 gradient-text">
+                    <Palette className="h-3 w-3" /> Визуал
+                  </p>
+                  <p className="text-lg font-black text-[#1A1A1A]">Картинки в твоём стиле</p>
+                </div>
+                <div className="flex gap-2">
+                  {['#ECEAE4', '#1A1A1A', '#E84B8A'].map((c, i) => (
+                    <div key={i} className="flex-1 aspect-[4/5] rounded-lg border border-[#E0E0E0]" style={{ background: c }} />
+                  ))}
+                </div>
+                <p className="text-xs text-[#888]">Загрузи примеры оформления — AI повторит твои цвета, шрифт и логотип. Карусели, посты и сторис как готовые картинки.</p>
+              </motion.div>
+            </TiltCard>
+
+            {/* Для продюсеров */}
+            <TiltCard>
+              <motion.div variants={fadeUp} custom={5} className="p-8 rounded-2xl bg-white border border-[#C5CBA5] space-y-5 shadow-md h-full">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 mb-2 gradient-text">
+                    <Users className="h-3 w-3" /> Для продюсеров
+                  </p>
+                  <p className="text-lg font-black text-[#1A1A1A]">Много клиентов — один кабинет</p>
+                </div>
+                <div className="space-y-2">
+                  {['Клиент 1 — фитнес', 'Клиент 2 — психология', 'Клиент 3 — маркетинг'].map((t, i) => (
+                    <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#F7F7F7] border border-[#E8E8E8] text-xs text-[#444]">
+                      <span className="w-2 h-2 rounded-full gradient-accent inline-block shrink-0" /> {t}
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-[#888]">У каждого клиента свой голос, стиль и стратегия. Команда и клиентский доступ в проект.</p>
+              </motion.div>
+            </TiltCard>
           </div>
         </RevealSection>
       </div>
@@ -819,53 +833,6 @@ function ProcessSection() {
                 </TiltCard>
               ))}
             </div>
-          </div>
-        </RevealSection>
-      </div>
-    </section>
-  )
-}
-
-// ── Reviews ───────────────────────────────────────────────────────────────────
-function ReviewsSection() {
-  return (
-    <section className="py-16 sm:py-28 px-5 bg-[#F5F5F5] border-b border-[#C5CBA5]/50">
-      <div className="max-w-5xl mx-auto">
-        <RevealSection>
-          <SectionLabel>Отзывы</SectionLabel>
-          <motion.h2 variants={fadeUp} className="text-4xl sm:text-5xl font-black text-[#1A1A1A] text-center mb-14 uppercase">
-            Что говорят <span className="gradient-text">эксперты</span>
-          </motion.h2>
-          <div className="grid sm:grid-cols-3 gap-5">
-            {REVIEWS.map((r, i) => (
-              <TiltCard key={i}>
-                <motion.div
-                  variants={fadeUp}
-                  custom={i}
-                  className="p-5 sm:p-7 rounded-2xl bg-white border border-[#C5CBA5] space-y-5 shadow-md h-full relative overflow-hidden"
-                >
-                  {/* Decorative quote */}
-                  <div className="absolute -top-2 -right-1 text-[80px] font-black leading-none gradient-text opacity-10 pointer-events-none select-none">
-                    "
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {[...Array(r.stars)].map((_, j) => (
-                      <Star key={j} className="h-4 w-4 fill-amber-400 text-amber-400" />
-                    ))}
-                  </div>
-                  <p className="text-sm text-[#555] leading-relaxed relative z-10">{r.text}</p>
-                  <div className="flex items-center gap-3 pt-1">
-                    <div className="w-10 h-10 rounded-full gradient-accent flex items-center justify-center text-sm font-bold text-white shadow-md">
-                      {r.avatar}
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-[#1A1A1A]">{r.name}</p>
-                      <p className="text-[11px] text-[#888]">{r.role}</p>
-                    </div>
-                  </div>
-                </motion.div>
-              </TiltCard>
-            ))}
           </div>
         </RevealSection>
       </div>
@@ -1067,7 +1034,6 @@ export default function LandingPage() {
         <SolutionSection />
         <FeaturesSection />
         <ProcessSection />
-        <ReviewsSection />
         <PricingSection />
         <CtaSection />
       </main>
