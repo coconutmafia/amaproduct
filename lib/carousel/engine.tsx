@@ -15,6 +15,7 @@ import type { ReactElement } from 'react'
 export const FORMATS = {
   carousel: { w: 1080, h: 1350 }, // 4:5
   post: { w: 1080, h: 1080 }, // 1:1
+  post45: { w: 1080, h: 1350 }, // 4:5 single post (best for IG feed reach)
   story: { w: 1080, h: 1920 }, // 9:16
 } as const
 export type FormatKey = keyof typeof FORMATS
@@ -432,6 +433,49 @@ function Story({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: S
   )
 }
 
+// ── Photo post (any ratio) — headline over the creator's OWN photo ──────────────
+// Dark bottom gradient keeps the headline readable over any image; accent words
+// (**…**) stay in the brand colour. Used for "сделать картинку поста" with a photo.
+function Photo({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Size }): ReactElement {
+  return (
+    <div style={{ display: 'flex', position: 'relative', width: size.w, height: size.h }}>
+      {s.photoUrl ? (
+        <img src={s.photoUrl} width={size.w} height={size.h} style={{ objectFit: 'cover' }} alt="" />
+      ) : (
+        <Backdrop theme={theme} size={size} />
+      )}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: Math.round(size.h * 0.62),
+          justifyContent: 'flex-end',
+          padding: '0 72px 80px',
+          backgroundImage: 'linear-gradient(0deg, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.30) 48%, rgba(0,0,0,0) 100%)',
+        }}
+      >
+        <RichText text={s.headline || ''} o={{ size: 64, weight: 800, accentWeight: 900, color: '#FFFFFF', accent: theme.accent, lineGap: 8 }} />
+        {s.body ? (
+          <div style={{ display: 'flex', marginTop: 18, width: '100%' }}>
+            <RichText text={s.body} o={{ size: 34, weight: 500, color: 'rgba(255,255,255,0.92)', accent: theme.accent, align: 'left', lineGap: 8 }} />
+          </div>
+        ) : (
+          <div style={{ display: 'flex' }} />
+        )}
+        {theme.handle ? (
+          <div style={{ display: 'flex', marginTop: 20, color: 'rgba(255,255,255,0.7)', fontSize: 22, fontWeight: 700, letterSpacing: 2 }}>{theme.handle.toUpperCase()}</div>
+        ) : (
+          <div style={{ display: 'flex' }} />
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function renderSlide(s: SlideSpec, theme: CarouselTheme, size: Size): ReactElement {
   switch (s.kind) {
     case 'cover':
@@ -440,6 +484,8 @@ export function renderSlide(s: SlideSpec, theme: CarouselTheme, size: Size): Rea
       return <CTA s={s} theme={theme} size={size} />
     case 'post':
       return <Post s={s} theme={theme} size={size} />
+    case 'photo':
+      return <Photo s={s} theme={theme} size={size} />
     case 'story':
       return <Story s={s} theme={theme} size={size} />
     default:
