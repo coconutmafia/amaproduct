@@ -50,7 +50,7 @@ const CURRENCY_CONFIG: Record<Currency, { symbol: string; prices: [number, numbe
 const PLANS = [
   {
     name: 'Соло',
-    period: '2 месяца бесплатно · без карты',
+    period: 'в месяц',
     popular: true,
     features: [
       { text: '1 проект (твой блог)', ok: true },
@@ -60,13 +60,13 @@ const PLANS = [
       { text: 'План прогрева, ассистент, тренды', ok: true },
       { text: 'Анализ конкурентов', ok: true },
     ],
-    cta: 'Начать бесплатно',
+    cta: 'Выбрать',
     href: '/register',
     gradient: true,
   },
   {
     name: 'Про',
-    period: 'в месяц · 2 месяца бесплатно',
+    period: 'в месяц',
     popular: false,
     features: [
       { text: 'Всё из Соло', ok: true },
@@ -76,7 +76,7 @@ const PLANS = [
       { text: 'Приоритет + ранний доступ к видео', ok: true },
       { text: 'Автопостинг (при запуске)', ok: true },
     ],
-    cta: 'Попробовать',
+    cta: 'Выбрать',
     href: '/register',
     gradient: false,
   },
@@ -257,7 +257,7 @@ function Navbar() {
               href="/register"
               className="h-10 px-5 rounded-[50px] text-sm font-bold uppercase text-white gradient-accent hover:opacity-90 transition-opacity flex items-center gap-1 shadow-md shadow-[#E86BA0]/25"
             >
-              Попробовать бесплатно <ChevronRight className="h-3.5 w-3.5" />
+              Начать <ChevronRight className="h-3.5 w-3.5" />
             </Link>
           </motion.div>
         </div>
@@ -287,7 +287,7 @@ function Navbar() {
             <div className="pt-2 flex flex-col gap-2">
               <Link href="/login" className="text-sm text-[#888] py-1">Войти</Link>
               <Link href="/register" className="h-12 w-full rounded-[50px] text-sm font-bold uppercase text-white gradient-accent flex items-center justify-center gap-1">
-                Попробовать бесплатно <ChevronRight className="h-4 w-4" />
+                Начать <ChevronRight className="h-4 w-4" />
               </Link>
             </div>
           </motion.div>
@@ -418,7 +418,7 @@ function HeroSection() {
           className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2 w-full sm:w-auto px-2 sm:px-0"
         >
           <GradientButton href="/register" large>
-            Попробовать бесплатно
+            Начать
           </GradientButton>
           <motion.a
             href="#features"
@@ -437,11 +437,11 @@ function HeroSection() {
           transition={{ delay: 1.5 }}
           className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-[#888] pt-2"
         >
-          <span className="flex items-center gap-1.5">✓ Бесплатно</span>
+          <span className="flex items-center gap-1.5">✓ Первый план за 8 минут</span>
           <span className="hidden sm:block w-px h-4 bg-[#E0E0E0]" />
-          <span className="flex items-center gap-1.5">✓ Без карты</span>
+          <span className="flex items-center gap-1.5">✓ Контент в твоём стиле</span>
           <span className="hidden sm:block w-px h-4 bg-[#E0E0E0]" />
-          <span className="flex items-center gap-1.5">✓ Первый план за 8 мин</span>
+          <span className="flex items-center gap-1.5">✓ Голос и методология</span>
         </motion.div>
       </div>
     </section>
@@ -473,7 +473,7 @@ function StatsSection() {
   const STATS = [
     { value: 8, suffix: ' мин', label: 'на первый план прогрева' },
     { value: 5, suffix: '', label: 'форматов: посты, рилз, карусели, сторис, визуал' },
-    { value: 2, suffix: ' мес', label: 'бесплатно — попробуй без карты' },
+    { value: 4, suffix: '', label: 'фазы прогрева под твой запуск' },
   ]
 
   return (
@@ -973,19 +973,17 @@ function CtaSection() {
             <span className="text-white">сегодня</span>
           </motion.h2>
           <motion.p variants={fadeUp} className="text-gray-400 text-lg">
-            Бесплатно. Без карты. Первый план за 8 минут.
+            Первый план прогрева за 8 минут — в твоём голосе и стиле.
           </motion.p>
           <motion.div variants={fadeUp} className="pt-2 flex justify-center">
             <GradientButton href="/register" large>
-              Попробовать бесплатно
+              Начать
             </GradientButton>
           </motion.div>
           <motion.div variants={fadeUp} className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-gray-500 pt-2">
             <span>🔒 Данные защищены</span>
             <span className="hidden sm:block w-px h-4 bg-white/10" />
             <span>✓ Отмена в любой момент</span>
-            <span className="hidden sm:block w-px h-4 bg-white/10" />
-            <span>→ Без кредитной карты</span>
           </motion.div>
         </RevealSection>
       </div>
