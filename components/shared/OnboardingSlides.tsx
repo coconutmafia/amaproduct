@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import {
   Bot, Upload, Zap, BarChart3, ChevronRight,
-  Users, Sparkles, Target, Gift, X,
+  Users, Sparkles, Target, Gift, X, Palette,
 } from 'lucide-react'
 
 const SLIDES = [
@@ -44,6 +44,18 @@ const SLIDES = [
       'Учитывает продукт, ЦА и дату запуска',
     ],
     tip: '🚀 Начни с кнопки «Сгенерировать контент-план» в своём проекте',
+  },
+  {
+    icon: Palette,
+    gradient: 'from-fuchsia-500 to-pink-600',
+    title: 'Контент не только текстом — картинками в ТВОЁМ стиле',
+    subtitle: 'Карусели, посты и сторис как готовые изображения, оформленные под твой бренд',
+    points: [
+      'Загрузи примеры своего оформления — AI распознает твой стиль (цвета, шрифт, настроение)',
+      'Карусель или пост → готовые слайды-картинки одной кнопкой',
+      'Сторис по фото: загрузи фото + сценарий → раскладка в твоём фирменном стиле',
+    ],
+    tip: '🎨 Настрой «Фирменный стиль» в проекте — и весь визуал будет твой',
   },
   {
     icon: BarChart3,
