@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { anthropic, MODEL } from '@/lib/ai/client'
+import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt } from '@/lib/ai/prompts/system'
 import {
@@ -342,7 +342,7 @@ ${currentContent}
         const response = await anthropic.messages.create({
           model: MODEL,
           max_tokens: 2048,
-          system: systemPrompt,
+          system: buildCachedSystem(systemPrompt),
           messages: chatMessages,
           stream: true,
         })

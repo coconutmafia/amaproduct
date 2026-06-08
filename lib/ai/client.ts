@@ -4,11 +4,14 @@ export const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
 
-// Primary content model = the strongest available (Opus 4.8). Quality of the
-// published content IS the product's value, so the flagship generation runs on
-// the frontier model. Cost is offset by prompt caching (see buildCachedSystem)
-// and managed via plan limits.
-export const MODEL = 'claude-opus-4-8'
+// Primary content model = the strongest available. Quality of the published
+// content IS the product's value, so flagship generation runs on the frontier
+// model. Cost is offset by prompt caching (see buildCachedSystem) + plan limits.
+//
+// Set via env so we can move to a new frontier model the day it ships WITHOUT a
+// code change — flip ANTHROPIC_CONTENT_MODEL and redeploy (do a quick quality
+// pass first: voice + forced-tool JSON can shift between models).
+export const MODEL = process.env.ANTHROPIC_CONTENT_MODEL || 'claude-opus-4-8'
 export const MODEL_OPUS = 'claude-opus-4-8'
 // Balanced model — available for drafts / high-volume secondary tasks if we ever
 // need to trade a bit of quality for margin on a specific path.
