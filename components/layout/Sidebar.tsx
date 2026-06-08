@@ -180,8 +180,8 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
                 {pathname.startsWith(`/projects/${project.id}`) && (
                   <div className="ml-3 mt-0.5 space-y-0.5 border-l border-border/50 pl-2">
                     {[
-                      { href: `/projects/${project.id}/style-bank`, label: '✦ Мой стиль' },
-                      { href: `/projects/${project.id}/generator`, label: '✦ Сделать контент' },
+                      { href: `/projects/${project.id}/assistant`, label: '✦ Создать контент' },
+                      { href: `/projects/${project.id}/content-plan`, label: '✦ Контент-план' },
                     ].map((sub) => (
                       <Link
                         key={sub.href}

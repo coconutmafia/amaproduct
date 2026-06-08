@@ -10,9 +10,7 @@ import {
   ArrowLeft,
   BookOpen,
   Calendar,
-  CalendarDays,
   TrendingUp,
-  Film,
   Sparkles,
   Grid3X3,
   Globe as Instagram,
@@ -24,10 +22,9 @@ import {
   ExternalLink,
   CheckCircle2,
   ChevronRight,
-  Users,
+  Bookmark,
   Flame,
   Palette,
-  Images,
 } from 'lucide-react'
 import { ProjectInfoSection } from '@/components/projects/ProjectInfoSection'
 
@@ -186,24 +183,19 @@ export default async function ProjectPage({ params }: Props) {
             /* ── Returning user: quick action buttons ── */
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {[
-                { href: `/projects/${id}/assistant`, icon: MessageCircle, label: 'AI-ассистент', color: 'text-pink-400 bg-pink-400/10', desc: 'Чат: знает проект, пишет твоим голосом' },
-                { href: `/projects/${id}/content-plan`, icon: Grid3X3, label: 'Контент-план', color: 'text-yellow-400 bg-yellow-400/10', desc: 'Расписание по дням' },
-                { href: `/projects/${id}/calendar`, icon: CalendarDays, label: 'Календарь', color: 'text-teal-400 bg-teal-400/10', desc: 'Визуальный месяц' },
-                { href: `/projects/${id}/generator`, icon: Sparkles, label: 'Сделать контент', color: 'text-purple-400 bg-purple-400/10', desc: 'AI пишет пост / рилс' },
-                { href: `/projects/${id}/knowledge`, icon: BookOpen, label: 'Материалы', color: 'text-blue-400 bg-blue-400/10', desc: 'База знаний' },
-                { href: `/projects/${id}/strategy`, icon: Calendar, label: 'План прогрева', color: 'text-green-400 bg-green-400/10', desc: 'Стратегия запуска' },
-                { href: `/projects/${id}/research`, icon: Users, label: 'Исследование', color: 'text-teal-400 bg-teal-400/10', desc: 'Интервью → карта смыслов' },
-                { href: `/projects/${id}/style-bank`, icon: Sparkles, label: 'Мой стиль', color: 'text-orange-400 bg-orange-400/10', desc: 'Одобренный контент' },
-                { href: `/projects/${id}/results`, icon: TrendingUp, label: 'Результаты', color: 'text-rose-400 bg-rose-400/10', desc: 'Охваты → AI учится' },
-                { href: `/projects/${id}/viral-reels`, icon: Film, label: 'Виральные рилз', color: 'text-fuchsia-400 bg-fuchsia-400/10', desc: 'Залетевшие рилз → в твой план' },
-                { href: `/projects/${id}/trends`, icon: Flame, label: 'Тренды месяца', color: 'text-amber-500 bg-amber-500/10', desc: 'Актуальные форматы → в твой план' },
-                { href: `/projects/${id}/brand`, icon: Palette, label: 'Фирменный стиль', color: 'text-violet-400 bg-violet-400/10', desc: 'Стиль из примеров → слайды в нём' },
-                { href: `/projects/${id}/stories`, icon: Images, label: 'Оформление сторис', color: 'text-cyan-400 bg-cyan-400/10', desc: 'Фото + сценарий → сторис в стиле' },
-              ].map(({ href, icon: Icon, label, color, desc }) => (
+                { href: `/projects/${id}/assistant`, icon: Sparkles, label: 'Создать контент', desc: 'Чат-ассистент пишет твоим голосом' },
+                { href: `/projects/${id}/content-plan`, icon: Grid3X3, label: 'Контент-план', desc: 'Расписание по дням' },
+                { href: `/projects/${id}/strategy`, icon: Calendar, label: 'План прогрева', desc: 'Стратегия запуска' },
+                { href: `/projects/${id}/knowledge`, icon: BookOpen, label: 'Материалы', desc: 'База знаний + интервью' },
+                { href: `/projects/${id}/trends`, icon: Flame, label: 'Тренды', desc: 'Тренды и залетевшие рилз → в план' },
+                { href: `/projects/${id}/brand`, icon: Palette, label: 'Фирменный стиль', desc: 'Бренд + оформление сторис' },
+                { href: `/library?project=${id}`, icon: Bookmark, label: 'Готовое', desc: 'AI учится на твоём контенте' },
+                { href: `/projects/${id}/results`, icon: TrendingUp, label: 'Результаты', desc: 'Охваты → AI усиливает' },
+              ].map(({ href, icon: Icon, label, desc }) => (
                 <Link key={href} href={href}>
                   <Card className="border-border bg-card hover:bg-card/80 hover:border-primary/30 transition-all cursor-pointer h-full">
                     <CardContent className="p-4 flex flex-col items-center gap-2 text-center">
-                      <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${color}`}>
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl text-primary bg-primary/10">
                         <Icon className="h-5 w-5" />
                       </div>
                       <span className="text-xs font-semibold text-foreground">{label}</span>
