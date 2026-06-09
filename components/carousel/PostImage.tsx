@@ -33,6 +33,8 @@ export function PostImage({ text, projectId, brand }: { text: string; projectId?
   const [busy, setBusy] = useState(false)
   const [img, setImg] = useState<{ url: string; blob: Blob } | null>(null)
   const [effBrand, setEffBrand] = useState<Brand | undefined>(brand)
+  const [hooking, setHooking] = useState(false)
+  const [captionCopied, setCaptionCopied] = useState(false)
 
   async function openModal() {
     setOpen(true)
@@ -74,6 +76,21 @@ export function PostImage({ text, projectId, brand }: { text: string; projectId?
     finally { setBusy(false) }
   }
 
+  async function suggestHook() {
+    setHooking(true)
+    try {
+      const res = await fetch('/api/post-hook', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) })
+      const d = await res.json()
+      if (!res.ok || !d.hook) throw new Error(d.error || 'Не удалось')
+      setHeadline(d.hook); setImg(null)
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Ошибка') }
+    finally { setHooking(false) }
+  }
+
+  function copyCaption() {
+    navigator.clipboard?.writeText(text).then(() => { setCaptionCopied(true); setTimeout(() => setCaptionCopied(false), 1500) }).catch(() => toast.error('Не удалось скопировать'))
+  }
+
   return (
     <>
       <button type="button" onClick={openModal} className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90">
@@ -89,11 +106,29 @@ export function PostImage({ text, projectId, brand }: { text: string; projectId?
             </div>
 
             <div className="space-y-4 overflow-auto p-4">
-              <label className="block text-xs font-medium text-foreground">
-                Заголовок на картинке
-                <textarea value={headline} onChange={(e) => setHeadline(e.target.value)} rows={2} className="mt-1 w-full resize-none rounded-lg border border-border bg-background p-2 text-sm" />
-                <span className="text-[11px] text-muted-foreground">Выдели слово **звёздочками** — будет акцентом.</span>
-              </label>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs font-medium text-foreground">Крючок на картинке <span className="text-muted-foreground">(коротко!)</span></label>
+                  <button type="button" onClick={suggestHook} disabled={hooking}
+                    className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/5 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10 disabled:opacity-50">
+                    {hooking ? '✨ Подбираю…' : '✨ Подобрать крючок'}
+                  </button>
+                </div>
+                <textarea value={headline} onChange={(e) => setHeadline(e.target.value)} rows={2} maxLength={70} className="w-full resize-none rounded-lg border border-border bg-background p-2 text-sm" />
+                <p className="text-[11px] text-muted-foreground">Одна цепляющая фраза, чтобы захотелось дочитать. Весь текст поста — в подписи ниже. Слово в **звёздочках** = акцент.</p>
+              </div>
+
+              {/* Caption — the full post goes UNDER the photo on Instagram, not on the image */}
+              <div className="space-y-1.5 rounded-lg border border-border bg-secondary/30 p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-medium text-foreground">Подпись под постом (весь текст)</p>
+                  <button type="button" onClick={copyCaption} className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-semibold hover:bg-secondary/60">
+                    {captionCopied ? '✓ Скопировано' : 'Скопировать'}
+                  </button>
+                </div>
+                <p className="max-h-28 overflow-auto whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">{text}</p>
+                <p className="text-[11px] text-muted-foreground">Картинку публикуешь как фото, а этот текст — в подпись. Хочешь весь текст на картинках? Сделай <b>карусель</b>.</p>
+              </div>
 
               <div className="flex items-center gap-3">
                 <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold hover:border-primary/40">

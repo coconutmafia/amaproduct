@@ -437,6 +437,10 @@ function Story({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: S
 // Dark bottom gradient keeps the headline readable over any image; accent words
 // (**…**) stay in the brand colour. Used for "сделать картинку поста" with a photo.
 function Photo({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Size }): ReactElement {
+  // Auto-fit the hook: short hooks render big and punchy, longer ones step down
+  // so they never overflow the image. The full post lives in the caption, not here.
+  const hl = s.headline || ''
+  const hlSize = hl.length <= 24 ? 78 : hl.length <= 40 ? 66 : hl.length <= 60 ? 54 : 46
   return (
     <div style={{ display: 'flex', position: 'relative', width: size.w, height: size.h }}>
       {s.photoUrl ? (
@@ -458,7 +462,7 @@ function Photo({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: S
           backgroundImage: 'linear-gradient(0deg, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.30) 48%, rgba(0,0,0,0) 100%)',
         }}
       >
-        <RichText text={s.headline || ''} o={{ size: 64, weight: 800, accentWeight: 900, color: '#FFFFFF', accent: theme.accent, lineGap: 8 }} />
+        <RichText text={hl} o={{ size: hlSize, weight: 800, accentWeight: 900, color: '#FFFFFF', accent: theme.accent, lineGap: 8 }} />
         {s.body ? (
           <div style={{ display: 'flex', marginTop: 18, width: '100%' }}>
             <RichText text={s.body} o={{ size: 34, weight: 500, color: 'rgba(255,255,255,0.92)', accent: theme.accent, align: 'left', lineGap: 8 }} />
