@@ -182,6 +182,7 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
                     {[
                       { href: `/projects/${project.id}/assistant`, label: '✦ Создать контент' },
                       { href: `/projects/${project.id}/content-plan`, label: '✦ Контент-план' },
+                      { href: `/projects/${project.id}/trends`, label: '✦ Тренды' },
                     ].map((sub) => (
                       <Link
                         key={sub.href}
