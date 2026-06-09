@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Bookmark, Copy, Check, Trash2, Loader2 } from 'lucide-react'
+import { Bookmark, Copy, Check, Trash2, Loader2, Plus, X } from 'lucide-react'
+import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { toast } from 'sonner'
 import type { SavedContentRow } from '@/lib/saveContent'
 
@@ -21,12 +22,19 @@ export default function LibraryPage() {
   const [needsSetup, setNeedsSetup] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [urlProject, setUrlProject] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [addBody, setAddBody] = useState('')
+  const [addType, setAddType] = useState('post')
+  const [addProject, setAddProject] = useState('')
+  const [savingAdd, setSavingAdd] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     // When opened from a project ("Готовое" tile → /library?project=ID), scope to
     // that project so the user sees this blog's library, not everything.
     const projectFilter = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('project') : null
+    setUrlProject(projectFilter)
     const base = supabase.from('saved_content').select('*')
     const scoped = projectFilter ? base.eq('project_id', projectFilter) : base
     const [{ data: rows, error }, { data: projs }] = await Promise.all([
@@ -60,6 +68,31 @@ export default function LibraryPage() {
     toast.success('Удалено')
   }
 
+  const openAdd = () => { setAddProject(prev => prev || urlProject || ''); setAdding(true) }
+
+  const addPost = async () => {
+    const body = addBody.trim()
+    if (!body || savingAdd) return
+    setSavingAdd(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Нужно войти')
+      const title = body.split('\n').map(s => s.trim()).find(Boolean)?.slice(0, 80) || null
+      const { error } = await supabase.from('saved_content').insert({
+        user_id: user.id,
+        project_id: addProject || null,
+        content_type: addType,
+        title,
+        body,
+      })
+      if (error) throw new Error(error.message)
+      toast.success(addProject ? 'Добавлено в Готовое — AI этого проекта будет учиться на нём' : 'Добавлено в Готовое')
+      setAddBody(''); setAdding(false)
+      load()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось') }
+    finally { setSavingAdd(false) }
+  }
+
   const groups = TYPE_ORDER
     .map(key => ({ key, label: TYPE_LABELS[key], rows: items.filter(i => (i.content_type || 'other') === key) }))
     .filter(g => g.rows.length > 0)
@@ -83,6 +116,39 @@ export default function LibraryPage() {
           Каждый проект учится на своём «Готовом»; данные одного проекта не попадают в другой.
         </p>
       </div>
+
+      {/* Manual add — paste your own post so the AI learns your voice */}
+      {!adding ? (
+        <button onClick={openAdd} className="flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/5 px-3.5 py-2.5 text-sm font-semibold text-primary hover:bg-primary/10">
+          <Plus className="h-4 w-4" /> Добавить свой пост
+        </button>
+      ) : (
+        <div className="rounded-xl border border-[#ECECEC] bg-white p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-foreground">Свой пост — AI будет на нём учиться</p>
+            <button onClick={() => setAdding(false)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+          </div>
+          <VoiceTextarea value={addBody} onChange={setAddBody} placeholder="Вставь или надиктуй свой пост — тот, что звучит как ты" rows={5} />
+          <div className="flex flex-wrap items-center gap-2">
+            {Object.keys(projects).length > 0 && (
+              <select value={addProject} onChange={e => setAddProject(e.target.value)}
+                className="rounded-xl border border-[#E0E0E0] px-3 py-2.5 text-sm bg-background focus:outline-none focus:border-primary/50">
+                <option value="">Без проекта</option>
+                {Object.entries(projects).map(([pid, name]) => <option key={pid} value={pid}>{name}</option>)}
+              </select>
+            )}
+            <select value={addType} onChange={e => setAddType(e.target.value)}
+              className="rounded-xl border border-[#E0E0E0] px-3 py-2.5 text-sm bg-background focus:outline-none focus:border-primary/50">
+              {TYPE_ORDER.map(t => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
+            </select>
+            <button onClick={addPost} disabled={!addBody.trim() || savingAdd}
+              className="ml-auto flex items-center gap-1.5 rounded-xl gradient-accent px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">
+              {savingAdd ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Добавить
+            </button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">Привяжи к проекту — и ассистент этого проекта будет писать в этом стиле.</p>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-muted-foreground text-sm gap-2">
