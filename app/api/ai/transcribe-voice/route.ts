@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
 export const dynamic     = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 300
 
 // Short voice-clip transcription for in-app dictation. Unlike /api/ai/transcribe
 // (large interview files via storage chunking), this takes a small blob directly
