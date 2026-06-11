@@ -8,10 +8,13 @@ import {
   Users, Sparkles, Target, X, Palette,
 } from 'lucide-react'
 
+// All slides share the app's brand gradient (matches .gradient-accent) — the
+// owner asked the onboarding to stop being rainbow-coloured per slide.
+const BRAND_GRADIENT = 'from-[#F5A84A] via-[#E86BA0] to-[#D44E7E]'
+
 const SLIDES = [
   {
     icon: Bot,
-    gradient: 'from-violet-500 to-purple-600',
     title: 'Знакомься — это твой AI SMM-щик!',
     subtitle: 'Он знает всё о твоём блоге и пишет контент, который звучит как ты',
     points: [
@@ -23,7 +26,6 @@ const SLIDES = [
   },
   {
     icon: Upload,
-    gradient: 'from-blue-500 to-cyan-500',
     title: 'Загрузи свои материалы',
     subtitle: 'Чем больше знает AI — тем точнее пишет под тебя',
     points: [
@@ -35,7 +37,6 @@ const SLIDES = [
   },
   {
     icon: Zap,
-    gradient: 'from-amber-500 to-orange-500',
     title: 'Генерируй контент за секунды',
     subtitle: 'Полный контент-план прогрева — от знакомства до продажи',
     points: [
@@ -47,7 +48,6 @@ const SLIDES = [
   },
   {
     icon: Palette,
-    gradient: 'from-fuchsia-500 to-pink-600',
     title: 'Контент не только текстом — картинками в ТВОЁМ стиле',
     subtitle: 'Карусели, посты и сторис как готовые изображения, оформленные под твой бренд',
     points: [
@@ -59,7 +59,6 @@ const SLIDES = [
   },
   {
     icon: BarChart3,
-    gradient: 'from-green-500 to-emerald-500',
     title: 'Анализируй и улучшай',
     subtitle: 'AI анализирует твой аккаунт и даёт конкретные рекомендации',
     points: [
@@ -104,7 +103,7 @@ export function OnboardingSlides({ userId, onComplete }: Props) {
       <div className={`relative w-full max-w-lg bg-card rounded-3xl shadow-2xl overflow-hidden transition-all duration-300 ${closing ? 'scale-95 opacity-0' : 'scale-100 opacity-100'}`}>
 
         {/* Gradient header */}
-        <div className={`bg-gradient-to-br ${current.gradient} p-8 text-white relative overflow-hidden`}>
+        <div className={`bg-gradient-to-br ${BRAND_GRADIENT} p-8 text-white relative overflow-hidden`}>
           <div className="absolute inset-0 opacity-20"
             style={{ backgroundImage: 'radial-gradient(circle at 80% 20%, white 0%, transparent 50%)' }} />
 
@@ -132,7 +131,7 @@ export function OnboardingSlides({ userId, onComplete }: Props) {
           <ul className="space-y-3">
             {current.points.map((point, i) => (
               <li key={i} className="flex items-start gap-3 text-sm">
-                <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${current.gradient} mt-0.5`}>
+                <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${BRAND_GRADIENT} mt-0.5`}>
                   <span className="text-white text-[10px] font-bold">{i + 1}</span>
                 </div>
                 <span>{point}</span>
@@ -158,7 +157,7 @@ export function OnboardingSlides({ userId, onComplete }: Props) {
                   key={i}
                   onClick={() => setSlide(i)}
                   className={`h-2 rounded-full transition-all ${
-                    i === slide ? `w-6 bg-gradient-to-r ${current.gradient}` : 'w-2 bg-border'
+                    i === slide ? `w-6 bg-gradient-to-r ${BRAND_GRADIENT}` : 'w-2 bg-border'
                   }`}
                 />
               ))}
@@ -173,7 +172,7 @@ export function OnboardingSlides({ userId, onComplete }: Props) {
               {isLast ? (
                 <Button
                   size="sm"
-                  className={`bg-gradient-to-r ${current.gradient} text-white hover:opacity-90 border-0`}
+                  className={`bg-gradient-to-r ${BRAND_GRADIENT} text-white hover:opacity-90 border-0`}
                   onClick={finish}
                 >
                   <Sparkles className="mr-1.5 h-4 w-4" />
@@ -182,7 +181,7 @@ export function OnboardingSlides({ userId, onComplete }: Props) {
               ) : (
                 <Button
                   size="sm"
-                  className={`bg-gradient-to-r ${current.gradient} text-white hover:opacity-90 border-0`}
+                  className={`bg-gradient-to-r ${BRAND_GRADIENT} text-white hover:opacity-90 border-0`}
                   onClick={() => setSlide(s => s + 1)}
                 >
                   Далее <ChevronRight className="ml-1 h-4 w-4" />
