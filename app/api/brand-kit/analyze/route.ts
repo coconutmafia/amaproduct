@@ -90,11 +90,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ accentColor: accent, bg, text, bgStyle, story })
     }
 
-    // Main (posts/carousels) style: keep any existing story block in the jsonb
+    // Main (posts/carousels) style: merge over the existing jsonb so unrelated
+    // keys (story style, saved story sets) survive a re-recognition.
     const { data: prevRow } = await admin.from('projects').select('brand_kit').eq('id', projectId).single()
-    const prevStory = ((prevRow?.brand_kit as Record<string, unknown>) || {}).story
-    const brandKit: Record<string, unknown> = { mood: String(kit.mood ?? ''), font_style: String(kit.font_style ?? ''), summary: String(kit.summary ?? ''), samples: urls }
-    if (prevStory) brandKit.story = prevStory
+    const existingKit = (prevRow?.brand_kit as Record<string, unknown>) || {}
+    const brandKit: Record<string, unknown> = { ...existingKit, mood: String(kit.mood ?? ''), font_style: String(kit.font_style ?? ''), summary: String(kit.summary ?? ''), samples: urls }
 
     const { error } = await admin.from('projects').update({
       brand_accent_color: accent,

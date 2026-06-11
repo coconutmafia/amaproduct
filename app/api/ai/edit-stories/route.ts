@@ -1,0 +1,100 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { anthropic, MODEL } from '@/lib/ai/client'
+import { AI_TELLS_TO_AVOID, VISUAL_RULES } from '@/lib/ai/prompts/content-brain'
+
+// Chat/voice edits to an already-designed stories series («на третьей сторис
+// поменяй…», owner request). Takes the current frames + a free-form instruction
+// (often dictated), returns the FULL updated frames array — only what was asked
+// changes, everything else returns byte-identical.
+export const maxDuration = 60
+
+interface Frame { headline?: string; body?: string; cta?: string; position?: string }
+
+function toArray(v: unknown): unknown[] {
+  if (Array.isArray(v)) return v
+  if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : [] } catch { return [] } }
+  return []
+}
+
+export async function POST(request: Request) {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const { projectId, frames, instruction } = (await request.json()) as { projectId?: string; frames?: Frame[]; instruction?: string }
+    if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
+    if (!frames || frames.length === 0) return NextResponse.json({ error: 'Нет кадров для правки' }, { status: 400 })
+    if (!instruction || !instruction.trim()) return NextResponse.json({ error: 'Скажи, что поменять' }, { status: 400 })
+
+    const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).eq('owner_id', user.id).single()
+    if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+
+    const current = frames.map((f, i) =>
+      `Кадр ${i + 1} (position: ${f.position || 'bottom'}):\n  headline: ${f.headline || ''}\n  body: ${f.body || ''}\n  cta: ${f.cta || ''}`
+    ).join('\n')
+
+    const prompt = `Ты — продюсер сторис. Блогер уже собрал серию сторис-кадров и просит внести ПРАВКУ (часто надиктована голосом, может ссылаться на номер кадра: «на третьей», «в последнем»).
+
+ТЕКУЩИЕ КАДРЫ:
+${current}
+
+ПРАВКА ОТ БЛОГЕРА:
+${instruction.slice(0, 1500)}
+
+ПРАВИЛА:
+- Меняй ТОЛЬКО то, о чём просят. Остальные кадры и поля верни ДОСЛОВНО как были (включая **акценты**).
+- Количество кадров НЕ меняй, если прямо не попросили добавить/убрать кадр.
+- Если просят «короче/другими словами/смени позицию» — правь только указанный кадр (или все, если сказано «везде»).
+- position может быть только top, center или bottom.
+${VISUAL_RULES}
+${AI_TELLS_TO_AVOID}
+
+Верни ПОЛНЫЙ обновлённый список кадров через инструмент edit_stories (по одному элементу на каждый кадр, в том же порядке).`
+
+    const tool = {
+      name: 'edit_stories',
+      description: 'Обновлённая раскадровка сторис',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          stories: {
+            type: 'array',
+            items: { type: 'object', properties: { headline: { type: 'string' }, body: { type: 'string' }, cta: { type: 'string' }, position: { type: 'string', description: 'top | center | bottom' } }, required: ['headline'] },
+          },
+        },
+        required: ['stories'],
+      },
+    }
+
+    let raw: Array<Record<string, unknown>> = []
+    for (let attempt = 0; attempt < 3 && raw.length === 0; attempt++) {
+      const res = await anthropic.messages.create({
+        model: MODEL, max_tokens: 2500, tools: [tool],
+        tool_choice: { type: 'tool' as const, name: 'edit_stories' },
+        messages: [{ role: 'user', content: prompt }],
+      })
+      const block = res.content.find((b) => b.type === 'tool_use')
+      if (block && block.type === 'tool_use') raw = toArray((block.input as { stories?: unknown }).stories) as Array<Record<string, unknown>>
+    }
+
+    const s = (v: unknown) => String(v ?? '').trim()
+    const out = raw
+      .map((r, i) => {
+        const p = s(r.position).toLowerCase()
+        const prev = frames[i] || {}
+        return {
+          headline: s(r.headline), body: s(r.body), cta: s(r.cta),
+          position: (['top', 'center', 'bottom'].includes(p) ? p : prev.position || 'bottom') as 'top' | 'center' | 'bottom',
+        }
+      })
+      .filter((r) => r.headline || r.body)
+    if (out.length === 0) return NextResponse.json({ error: 'Не удалось применить правку — попробуй сформулировать иначе' }, { status: 502 })
+
+    return NextResponse.json({ stories: out })
+  } catch (e) {
+    console.error('[edit-stories]', e instanceof Error ? e.message : e)
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 })
+  }
+}

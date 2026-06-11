@@ -9,11 +9,14 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { ArrowLeft, Upload, Loader2, Sparkles, Download } from 'lucide-react'
+import { ArrowLeft, Upload, Loader2, Sparkles, Download, Trash2, Wand2 } from 'lucide-react'
 import { downscaleImage } from '@/lib/downscaleImage'
+import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 
 interface Brand { accentColor?: string; bg?: string; text?: string; bgStyle?: string; handle?: string; logoUrl?: string }
 interface Frame { headline: string; body: string; cta: string; position?: 'top' | 'center' | 'bottom' }
+interface SetFrame { url: string; headline?: string; body?: string; cta?: string; position?: string }
+interface StorySet { id: string; created_at: string; script: string; frames: SetFrame[] }
 
 function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob)
@@ -31,6 +34,13 @@ export default function StoriesPage() {
   const [brand, setBrand] = useState<Brand | undefined>()
   const [rendered, setRendered] = useState<{ url: string; blob: Blob; frame: Frame }[]>([])
   const [zipping, setZipping] = useState(false)
+  // Gallery of saved designed sets + chat/voice edits
+  const [sets, setSets] = useState<StorySet[]>([])
+  const [savedSetId, setSavedSetId] = useState<string | null>(null)
+  const [savingSet, setSavingSet] = useState(false)
+  const [setBusyId, setSetBusyId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+  const [editing, setEditing] = useState(false)
 
   useEffect(() => {
     if (!projectId) return
@@ -79,6 +89,98 @@ export default function StoriesPage() {
       if (script.trim() || photos.length) localStorage.setItem(`ama_stories_draft_${projectId}`, JSON.stringify({ script, photos }))
     } catch { /* ignore */ }
   }, [projectId, script, photos])
+
+  // Load the saved-sets gallery
+  useEffect(() => {
+    if (!projectId) return
+    fetch(`/api/stories/sets?projectId=${projectId}`).then((r) => r.json()).then((d) => {
+      if (d && Array.isArray(d.sets)) setSets(d.sets as StorySet[])
+    }).catch(() => {})
+  }, [projectId])
+
+  // Persist a rendered series into «Мои оформленные сторис» (storage + index).
+  // Re-saving with the same setId replaces the set (used after chat edits).
+  async function saveSet(frames: Frame[], blobs: Blob[], existingSetId: string | null) {
+    setSavingSet(true)
+    try {
+      const urls: string[] = []
+      for (let i = 0; i < blobs.length; i++) {
+        const file = await downscaleImage(new File([blobs[i]], `story-${i + 1}.png`, { type: 'image/png' }), 1920, 0.87)
+        const fd = new FormData()
+        fd.append('projectId', projectId)
+        fd.append('kind', 'story-out')
+        fd.append('files', file)
+        const res = await fetch('/api/brand-kit/upload', { method: 'POST', body: fd })
+        const data = await res.json().catch(() => ({} as { urls?: string[]; error?: string }))
+        if (!res.ok || !data.urls?.[0]) throw new Error(data.error || 'Не удалось сохранить кадр')
+        urls.push(data.urls[0])
+      }
+      const res = await fetch('/api/stories/sets', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          projectId, setId: existingSetId || undefined, script,
+          frames: frames.map((f, i) => ({ url: urls[i], headline: f.headline, body: f.body, cta: f.cta, position: f.position })),
+        }),
+      })
+      const d = await res.json().catch(() => ({} as { set?: StorySet; sets?: StorySet[]; error?: string }))
+      if (!res.ok || !d.set) throw new Error(d.error || 'Не удалось сохранить серию')
+      setSavedSetId(d.set.id)
+      if (Array.isArray(d.sets)) setSets(d.sets)
+      toast.success('Серия сохранена в «Мои оформленные сторис»')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Не удалось сохранить серию')
+    } finally { setSavingSet(false) }
+  }
+
+  // Chat/voice edit of the designed series → re-render → re-save the same set
+  async function applyEdit() {
+    if (!editText.trim() || rendered.length === 0 || editing) return
+    setEditing(true)
+    try {
+      const res = await fetch('/api/ai/edit-stories', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ projectId, frames: rendered.map((r) => r.frame), instruction: editText }),
+      })
+      const d = await res.json().catch(() => ({} as { stories?: Frame[]; error?: string }))
+      if (!res.ok || !d.stories?.length) throw new Error(d.error || 'Не удалось применить правку')
+      const frames = d.stories as Frame[]
+      const blobs = await Promise.all(frames.map((f: Frame, i: number) => renderFrame(f, photos.length ? photos[i % photos.length] : undefined)))
+      rendered.forEach((r) => URL.revokeObjectURL(r.url))
+      setRendered(blobs.map((blob, i) => ({ blob, url: URL.createObjectURL(blob), frame: frames[i] })))
+      setEditText('')
+      toast.success('Правка применена — пересохраняю серию')
+      void saveSet(frames, blobs, savedSetId)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Не удалось применить правку')
+    } finally { setEditing(false) }
+  }
+
+  async function downloadSetZip(set: StorySet) {
+    setSetBusyId(set.id)
+    try {
+      const { default: JSZip } = await import('jszip')
+      const zip = new JSZip()
+      for (let i = 0; i < set.frames.length; i++) {
+        const r = await fetch(set.frames[i].url)
+        if (!r.ok) throw new Error('Не удалось скачать кадр')
+        zip.file(`story-${String(i + 1).padStart(2, '0')}.jpg`, await r.blob())
+      }
+      download(await zip.generateAsync({ type: 'blob' }), 'stories.zip')
+    } catch { toast.error('Не удалось собрать ZIP') }
+    finally { setSetBusyId(null) }
+  }
+
+  async function deleteSet(set: StorySet) {
+    setSetBusyId(set.id)
+    try {
+      const res = await fetch(`/api/stories/sets?projectId=${projectId}&setId=${encodeURIComponent(set.id)}`, { method: 'DELETE' })
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error((d as { error?: string }).error || 'Не удалось удалить') }
+      setSets((prev) => prev.filter((s) => s.id !== set.id))
+      if (savedSetId === set.id) setSavedSetId(null)
+      toast.success('Серия удалена')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось удалить') }
+    finally { setSetBusyId(null) }
+  }
 
   async function uploadPhotos(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -129,6 +231,9 @@ export default function StoriesPage() {
 
       const blobs = await Promise.all(frames.map((f, i) => renderFrame(f, photos.length ? photos[i % photos.length] : undefined)))
       setRendered(blobs.map((blob, i) => ({ blob, url: URL.createObjectURL(blob), frame: frames[i] })))
+      // Auto-save into the gallery (new set per build) — nothing gets lost
+      setSavedSetId(null)
+      void saveSet(frames, blobs, null)
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось собрать сторис') }
     finally { setBusy(false) }
   }
@@ -189,7 +294,9 @@ export default function StoriesPage() {
               <Download className="h-3.5 w-3.5" /> {zipping ? 'Собираю…' : 'Скачать всё (ZIP)'}
             </button>
           </div>
-          <p className="mt-1 text-[11px] text-muted-foreground">Скачай картинки сейчас — в сервисе они пока не хранятся. Сценарий и фото сохраняются как черновик: вернёшься и нажмёшь «Собрать сторис» заново.</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {savingSet ? 'Сохраняю серию в «Мои оформленные сторис»…' : 'Серия автоматически сохраняется в «Мои оформленные сторис» ниже — найдёшь её там в любой момент.'}
+          </p>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {rendered.map((r, i) => (
               <div key={i} className="flex flex-col gap-1">
@@ -197,6 +304,55 @@ export default function StoriesPage() {
                 <img src={r.url} alt={`Сторис ${i + 1}`} className="w-full rounded-lg border border-border" />
                 <button type="button" onClick={() => download(r.blob, `story-${String(i + 1).padStart(2, '0')}.png`)}
                   className="text-[11px] font-medium text-muted-foreground hover:text-foreground">↓ Сторис {i + 1}</button>
+              </div>
+            ))}
+          </div>
+
+          {/* Chat/voice edits — «на третьей сторис поменяй…» */}
+          <div className="mt-4 rounded-xl border border-primary/25 bg-primary/5 p-3 space-y-2">
+            <p className="text-xs font-semibold text-foreground flex items-center gap-1.5"><Wand2 className="h-3.5 w-3.5 text-primary" /> Правки — голосом или текстом</p>
+            <VoiceTextarea value={editText} onChange={setEditText} rows={2}
+              placeholder="Например: «на 3-й сторис сделай текст короче», «в последней поменяй призыв на опрос», «на первой подними текст наверх»" />
+            <button type="button" onClick={applyEdit} disabled={editing || !editText.trim()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40">
+              {editing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+              {editing ? 'Применяю правку…' : 'Применить правку'}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* Gallery — saved designed series */}
+      {sets.length > 0 && (
+        <section className="mt-4 rounded-2xl border border-border bg-card p-4">
+          <p className="text-sm font-semibold text-foreground">Мои оформленные сторис · {sets.length}</p>
+          <div className="mt-3 space-y-4">
+            {sets.map((set) => (
+              <div key={set.id} className="rounded-xl border border-[#ECECEC] p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-foreground">{new Date(set.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })} · {set.frames.length} кадров</p>
+                    {set.script && <p className="mt-0.5 text-[11px] text-muted-foreground line-clamp-1">{set.script}</p>}
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button type="button" onClick={() => downloadSetZip(set)} disabled={setBusyId === set.id} title="Скачать ZIP"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#E8E8E8] text-muted-foreground hover:text-primary">
+                      {setBusyId === set.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                    </button>
+                    <button type="button" onClick={() => deleteSet(set)} disabled={setBusyId === set.id} title="Удалить серию"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#E8E8E8] text-muted-foreground hover:text-red-500 hover:border-red-200">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                  {set.frames.map((f, i) => (
+                    <a key={i} href={f.url} target="_blank" rel="noreferrer" className="shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={f.url} alt={`кадр ${i + 1}`} className="h-28 w-16 rounded-md border border-border object-cover" />
+                    </a>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
