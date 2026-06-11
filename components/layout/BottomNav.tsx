@@ -23,7 +23,7 @@ export function BottomNav() {
       href: '/projects',
       icon: FolderKanban,
       label: 'Проекты',
-      isActive: (p: string) => p.startsWith('/projects') && !p.includes('/generator'),
+      isActive: (p: string) => p.startsWith('/projects'),
       accent: false,
     },
     {

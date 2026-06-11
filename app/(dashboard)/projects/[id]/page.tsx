@@ -165,7 +165,7 @@ export default async function ProjectPage({ params }: Props) {
                 </Link>
 
                 {/* Step 4 */}
-                <Link href={`/projects/${id}/generator`} className="group flex items-center gap-4 p-3 rounded-xl border transition-all hover:border-primary/40 hover:bg-secondary/30 cursor-pointer"
+                <Link href={`/projects/${id}/assistant`} className="group flex items-center gap-4 p-3 rounded-xl border transition-all hover:border-primary/40 hover:bg-secondary/30 cursor-pointer"
                   style={{ borderColor: hasContent ? 'rgb(34 197 94 / 0.3)' : undefined,
                            backgroundColor: hasContent ? 'rgb(34 197 94 / 0.05)' : undefined }}>
                   <div className={`flex h-9 w-9 items-center justify-center rounded-full shrink-0 font-bold text-sm ${hasContent ? 'bg-green-500/15 text-green-400' : hasContentPlan && hasWarmupPlan ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground'}`}>
