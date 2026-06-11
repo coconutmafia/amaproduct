@@ -111,7 +111,10 @@ export default function BrandPage() {
     } finally { setPreviewing(false) }
   }, [])
 
-  const renderStoryPreview = useCallback(async (b: typeof storyBrand, handle: string, logoUrl: string | null) => {
+  // Story preview renders OVER the first uploaded story example — her stories
+  // are live photos with text plates, a flat-colour 9:16 looked «не моё»
+  // (owner video). Falls back to the flat brand bg when nothing is uploaded.
+  const renderStoryPreview = useCallback(async (b: typeof storyBrand, handle: string, logoUrl: string | null, photoUrl?: string) => {
     setStoryPreviewing(true)
     try {
       const res = await fetch('/api/carousel/render', {
@@ -119,7 +122,7 @@ export default function BrandPage() {
         body: JSON.stringify({
           format: 'story',
           brand: { ...b, handle, logoUrl },
-          slide: { kind: 'story', headline: 'твой **заголовок**', body: 'так будут выглядеть твои сторис', action: 'это твой стиль сториз' },
+          slide: { kind: 'story', headline: 'твой **заголовок**', body: 'так будут выглядеть твои сторис', action: 'это твой стиль сториз', photoUrl },
         }),
       })
       if (res.ok) { const blob = await res.blob(); setStoryPreviewUrl((old) => { if (old) URL.revokeObjectURL(old); return URL.createObjectURL(blob) }) }
@@ -131,10 +134,10 @@ export default function BrandPage() {
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => {
       if (tab === 'posts') void renderPreview(brand, previewIdx)
-      else void renderStoryPreview(storyBrand, brand.handle, brand.logoUrl)
+      else void renderStoryPreview(storyBrand, brand.handle, brand.logoUrl, storySamples[0])
     }, 350)
     return () => { if (timer.current) clearTimeout(timer.current) }
-  }, [tab, brand, previewIdx, storyBrand, renderPreview, renderStoryPreview])
+  }, [tab, brand, previewIdx, storyBrand, storySamples, renderPreview, renderStoryPreview])
 
   async function uploadFiles(files: FileList | null, kind: 'sample' | 'logo', forStory = false) {
     if (!files || files.length === 0) return
@@ -156,9 +159,14 @@ export default function BrandPage() {
         if (!res.ok) throw new Error(data.error || (res.status === 413 ? 'Фото слишком большое' : `Не удалось загрузить (${res.status})`))
         all.push(...(data.urls || []))
       }
-      if (kind === 'logo') { set({ logoUrl: all[0] }); toast.success('Логотип загружен') }
-      else if (forStory) { setStorySamples((s) => [...s, ...all].slice(0, 8)); toast.success('Примеры сториз загружены') }
-      else { setSamples((s) => [...s, ...all].slice(0, 8)); toast.success('Примеры загружены') }
+      if (kind === 'logo') { set({ logoUrl: all[0] }); toast.success('Логотип загружен'); return }
+      // Samples: merge into state and AUTO-recognize — uploading examples must
+      // change the style by itself (owner video: «загрузила, а настройки и
+      // превью как стояли, так и стоят» — the separate button wasn't obvious).
+      const merged = [...(forStory ? storySamples : samples), ...all].slice(0, 8)
+      if (forStory) setStorySamples(merged); else setSamples(merged)
+      toast.success('Примеры загружены — распознаю твой стиль (~30-60 сек)')
+      void analyze(forStory, merged)
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось загрузить') }
     finally { setBusy(false) }
   }
@@ -182,8 +190,9 @@ export default function BrandPage() {
     }
   }
 
-  async function analyze(forStory = false) {
-    const urls = forStory ? storySamples : samples
+  async function analyze(forStory = false, urlsOverride?: string[]) {
+    if (forStory ? storyAnalyzing : analyzing) return
+    const urls = urlsOverride ?? (forStory ? storySamples : samples)
     if (urls.length === 0) { toast.error(forStory ? 'Сначала загрузи примеры оформления сториз' : 'Сначала загрузи примеры стиля'); return }
     const setBusy = forStory ? setStoryAnalyzing : setAnalyzing
     setBusy(true)
@@ -198,11 +207,11 @@ export default function BrandPage() {
         setStoryBrand({ accentColor: d.accentColor, bg: d.bg, text: d.text, bgStyle: d.bgStyle })
         if (d.story?.summary) setStorySummary(d.story.summary)
         setHasStoryStyle(true)
-        toast.success('Стиль сториз распознан — проверь цвета и сохрани')
+        toast.success('Стиль сториз распознан и сохранён — смотри превью')
       } else {
         set({ accentColor: d.accentColor, bg: d.bg, text: d.text, bgStyle: d.bgStyle })
         if (d.kit?.summary) setKitSummary(d.kit.summary)
-        toast.success('Стиль распознан — проверь цвета и сохрани')
+        toast.success('Стиль распознан и сохранён — смотри превью')
       }
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось распознать') }
     finally { setBusy(false) }
@@ -273,7 +282,7 @@ export default function BrandPage() {
         </div>
         {recognized && !busy && (
           <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-green-600">
-            <CheckCircle2 className="h-4 w-4" /> Стиль распознан — проверь цвета ниже и сохрани
+            <CheckCircle2 className="h-4 w-4" /> Стиль распознан и применён — смотри превью справа
           </p>
         )}
         <button type="button" onClick={() => analyze(forStory)} disabled={busy || urls.length === 0}
@@ -324,7 +333,8 @@ export default function BrandPage() {
       {/* 2. Edit + preview */}
       <section className="mt-4 grid gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-sm font-semibold text-foreground">2. Настройки стиля</p>
+          <p className="text-sm font-semibold text-foreground">2. Доводка стиля <span className="font-normal text-muted-foreground">(не обязательно)</span></p>
+          <p className="mt-1 text-[11px] text-muted-foreground">AI заполняет это сам из твоих примеров. Подкрути вручную, только если хочешь точнее, и нажми «Сохранить».</p>
           <div className="mt-3 flex flex-col gap-3">
             {tab === 'posts' ? (
               <>
@@ -332,12 +342,13 @@ export default function BrandPage() {
                 {swatch('Фон', brand.bg, (v) => set({ bg: v }))}
                 {swatch('Текст', brand.text, (v) => set({ text: v }))}
                 <label className="flex flex-col gap-1 text-xs font-medium text-foreground">
-                  Тип фона
+                  Тип фона слайдов
                   <select value={brand.bgStyle} onChange={(e) => set({ bgStyle: e.target.value as BgStyle })} className="h-9 rounded-lg border border-border bg-background px-2 text-sm">
                     <option value="paper">Бумага (фактура)</option>
                     <option value="solid">Однотонный</option>
                     <option value="gradient">Градиент</option>
                   </select>
+                  <span className="font-normal text-muted-foreground">AI выбирает ближайший из трёх к твоим примерам.</span>
                 </label>
                 <label className="flex flex-col gap-1 text-xs font-medium text-foreground">
                   Ник (на слайдах)
@@ -382,19 +393,24 @@ export default function BrandPage() {
               </div>
             )}
           </div>
-          <div className={`mt-3 flex items-center justify-center overflow-hidden rounded-xl border border-border bg-secondary/20 ${tab === 'posts' ? 'aspect-[4/5]' : 'aspect-[9/16] max-h-96 mx-auto'}`}>
+          <div className={`relative mt-3 flex items-center justify-center overflow-hidden rounded-xl border border-border bg-secondary/20 ${tab === 'posts' ? 'aspect-[4/5]' : 'aspect-[9/16] max-h-96 mx-auto'}`}>
             {tab === 'posts' ? (
               previewUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={previewUrl} alt="превью" className={`h-full w-full object-contain transition-opacity ${previewing ? 'opacity-50' : ''}`} />
+                <img src={previewUrl} alt="превью" className={`h-full w-full object-contain transition-opacity ${previewing || analyzing ? 'opacity-40' : ''}`} />
               ) : (
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               )
             ) : storyPreviewUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={storyPreviewUrl} alt="превью сторис" className={`h-full w-full object-contain transition-opacity ${storyPreviewing ? 'opacity-50' : ''}`} />
+              <img src={storyPreviewUrl} alt="превью сторис" className={`h-full w-full object-contain transition-opacity ${storyPreviewing || storyAnalyzing ? 'opacity-40' : ''}`} />
             ) : (
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            )}
+            {(tab === 'posts' ? analyzing : storyAnalyzing) && (
+              <div className="absolute inset-x-3 bottom-3 flex items-center justify-center gap-1.5 rounded-lg bg-background/90 px-3 py-2 text-xs font-medium text-foreground shadow">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Распознаю твой стиль — превью обновится само
+              </div>
             )}
           </div>
         </div>
