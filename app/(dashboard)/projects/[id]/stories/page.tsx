@@ -5,16 +5,25 @@
 // 9:16 over your photo in your brand style → preview + download (PNG / ZIP).
 // (Photo stories work today; video overlay is a later step — needs a video engine.)
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { ArrowLeft, Upload, Loader2, Sparkles, Download, Trash2, Wand2 } from 'lucide-react'
 import { downscaleImage } from '@/lib/downscaleImage'
+import { analyzePhotoBands, pickPlacement, type PhotoBands } from '@/lib/photoBands'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 
 interface Brand { accentColor?: string; bg?: string; text?: string; bgStyle?: string; handle?: string; logoUrl?: string }
-interface Frame { headline: string; body: string; cta: string; position?: 'top' | 'center' | 'bottom' }
+interface Frame {
+  headline: string; body: string; cta: string
+  position?: 'top' | 'center' | 'bottom'
+  plate?: boolean
+  // Set when the user explicitly changed it via a chat edit — photo analysis
+  // must not override an explicit instruction.
+  posLocked?: boolean
+  plateLocked?: boolean
+}
 interface SetFrame { url: string; headline?: string; body?: string; cta?: string; position?: string }
 interface StorySet { id: string; created_at: string; script: string; frames: SetFrame[] }
 
@@ -143,8 +152,21 @@ export default function StoriesPage() {
       })
       const d = await res.json().catch(() => ({} as { stories?: Frame[]; error?: string }))
       if (!res.ok || !d.stories?.length) throw new Error(d.error || 'Не удалось применить правку')
-      const frames = d.stories as Frame[]
-      const blobs = await Promise.all(frames.map((f: Frame, i: number) => renderFrame(f, photos.length ? photos[i % photos.length] : undefined)))
+      // Merge with the previous frames: anything the edit explicitly CHANGED
+      // (position / plate) becomes locked so photo-analysis won't override it.
+      const old = rendered.map((r) => r.frame)
+      const frames = (d.stories as Frame[]).map((nf, i) => {
+        const prev = old[i]
+        const posChanged = !!nf.position && !!prev && nf.position !== prev.position
+        const plateGiven = typeof nf.plate === 'boolean'
+        return {
+          ...nf,
+          posLocked: (prev?.posLocked || posChanged) || undefined,
+          plate: plateGiven ? nf.plate : prev?.plate,
+          plateLocked: (prev?.plateLocked || (plateGiven && nf.plate !== prev?.plate)) || undefined,
+        } as Frame
+      })
+      const blobs = await Promise.all(frames.map((f: Frame, i: number) => renderFrame(f, photos.length ? photos[i % photos.length] : undefined, i)))
       rendered.forEach((r) => URL.revokeObjectURL(r.url))
       setRendered(blobs.map((blob, i) => ({ blob, url: URL.createObjectURL(blob), frame: frames[i] })))
       setEditText('')
@@ -205,10 +227,42 @@ export default function StoriesPage() {
     finally { setUploading(false) }
   }
 
-  async function renderFrame(frame: Frame, photoUrl: string | undefined): Promise<Blob> {
+  // Photo-band analysis cache (per photo URL)
+  const bandsCache = useRef(new Map<string, PhotoBands | null>())
+  async function getBands(url: string): Promise<PhotoBands | null> {
+    if (!bandsCache.current.has(url)) bandsCache.current.set(url, await analyzePhotoBands(url))
+    return bandsCache.current.get(url) ?? null
+  }
+
+  // Final layout per frame: explicit user edits win; otherwise the PHOTO
+  // decides (text goes to the calmest band; uniform band → no plates).
+  async function resolveLayout(frame: Frame, photoUrl: string | undefined, idx: number): Promise<Frame> {
+    const fallback: Frame = { ...frame, position: frame.position || (idx % 2 === 0 ? 'bottom' : 'top'), plate: frame.plate ?? true }
+    if (!photoUrl) return { ...fallback, plate: false }
+    const bands = await getBands(photoUrl)
+    if (!bands) return fallback
+    const pick = pickPlacement(bands, brand?.text || '#1A1A1A')
+    return {
+      ...frame,
+      position: frame.posLocked && frame.position ? frame.position : pick.position,
+      plate: frame.plateLocked && frame.plate !== undefined ? frame.plate : pick.plate,
+      ...(frame.plateLocked && frame.plate === false ? {} : {}),
+    }
+  }
+
+  async function renderFrame(frame: Frame, photoUrl: string | undefined, idx: number): Promise<Blob> {
+    const f = await resolveLayout(frame, photoUrl, idx)
+    let textColor: string | undefined
+    if (f.plate === false && photoUrl) {
+      const bands = await getBands(photoUrl)
+      textColor = bands ? pickPlacement(bands, brand?.text || '#1A1A1A').textColor : '#FFFFFF'
+    }
     const res = await fetch('/api/carousel/render', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ format: 'story', brand, slide: { kind: 'story', headline: frame.headline, body: frame.body, action: frame.cta, position: frame.position, photoUrl } }),
+      body: JSON.stringify({
+        format: 'story', brand,
+        slide: { kind: 'story', headline: frame.headline, body: frame.body, action: frame.cta, position: f.position, plate: f.plate, textColor, photoUrl },
+      }),
     })
     if (!res.ok) throw new Error('render failed')
     return res.blob()
@@ -229,7 +283,7 @@ export default function StoriesPage() {
       const frames = (planData.stories || []) as Frame[]
       if (frames.length === 0) throw new Error('Пустая раскадровка')
 
-      const blobs = await Promise.all(frames.map((f, i) => renderFrame(f, photos.length ? photos[i % photos.length] : undefined)))
+      const blobs = await Promise.all(frames.map((f, i) => renderFrame(f, photos.length ? photos[i % photos.length] : undefined, i)))
       setRendered(blobs.map((blob, i) => ({ blob, url: URL.createObjectURL(blob), frame: frames[i] })))
       // Auto-save into the gallery (new set per build) — nothing gets lost
       setSavedSetId(null)

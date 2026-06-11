@@ -7,6 +7,8 @@
 // + ZIP download. Loads the project's brand kit so slides match the creator's style.
 
 import { useState } from 'react'
+import { toast } from 'sonner'
+import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 
 type Dict = Record<string, unknown>
 
@@ -66,6 +68,8 @@ export function CarouselSlides({
   const [slides, setSlides] = useState<{ url: string; blob: Blob }[]>([])
   const [zipping, setZipping] = useState(false)
   const [effBrand, setEffBrand] = useState<Brand | undefined>(brand)
+  const [editText, setEditText] = useState('')
+  const [editing, setEditing] = useState(false)
 
   // Nothing to work with → render nothing. (Structured-but-empty also hides.)
   if (!initialCarousel && !sourceText) return null
@@ -121,6 +125,27 @@ export function CarouselSlides({
       setBusy(false)
       setStatus('')
     }
+  }
+
+  // Chat/voice edit of the slides («на 2-м слайде не разрывай 15 тысяч…») —
+  // only the requested bits change, then the slides re-render.
+  async function applyEdit() {
+    if (!editText.trim() || !carousel || editing) return
+    setEditing(true)
+    try {
+      const res = await fetch('/api/ai/edit-carousel', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ carousel, instruction: editText }),
+      })
+      const d = await res.json().catch(() => ({} as { carousel?: Dict; error?: string }))
+      if (!res.ok || !d.carousel) throw new Error(d.error || 'Не удалось применить правку')
+      setCarousel(d.carousel)
+      setEditText('')
+      await generate(d.carousel)
+      toast.success('Правка применена')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Не удалось применить правку')
+    } finally { setEditing(false) }
   }
 
   async function downloadZip() {
@@ -184,21 +209,36 @@ export function CarouselSlides({
                 </div>
               )}
               {!busy && !err && (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {slides.map((s, i) => (
-                    <div key={i} className="flex flex-col gap-1">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={s.url} alt={`Слайд ${i + 1}`} className="w-full rounded-lg border border-border" />
-                      <button
-                        type="button"
-                        onClick={() => download(s.blob, `slide-${String(i + 1).padStart(2, '0')}.png`)}
-                        className="text-[11px] font-medium text-muted-foreground hover:text-foreground"
-                      >
-                        ↓ Слайд {i + 1}
+                <>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {slides.map((s, i) => (
+                      <div key={i} className="flex flex-col gap-1">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={s.url} alt={`Слайд ${i + 1}`} className="w-full rounded-lg border border-border" />
+                        <button
+                          type="button"
+                          onClick={() => download(s.blob, `slide-${String(i + 1).padStart(2, '0')}.png`)}
+                          className="text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                        >
+                          ↓ Слайд {i + 1}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {slides.length > 0 && (
+                    <div className="mt-4 rounded-xl border border-primary/25 bg-primary/5 p-3 space-y-2">
+                      <p className="text-xs font-semibold text-foreground">Правки — голосом или текстом</p>
+                      <VoiceTextarea value={editText} onChange={setEditText} rows={2}
+                        placeholder="Например: «на 2-м слайде не разрывай 15 тысяч рублей», «обложку сделай короче», «выдели слово система»" />
+                      <button type="button" onClick={applyEdit} disabled={editing || !editText.trim()}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40">
+                        {editing ? 'Применяю правку…' : 'Применить правку'}
                       </button>
+                      {editing && <p className="text-[11px] text-muted-foreground">Обычно до минуты: правлю слайды и перерисовываю.</p>}
                     </div>
-                  ))}
-                </div>
+                  )}
+                </>
               )}
             </div>
           </div>

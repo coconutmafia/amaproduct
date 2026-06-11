@@ -9,7 +9,7 @@ import { AI_TELLS_TO_AVOID, VISUAL_RULES } from '@/lib/ai/prompts/content-brain'
 // changes, everything else returns byte-identical.
 export const maxDuration = 60
 
-interface Frame { headline?: string; body?: string; cta?: string; position?: string }
+interface Frame { headline?: string; body?: string; cta?: string; position?: string; plate?: boolean }
 
 function toArray(v: unknown): unknown[] {
   if (Array.isArray(v)) return v
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
     const current = frames.map((f, i) =>
-      `Кадр ${i + 1} (position: ${f.position || 'bottom'}):\n  headline: ${f.headline || ''}\n  body: ${f.body || ''}\n  cta: ${f.cta || ''}`
+      `Кадр ${i + 1} (position: ${f.position || 'auto'}, подложка: ${f.plate === false ? 'без' : 'с подложкой'}):\n  headline: ${f.headline || ''}\n  body: ${f.body || ''}\n  cta: ${f.cta || ''}`
     ).join('\n')
 
     const prompt = `Ты — продюсер сторис. Блогер уже собрал серию сторис-кадров и просит внести ПРАВКУ (часто надиктована голосом, может ссылаться на номер кадра: «на третьей», «в последнем»).
@@ -46,8 +46,9 @@ ${instruction.slice(0, 1500)}
 ПРАВИЛА:
 - Меняй ТОЛЬКО то, о чём просят. Остальные кадры и поля верни ДОСЛОВНО как были (включая **акценты**).
 - Количество кадров НЕ меняй, если прямо не попросили добавить/убрать кадр.
-- Если просят «короче/другими словами/смени позицию» — правь только указанный кадр (или все, если сказано «везде»).
-- position может быть только top, center или bottom.
+- Можно менять: тексты, выделение **слов** акцентом, расположение текста (position: top | center | bottom), подложку (plate: "with" — текст на плашках, "without" — чистый текст без плашек).
+- position указывай ТОЛЬКО для кадров, где просили её поменять; для остальных верни как было. plate указывай ТОЛЬКО если просили про подложку — иначе оставь пустым.
+- Если просят «короче/другими словами» — правь только указанный кадр (или все, если сказано «везде»).
 ${VISUAL_RULES}
 ${AI_TELLS_TO_AVOID}
 
@@ -61,7 +62,7 @@ ${AI_TELLS_TO_AVOID}
         properties: {
           stories: {
             type: 'array',
-            items: { type: 'object', properties: { headline: { type: 'string' }, body: { type: 'string' }, cta: { type: 'string' }, position: { type: 'string', description: 'top | center | bottom' } }, required: ['headline'] },
+            items: { type: 'object', properties: { headline: { type: 'string' }, body: { type: 'string' }, cta: { type: 'string' }, position: { type: 'string', description: 'top | center | bottom' }, plate: { type: 'string', description: 'with | without — только если просили менять подложку, иначе пусто' } }, required: ['headline'] },
           },
         },
         required: ['stories'],
@@ -83,10 +84,13 @@ ${AI_TELLS_TO_AVOID}
     const out = raw
       .map((r, i) => {
         const p = s(r.position).toLowerCase()
+        const plateRaw = s(r.plate).toLowerCase()
         const prev = frames[i] || {}
         return {
           headline: s(r.headline), body: s(r.body), cta: s(r.cta),
-          position: (['top', 'center', 'bottom'].includes(p) ? p : prev.position || 'bottom') as 'top' | 'center' | 'bottom',
+          position: (['top', 'center', 'bottom'].includes(p) ? p : prev.position) as 'top' | 'center' | 'bottom' | undefined,
+          // plate present only when the user asked about it
+          ...(plateRaw === 'with' ? { plate: true } : plateRaw === 'without' ? { plate: false } : {}),
         }
       })
       .filter((r) => r.headline || r.body)

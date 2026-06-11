@@ -198,28 +198,19 @@ export function RichText({ text, o }: { text: string; o: RichOpts }): ReactEleme
   )
 }
 
-// ── Plate text (Instagram-style line plates) ────────────────────────────────────
-// One CONTINUOUS plate under each LINE of text (owner: «подложка должна быть
-// полностью под фразой», not per-word chips). Satori has no inline box
-// decoration, so we wrap words into lines ourselves (estimated width) and give
-// every line a single solid plate; accent **words** keep the brand colour.
-function PlateText({ text, size, color, accent, bg, weight = 800, accentWeight = 900, align = 'left', maxWidth }: {
-  text: string
-  size: number
-  color: string
-  accent: string
-  bg: string
-  weight?: number
-  accentWeight?: number
-  align?: 'left' | 'center'
-  maxWidth: number
-}): ReactElement {
+// ── Story text (Instagram-style) ─────────────────────────────────────────────────
+// We wrap words into lines ourselves (Satori has no inline box decoration):
+//  • plate mode — one CONTINUOUS plate under each line, lines FLUSH together
+//    (owner: «между строчек… пробелов нету» in Instagram's text background);
+//  • clean mode (bg=null) — bare text for uniform backgrounds (sky etc.).
+// Widow-fix: never leave a single word alone on the last line (owner: «перенос
+// одного слова на новую строчку — чтоб такого не было»).
+type WrapTok = { word: string; em: boolean }
+
+function wrapWords(text: string, size: number, maxWidth: number): WrapTok[][] {
   const tokens = tokenize(text.trim())
-  const padX = Math.round(size * 0.26)
-  const padY = Math.round(size * 0.14)
-  // Greedy word-wrap by estimated glyph width (Montserrat ~0.62em per char)
-  const maxChars = Math.max(8, Math.floor((maxWidth - padX * 2) / (size * 0.62)))
-  const lines: { word: string; em: boolean }[][] = [[]]
+  const maxChars = Math.max(8, Math.floor(maxWidth / (size * 0.62)))
+  const lines: WrapTok[][] = [[]]
   let cur = 0
   for (const t of tokens) {
     if (t.br) { lines.push([]); cur = 0; continue }
@@ -229,16 +220,42 @@ function PlateText({ text, size, color, accent, bg, weight = 800, accentWeight =
     lines[lines.length - 1].push({ word: t.word, em: t.em })
     cur += wlen
   }
-  const rendered = lines.filter((l) => l.length > 0)
+  const out = lines.filter((l) => l.length > 0)
+  // Widow-fix: pull a word down from the previous line so the last line has ≥2
+  for (let i = out.length - 1; i > 0; i--) {
+    if (out[i].length === 1 && out[i - 1].length >= 3) {
+      const moved = out[i - 1].pop()
+      if (moved) out[i].unshift(moved)
+    }
+  }
+  return out
+}
+
+function StoryText({ text, size, color, accent, bg, weight = 800, accentWeight = 900, align = 'left', maxWidth }: {
+  text: string
+  size: number
+  color: string
+  accent: string
+  bg: string | null // null → clean text, no plates
+  weight?: number
+  accentWeight?: number
+  align?: 'left' | 'center'
+  maxWidth: number
+}): ReactElement {
+  const padX = bg ? Math.round(size * 0.26) : 0
+  const padY = bg ? Math.round(size * 0.14) : 0
+  const rendered = wrapWords(text, size, maxWidth - padX * 2)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: align === 'center' ? 'center' : 'flex-start', width: '100%' }}>
       {rendered.map((line, li) => (
         <div key={li} style={{
           display: 'flex', flexWrap: 'wrap', maxWidth: '100%',
-          backgroundColor: bg,
+          backgroundColor: bg ?? 'transparent',
           padding: `${padY}px ${padX}px`,
-          borderRadius: Math.round(size * 0.16),
-          marginBottom: li === rendered.length - 1 ? 0 : Math.round(size * 0.16),
+          borderRadius: bg ? Math.round(size * 0.14) : 0,
+          // Plates sit flush (IG text-bg has no inter-line gaps); clean text
+          // keeps a small natural line gap.
+          marginBottom: li === rendered.length - 1 ? 0 : bg ? 0 : Math.round(size * 0.18),
         }}>
           {line.map((t, i) => (
             <div key={i} style={{
@@ -367,6 +384,10 @@ export interface SlideSpec {
   // Story frames: where the text group sits (varies frame-to-frame so a series
   // doesn't look stamped — owner feedback). Default 'bottom'.
   position?: 'top' | 'center' | 'bottom'
+  // Story frames: plates under text (default true over photo). plate=false →
+  // clean text for uniform backgrounds, coloured via textColor.
+  plate?: boolean
+  textColor?: string
 }
 
 // ── Carousel templates ──────────────────────────────────────────────────────────
@@ -464,15 +485,20 @@ function Story({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: S
         }}
       >
         {overPhoto ? (
-          // Plates carry readability over photos — one continuous plate per LINE
-          <PlateText text={s.headline || ''} size={58} weight={800} accentWeight={900} color={txt} accent={theme.accent} bg={theme.bg} maxWidth={contentW} />
+          // Plates carry readability over busy photos; on uniform areas the
+          // page passes plate=false → clean text in a photo-picked colour.
+          <StoryText text={s.headline || ''} size={58} weight={800} accentWeight={900}
+            color={s.plate === false ? (s.textColor || '#FFFFFF') : txt}
+            accent={theme.accent} bg={s.plate === false ? null : theme.bg} maxWidth={contentW} />
         ) : (
           <RichText text={s.headline || ''} o={{ size: 58, weight: 800, accentWeight: 900, color: txt, accent: theme.accent, lineGap: 14 }} />
         )}
         {s.body ? (
           <div style={{ display: 'flex', marginTop: 26, width: '100%' }}>
             {overPhoto ? (
-              <PlateText text={s.body} size={42} weight={600} accentWeight={800} color={txt} accent={theme.accent} bg={theme.bg} maxWidth={contentW} />
+              <StoryText text={s.body} size={42} weight={600} accentWeight={800}
+                color={s.plate === false ? (s.textColor || '#FFFFFF') : txt}
+                accent={theme.accent} bg={s.plate === false ? null : theme.bg} maxWidth={contentW} />
             ) : (
               <RichText text={s.body} o={{ size: 42, weight: 600, color: txt, accent: theme.accent, lineGap: 12 }} />
             )}

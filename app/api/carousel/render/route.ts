@@ -80,11 +80,13 @@ export async function GET(request: Request) {
       return png(spec, 'post', brand)
     }
     if (format === 'story') {
-      // Dev eyeball params: &photo=<url> renders the over-photo plates path,
-      // &pos=top|center|bottom checks the layout variety.
+      // Dev eyeball params: &photo=<url> renders the over-photo path,
+      // &pos=top|center|bottom layout, &plate=0 clean text, &tc=ffffff its colour.
       const photo = url.searchParams.get('photo') || undefined
       const pos = (url.searchParams.get('pos') as SlideSpec['position']) || undefined
-      const spec: SlideSpec = { kind: 'story', index: 0, total: 1, headline: 'как я набрала **первую 1000** подписчиков', body: 'рассказываю по шагам в следующих сторис', action: 'смотри до конца', photoUrl: photo, position: pos }
+      const plate = url.searchParams.get('plate') === '0' ? false : undefined
+      const tc = url.searchParams.get('tc') ? `#${url.searchParams.get('tc')}` : undefined
+      const spec: SlideSpec = { kind: 'story', index: 0, total: 1, headline: 'как я набрала **первую 1000** подписчиков', body: 'рассказываю по шагам в следующих сторис', action: 'смотри до конца', photoUrl: photo, position: pos, plate, textColor: tc }
       return png(spec, 'story', brand)
     }
     const demo: Dict = {
