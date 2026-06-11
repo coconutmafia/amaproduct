@@ -109,7 +109,7 @@ export default async function DashboardPage() {
           </Card>
         </Link>
 
-        <Link href={projects && projects.length === 1 ? `/projects/${projects[0].id}/generator` : '/projects'}>
+        <Link href={projects && projects.length === 1 ? `/projects/${projects[0].id}/assistant` : '/projects'}>
           <Card className="border-border bg-card hover:border-green-500/40 hover:bg-card/80 transition-all cursor-pointer">
             <CardContent className="p-6">
               <div className="flex items-center gap-4">

@@ -107,7 +107,7 @@ export function WarmupTimeline({ planData, projectId }: WarmupTimelineProps) {
               </Badge>
             </div>
             <Button size="sm" asChild className="gradient-accent text-white hover:opacity-90 text-xs h-7">
-              <Link href={`/projects/${projectId}/generator`}>
+              <Link href={`/projects/${projectId}/assistant`}>
                 <ExternalLink className="mr-1.5 h-3 w-3" />
                 Создать контент для этого дня
               </Link>

@@ -14,7 +14,6 @@ import {
   Plus,
   LogOut,
   Sparkles,
-  Gift,
   Zap,
   Users,
   TrendingUp,
@@ -83,12 +82,8 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
       label: 'Тарифы',
       badge: null as string | null,
     },
-    {
-      href: '/referral',
-      icon: Gift,
-      label: 'Твои бонусы',
-      badge: null as string | null,
-    },
+    // «Твои бонусы» (/referral) скрыт до пересборки реферальной системы вместе
+    // с биллингом — бонусные запросы сейчас ничего не дают. Роут жив.
     {
       href: '/settings',
       icon: Settings,

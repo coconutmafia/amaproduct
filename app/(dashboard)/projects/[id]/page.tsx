@@ -216,13 +216,13 @@ export default async function ProjectPage({ params }: Props) {
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm font-medium">Последний контент</CardTitle>
                   <Button variant="ghost" size="sm" asChild className="text-xs text-muted-foreground">
-                    <Link href={`/projects/${id}/generator`}>Открыть →</Link>
+                    <Link href={`/projects/${id}/content-plan`}>Открыть →</Link>
                   </Button>
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">
                 {recentContent.map((item) => (
-                  <Link key={item.id} href={`/projects/${id}/generator`} className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary/50 transition-colors">
+                  <Link key={item.id} href={`/projects/${id}/content-plan${item.day_number ? `?week=${Math.max(1, Math.ceil(item.day_number / 7))}` : ''}`} className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary/50 transition-colors">
                     <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/15 shrink-0">
                       <Sparkles className="h-3.5 w-3.5 text-primary" />
                     </div>
