@@ -72,7 +72,9 @@ export default async function ProjectPage({ params }: Props) {
   ].filter((s) => s.url)
 
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-5 md:space-y-6">
+    // pb-28: keep the page tail reachable above the fixed bottom nav + Safari's
+    // own bottom bar (owner video: last cards wouldn't scroll into view).
+    <div className="p-4 pb-28 md:p-6 md:pb-12 max-w-7xl mx-auto space-y-5 md:space-y-6">
       {/* Header */}
       <div className="space-y-1">
         <div className="flex items-center justify-between gap-2">
@@ -186,9 +188,9 @@ export default async function ProjectPage({ params }: Props) {
                 { href: `/projects/${id}/assistant`, icon: Sparkles, label: 'Создать контент', desc: 'Чат-ассистент пишет твоим голосом' },
                 { href: `/projects/${id}/content-plan`, icon: Grid3X3, label: 'Контент-план', desc: 'Расписание по дням' },
                 { href: `/projects/${id}/strategy`, icon: Calendar, label: 'План прогрева', desc: 'Стратегия запуска' },
-                { href: `/projects/${id}/knowledge`, icon: BookOpen, label: 'Материалы', desc: 'База знаний + интервью' },
+                { href: `/projects/${id}/knowledge`, icon: BookOpen, label: 'Материалы', desc: 'База знаний, интервью, стиль' },
                 { href: `/projects/${id}/trends`, icon: Flame, label: 'Тренды', desc: 'Тренды и залетевшие рилз → в план' },
-                { href: `/projects/${id}/brand`, icon: Palette, label: 'Фирменный стиль', desc: 'Бренд + оформление сторис' },
+                { href: `/projects/${id}/visual`, icon: Palette, label: 'Создать визуал', desc: 'Сторис, картинка поста, карусель' },
                 { href: `/library?project=${id}`, icon: Bookmark, label: 'Готовое', desc: 'AI учится на твоём контенте' },
                 { href: `/projects/${id}/results`, icon: TrendingUp, label: 'Результаты', desc: 'Охваты → AI усиливает' },
               ].map(({ href, icon: Icon, label, desc }) => (
