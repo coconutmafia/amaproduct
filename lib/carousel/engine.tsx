@@ -139,9 +139,6 @@ type RichOpts = {
   lineGap?: number
   uppercase?: boolean
   accentWeight?: number
-  // Instagram-style text plates: each word sits on a solid chip so text stays
-  // readable over ANY photo (owner: «текст в рамочке, с обводкой, читаемый»).
-  chipBg?: string
 }
 
 function tokenize(text: string): { word: string; em: boolean; br?: boolean }[] {
@@ -180,13 +177,6 @@ export function RichText({ text, o }: { text: string; o: RichOpts }): ReactEleme
       {items.map((it, i) => {
         if (it.br) return <div key={i} style={{ display: 'flex', width: '100%', height: 0 }} />
         const punct = /^[.,!?;:»)]+$/.test(it.word)
-        const chip = o.chipBg
-          ? {
-              backgroundColor: o.chipBg,
-              padding: `${Math.round(o.size * 0.14)}px ${Math.round(o.size * 0.22)}px`,
-              borderRadius: Math.round(o.size * 0.2),
-            }
-          : {}
         return (
           <div
             key={i}
@@ -195,16 +185,71 @@ export function RichText({ text, o }: { text: string; o: RichOpts }): ReactEleme
               color: it.em ? o.accent : o.color,
               fontSize: o.size,
               fontWeight: it.em ? o.accentWeight ?? 800 : o.weight ?? 500,
-              marginRight: o.chipBg ? Math.round(o.size * 0.1) : gap,
+              marginRight: gap,
               marginLeft: punct ? -gap : 0,
               marginBottom: o.lineGap ?? o.size * 0.18,
-              ...chip,
             }}
           >
             {it.word}
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// ── Plate text (Instagram-style line plates) ────────────────────────────────────
+// One CONTINUOUS plate under each LINE of text (owner: «подложка должна быть
+// полностью под фразой», not per-word chips). Satori has no inline box
+// decoration, so we wrap words into lines ourselves (estimated width) and give
+// every line a single solid plate; accent **words** keep the brand colour.
+function PlateText({ text, size, color, accent, bg, weight = 800, accentWeight = 900, align = 'left', maxWidth }: {
+  text: string
+  size: number
+  color: string
+  accent: string
+  bg: string
+  weight?: number
+  accentWeight?: number
+  align?: 'left' | 'center'
+  maxWidth: number
+}): ReactElement {
+  const tokens = tokenize(text.trim())
+  const padX = Math.round(size * 0.26)
+  const padY = Math.round(size * 0.14)
+  // Greedy word-wrap by estimated glyph width (Montserrat ~0.62em per char)
+  const maxChars = Math.max(8, Math.floor((maxWidth - padX * 2) / (size * 0.62)))
+  const lines: { word: string; em: boolean }[][] = [[]]
+  let cur = 0
+  for (const t of tokens) {
+    if (t.br) { lines.push([]); cur = 0; continue }
+    if (!t.word) continue
+    const wlen = t.word.length + 1
+    if (cur > 0 && cur + wlen > maxChars) { lines.push([]); cur = 0 }
+    lines[lines.length - 1].push({ word: t.word, em: t.em })
+    cur += wlen
+  }
+  const rendered = lines.filter((l) => l.length > 0)
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: align === 'center' ? 'center' : 'flex-start', width: '100%' }}>
+      {rendered.map((line, li) => (
+        <div key={li} style={{
+          display: 'flex', flexWrap: 'wrap', maxWidth: '100%',
+          backgroundColor: bg,
+          padding: `${padY}px ${padX}px`,
+          borderRadius: Math.round(size * 0.16),
+          marginBottom: li === rendered.length - 1 ? 0 : Math.round(size * 0.16),
+        }}>
+          {line.map((t, i) => (
+            <div key={i} style={{
+              display: 'flex', fontFamily: 'Montserrat', fontSize: size, lineHeight: 1.15,
+              color: t.em ? accent : color,
+              fontWeight: t.em ? accentWeight : weight,
+              marginRight: i === line.length - 1 ? 0 : Math.round(size * 0.24),
+            }}>{t.word}</div>
+          ))}
+        </div>
+      ))}
     </div>
   )
 }
@@ -398,10 +443,8 @@ function Story({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: S
   const overPhoto = !!s.photoUrl
   const pos = s.position || 'bottom'
   const justify = pos === 'top' ? 'flex-start' : pos === 'center' ? 'center' : 'flex-end'
-  // Plates carry readability over photos; on a flat brand background plates are
-  // unnecessary noise — render plain brand text there.
-  const chipBg = overPhoto ? theme.bg : undefined
   const txt = theme.text
+  const contentW = size.w - 2 * 72
   return (
     <div style={{ display: 'flex', position: 'relative', width: size.w, height: size.h }}>
       {overPhoto ? <img src={s.photoUrl} width={size.w} height={size.h} style={{ objectFit: 'cover' }} alt="" /> : <Backdrop theme={theme} size={size} />}
@@ -420,10 +463,19 @@ function Story({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: S
           justifyContent: justify,
         }}
       >
-        <RichText text={s.headline || ''} o={{ size: 58, weight: 800, accentWeight: 900, color: txt, accent: theme.accent, lineGap: 14, chipBg }} />
+        {overPhoto ? (
+          // Plates carry readability over photos — one continuous plate per LINE
+          <PlateText text={s.headline || ''} size={58} weight={800} accentWeight={900} color={txt} accent={theme.accent} bg={theme.bg} maxWidth={contentW} />
+        ) : (
+          <RichText text={s.headline || ''} o={{ size: 58, weight: 800, accentWeight: 900, color: txt, accent: theme.accent, lineGap: 14 }} />
+        )}
         {s.body ? (
           <div style={{ display: 'flex', marginTop: 26, width: '100%' }}>
-            <RichText text={s.body} o={{ size: 42, weight: 600, color: txt, accent: theme.accent, lineGap: 12, chipBg }} />
+            {overPhoto ? (
+              <PlateText text={s.body} size={42} weight={600} accentWeight={800} color={txt} accent={theme.accent} bg={theme.bg} maxWidth={contentW} />
+            ) : (
+              <RichText text={s.body} o={{ size: 42, weight: 600, color: txt, accent: theme.accent, lineGap: 12 }} />
+            )}
           </div>
         ) : (
           <div style={{ display: 'flex' }} />
@@ -439,7 +491,7 @@ function Story({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: S
 
       {theme.handle ? (
         <div style={{ position: 'absolute', top: 70, left: 72, display: 'flex' }}>
-          <div style={{ display: 'flex', color: overPhoto ? theme.text : theme.textMuted, backgroundColor: chipBg ?? 'transparent', padding: chipBg ? '8px 16px' : 0, borderRadius: 10, fontSize: 24, fontWeight: 800, letterSpacing: 2 }}>
+          <div style={{ display: 'flex', color: overPhoto ? theme.text : theme.textMuted, backgroundColor: overPhoto ? theme.bg : 'transparent', padding: overPhoto ? '8px 16px' : 0, borderRadius: 10, fontSize: 24, fontWeight: 800, letterSpacing: 2 }}>
             {theme.handle.toUpperCase()}
           </div>
         </div>

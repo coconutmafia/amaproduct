@@ -271,6 +271,7 @@ export default function StoriesPage() {
             <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => uploadPhotos(e.target.files)} />
           </label>
         </div>
+        {uploading && <p className="mt-2 text-[11px] text-muted-foreground">Загружаю и сжимаю фото — обычно 5-15 секунд на фото.</p>}
       </section>
 
       <section className="mt-4 rounded-2xl border border-border bg-card p-4">
@@ -281,8 +282,9 @@ export default function StoriesPage() {
         <button type="button" onClick={build} disabled={busy}
           className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          {busy ? 'Собираю сторис…' : 'Собрать сторис'}
+          {busy ? 'Оформляю сторис…' : 'Оформить сторис'}
         </button>
+        {busy && <p className="mt-2 text-[11px] text-muted-foreground">Обычно 1-2 минуты: раскладываю сценарий на кадры и оформляю каждый в твоём стиле. Не закрывай страницу.</p>}
       </section>
 
       {rendered.length > 0 && (
@@ -318,6 +320,7 @@ export default function StoriesPage() {
               {editing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
               {editing ? 'Применяю правку…' : 'Применить правку'}
             </button>
+            {editing && <p className="text-[11px] text-muted-foreground">Обычно до минуты: правлю кадры и пересобираю картинки.</p>}
           </div>
         </section>
       )}
