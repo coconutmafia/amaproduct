@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
+import { VISUAL_RULES } from '@/lib/ai/prompts/content-brain'
 
 // Turns a story idea/script into a sequence of story FRAMES (minimal on-screen
 // text per frame, in the blogger's voice) that the engine renders over their
@@ -37,12 +38,15 @@ export async function POST(request: Request) {
 
     const prompt = `Ты — продюсер сторис для этого блогера. Разбей идею/сценарий ниже на последовательность из ~${target} сторис-кадров для Instagram (9:16).
 
+${VISUAL_RULES}
+
 ПРАВИЛА сторис:
-- На каждом кадре МИНИМУМ текста (1-2 коротких строки) — сторис смотрят быстро.
-- headline — главная фраза НА ЭКРАНЕ для этого кадра (хук/мысль), в голосе блогера.
-- body — опциональная короткая поддержка (можно пусто).
-- cta — опционально: призыв/стикер для кадра (напр. «листай дальше», «пиши + в директ», «опрос: да/нет», «ссылка в шапке»). Не на каждом кадре.
-- Веди по нарастающей: зацепить → раскрыть → подвести к действию. Последний кадр — призыв.
+- На каждом кадре МИНИМУМ текста (1-2 коротких строки, БЕЗ длинных оборотов) — сторис смотрят быстро.
+- headline — главная фраза НА ЭКРАНЕ для этого кадра (хук/мысль), в голосе блогера. В headline или body выдели 1-2 САМЫХ важных слова двойными звёздочками **слово** — они станут акцентом фирменным цветом.
+- body — опциональная короткая поддержка (можно пусто). Перечисление — короткими строками через перенос, не блоком.
+- cta — опционально: призыв/стикер для кадра (напр. «листай дальше», «пиши + в директ», «опрос: да/нет», «ссылка в шапке»). Примерно в 20% кадров, не в каждом.
+- position — где разместить текст на кадре: top / center / bottom. ЧЕРЕДУЙ позицию между кадрами (серия не должна выглядеть проштампованной одинаково); center используй редко, для самого важного кадра.
+- Веди по нарастающей: первый кадр обязан ЗАЦЕПИТЬ → раскрыть → подвести к действию. Последний кадр — призыв.
 - Голос и факты — ТОЛЬКО из материалов блогера ниже, не выдумывай.
 
 ИДЕЯ/СЦЕНАРИЙ ОТ БЛОГЕРА:
@@ -61,7 +65,7 @@ ${ragBlock || '(мало материалов — опирайся на сцен
         properties: {
           stories: {
             type: 'array',
-            items: { type: 'object', properties: { headline: { type: 'string' }, body: { type: 'string' }, cta: { type: 'string' } }, required: ['headline'] },
+            items: { type: 'object', properties: { headline: { type: 'string' }, body: { type: 'string' }, cta: { type: 'string' }, position: { type: 'string', description: 'top | center | bottom' } }, required: ['headline'] },
           },
         },
         required: ['stories'],
@@ -80,7 +84,16 @@ ${ragBlock || '(мало материалов — опирайся на сцен
     }
 
     const s = (v: unknown) => String(v ?? '').trim()
-    const stories = raw.map((r) => ({ headline: s(r.headline), body: s(r.body), cta: s(r.cta) })).filter((r) => r.headline || r.body)
+    const stories = raw
+      .map((r, i) => {
+        const p = s(r.position).toLowerCase()
+        return {
+          headline: s(r.headline), body: s(r.body), cta: s(r.cta),
+          // Validate position; alternate as fallback so the series never stamps
+          position: (['top', 'center', 'bottom'].includes(p) ? p : i % 2 === 0 ? 'bottom' : 'top') as 'top' | 'center' | 'bottom',
+        }
+      })
+      .filter((r) => r.headline || r.body)
     if (stories.length === 0) return NextResponse.json({ error: 'Не удалось собрать сторис — попробуй ещё раз' }, { status: 502 })
 
     return NextResponse.json({ stories })

@@ -139,6 +139,9 @@ type RichOpts = {
   lineGap?: number
   uppercase?: boolean
   accentWeight?: number
+  // Instagram-style text plates: each word sits on a solid chip so text stays
+  // readable over ANY photo (owner: «текст в рамочке, с обводкой, читаемый»).
+  chipBg?: string
 }
 
 function tokenize(text: string): { word: string; em: boolean; br?: boolean }[] {
@@ -177,6 +180,13 @@ export function RichText({ text, o }: { text: string; o: RichOpts }): ReactEleme
       {items.map((it, i) => {
         if (it.br) return <div key={i} style={{ display: 'flex', width: '100%', height: 0 }} />
         const punct = /^[.,!?;:»)]+$/.test(it.word)
+        const chip = o.chipBg
+          ? {
+              backgroundColor: o.chipBg,
+              padding: `${Math.round(o.size * 0.14)}px ${Math.round(o.size * 0.22)}px`,
+              borderRadius: Math.round(o.size * 0.2),
+            }
+          : {}
         return (
           <div
             key={i}
@@ -185,9 +195,10 @@ export function RichText({ text, o }: { text: string; o: RichOpts }): ReactEleme
               color: it.em ? o.accent : o.color,
               fontSize: o.size,
               fontWeight: it.em ? o.accentWeight ?? 800 : o.weight ?? 500,
-              marginRight: gap,
+              marginRight: o.chipBg ? Math.round(o.size * 0.1) : gap,
               marginLeft: punct ? -gap : 0,
               marginBottom: o.lineGap ?? o.size * 0.18,
+              ...chip,
             }}
           >
             {it.word}
@@ -308,6 +319,9 @@ export interface SlideSpec {
   subheadline?: string
   action?: string
   photoUrl?: string
+  // Story frames: where the text group sits (varies frame-to-frame so a series
+  // doesn't look stamped — owner feedback). Default 'bottom'.
+  position?: 'top' | 'center' | 'bottom'
 }
 
 // ── Carousel templates ──────────────────────────────────────────────────────────
@@ -377,54 +391,57 @@ function Post({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Si
 }
 
 // ── Story (9:16) — text/script over the creator's photo, in brand style ─────────
+// Owner methodology (lesson «Визуальная концепция»): text on photo must sit in
+// readable PLATES in the brand colours (no alien white gradients), key words in
+// the accent colour, and the text group position varies frame-to-frame.
 function Story({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Size }): ReactElement {
   const overPhoto = !!s.photoUrl
-  const onText = overPhoto ? theme.onPhotoText : theme.text
+  const pos = s.position || 'bottom'
+  const justify = pos === 'top' ? 'flex-start' : pos === 'center' ? 'center' : 'flex-end'
+  // Plates carry readability over photos; on a flat brand background plates are
+  // unnecessary noise — render plain brand text there.
+  const chipBg = overPhoto ? theme.bg : undefined
+  const txt = theme.text
   return (
     <div style={{ display: 'flex', position: 'relative', width: size.w, height: size.h }}>
       {overPhoto ? <img src={s.photoUrl} width={size.w} height={size.h} style={{ objectFit: 'cover' }} alt="" /> : <Backdrop theme={theme} size={size} />}
-      {/* top scrim + hook */}
-      <div
-        style={{
-          display: 'flex',
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 560,
-          padding: '120px 80px 0',
-          backgroundImage: overPhoto ? 'linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0) 100%)' : 'linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0) 100%)',
-        }}
-      >
-        <RichText text={s.headline || ''} o={{ size: 56, weight: 800, accentWeight: 900, color: onText, accent: theme.accent, lineGap: 10 }} />
-      </div>
-      {/* bottom scrim + body/CTA + brand handle */}
+
+      {/* single text group, position varies per frame */}
       <div
         style={{
           display: 'flex',
           flexDirection: 'column',
           position: 'absolute',
-          bottom: 0,
+          top: 0,
           left: 0,
           right: 0,
-          minHeight: 480,
-          padding: '0 80px 130px',
-          justifyContent: 'flex-end',
-          backgroundImage: overPhoto ? 'linear-gradient(0deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0) 100%)' : 'linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0) 100%)',
+          bottom: 0,
+          padding: '190px 72px 150px',
+          justifyContent: justify,
         }}
       >
-        {s.body ? <RichText text={s.body} o={{ size: 46, weight: 600, color: onText, accent: theme.accent, lineGap: 12 }} /> : <div style={{ display: 'flex' }} />}
+        <RichText text={s.headline || ''} o={{ size: 58, weight: 800, accentWeight: 900, color: txt, accent: theme.accent, lineGap: 14, chipBg }} />
+        {s.body ? (
+          <div style={{ display: 'flex', marginTop: 26, width: '100%' }}>
+            <RichText text={s.body} o={{ size: 42, weight: 600, color: txt, accent: theme.accent, lineGap: 12, chipBg }} />
+          </div>
+        ) : (
+          <div style={{ display: 'flex' }} />
+        )}
         {s.action ? (
-          <div style={{ display: 'flex', marginTop: 28, alignSelf: 'center', backgroundColor: theme.accent, color: '#fff', fontSize: 36, fontWeight: 800, padding: '20px 44px', borderRadius: 60 }}>
+          <div style={{ display: 'flex', marginTop: 34, alignSelf: 'center', backgroundColor: theme.accent, color: '#fff', fontSize: 36, fontWeight: 800, padding: '20px 44px', borderRadius: 60 }}>
             {s.action}
           </div>
         ) : (
           <div style={{ display: 'flex' }} />
         )}
       </div>
+
       {theme.handle ? (
-        <div style={{ position: 'absolute', top: 70, left: 80, display: 'flex', color: onText, fontSize: 24, fontWeight: 800, letterSpacing: 2 }}>
-          {theme.handle.toUpperCase()}
+        <div style={{ position: 'absolute', top: 70, left: 72, display: 'flex' }}>
+          <div style={{ display: 'flex', color: overPhoto ? theme.text : theme.textMuted, backgroundColor: chipBg ?? 'transparent', padding: chipBg ? '8px 16px' : 0, borderRadius: 10, fontSize: 24, fontWeight: 800, letterSpacing: 2 }}>
+            {theme.handle.toUpperCase()}
+          </div>
         </div>
       ) : (
         <div style={{ display: 'flex' }} />

@@ -13,7 +13,7 @@ import { ArrowLeft, Upload, Loader2, Sparkles, Download } from 'lucide-react'
 import { downscaleImage } from '@/lib/downscaleImage'
 
 interface Brand { accentColor?: string; bg?: string; text?: string; bgStyle?: string; handle?: string; logoUrl?: string }
-interface Frame { headline: string; body: string; cta: string }
+interface Frame { headline: string; body: string; cta: string; position?: 'top' | 'center' | 'bottom' }
 
 function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob)
@@ -59,9 +59,26 @@ export default function StoriesPage() {
         localStorage.removeItem(key)
         setScript((s) => s || handed)
         toast.message('Сценарий из чата подставлен — жми «Собрать сторис»')
+        return
+      }
+      // Draft restore — leaving the page must not lose the work (owner: «я
+      // выйду, и оно всё — теперь не найду»). Photos are storage URLs → cheap.
+      const draft = localStorage.getItem(`ama_stories_draft_${projectId}`)
+      if (draft) {
+        const d = JSON.parse(draft) as { script?: string; photos?: string[] }
+        if (d.script) setScript((s) => s || d.script || '')
+        if (Array.isArray(d.photos) && d.photos.length) setPhotos((p) => (p.length ? p : d.photos!))
       }
     } catch { /* ignore */ }
   }, [projectId])
+
+  // Auto-save the builder draft (script + photo URLs)
+  useEffect(() => {
+    if (!projectId) return
+    try {
+      if (script.trim() || photos.length) localStorage.setItem(`ama_stories_draft_${projectId}`, JSON.stringify({ script, photos }))
+    } catch { /* ignore */ }
+  }, [projectId, script, photos])
 
   async function uploadPhotos(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -89,7 +106,7 @@ export default function StoriesPage() {
   async function renderFrame(frame: Frame, photoUrl: string | undefined): Promise<Blob> {
     const res = await fetch('/api/carousel/render', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ format: 'story', brand, slide: { kind: 'story', headline: frame.headline, body: frame.body, action: frame.cta, photoUrl } }),
+      body: JSON.stringify({ format: 'story', brand, slide: { kind: 'story', headline: frame.headline, body: frame.body, action: frame.cta, position: frame.position, photoUrl } }),
     })
     if (!res.ok) throw new Error('render failed')
     return res.blob()
@@ -172,6 +189,7 @@ export default function StoriesPage() {
               <Download className="h-3.5 w-3.5" /> {zipping ? 'Собираю…' : 'Скачать всё (ZIP)'}
             </button>
           </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">Скачай картинки сейчас — в сервисе они пока не хранятся. Сценарий и фото сохраняются как черновик: вернёшься и нажмёшь «Собрать сторис» заново.</p>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {rendered.map((r, i) => (
               <div key={i} className="flex flex-col gap-1">

@@ -185,19 +185,21 @@ export default async function ProjectPage({ params }: Props) {
             /* ── Returning user: quick action buttons ── */
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {[
-                { href: `/projects/${id}/assistant`, icon: Sparkles, label: 'Создать контент', desc: 'Чат-ассистент пишет твоим голосом' },
-                { href: `/projects/${id}/content-plan`, icon: Grid3X3, label: 'Контент-план', desc: 'Расписание по дням' },
-                { href: `/projects/${id}/strategy`, icon: Calendar, label: 'План прогрева', desc: 'Стратегия запуска' },
-                { href: `/projects/${id}/knowledge`, icon: BookOpen, label: 'Материалы', desc: 'База знаний, интервью, стиль' },
-                { href: `/projects/${id}/trends`, icon: Flame, label: 'Тренды', desc: 'Тренды и залетевшие рилз → в план' },
-                { href: `/projects/${id}/visual`, icon: Palette, label: 'Создать визуал', desc: 'Сторис, картинка поста, карусель' },
-                { href: `/library?project=${id}`, icon: Bookmark, label: 'Готовое', desc: 'AI учится на твоём контенте' },
-                { href: `/projects/${id}/results`, icon: TrendingUp, label: 'Результаты', desc: 'Охваты → AI усиливает' },
-              ].map(({ href, icon: Icon, label, desc }) => (
+                // Icon colours rotate within the brand palette (green/pink/orange/rose)
+                // — the all-green grid felt flat (owner), but stays «в цветах приложухи».
+                { href: `/projects/${id}/assistant`, icon: Sparkles, label: 'Создать контент', desc: 'Чат-ассистент пишет твоим голосом', color: 'text-primary bg-primary/10' },
+                { href: `/projects/${id}/content-plan`, icon: Grid3X3, label: 'Контент-план', desc: 'Расписание по дням', color: 'text-[#D44E7E] bg-[#D44E7E]/10' },
+                { href: `/projects/${id}/strategy`, icon: Calendar, label: 'План прогрева', desc: 'Стратегия запуска', color: 'text-[#F5A84A] bg-[#F5A84A]/10' },
+                { href: `/projects/${id}/knowledge`, icon: BookOpen, label: 'Материалы', desc: 'База знаний, интервью, стиль', color: 'text-[#E86BA0] bg-[#E86BA0]/10' },
+                { href: `/projects/${id}/trends`, icon: Flame, label: 'Тренды', desc: 'Тренды и залетевшие рилз → в план', color: 'text-[#F5A84A] bg-[#F5A84A]/10' },
+                { href: `/projects/${id}/visual`, icon: Palette, label: 'Создать визуал', desc: 'Сторис, картинка поста, карусель', color: 'text-[#D44E7E] bg-[#D44E7E]/10' },
+                { href: `/library?project=${id}`, icon: Bookmark, label: 'Готовое', desc: 'AI учится на твоём контенте', color: 'text-primary bg-primary/10' },
+                { href: `/projects/${id}/results`, icon: TrendingUp, label: 'Результаты', desc: 'Охваты → AI усиливает', color: 'text-[#E86BA0] bg-[#E86BA0]/10' },
+              ].map(({ href, icon: Icon, label, desc, color }) => (
                 <Link key={href} href={href}>
                   <Card className="border-border bg-card hover:bg-card/80 hover:border-primary/30 transition-all cursor-pointer h-full">
                     <CardContent className="p-4 flex flex-col items-center gap-2 text-center">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl text-primary bg-primary/10">
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${color}`}>
                         <Icon className="h-5 w-5" />
                       </div>
                       <span className="text-xs font-semibold text-foreground">{label}</span>
