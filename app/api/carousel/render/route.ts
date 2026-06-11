@@ -56,6 +56,10 @@ export async function POST(request: Request) {
       const specs = planSlides((body.carousel ?? body) as Dict)
       if (specs.length === 0) return new Response('No slides', { status: 400 })
       spec = specs[Math.max(0, Math.min(index, specs.length - 1))]
+      // Per-slide photo backgrounds for carousels: { "<slideIndex>": url }
+      const photos = body.photos as Record<string, string> | undefined
+      const ph = photos?.[String(index)]
+      if (ph) spec = { ...spec, photoUrl: ph }
     }
     return png(spec, format, brand)
   } catch (e) {
@@ -100,7 +104,11 @@ export async function GET(request: Request) {
       last_slide: { text: 'хочешь свою **персональную воронку** трафика?', action: 'пиши «хочу трафик» мне в директ' },
     }
     const specs = planSlides(demo)
-    return png(specs[Math.max(0, Math.min(i, specs.length - 1))], 'carousel', brand)
+    let spec = specs[Math.max(0, Math.min(i, specs.length - 1))]
+    // Dev eyeball: &photo= puts the creator photo behind a carousel slide too
+    const cPhoto = url.searchParams.get('photo')
+    if (cPhoto) spec = { ...spec, photoUrl: cPhoto }
+    return png(spec, 'carousel', brand)
   } catch (e) {
     console.error('[carousel/render demo]', e instanceof Error ? e.message : e)
     return new Response('Failed to render demo slide', { status: 500 })

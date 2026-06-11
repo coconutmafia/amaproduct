@@ -9,6 +9,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
+import { downscaleImage } from '@/lib/downscaleImage'
 
 type Dict = Record<string, unknown>
 
@@ -26,11 +27,11 @@ function slideCount(carousel: Dict): number {
   return (carousel.cover ? 1 : 0) + slides.length + (carousel.last_slide ? 1 : 0)
 }
 
-async function renderSlide(carousel: Dict, index: number, brand?: Brand): Promise<Blob> {
+async function renderSlide(carousel: Dict, index: number, brand?: Brand, photos?: Record<number, string>): Promise<Blob> {
   const res = await fetch('/api/carousel/render', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ carousel, index, format: 'carousel', brand }),
+    body: JSON.stringify({ carousel, index, format: 'carousel', brand, photos }),
   })
   if (!res.ok) throw new Error(`slide ${index + 1}: ${res.status}`)
   return res.blob()
@@ -70,18 +71,54 @@ export function CarouselSlides({
   const [effBrand, setEffBrand] = useState<Brand | undefined>(brand)
   const [editText, setEditText] = useState('')
   const [editing, setEditing] = useState(false)
+  // Per-slide photo backgrounds (owner: «хочу добавлять свои картинки/подложку»)
+  const [slidePhotos, setSlidePhotos] = useState<Record<number, string>>({})
+  const [photoBusy, setPhotoBusy] = useState<number | null>(null)
 
   // Nothing to work with → render nothing. (Structured-but-empty also hides.)
   if (!initialCarousel && !sourceText) return null
   if (initialCarousel && slideCount(initialCarousel) === 0) return null
 
-  async function generate(c: Dict, b?: Brand) {
+  async function generate(c: Dict, b?: Brand, photos?: Record<number, string>) {
     setStatus('Рисую слайды…')
     slides.forEach((s) => URL.revokeObjectURL(s.url))
     setSlides([])
     const n = slideCount(c)
-    const blobs = await Promise.all(Array.from({ length: n }, (_, i) => renderSlide(c, i, b ?? effBrand)))
+    const ph = photos ?? slidePhotos
+    const blobs = await Promise.all(Array.from({ length: n }, (_, i) => renderSlide(c, i, b ?? effBrand, ph)))
     setSlides(blobs.map((blob) => ({ blob, url: URL.createObjectURL(blob) })))
+  }
+
+  // Set/remove the creator's own photo as a slide background → re-render that slide
+  async function setSlidePhoto(i: number, files: FileList | null) {
+    if (!files?.[0] || !projectId || !carousel) return
+    setPhotoBusy(i)
+    try {
+      const small = await downscaleImage(files[0], 2000)
+      const fd = new FormData()
+      fd.append('projectId', projectId); fd.append('kind', 'post'); fd.append('files', small)
+      const res = await fetch('/api/brand-kit/upload', { method: 'POST', body: fd })
+      const d = await res.json().catch(() => ({} as { urls?: string[]; error?: string }))
+      if (!res.ok || !d.urls?.[0]) throw new Error(d.error || 'Не удалось загрузить фото')
+      const next = { ...slidePhotos, [i]: d.urls[0] }
+      setSlidePhotos(next)
+      const blob = await renderSlide(carousel, i, effBrand, next)
+      setSlides((prev) => prev.map((s, j) => (j === i ? (URL.revokeObjectURL(s.url), { blob, url: URL.createObjectURL(blob) }) : s)))
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось') }
+    finally { setPhotoBusy(null) }
+  }
+
+  async function clearSlidePhoto(i: number) {
+    if (!carousel) return
+    setPhotoBusy(i)
+    try {
+      const next = { ...slidePhotos }
+      delete next[i]
+      setSlidePhotos(next)
+      const blob = await renderSlide(carousel, i, effBrand, next)
+      setSlides((prev) => prev.map((s, j) => (j === i ? (URL.revokeObjectURL(s.url), { blob, url: URL.createObjectURL(blob) }) : s)))
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось') }
+    finally { setPhotoBusy(null) }
   }
 
   async function openModal() {
@@ -214,14 +251,30 @@ export function CarouselSlides({
                     {slides.map((s, i) => (
                       <div key={i} className="flex flex-col gap-1">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={s.url} alt={`Слайд ${i + 1}`} className="w-full rounded-lg border border-border" />
-                        <button
-                          type="button"
-                          onClick={() => download(s.blob, `slide-${String(i + 1).padStart(2, '0')}.png`)}
-                          className="text-[11px] font-medium text-muted-foreground hover:text-foreground"
-                        >
-                          ↓ Слайд {i + 1}
-                        </button>
+                        <img src={s.url} alt={`Слайд ${i + 1}`} className={`w-full rounded-lg border border-border ${photoBusy === i ? 'opacity-50' : ''}`} />
+                        <div className="flex items-center justify-between gap-1">
+                          <button
+                            type="button"
+                            onClick={() => download(s.blob, `slide-${String(i + 1).padStart(2, '0')}.png`)}
+                            className="text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                          >
+                            ↓ Слайд {i + 1}
+                          </button>
+                          {projectId && (
+                            slidePhotos[i] ? (
+                              <button type="button" onClick={() => clearSlidePhoto(i)} disabled={photoBusy !== null}
+                                className="text-[11px] font-medium text-muted-foreground hover:text-red-500">
+                                {photoBusy === i ? '…' : '✕ фон'}
+                              </button>
+                            ) : (
+                              <label className={`cursor-pointer text-[11px] font-medium text-muted-foreground hover:text-primary ${photoBusy !== null ? 'opacity-50' : ''}`}>
+                                {photoBusy === i ? 'Загружаю…' : '📷 Фото'}
+                                <input type="file" accept="image/*" className="hidden" disabled={photoBusy !== null}
+                                  onChange={(e) => setSlidePhoto(i, e.target.files)} />
+                              </label>
+                            )
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>

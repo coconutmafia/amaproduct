@@ -336,6 +336,7 @@ function Frame({
   total,
   children,
   justify = 'center',
+  photo,
 }: {
   theme: CarouselTheme
   size: Size
@@ -343,10 +344,23 @@ function Frame({
   total: number
   children: ReactElement | ReactElement[]
   justify?: 'center' | 'flex-start'
+  // The creator's own photo as the slide background (owner request: «хочу сюда
+  // добавлять свои картинки/подложку»). A dark scrim keeps text readable.
+  photo?: string
 }): ReactElement {
+  const footerTheme = photo ? { ...theme, textMuted: 'rgba(255,255,255,0.85)' } : theme
   return (
     <div style={{ display: 'flex', position: 'relative', width: size.w, height: size.h }}>
-      <Backdrop theme={theme} size={size} />
+      {photo ? (
+        <img src={photo} width={size.w} height={size.h} style={{ objectFit: 'cover' }} alt="" />
+      ) : (
+        <Backdrop theme={theme} size={size} />
+      )}
+      {photo ? (
+        <div style={{ position: 'absolute', top: 0, left: 0, width: size.w, height: size.h, display: 'flex', backgroundImage: 'linear-gradient(180deg, rgba(0,0,0,0.38) 0%, rgba(0,0,0,0.52) 60%, rgba(0,0,0,0.66) 100%)' }} />
+      ) : (
+        <div style={{ display: 'flex' }} />
+      )}
       <div
         style={{
           display: 'flex',
@@ -362,7 +376,7 @@ function Frame({
       >
         {children}
       </div>
-      <Footer theme={theme} size={size} index={index} total={total} />
+      <Footer theme={footerTheme} size={size} index={index} total={total} />
     </div>
   )
 }
@@ -392,13 +406,16 @@ export interface SlideSpec {
 
 // ── Carousel templates ──────────────────────────────────────────────────────────
 function Cover({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Size }): ReactElement {
+  const over = !!s.photoUrl
+  const tx = over ? '#FFFFFF' : theme.text
+  const mu = over ? 'rgba(255,255,255,0.88)' : theme.textMuted
   return (
-    <Frame theme={theme} size={size} index={s.index} total={s.total}>
+    <Frame theme={theme} size={size} index={s.index} total={s.total} photo={s.photoUrl}>
       {s.emoji ? <div style={{ display: 'flex', fontSize: 120, marginBottom: 30 }}>{s.emoji}</div> : <div style={{ display: 'flex' }} />}
-      <RichText text={s.headline || ''} o={{ size: 92, weight: 900, accentWeight: 900, color: theme.text, accent: theme.accent, uppercase: true, lineGap: 8 }} />
+      <RichText text={s.headline || ''} o={{ size: 92, weight: 900, accentWeight: 900, color: tx, accent: theme.accent, uppercase: true, lineGap: 8 }} />
       {s.subheadline ? (
         <div style={{ display: 'flex', marginTop: 40, width: '100%', justifyContent: 'center' }}>
-          <RichText text={s.subheadline} o={{ size: 38, weight: 500, color: theme.textMuted, accent: theme.accent }} />
+          <RichText text={s.subheadline} o={{ size: 38, weight: 500, color: mu, accent: theme.accent }} />
         </div>
       ) : (
         <div style={{ display: 'flex' }} />
@@ -408,26 +425,30 @@ function Cover({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: S
 }
 
 function Content({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Size }): ReactElement {
+  const over = !!s.photoUrl
+  const tx = over ? '#FFFFFF' : theme.text
   return (
-    <Frame theme={theme} size={size} index={s.index} total={s.total}>
+    <Frame theme={theme} size={size} index={s.index} total={s.total} photo={s.photoUrl}>
       {s.emoji ? <div style={{ display: 'flex', fontSize: 96, marginBottom: 28 }}>{s.emoji}</div> : <div style={{ display: 'flex' }} />}
       {s.headline ? (
         <div style={{ display: 'flex', width: '100%', justifyContent: 'center', marginBottom: 36 }}>
-          <RichText text={s.headline} o={{ size: 58, weight: 800, accentWeight: 800, color: theme.text, accent: theme.accent, uppercase: true, lineGap: 6 }} />
+          <RichText text={s.headline} o={{ size: 58, weight: 800, accentWeight: 800, color: tx, accent: theme.accent, uppercase: true, lineGap: 6 }} />
         </div>
       ) : (
         <div style={{ display: 'flex' }} />
       )}
-      {s.body ? <RichText text={s.body} o={{ size: 42, weight: 500, color: theme.text, accent: theme.accent, lineGap: 14 }} /> : <div style={{ display: 'flex' }} />}
+      {s.body ? <RichText text={s.body} o={{ size: 42, weight: 500, color: tx, accent: theme.accent, lineGap: 14 }} /> : <div style={{ display: 'flex' }} />}
     </Frame>
   )
 }
 
 function CTA({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Size }): ReactElement {
+  const over = !!s.photoUrl
+  const tx = over ? '#FFFFFF' : theme.text
   return (
-    <Frame theme={theme} size={size} index={s.index} total={s.total}>
+    <Frame theme={theme} size={size} index={s.index} total={s.total} photo={s.photoUrl}>
       <div style={{ display: 'flex', fontSize: 104, marginBottom: 44 }}>✉️</div>
-      {s.body ? <RichText text={s.body} o={{ size: 50, weight: 700, color: theme.text, accent: theme.accent, lineGap: 14 }} /> : <div style={{ display: 'flex' }} />}
+      {s.body ? <RichText text={s.body} o={{ size: 50, weight: 700, color: tx, accent: theme.accent, lineGap: 14 }} /> : <div style={{ display: 'flex' }} />}
       {s.action ? (
         <div style={{ display: 'flex', marginTop: 44, width: '100%', justifyContent: 'center' }}>
           <RichText text={s.action} o={{ size: 46, weight: 800, accentWeight: 800, color: theme.accent, accent: theme.accent }} />
