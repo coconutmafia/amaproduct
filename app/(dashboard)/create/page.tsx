@@ -41,10 +41,34 @@ export default function CreatePage() {
     supabase.from('projects').select('id, name').order('updated_at', { ascending: false }).then(({ data }) => {
       const list = (data ?? []) as ProjectLite[]
       setProjects(list)
-      // Default to the most recent project — most users want their own voice/data
-      if (list.length > 0) setProjectId(list[0].id)
+      // Default to the most recent project — most users want their own voice/data.
+      // Functional update: an edit-handoff (below) may have already picked one.
+      if (list.length > 0) setProjectId(prev => prev ?? list[0].id)
     })
   }, [supabase])
+
+  // Edit handoff from «Готовое»: the saved text arrives via localStorage, the
+  // chat opens it and ASKS what to change (owner flow: «как ты хочешь его
+  // редактировать?»). Send fires once projectId from the handoff has settled.
+  const [pendingEdit, setPendingEdit] = useState<{ text: string; projectId: string | null } | null>(null)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('ama_edit_prefill')
+      if (!raw) return
+      localStorage.removeItem('ama_edit_prefill')
+      const d = JSON.parse(raw) as { text?: string; projectId?: string | null }
+      if (!d.text) return
+      if (d.projectId) setProjectId(d.projectId)
+      setPendingEdit({ text: d.text, projectId: d.projectId ?? null })
+    } catch { /* ignore */ }
+  }, [])
+  useEffect(() => {
+    if (!pendingEdit) return
+    if (pendingEdit.projectId && projectId !== pendingEdit.projectId) return
+    setPendingEdit(null)
+    void send(`Вот мой готовый текст:\n\n${pendingEdit.text}\n\nХочу его отредактировать. Спроси, что именно поменять, и применяй мои правки по одной — каждый раз присылай обновлённый текст целиком.`)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingEdit, projectId])
 
   const activeProject = projects.find(p => p.id === projectId) || null
 

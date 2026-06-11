@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Bookmark, Copy, Check, Trash2, Loader2, Plus, X } from 'lucide-react'
+import { Bookmark, Copy, Check, Trash2, Loader2, Plus, X, Pencil, Palette } from 'lucide-react'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { toast } from 'sonner'
 import type { SavedContentRow } from '@/lib/saveContent'
@@ -16,6 +17,7 @@ const TYPE_LABELS: Record<string, string> = {
 
 export default function LibraryPage() {
   const supabase = createClient()
+  const router = useRouter()
   const [items, setItems] = useState<SavedContentRow[]>([])
   const [projects, setProjects] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
@@ -28,6 +30,7 @@ export default function LibraryPage() {
   const [addType, setAddType] = useState('post')
   const [addProject, setAddProject] = useState('')
   const [savingAdd, setSavingAdd] = useState(false)
+  const [viewItem, setViewItem] = useState<SavedContentRow | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -96,6 +99,30 @@ export default function LibraryPage() {
   const groups = TYPE_ORDER
     .map(key => ({ key, label: TYPE_LABELS[key], rows: items.filter(i => (i.content_type || 'other') === key) }))
     .filter(g => g.rows.length > 0)
+
+  const isStories = (it: SavedContentRow) => it.content_type === 'stories' || /(сторис|stories|кадр)\s*\d/i.test(it.body)
+  const isCarousel = (it: SavedContentRow) => it.content_type === 'carousel' || /слайд\s*\d/i.test(it.body)
+
+  // «Редактировать» → the create chat opens the text and asks what to change
+  const editInChat = (it: SavedContentRow) => {
+    try { localStorage.setItem('ama_edit_prefill', JSON.stringify({ text: it.body, projectId: it.project_id })) } catch { /* ignore */ }
+    router.push('/create')
+  }
+
+  // «Оформить визуально» → stories builder for stories, visual page otherwise
+  const designVisual = (it: SavedContentRow) => {
+    const pid = it.project_id
+    if (!pid) { toast.error('У этого текста нет проекта — оформить можно из текста внутри проекта'); return }
+    try {
+      if (isStories(it)) {
+        localStorage.setItem(`ama_stories_script_${pid}`, it.body)
+        router.push(`/projects/${pid}/stories`)
+      } else {
+        localStorage.setItem(`ama_visual_prefill_${pid}`, JSON.stringify({ type: isCarousel(it) ? 'carousel' : 'post', text: it.body }))
+        router.push(`/projects/${pid}/visual`)
+      }
+    } catch { /* ignore */ }
+  }
 
   return (
     <div className="p-4 md:p-6 pb-28 max-w-3xl mx-auto space-y-5">
@@ -194,7 +221,11 @@ export default function LibraryPage() {
                       </button>
                     </div>
                   </div>
-                  <p className="text-[13px] text-[#444] whitespace-pre-wrap line-clamp-4 leading-relaxed">{it.body}</p>
+                  {/* Tap to open — the owner couldn't read a long saved item at all */}
+                  <button type="button" onClick={() => setViewItem(it)} className="block w-full text-left">
+                    <p className="text-[13px] text-[#444] whitespace-pre-wrap line-clamp-4 leading-relaxed">{it.body}</p>
+                    <span className="mt-1 inline-block text-[11px] font-medium text-primary">Открыть →</span>
+                  </button>
                   <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                     {it.project_id && projects[it.project_id] && <span className="truncate">{projects[it.project_id]}</span>}
                     <span className="ml-auto shrink-0">{new Date(it.created_at).toLocaleDateString('ru-RU')}</span>
@@ -203,6 +234,35 @@ export default function LibraryPage() {
               ))}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Viewer — full text + edit/design actions (owner flow) */}
+      {viewItem && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" onClick={() => setViewItem(null)}>
+          <div className="flex max-h-[88vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-background shadow-xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+              <p className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">{viewItem.title || 'Без названия'}</p>
+              <button type="button" onClick={() => setViewItem(null)} className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-secondary/40">Закрыть</button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{viewItem.body}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 border-t border-border p-3">
+              <button type="button" onClick={() => copy(viewItem)}
+                className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-semibold hover:bg-secondary/40">
+                {copiedId === viewItem.id ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />} Копировать
+              </button>
+              <button type="button" onClick={() => editInChat(viewItem)}
+                className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-semibold hover:bg-secondary/40">
+                <Pencil className="h-3.5 w-3.5" /> Редактировать
+              </button>
+              <button type="button" onClick={() => designVisual(viewItem)}
+                className="flex items-center gap-1.5 rounded-lg gradient-accent px-3 py-2 text-xs font-semibold text-white hover:opacity-90">
+                <Palette className="h-3.5 w-3.5" /> Оформить визуально
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

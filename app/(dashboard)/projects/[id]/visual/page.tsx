@@ -7,9 +7,10 @@
 // The same buttons also appear in the chat under generated answers — this page
 // is for when the text is already written (or pasted from elsewhere).
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import { ArrowLeft, Images, GalleryHorizontalEnd, ImageIcon, ChevronRight, Palette } from 'lucide-react'
 import { PostImage } from '@/components/carousel/PostImage'
 import { CarouselSlides } from '@/components/carousel/CarouselSlides'
@@ -18,6 +19,22 @@ export default function VisualPage() {
   const { id: projectId } = useParams<{ id: string }>()
   const [postText, setPostText] = useState('')
   const [carouselText, setCarouselText] = useState('')
+
+  // Text handed over from «Готовое» («Оформить визуально» on a saved item)
+  useEffect(() => {
+    if (!projectId) return
+    try {
+      const key = `ama_visual_prefill_${projectId}`
+      const raw = localStorage.getItem(key)
+      if (!raw) return
+      localStorage.removeItem(key)
+      const d = JSON.parse(raw) as { type?: string; text?: string }
+      if (!d.text) return
+      if (d.type === 'carousel') setCarouselText(d.text)
+      else setPostText(d.text)
+      toast.message('Текст из «Готового» подставлен — жми кнопку оформления')
+    } catch { /* ignore */ }
+  }, [projectId])
 
   return (
     <div className="mx-auto max-w-3xl p-5 pb-28">
