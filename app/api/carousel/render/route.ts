@@ -1,4 +1,5 @@
 import { ImageResponse } from 'next/og'
+import { createClient } from '@/lib/supabase/server'
 import {
   loadFonts,
   planSlides,
@@ -36,6 +37,12 @@ async function png(spec: SlideSpec, format: FormatKey, brand: BrandInput) {
 
 export async function POST(request: Request) {
   try {
+    // Auth: render burns server compute per call — app surfaces are all
+    // authenticated, so an open endpoint was just a free render API.
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'content-type': 'application/json' } })
+
     const body = (await request.json()) as Dict
     const format = (body.format as FormatKey) || 'carousel'
     const brand: BrandInput = { ...(body.brand as BrandInput), paperUrl: paperUrlFrom(request) }
@@ -59,6 +66,8 @@ export async function POST(request: Request) {
 
 // GET ?demo=1&format=carousel|post|story&i=N — quick eyeball without data.
 export async function GET(request: Request) {
+  // Eyeball-check endpoint — dev only (in prod it would be a free render API).
+  if (process.env.NODE_ENV === 'production') return new Response('Not found', { status: 404 })
   const url = new URL(request.url)
   if (url.searchParams.get('demo') == null) return new Response('POST a carousel to render', { status: 400 })
   const format = (url.searchParams.get('format') as FormatKey) || 'carousel'
