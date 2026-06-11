@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { anthropic, MODEL } from '@/lib/ai/client'
+import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 
 export const maxDuration = 300
 
@@ -151,6 +151,43 @@ export async function POST(request: Request) {
     } catch (e) {
       console.error('[warmup-plan] instagram query error:', e)
     }
+
+    // ── Trends + viral-reel references (niche-matched) ───────────────────────
+    // The week-brief already weaves these in, but the 30-day plan was built
+    // blind to them — so the plan's day-meanings missed what's hot in the niche
+    // right now. The plan stays FORMAT-FREE (rule: no пост/рилс in meanings),
+    // so trends/reels are injected as topical ANGLES for day meanings.
+    let trendsBlock = ''
+    try {
+      const niche = (project.niche || '').toLowerCase()
+      const [{ data: sysTrends }, { data: projTrends }, { data: sysReels }, { data: projReels }] = await Promise.all([
+        supabase.from('content_trends').select('title, description, niches')
+          .eq('scope', 'system').eq('is_active', true).order('created_at', { ascending: false }).limit(12),
+        supabase.from('content_trends').select('title, description, niches')
+          .eq('scope', 'project').eq('project_id', projectId).eq('is_active', true)
+          .order('created_at', { ascending: false }).limit(10),
+        supabase.from('viral_reels').select('reel_type, analysis, niches')
+          .eq('scope', 'system').eq('is_active', true).limit(20),
+        supabase.from('viral_reels').select('reel_type, analysis, niches')
+          .eq('scope', 'project').eq('project_id', projectId).limit(10),
+      ])
+      const byNiche = <T extends { niches: unknown }>(rows: T[] | null) => (rows ?? []).filter(r => {
+        const ns = r.niches as string[] | null
+        if (!ns || ns.length === 0) return true
+        return ns.some(n => niche.includes(n.toLowerCase()) || n.toLowerCase().includes(niche))
+      })
+      const trends = [...(projTrends ?? []), ...byNiche(sysTrends)].slice(0, 5)
+      const reels = [...(projReels ?? []), ...byNiche(sysReels)].slice(0, 3)
+      if (trends.length > 0 || reels.length > 0) {
+        trendsBlock = `
+═══════════════════════════════
+АКТУАЛЬНОЕ В НИШЕ СЕЙЧАС (тренды + разборы залетевшего)
+═══════════════════════════════
+Используй как АКТУАЛЬНЫЕ УГЛЫ для смыслов 1–3 дней плана (там, где тема ложится естественно). Бери ПРИНЦИП (боль/хук/угол) и адаптируй под нишу и голос блогера. Форматы контента в смыслах по-прежнему НЕ указывай.
+${trends.map(t => `• Тренд: ${t.title} — ${t.description}`).join('\n')}
+${reels.map(r => `• Что залетает: ${r.reel_type} — ${(r.analysis ?? '').slice(0, 300)}`).join('\n')}`
+      }
+    } catch { /* tables missing — skip */ }
 
     // ── Phase lengths ────────────────────────────────────────────────────────
     const p1 = Math.round(duration * 0.25)
@@ -322,7 +359,7 @@ ${distBlock}
 
 ОБЯЗАТЕЛЬНО: соблюдай ТОЧНОЕ количество дней по каждой линии из таблицы выше. Распредели дни равномерно по всей фазе (не всё в начало или конец).`
     })() : ''}
-
+${trendsBlock}
 ═══════════════════════════════
 МЕТОДОЛОГИЯ
 ═══════════════════════════════
@@ -418,12 +455,15 @@ ${isEvergreen ? `
 
           // Стримим каждый чанк Claude → клиент видит данные сразу
           // TCP-соединение остаётся живым пока идёт генерация
+          // Prompt caching: the big context block goes into a cached system —
+          // retries and «Начать заново» re-runs read it at ~10% input price.
           const claudeStream = anthropic.messages.stream({
             model: MODEL,
             max_tokens: 8000,
             tools: [toolDef],
             tool_choice: { type: 'tool' as const, name: 'create_warmup_plan' },
-            messages: [{ role: 'user', content: prompt }],
+            system: buildCachedSystem(prompt),
+            messages: [{ role: 'user', content: `Составь план прогрева по данным выше. Используй инструмент create_warmup_plan и заполни ВСЕ дни от 1 до ${duration}.` }],
           })
 
           // Каждый входящий чанк — отправляем heartbeat клиенту

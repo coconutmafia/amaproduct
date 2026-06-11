@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { anthropic, MODEL } from '@/lib/ai/client'
+import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { getSchemaForPhase, getEmotionalMechanics, getCTAEngine } from '@/lib/ai/prompts/content-brain'
 import { NextResponse } from 'next/server'
@@ -79,8 +79,11 @@ export async function POST(request: Request) {
   try {
     const rag = await buildRAGContext('контент-план прогрев темы постов рилс сториз', projectId, 'post')
     const otherChunks = rag.projectContext.filter(c => c.material_type !== 'blog_lines')
-    projectSummary = otherChunks.slice(0, 4).map(c => c.chunk_text).join('\n\n').slice(0, 800)
-    systemKnowledge = rag.systemKnowledge.slice(0, 3).map(c => c.chunk_text).join('\n\n').slice(0, 1000)
+    // Was 4 chunks × 800 chars total — cases/product rarely reached the plan and
+    // themes came out generic. The block now rides in a CACHED system, so the
+    // bigger context costs ~10% input price on repeat generations.
+    projectSummary = otherChunks.slice(0, 10).map(c => c.chunk_text).join('\n\n').slice(0, 3500)
+    systemKnowledge = rag.systemKnowledge.slice(0, 4).map(c => c.chunk_text).join('\n\n').slice(0, 1500)
   } catch { /* ignore */ }
 
   // ── Monthly trends / "актуалочки" (owner-curated) ──────────────────────────
@@ -171,7 +174,10 @@ ${blogLinesSummary}
 Для таких дней тема поста НАЧИНАЕТСЯ с личного эпизода, а не с экспертного тезиса.
 ` : ''
 
-  const prompt = `Составь план контента на неделю для блогера. Заполни инструмент week_brief: для каждого дня по одному элементу на каждый его формат.
+  // Static project context → cached system block (stable across the plan's
+  // weeks for the same project → week 2+ briefs read it at ~10% input price).
+  // Volatile parts (phases of THIS week, days, task) stay in the user message.
+  const systemBlock = `Составь план контента на неделю для блогера. Заполни инструмент week_brief: для каждого дня по одному элементу на каждый его формат.
 
 ПРОЕКТ: ${project.name}
 НИША: ${project.niche || 'не указана'}
@@ -182,8 +188,9 @@ ${myInstagramSummary ? `АНАЛИЗ МОЕГО INSTAGRAM (опирайся на
 ${competitorsSummary ? `АНАЛИЗ INSTAGRAM КОНКУРЕНТОВ (что у них «заходит»; отстраивайся, не копируй):\n${competitorsSummary}\n` : ''}
 ${blogLinesInstruction}
 ${trendsBlock}
-${reelsBlock}
-─── ПСИХОЛОГИЯ КОНТЕНТА ПО ФАЗАМ ───────────────────────────
+${reelsBlock}`
+
+  const prompt = `─── ПСИХОЛОГИЯ КОНТЕНТА ПО ФАЗАМ ───────────────────────────
 ${phasePsychology}
 ────────────────────────────────────────────────────────────
 
@@ -254,6 +261,7 @@ ${daysText}
       max_tokens: 8000,
       tools: [toolDef],
       tool_choice: { type: 'tool' as const, name: 'week_brief' },
+      system: buildCachedSystem(systemBlock),
       messages: [{ role: 'user', content: prompt }],
     })
 
