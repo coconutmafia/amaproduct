@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
-import { VISUAL_RULES } from '@/lib/ai/prompts/content-brain'
 
 // Turns a story idea/script into a sequence of story FRAMES (minimal on-screen
 // text per frame, in the blogger's voice) that the engine renders over their
@@ -36,26 +35,28 @@ export async function POST(request: Request) {
       ragBlock = rag.projectContext.map((c) => c.chunk_text).join('\n\n').slice(0, 3500)
     } catch { /* no RAG */ }
 
-    const prompt = `Ты — продюсер сторис для этого блогера. Разбей идею/сценарий ниже на последовательность из ~${target} сторис-кадров для Instagram (9:16).
+    const prompt = `Ты — раскладчик сторис для этого блогера. Разложи его ГОТОВЫЙ текст ниже на кадры сторис для Instagram (9:16).
 
-${VISUAL_RULES}
+⛔ ГЛАВНОЕ ПРАВИЛО — ТЕКСТ УТВЕРЖДЁН, МЕНЯТЬ ЕГО НЕЛЬЗЯ:
+- Используй формулировки блогера ДОСЛОВНО. НИ ОДНОГО нового слова, НИ одного переписанного или выброшенного предложения. Не сокращай, не «улучшай», не пересказывай.
+- Если в тексте есть маркеры «Сторис N» / «Кадр N» — это ГОТОВЫЕ границы кадров: используй ровно эти кадры и их текст дословно (маркеры и подписи типа «(хук)» в текст кадра не включай).
+- Если маркеров нет — режь на кадры ПО ГРАНИЦАМ предложений/абзацев, ничего не меняя внутри.
+- Если текст кадра длинный — НЕ сокращай: раздели его на два кадра (по границе предложения).
+- Единственное, что МОЖНО добавить: выделение 1-2 ключевых слов кадра двойными звёздочками **слово** (станут акцентом фирменным цветом) и переносы строк для перечислений.
 
-ПРАВИЛА сторис:
-- На каждом кадре МИНИМУМ текста (1-2 коротких строки, БЕЗ длинных оборотов) — сторис смотрят быстро.
-- headline — главная фраза НА ЭКРАНЕ для этого кадра (хук/мысль), в голосе блогера. В headline или body выдели 1-2 САМЫХ важных слова двойными звёздочками **слово** — они станут акцентом фирменным цветом.
-- body — опциональная короткая поддержка (можно пусто). Перечисление — короткими строками через перенос, не блоком.
-- cta — ТОЛЬКО если призыв/интерактив ЯВНО есть в сценарии блогера (его словами: опрос, «жми», вопрос аудитории). НЕ ПРИДУМЫВАЙ призывы от себя — никаких «листай дальше», «пиши в директ», «ссылка в шапке», если их нет в сценарии. Нет призыва — оставь cta пустым.
-- position — где разместить текст на кадре: top / center / bottom (подсказка; финально позиция подбирается автоматически по фото кадра).
-- Веди по нарастающей: первый кадр обязан ЗАЦЕПИТЬ → раскрыть. Последний кадр — завершение мысли (призыв только если он есть в сценарии).
-- Голос и факты — ТОЛЬКО из материалов блогера ниже, не выдумывай.
+Структура кадра:
+- headline — первая фраза/мысль кадра (дословно из текста).
+- body — остальной текст кадра (дословно; можно пусто).
+- cta — ТОЛЬКО если призыв/опрос/вопрос аудитории НАПИСАН в тексте блогера — тогда перенеси его сюда ДОСЛОВНО. НИКАКОЙ отсебятины: не добавляй «листай дальше», «пиши в директ», «ответь мне» и т.п. Нет призыва в тексте — cta пустой.
+- position — top / center / bottom (подсказка; финально подбирается по фото).
 
-ИДЕЯ/СЦЕНАРИЙ ОТ БЛОГЕРА:
+УТВЕРЖДЁННЫЙ ТЕКСТ БЛОГЕРА:
 ${script.slice(0, 3000)}
 
-МАТЕРИАЛЫ БЛОГЕРА (голос, аудитория, кейсы):
-${ragBlock || '(мало материалов — опирайся на сценарий и его стиль)'}
+КОНТЕКСТ ПРО БЛОГЕРА (только для понимания, КАКИЕ слова выделять акцентом — НЕ для дописывания текста):
+${ragBlock || '(мало материалов)'}
 
-Верни через инструмент plan_stories ровно ${target} кадров.`
+Верни кадры через инструмент plan_stories (ориентир ~${target} кадров; если в тексте маркеры «Сторис N» — ровно по ним).`
 
     const tool = {
       name: 'plan_stories',
@@ -84,11 +85,25 @@ ${ragBlock || '(мало материалов — опирайся на сцен
     }
 
     const s = (v: unknown) => String(v ?? '').trim()
+    // HARD guard against invented CTAs (prompt alone wasn't enough — the owner
+    // kept getting «пиши в директ» из ниоткуда): a cta survives only if it
+    // actually appears in the blogger's own text.
+    const norm = (t: string) => t.toLowerCase().replace(/\*\*/g, '').replace(/[^а-яёa-z0-9+\s]/gi, ' ').replace(/\s+/g, ' ').trim()
+    const scriptN = norm(script)
+    const ctaFromScript = (cta: string): string => {
+      const c = norm(cta)
+      if (!c) return ''
+      if (scriptN.includes(c)) return cta
+      const words = c.split(' ').filter((w) => w.length > 2)
+      if (words.length === 0) return ''
+      const hit = words.filter((w) => scriptN.includes(w)).length
+      return hit / words.length >= 0.7 ? cta : ''
+    }
     const stories = raw
       .map((r, i) => {
         const p = s(r.position).toLowerCase()
         return {
-          headline: s(r.headline), body: s(r.body), cta: s(r.cta),
+          headline: s(r.headline), body: s(r.body), cta: ctaFromScript(s(r.cta)),
           // Validate position; alternate as fallback so the series never stamps
           position: (['top', 'center', 'bottom'].includes(p) ? p : i % 2 === 0 ? 'bottom' : 'top') as 'top' | 'center' | 'bottom',
         }

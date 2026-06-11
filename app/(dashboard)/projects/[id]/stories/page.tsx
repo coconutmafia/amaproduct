@@ -19,12 +19,15 @@ interface Frame {
   headline: string; body: string; cta: string
   position?: 'top' | 'center' | 'bottom'
   plate?: boolean
+  // The photo this frame renders over (assigned at build, survives edits and
+  // is stored with the set so a saved series can be reopened for edits).
+  photo?: string
   // Set when the user explicitly changed it via a chat edit — photo analysis
   // must not override an explicit instruction.
   posLocked?: boolean
   plateLocked?: boolean
 }
-interface SetFrame { url: string; headline?: string; body?: string; cta?: string; position?: string }
+interface SetFrame { url: string; headline?: string; body?: string; cta?: string; position?: string; photo?: string }
 interface StorySet { id: string; created_at: string; script: string; frames: SetFrame[] }
 
 function download(blob: Blob, name: string) {
@@ -128,7 +131,7 @@ export default function StoriesPage() {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           projectId, setId: existingSetId || undefined, script,
-          frames: frames.map((f, i) => ({ url: urls[i], headline: f.headline, body: f.body, cta: f.cta, position: f.position })),
+          frames: frames.map((f, i) => ({ url: urls[i], headline: f.headline, body: f.body, cta: f.cta, position: f.position, photo: f.photo })),
         }),
       })
       const d = await res.json().catch(() => ({} as { set?: StorySet; sets?: StorySet[]; error?: string }))
@@ -161,12 +164,13 @@ export default function StoriesPage() {
         const plateGiven = typeof nf.plate === 'boolean'
         return {
           ...nf,
+          photo: prev?.photo ?? (photos.length ? photos[i % photos.length] : undefined),
           posLocked: (prev?.posLocked || posChanged) || undefined,
           plate: plateGiven ? nf.plate : prev?.plate,
           plateLocked: (prev?.plateLocked || (plateGiven && nf.plate !== prev?.plate)) || undefined,
         } as Frame
       })
-      const blobs = await Promise.all(frames.map((f: Frame, i: number) => renderFrame(f, photos.length ? photos[i % photos.length] : undefined, i)))
+      const blobs = await Promise.all(frames.map((f: Frame, i: number) => renderFrame(f, i)))
       rendered.forEach((r) => URL.revokeObjectURL(r.url))
       setRendered(blobs.map((blob, i) => ({ blob, url: URL.createObjectURL(blob), frame: frames[i] })))
       setEditText('')
@@ -175,6 +179,31 @@ export default function StoriesPage() {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Не удалось применить правку')
     } finally { setEditing(false) }
+  }
+
+  // Reopen a SAVED set for edits («нет возможности редактировать визуал» — the
+  // edit bar only existed for a freshly built series). Restores frames+photos
+  // into the builder, re-renders, and edits overwrite the same set.
+  async function openSetForEdit(set: StorySet) {
+    setSetBusyId(set.id)
+    try {
+      const frames: Frame[] = set.frames.map((sf) => ({
+        headline: sf.headline || '', body: sf.body || '', cta: sf.cta || '',
+        position: (['top', 'center', 'bottom'].includes(String(sf.position)) ? sf.position : undefined) as Frame['position'],
+        posLocked: sf.position ? true : undefined,
+        photo: sf.photo,
+      }))
+      if (set.script) setScript(set.script)
+      const uniquePhotos = [...new Set(frames.map((f) => f.photo).filter((p): p is string => !!p))]
+      if (uniquePhotos.length) setPhotos(uniquePhotos.slice(0, 8))
+      const blobs = await Promise.all(frames.map((f, i) => renderFrame(f, i)))
+      rendered.forEach((r) => URL.revokeObjectURL(r.url))
+      setRendered(blobs.map((blob, i) => ({ blob, url: URL.createObjectURL(blob), frame: frames[i] })))
+      setSavedSetId(set.id)
+      toast.success('Серия открыта — панель правок под кадрами (можно голосом)')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось открыть серию') }
+    finally { setSetBusyId(null) }
   }
 
   async function downloadSetZip(set: StorySet) {
@@ -250,7 +279,8 @@ export default function StoriesPage() {
     }
   }
 
-  async function renderFrame(frame: Frame, photoUrl: string | undefined, idx: number): Promise<Blob> {
+  async function renderFrame(frame: Frame, idx: number): Promise<Blob> {
+    const photoUrl = frame.photo
     const f = await resolveLayout(frame, photoUrl, idx)
     let textColor: string | undefined
     if (f.plate === false && photoUrl) {
@@ -280,10 +310,12 @@ export default function StoriesPage() {
       })
       const planData = await planRes.json()
       if (!planRes.ok) throw new Error(planData.error || 'Ошибка раскладки')
-      const frames = (planData.stories || []) as Frame[]
-      if (frames.length === 0) throw new Error('Пустая раскадровка')
+      const planned = (planData.stories || []) as Frame[]
+      if (planned.length === 0) throw new Error('Пустая раскадровка')
+      // Pin each frame to its photo — edits and the saved set keep the pairing
+      const frames = planned.map((f, i) => ({ ...f, photo: photos.length ? photos[i % photos.length] : undefined }))
 
-      const blobs = await Promise.all(frames.map((f, i) => renderFrame(f, photos.length ? photos[i % photos.length] : undefined, i)))
+      const blobs = await Promise.all(frames.map((f, i) => renderFrame(f, i)))
       setRendered(blobs.map((blob, i) => ({ blob, url: URL.createObjectURL(blob), frame: frames[i] })))
       // Auto-save into the gallery (new set per build) — nothing gets lost
       setSavedSetId(null)
@@ -392,9 +424,13 @@ export default function StoriesPage() {
                     {set.script && <p className="mt-0.5 text-[11px] text-muted-foreground line-clamp-1">{set.script}</p>}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    <button type="button" onClick={() => openSetForEdit(set)} disabled={setBusyId === set.id} title="Открыть для правок"
+                      className="flex h-7 items-center justify-center gap-1 rounded-lg border border-[#E8E8E8] px-2 text-[11px] font-semibold text-muted-foreground hover:text-primary">
+                      {setBusyId === set.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />} Редактировать
+                    </button>
                     <button type="button" onClick={() => downloadSetZip(set)} disabled={setBusyId === set.id} title="Скачать ZIP"
                       className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#E8E8E8] text-muted-foreground hover:text-primary">
-                      {setBusyId === set.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                      <Download className="h-3.5 w-3.5" />
                     </button>
                     <button type="button" onClick={() => deleteSet(set)} disabled={setBusyId === set.id} title="Удалить серию"
                       className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#E8E8E8] text-muted-foreground hover:text-red-500 hover:border-red-200">

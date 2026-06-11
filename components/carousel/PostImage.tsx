@@ -7,6 +7,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { downscaleImage } from '@/lib/downscaleImage'
+import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 
 interface Brand {
   accentColor?: string; bg?: string; text?: string
@@ -117,8 +118,9 @@ export function PostImage({ text, projectId, brand }: { text: string; projectId?
                     {hooking ? '✨ Подбираю…' : '✨ Подобрать крючок'}
                   </button>
                 </div>
-                <textarea value={headline} onChange={(e) => setHeadline(e.target.value)} rows={2} maxLength={70} className="w-full resize-none rounded-lg border border-border bg-background p-2 text-sm" />
-                <p className="text-[11px] text-muted-foreground">Одна цепляющая фраза, чтобы захотелось дочитать. Весь текст поста — в подписи ниже. Слово в **звёздочках** = акцент.</p>
+                <VoiceTextarea value={headline} onChange={(v) => { setHeadline(v.slice(0, 70)); setImg(null) }} rows={2}
+                  placeholder="Крючок на картинке — впиши или надиктуй" />
+                <p className="text-[11px] text-muted-foreground">Одна цепляющая фраза, чтобы захотелось дочитать (можно надиктовать). Весь текст поста — в подписи ниже. Слово в **звёздочках** = акцент.</p>
               </div>
 
               {/* Caption — the full post goes UNDER the photo on Instagram, not on the image */}
