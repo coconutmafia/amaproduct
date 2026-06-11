@@ -282,7 +282,7 @@ export default function BrandPage() {
         </div>
         {recognized && !busy && (
           <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-green-600">
-            <CheckCircle2 className="h-4 w-4" /> Стиль распознан и применён — смотри превью справа
+            <CheckCircle2 className="h-4 w-4" /> Стиль распознан и применён — превью обновилось
           </p>
         )}
         <button type="button" onClick={() => analyze(forStory)} disabled={busy || urls.length === 0}
