@@ -13,6 +13,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { Loader2, Upload, Sparkles, ArrowLeft, ImageIcon, CheckCircle2, X } from 'lucide-react'
+import { downscaleImage } from '@/lib/downscaleImage'
 
 type BgStyle = 'paper' | 'solid' | 'gradient'
 interface Brand {
@@ -140,16 +141,24 @@ export default function BrandPage() {
     const setBusy = forStory ? setStoryUploading : setUploading
     setBusy(true)
     try {
-      const fd = new FormData()
-      fd.append('projectId', projectId)
-      fd.append('kind', kind)
-      Array.from(files).slice(0, 8).forEach((f) => fd.append('files', f))
-      const res = await fetch('/api/brand-kit/upload', { method: 'POST', body: fd })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Ошибка загрузки')
-      if (kind === 'logo') { set({ logoUrl: data.urls[0] }); toast.success('Логотип загружен') }
-      else if (forStory) { setStorySamples((s) => [...s, ...data.urls].slice(0, 8)); toast.success('Примеры сториз загружены') }
-      else { setSamples((s) => [...s, ...data.urls].slice(0, 8)); toast.success('Примеры загружены') }
+      // Downscale on-device (iPhone photos are 4–12 MB; Vercel caps the request
+      // body at ~4.5 MB) and upload ONE file per request so a batch never
+      // exceeds the limit either.
+      const all: string[] = []
+      for (const f of Array.from(files).slice(0, 8)) {
+        const small = await downscaleImage(f, kind === 'logo' ? 900 : 1600)
+        const fd = new FormData()
+        fd.append('projectId', projectId)
+        fd.append('kind', kind)
+        fd.append('files', small)
+        const res = await fetch('/api/brand-kit/upload', { method: 'POST', body: fd })
+        const data = await res.json().catch(() => ({} as { urls?: string[]; error?: string }))
+        if (!res.ok) throw new Error(data.error || (res.status === 413 ? 'Фото слишком большое' : `Не удалось загрузить (${res.status})`))
+        all.push(...(data.urls || []))
+      }
+      if (kind === 'logo') { set({ logoUrl: all[0] }); toast.success('Логотип загружен') }
+      else if (forStory) { setStorySamples((s) => [...s, ...all].slice(0, 8)); toast.success('Примеры сториз загружены') }
+      else { setSamples((s) => [...s, ...all].slice(0, 8)); toast.success('Примеры загружены') }
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось загрузить') }
     finally { setBusy(false) }
   }

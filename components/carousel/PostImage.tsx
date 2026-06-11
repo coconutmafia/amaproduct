@@ -6,6 +6,7 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { downscaleImage } from '@/lib/downscaleImage'
 
 interface Brand {
   accentColor?: string; bg?: string; text?: string
@@ -51,12 +52,14 @@ export function PostImage({ text, projectId, brand }: { text: string; projectId?
     if (!files?.[0] || !projectId) return
     setUploading(true)
     try {
+      // Downscale on-device: iPhone originals exceed Vercel's ~4.5 MB body cap.
+      const small = await downscaleImage(files[0], 2000)
       const fd = new FormData()
-      fd.append('projectId', projectId); fd.append('kind', 'post'); fd.append('files', files[0])
+      fd.append('projectId', projectId); fd.append('kind', 'post'); fd.append('files', small)
       const res = await fetch('/api/brand-kit/upload', { method: 'POST', body: fd })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error || 'Ошибка загрузки')
-      setPhotoUrl(d.urls[0]); setImg(null)
+      const d = await res.json().catch(() => ({} as { urls?: string[]; error?: string }))
+      if (!res.ok) throw new Error(d.error || (res.status === 413 ? 'Фото слишком большое' : `Не удалось загрузить (${res.status})`))
+      setPhotoUrl((d.urls || [])[0] || null); setImg(null)
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось загрузить') }
     finally { setUploading(false) }
   }

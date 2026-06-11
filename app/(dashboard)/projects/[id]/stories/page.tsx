@@ -10,6 +10,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { ArrowLeft, Upload, Loader2, Sparkles, Download } from 'lucide-react'
+import { downscaleImage } from '@/lib/downscaleImage'
 
 interface Brand { accentColor?: string; bg?: string; text?: string; bgStyle?: string; handle?: string; logoUrl?: string }
 interface Frame { headline: string; body: string; cta: string }
@@ -66,14 +67,21 @@ export default function StoriesPage() {
     if (!files || files.length === 0) return
     setUploading(true)
     try {
-      const fd = new FormData()
-      fd.append('projectId', projectId)
-      fd.append('kind', 'story')
-      Array.from(files).slice(0, 8).forEach((f) => fd.append('files', f))
-      const res = await fetch('/api/brand-kit/upload', { method: 'POST', body: fd })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Ошибка загрузки')
-      setPhotos((p) => [...p, ...data.urls].slice(0, 8))
+      // One downscaled file per request — iPhone originals blow Vercel's
+      // ~4.5 MB body cap (story frames render at 1080×1920, 2000px is plenty).
+      const all: string[] = []
+      for (const f of Array.from(files).slice(0, 8)) {
+        const small = await downscaleImage(f, 2000)
+        const fd = new FormData()
+        fd.append('projectId', projectId)
+        fd.append('kind', 'story')
+        fd.append('files', small)
+        const res = await fetch('/api/brand-kit/upload', { method: 'POST', body: fd })
+        const data = await res.json().catch(() => ({} as { urls?: string[]; error?: string }))
+        if (!res.ok) throw new Error(data.error || (res.status === 413 ? 'Фото слишком большое' : `Не удалось загрузить (${res.status})`))
+        all.push(...(data.urls || []))
+      }
+      setPhotos((p) => [...p, ...all].slice(0, 8))
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось загрузить') }
     finally { setUploading(false) }
   }
