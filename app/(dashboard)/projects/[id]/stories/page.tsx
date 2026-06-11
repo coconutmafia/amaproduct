@@ -35,9 +35,31 @@ export default function StoriesPage() {
     if (!projectId) return
     fetch(`/api/brand-kit?projectId=${projectId}`).then((r) => r.json()).then((d) => {
       if (d && !d.error && (d.accentColor || d.bg || d.handle || d.logoUrl)) {
-        setBrand({ accentColor: d.accentColor, bg: d.bg, text: d.text, bgStyle: d.bgStyle, handle: d.handle, logoUrl: d.logoUrl })
+        // Separate story style (brand_kit.story) wins over the posts style
+        const story = (d.kit?.story ?? {}) as { accentColor?: string; bg?: string; text?: string; bgStyle?: string }
+        setBrand({
+          accentColor: story.accentColor || d.accentColor,
+          bg: story.bg || d.bg,
+          text: story.text || d.text,
+          bgStyle: story.bgStyle || d.bgStyle,
+          handle: d.handle, logoUrl: d.logoUrl,
+        })
       }
     }).catch(() => {})
+  }, [projectId])
+
+  // Script handed over from the chat («Оформить сторис» on a stories answer)
+  useEffect(() => {
+    if (!projectId) return
+    try {
+      const key = `ama_stories_script_${projectId}`
+      const handed = localStorage.getItem(key)
+      if (handed) {
+        localStorage.removeItem(key)
+        setScript((s) => s || handed)
+        toast.message('Сценарий из чата подставлен — жми «Собрать сторис»')
+      }
+    } catch { /* ignore */ }
   }, [projectId])
 
   async function uploadPhotos(files: FileList | null) {

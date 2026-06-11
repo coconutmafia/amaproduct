@@ -8,6 +8,7 @@ import { ChatComposer } from '@/components/ui/ChatComposer'
 import { SaveButton } from '@/components/content/SaveButton'
 import { CarouselSlides } from '@/components/carousel/CarouselSlides'
 import { PostImage } from '@/components/carousel/PostImage'
+import { StoryDesignButton } from '@/components/carousel/StoryDesignButton'
 import { useChatPin } from '@/lib/useChatPin'
 import { cleanMarkdown } from '@/lib/cleanText'
 
@@ -266,6 +267,8 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
                   {genContext && <SaveToPlanButton projectId={id} ctx={genContext} text={text} />}
                   {(genContext?.type === 'carousel' || /слайд\s*\d/i.test(text)) ? (
                     <CarouselSlides sourceText={text} type="carousel" projectId={id} />
+                  ) : (genContext?.type === 'stories' || /(сторис|stories|кадр)\s*\d/i.test(text)) ? (
+                    <StoryDesignButton text={text} projectId={id} />
                   ) : (genContext?.type === 'post' || text.length > 150) ? (
                     <PostImage text={text} projectId={id} />
                   ) : null}

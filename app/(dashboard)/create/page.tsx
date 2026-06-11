@@ -8,6 +8,7 @@ import { ChatComposer } from '@/components/ui/ChatComposer'
 import { SaveButton } from '@/components/content/SaveButton'
 import { CarouselSlides } from '@/components/carousel/CarouselSlides'
 import { PostImage } from '@/components/carousel/PostImage'
+import { StoryDesignButton } from '@/components/carousel/StoryDesignButton'
 import { useChatPin } from '@/lib/useChatPin'
 import { cleanMarkdown } from '@/lib/cleanText'
 
@@ -171,6 +172,8 @@ export default function CreatePage() {
                   <SaveButton body={text} projectId={projectId} className="text-[11px] text-muted-foreground hover:text-primary" />
                   {/слайд\s*\d/i.test(text) ? (
                     <CarouselSlides sourceText={text} type="carousel" projectId={projectId || undefined} />
+                  ) : /(сторис|stories|кадр)\s*\d/i.test(text) ? (
+                    projectId ? <StoryDesignButton text={text} projectId={projectId} /> : null
                   ) : text.length > 150 ? (
                     <PostImage text={text} projectId={projectId || undefined} />
                   ) : null}
