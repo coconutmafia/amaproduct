@@ -201,23 +201,23 @@ export async function buildRAGContext(
   // 2. Supplement with the project's saved "Готовое" library (saved_content).
   //    Content the user keeps as "готовое" IS what the AI should learn the voice
   //    from — the same promise the user sees in the library badge. Deduped, ≤5.
+  //    No hard content_type filter: most chat saves land as 'other'/null, and a
+  //    voice example of another format still teaches the voice — we just PREFER
+  //    same-format rows by sorting them first.
   if (styleExamples.length < 5) {
     try {
-      const needed = 5 - styleExamples.length
-      const savedQuery = supabase
+      const { data: savedData } = await supabase
         .from('saved_content')
         .select('id, project_id, content_type, title, body, created_at')
         .eq('project_id', projectId)
         .order('created_at', { ascending: false })
-        .limit(needed + 4)
+        .limit(12)
 
-      if (contentType) {
-        savedQuery.eq('content_type', contentType)
-      }
+      const rows = ((savedData as Array<{ id: string; project_id: string | null; content_type: string | null; title: string | null; body: string; created_at: string }>) || [])
+        .sort((a, b) => (contentType ? Number(b.content_type === contentType) - Number(a.content_type === contentType) : 0))
 
-      const { data: savedData } = await savedQuery
       const seen = new Set(styleExamples.map(e => (e.body_text || '').slice(0, 80)))
-      for (const s of (savedData as Array<{ id: string; project_id: string | null; content_type: string | null; title: string | null; body: string; created_at: string }>) || []) {
+      for (const s of rows) {
         if (styleExamples.length >= 5) break
         const body = (s.body || '').trim()
         if (body.length < 40) continue
