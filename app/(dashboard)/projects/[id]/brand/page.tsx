@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Loader2, Upload, Sparkles, ArrowLeft, ImageIcon, CheckCircle2 } from 'lucide-react'
+import { Loader2, Upload, Sparkles, ArrowLeft, ImageIcon, CheckCircle2, X } from 'lucide-react'
 
 type BgStyle = 'paper' | 'solid' | 'gradient'
 interface Brand {
@@ -154,6 +154,25 @@ export default function BrandPage() {
     finally { setBusy(false) }
   }
 
+  async function removeSample(url: string, forStory: boolean) {
+    // Optimistic removal; restore on failure.
+    const prev = forStory ? storySamples : samples
+    const setList = forStory ? setStorySamples : setSamples
+    setList(prev.filter((u) => u !== url))
+    try {
+      const res = await fetch('/api/brand-kit/upload', {
+        method: 'DELETE', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ projectId, url, target: forStory ? 'story' : 'posts' }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Не удалось удалить')
+      toast.success('Фото удалено')
+    } catch (e) {
+      setList(prev)
+      toast.error(e instanceof Error ? e.message : 'Не удалось удалить')
+    }
+  }
+
   async function analyze(forStory = false) {
     const urls = forStory ? storySamples : samples
     if (urls.length === 0) { toast.error(forStory ? 'Сначала загрузи примеры оформления сториз' : 'Сначала загрузи примеры стиля'); return }
@@ -228,8 +247,14 @@ export default function BrandPage() {
         <p className="text-sm font-semibold text-foreground">1. {forStory ? 'Примеры оформления твоих сториз' : 'Примеры твоего стиля'}</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {urls.map((u, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img key={i} src={u} alt="" className="h-20 w-20 rounded-lg border border-border object-cover" />
+            <div key={i} className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={u} alt="" className="h-20 w-20 rounded-lg border border-border object-cover" />
+              <button type="button" onClick={() => removeSample(u, forStory)} title="Удалить фото"
+                className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-foreground/80 text-background shadow hover:bg-destructive">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
           ))}
           <label className="flex h-20 w-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border text-muted-foreground hover:border-primary/40 hover:text-foreground">
             {up ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
