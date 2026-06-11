@@ -169,11 +169,15 @@ export default function ContentPlanPage() {
             if (builtDays.length > 0) {
               // Fetch existing generated content for these days
               const dayNumbers = builtDays.map((d) => d.day)
+              // Newest first: the grid shows ONE item per day+format via find(),
+              // so without ordering a re-saved unit stayed hidden behind the
+              // old version (owner: «нажала „В план", галочка есть — в плане нет»).
               const { data: existingItems } = await supabase
                 .from('content_items')
                 .select('*')
                 .eq('project_id', id)
                 .in('day_number', dayNumbers)
+                .order('created_at', { ascending: false })
 
               const mergedDays = builtDays.map((d) => ({
                 ...d,
