@@ -58,10 +58,28 @@ export async function POST(request: Request) {
     if ('text' in body) update.brand_text_color = hex(body.text)
     if ('bgStyle' in body) update.brand_bg_style = ALLOWED_BG.includes(String(body.bgStyle)) ? String(body.bgStyle) : null
     if ('handle' in body) update.brand_handle = String(body.handle || '').trim().slice(0, 40) || null
+
+    // Separate STORY style — lives inside the brand_kit jsonb (no migration
+    // needed): merged over the main brand when rendering story frames.
+    const admin = createAdminClient()
+    if (body.story && typeof body.story === 'object') {
+      const s = body.story as Record<string, unknown>
+      const story: Record<string, unknown> = {}
+      if ('accentColor' in s) story.accentColor = hex(s.accentColor)
+      if ('bg' in s) story.bg = hex(s.bg)
+      if ('text' in s) story.text = hex(s.text)
+      if ('bgStyle' in s) story.bgStyle = ALLOWED_BG.includes(String(s.bgStyle)) ? String(s.bgStyle) : null
+      if (Object.keys(story).length > 0) {
+        const { data: row } = await admin.from('projects').select('brand_kit').eq('id', projectId).single()
+        const kit = (row?.brand_kit as Record<string, unknown>) || {}
+        const prevStory = (kit.story as Record<string, unknown>) || {}
+        update.brand_kit = { ...kit, story: { ...prevStory, ...story } }
+      }
+    }
+
     if (Object.keys(update).length === 0) return NextResponse.json({ ok: true })
     if (update.brand_accent_color || update.brand_bg_color) update.brand_kit_status = 'ready'
 
-    const admin = createAdminClient()
     const { error } = await admin.from('projects').update(update).eq('id', projectId)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true })

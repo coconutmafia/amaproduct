@@ -18,8 +18,9 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { projectId, sampleUrls } = (await request.json()) as { projectId?: string; sampleUrls?: string[] }
+    const { projectId, sampleUrls, target } = (await request.json()) as { projectId?: string; sampleUrls?: string[]; target?: string }
     if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
+    const forStory = target === 'story' // story style is stored separately (brand_kit.story)
     const urls = (sampleUrls || []).filter(Boolean).slice(0, 5)
     if (urls.length === 0) return NextResponse.json({ error: 'Сначала загрузи примеры стиля' }, { status: 400 })
 
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
         required: ['accent_color', 'bg_color', 'text_color', 'bg_style'],
       },
     }
-    const prompt = `Ты — бренд-дизайнер. Перед тобой примеры оформления контента блогера (сторис/посты/обложки). Определи его ФИРМЕННЫЙ СТИЛЬ, чтобы генерировать карусели/посты/сторис в этом же стиле. Верни через инструмент extract_brand_kit: accent_color (главный акцент для выделения ключевых слов, hex), bg_color (типичный фон, hex), text_color (цвет текста, hex), bg_style (paper если фактура бумаги, solid если однотонный фон, gradient если градиент), mood (1-3 слова), font_style (короткое описание шрифта), summary (1-2 предложения о стиле).`
+    const prompt = `Ты — бренд-дизайнер. Перед тобой примеры оформления ${forStory ? 'СТОРИС блогера' : 'контента блогера (посты/карусели/обложки)'}. Определи его ФИРМЕННЫЙ СТИЛЬ${forStory ? ' ИМЕННО ДЛЯ СТОРИС' : ''}, чтобы генерировать ${forStory ? 'оформление сторис' : 'карусели и посты'} в этом же стиле. Верни через инструмент extract_brand_kit: accent_color (главный акцент для выделения ключевых слов, hex), bg_color (типичный фон, hex), text_color (цвет текста, hex), bg_style (paper если фактура бумаги, solid если однотонный фон, gradient если градиент), mood (1-3 слова), font_style (короткое описание шрифта), summary (1-2 предложения о стиле).`
 
     let kit: Record<string, unknown> | null = null
     for (let attempt = 0; attempt < 3 && !kit; attempt++) {
@@ -77,9 +78,24 @@ export async function POST(request: Request) {
     const bg = hex(kit.bg_color, '#F3EEE7')
     const text = hex(kit.text_color, '#262321')
     const bgStyle = ALLOWED_BG.includes(String(kit.bg_style)) ? String(kit.bg_style) : 'solid'
-    const brandKit = { mood: String(kit.mood ?? ''), font_style: String(kit.font_style ?? ''), summary: String(kit.summary ?? ''), samples: urls }
-
     const admin = createAdminClient()
+
+    if (forStory) {
+      // Story style → brand_kit.story (merge; main brand columns untouched)
+      const story = { accentColor: accent, bg, text, bgStyle, mood: String(kit.mood ?? ''), font_style: String(kit.font_style ?? ''), summary: String(kit.summary ?? ''), samples: urls }
+      const { data: row } = await admin.from('projects').select('brand_kit').eq('id', projectId).single()
+      const existing = (row?.brand_kit as Record<string, unknown>) || {}
+      const { error } = await admin.from('projects').update({ brand_kit: { ...existing, story } }).eq('id', projectId)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ accentColor: accent, bg, text, bgStyle, story })
+    }
+
+    // Main (posts/carousels) style: keep any existing story block in the jsonb
+    const { data: prevRow } = await admin.from('projects').select('brand_kit').eq('id', projectId).single()
+    const prevStory = ((prevRow?.brand_kit as Record<string, unknown>) || {}).story
+    const brandKit: Record<string, unknown> = { mood: String(kit.mood ?? ''), font_style: String(kit.font_style ?? ''), summary: String(kit.summary ?? ''), samples: urls }
+    if (prevStory) brandKit.story = prevStory
+
     const { error } = await admin.from('projects').update({
       brand_accent_color: accent,
       brand_bg_color: bg,

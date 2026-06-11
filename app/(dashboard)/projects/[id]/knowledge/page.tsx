@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import { KnowledgePageClient } from '@/components/projects/KnowledgePageClient'
-import { ArrowLeft, Users, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Users, ChevronRight, Palette } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 
@@ -46,6 +46,19 @@ export default async function KnowledgePage({ params }: Props) {
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-foreground">Исследование аудитории</p>
             <p className="text-xs text-muted-foreground">Интервью с клиентами → расшифровка → карта смыслов. Загрузи аудио — AI разберёт боли и язык аудитории.</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+        </div>
+      </Link>
+
+      <Link href={`/projects/${id}/brand`} className="block rounded-xl border border-primary/25 bg-primary/5 p-4 hover:border-primary/40 transition-colors">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary shrink-0">
+            <Palette className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-foreground">Фирменный стиль</p>
+            <p className="text-xs text-muted-foreground">Примеры оформления → AI распознаёт цвета и настроение. Отдельно стиль постов и стиль сториз.</p>
           </div>
           <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
         </div>
