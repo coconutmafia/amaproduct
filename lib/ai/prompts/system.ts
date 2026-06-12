@@ -96,10 +96,21 @@ ${context.styleExamples.map((ex, i) => `--- Эталон ${i + 1} [${ex.content_
   // Content Brain: niche emotional vocabulary (injected only if niche detected)
   const nicheEmotions = project.niche ? getNicheEmotions(project.niche) : ''
 
+  // Standing rules the blogger dictated himself (📌 in chat) — top priority,
+  // above every other style rule.
+  const voiceRulesSection = context.voiceRules
+    ? `
+═══════════════════════════════════════
+📌 ЛИЧНЫЕ ПРАВИЛА ЭТОГО БЛОГЕРА (он задал их сам — НАРУШАТЬ НЕЛЬЗЯ, приоритет выше всех остальных правил)
+═══════════════════════════════════════
+${context.voiceRules}
+`
+    : ''
+
   return `Ты — профессиональный автор контента для онлайн-запусков.
 Ты пишешь ОТ ИМЕНИ конкретного блогера/эксперта, используя его голос, его истории, его материалы.
 Ты НЕ пишешь "маркетинговые тексты". Ты пишешь живые посты, которые звучат как реальный человек.
-
+${voiceRulesSection}
 ${BANNED_PHRASES}
 
 ═══════════════════════════════════════

@@ -24,7 +24,9 @@ export function SaveButton({ body, title, contentType, projectId, className }: P
     try {
       await saveToLibrary({ body, title, content_type: contentType, project_id: projectId })
       setState('saved')
-      toast.success('Сохранено в «Готовое»')
+      toast.success(projectId
+        ? 'Сохранено в «Готовое» ⭐ — AI этого проекта будет учиться на этом тексте'
+        : 'Сохранено в «Готовое»')
     } catch (e) {
       setState('idle')
       toast.error(e instanceof Error ? e.message : 'Не удалось сохранить')
@@ -37,8 +39,8 @@ export function SaveButton({ body, title, contentType, projectId, className }: P
       {state === 'saving'
         ? <><Loader2 className="h-3 w-3 animate-spin" /> Сохраняю…</>
         : state === 'saved'
-        ? <><BookmarkCheck className="h-3 w-3" /> Сохранено</>
-        : <><Bookmark className="h-3 w-3" /> Сохранить</>}
+        ? <><BookmarkCheck className="h-3 w-3" /> В Готовом</>
+        : <><Bookmark className="h-3 w-3" /> В Готовое</>}
     </button>
   )
 }

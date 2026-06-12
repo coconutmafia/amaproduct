@@ -9,6 +9,7 @@ import { SaveButton } from '@/components/content/SaveButton'
 import { CarouselSlides } from '@/components/carousel/CarouselSlides'
 import { PostImage } from '@/components/carousel/PostImage'
 import { StoryDesignButton } from '@/components/carousel/StoryDesignButton'
+import { VoiceRuleButton, maybeSuggestRule } from '@/components/chat/VoiceRuleButton'
 import { useChatPin } from '@/lib/useChatPin'
 import { cleanMarkdown } from '@/lib/cleanText'
 
@@ -98,6 +99,8 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
     setInput('')
     const next = [...messages, { role: 'user' as const, content }]
     setMessages(next)
+    // Durable style instruction? Offer one-tap save as a project rule.
+    maybeSuggestRule(content, id)
     setLoading(true)
     setStreaming('')
 
@@ -264,6 +267,7 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
                     {copiedIdx === i ? <><Check className="h-3 w-3" /> Скопировано</> : <><Copy className="h-3 w-3" /> Копировать</>}
                   </button>
                   <SaveButton body={text} projectId={id} className="text-[11px] text-muted-foreground hover:text-primary" />
+                  <VoiceRuleButton projectId={id} />
                   {genContext && <SaveToPlanButton projectId={id} ctx={genContext} text={text} />}
                   {(genContext?.type === 'carousel' || /слайд\s*\d/i.test(text)) ? (
                     <CarouselSlides sourceText={text} type="carousel" projectId={id} />

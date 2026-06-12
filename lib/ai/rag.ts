@@ -5,6 +5,9 @@ export interface RAGContext {
   systemKnowledge: Array<{ chunk_text: string; metadata: Record<string, unknown> }>
   projectContext: Array<{ chunk_text: string; material_type: string; metadata: Record<string, unknown> }>
   styleExamples: StyleExample[]
+  // Standing per-project rules the blogger dictated («не пиши…», «всегда…») —
+  // injected prominently into the system prompt, top priority.
+  voiceRules?: string
 }
 
 // Try OpenAI embedding — returns null if key missing or request fails
@@ -267,7 +270,20 @@ export async function buildRAGContext(
     }
   }
 
-  return { systemKnowledge: systemChunks, projectContext: projectChunks, styleExamples }
+  // ── Standing voice rules (owner-dictated, e.g. via 📌 in the chat) ────────
+  let voiceRules: string | undefined
+  try {
+    const { data: rulesRow } = await supabase
+      .from('project_materials')
+      .select('raw_content')
+      .eq('project_id', projectId)
+      .eq('material_type', 'voice_rules')
+      .maybeSingle()
+    const raw = (rulesRow?.raw_content as string | null)?.trim()
+    if (raw) voiceRules = raw.slice(0, 3000)
+  } catch { /* unavailable */ }
+
+  return { systemKnowledge: systemChunks, projectContext: projectChunks, styleExamples, voiceRules }
 }
 
 export function splitIntoChunks(text: string, chunkSize = 512, overlap = 50): string[] {

@@ -12,36 +12,64 @@ import { toast } from 'sonner'
 const DIRECT_LIMIT = 3.5 * 1024 * 1024
 const MAX_BYTES    = 20 * 1024 * 1024 // matches the server cap (~15+ min of audio)
 
+// Weak mobile networks drop long uploads: fetch hangs forever or dies with
+// Safari's «Load failed» (owner video). Every network call gets a hard timeout,
+// the direct path retries once, and errors become human.
+const NET_ERR = 'Сеть оборвалась при отправке записи — проверь интернет и надиктуй ещё раз'
+
+async function fetchT(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal })
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw new Error('Загрузка записи заняла слишком долго — проверь интернет и попробуй ещё раз')
+    throw new Error(NET_ERR)
+  } finally { clearTimeout(t) }
+}
+
 async function transcribeBlob(blob: Blob, mimeType: string): Promise<string> {
   const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm'
 
   if (blob.size <= DIRECT_LIMIT) {
-    const fd = new FormData()
-    fd.append('audio', blob, `voice.${ext}`)
-    const res = await fetch('/api/ai/transcribe-voice', { method: 'POST', body: fd })
-    const data = await res.json().catch(() => ({})) as { text?: string; error?: string }
-    if (!res.ok || data.error) throw new Error(data.error ?? 'Ошибка расшифровки')
-    return data.text ?? ''
+    const direct = async () => {
+      const fd = new FormData()
+      fd.append('audio', blob, `voice.${ext}`)
+      const res = await fetchT('/api/ai/transcribe-voice', { method: 'POST', body: fd }, 90_000)
+      const data = await res.json().catch(() => ({})) as { text?: string; error?: string }
+      if (!res.ok || data.error) throw new Error(data.error ?? 'Ошибка расшифровки')
+      return data.text ?? ''
+    }
+    try {
+      return await direct()
+    } catch (e) {
+      // One automatic retry on a network drop before giving up
+      if (e instanceof Error && (e.message === NET_ERR || e.message.includes('слишком долго'))) {
+        await new Promise((r) => setTimeout(r, 900))
+        return direct()
+      }
+      throw e
+    }
   }
 
   // Long recording → Storage route (bypasses the body-size limit)
-  const urlRes = await fetch('/api/ai/transcribe/upload-url', {
+  const urlRes = await fetchT('/api/ai/transcribe/upload-url', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ext }),
-  })
+  }, 30_000)
   const urlData = await urlRes.json().catch(() => ({})) as { path?: string; token?: string; error?: string }
   if (!urlRes.ok || !urlData.path || !urlData.token) throw new Error(urlData.error ?? 'Не удалось подготовить загрузку')
 
   const supabase = createClient()
   const { error: upErr } = await supabase.storage.from('audio-temp')
     .uploadToSignedUrl(urlData.path, urlData.token, blob)
-  if (upErr) throw new Error(`Ошибка загрузки записи: ${upErr.message}`)
+  if (upErr) throw new Error(NET_ERR)
 
   try {
-    const res = await fetch('/api/ai/transcribe', {
+    const res = await fetchT('/api/ai/transcribe', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ storagePath: urlData.path, ext, isLastChunk: true }), // isLastChunk → route deletes the temp file
-    })
+    }, 120_000)
     const data = await res.json().catch(() => ({})) as { text?: string; error?: string }
     if (!res.ok || data.error) throw new Error(data.error ?? 'Ошибка расшифровки')
     return (data.text ?? '').trim()
@@ -87,10 +115,17 @@ export function useVoiceRecorder(onText: (text: string) => void) {
       return
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // Mono + modest bitrate: a 1-minute clip drops from ~2MB to ~350KB, so
+      // uploads survive weak LTE (constraints are "ideal" — safe everywhere).
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } })
       streamRef.current = stream
       const mime = ['audio/webm', 'audio/mp4', 'audio/ogg'].find(m => MediaRecorder.isTypeSupported?.(m)) || ''
-      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
+      let rec: MediaRecorder
+      try {
+        rec = mime ? new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 48_000 }) : new MediaRecorder(stream, { audioBitsPerSecond: 48_000 })
+      } catch {
+        rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
+      }
       chunksRef.current = []
       discardRef.current = false
       rec.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
