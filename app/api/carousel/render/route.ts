@@ -90,7 +90,8 @@ export async function GET(request: Request) {
       const pos = (url.searchParams.get('pos') as SlideSpec['position']) || undefined
       const plate = url.searchParams.get('plate') === '0' ? false : undefined
       const tc = url.searchParams.get('tc') ? `#${url.searchParams.get('tc')}` : undefined
-      const spec: SlideSpec = { kind: 'story', index: 0, total: 1, headline: 'как я набрала **первую 1000** подписчиков', body: 'рассказываю по шагам в следующих сторис', action: 'смотри до конца', photoUrl: photo, position: pos, plate, textColor: tc }
+      const transparent = url.searchParams.get('transparent') === '1' || undefined
+      const spec: SlideSpec = { kind: 'story', index: 0, total: 1, headline: 'как я набрала **первую 1000** подписчиков', body: 'рассказываю по шагам в следующих сторис', action: 'смотри до конца', photoUrl: photo, position: pos, plate, textColor: tc, transparent }
       return png(spec, 'story', brand)
     }
     const demo: Dict = {

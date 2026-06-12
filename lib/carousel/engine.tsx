@@ -416,6 +416,9 @@ export interface SlideSpec {
   // clean text for uniform backgrounds, coloured via textColor.
   plate?: boolean
   textColor?: string
+  // Render on a TRANSPARENT background (no Backdrop) — used to burn brand text
+  // over a VIDEO with ffmpeg (the overlay PNG keeps its alpha channel).
+  transparent?: boolean
 }
 
 // ── Carousel templates ──────────────────────────────────────────────────────────
@@ -496,16 +499,24 @@ function Post({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Si
 // readable PLATES in the brand colours (no alien white gradients), key words in
 // the accent colour, and the text group position varies frame-to-frame.
 function Story({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Size }): ReactElement {
-  const overPhoto = !!s.photoUrl
+  // Over a photo OR over video (transparent overlay) the text needs the same
+  // treatment: plates in brand colours, or clean text in a picked colour.
+  const overPhoto = !!s.photoUrl || !!s.transparent
   const pos = s.position || 'bottom'
   const justify = pos === 'top' ? 'flex-start' : pos === 'center' ? 'center' : 'flex-end'
   const txt = theme.text
   const contentW = size.w - 2 * 72
   return (
     <div style={{ display: 'flex', position: 'relative', width: size.w, height: size.h }}>
-      {overPhoto ? <img src={s.photoUrl} width={size.w} height={size.h} style={{ objectFit: 'cover' }} alt="" /> : <Backdrop theme={theme} size={size} />}
+      {s.photoUrl ? (
+        <img src={s.photoUrl} width={size.w} height={size.h} style={{ objectFit: 'cover' }} alt="" />
+      ) : s.transparent ? (
+        <div style={{ display: 'flex' }} />
+      ) : (
+        <Backdrop theme={theme} size={size} />
+      )}
 
-      {/* single text group, position varies per frame */}
+      {/* single text group, varies per frame */}
       <div
         style={{
           display: 'flex',
