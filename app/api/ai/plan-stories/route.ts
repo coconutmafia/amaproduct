@@ -85,25 +85,43 @@ ${ragBlock || '(мало материалов)'}
     }
 
     const s = (v: unknown) => String(v ?? '').trim()
-    // HARD guard against invented CTAs (prompt alone wasn't enough — the owner
-    // kept getting «пиши в директ» из ниоткуда): a cta survives only if it
-    // actually appears in the blogger's own text.
+    // HARD guards against invented content (prompt alone wasn't enough — the
+    // owner kept getting «пиши в директ» из ниоткуда даже после запрета):
+    //  • cta survives only if it actually appears in the blogger's own text;
+    //  • known CTA phrases are stripped from headline/body too unless present
+    //    in the script;
+    //  • the LAST frame additionally drops trailing sentences absent from the
+    //    script (that's where the model liked to append a call-to-action).
     const norm = (t: string) => t.toLowerCase().replace(/\*\*/g, '').replace(/[^а-яёa-z0-9+\s]/gi, ' ').replace(/\s+/g, ' ').trim()
     const scriptN = norm(script)
-    const ctaFromScript = (cta: string): string => {
-      const c = norm(cta)
-      if (!c) return ''
-      if (scriptN.includes(c)) return cta
+    const inScript = (t: string): boolean => {
+      const c = norm(t)
+      if (!c) return false
+      if (scriptN.includes(c)) return true
       const words = c.split(' ').filter((w) => w.length > 2)
-      if (words.length === 0) return ''
+      if (words.length === 0) return false
       const hit = words.filter((w) => scriptN.includes(w)).length
-      return hit / words.length >= 0.7 ? cta : ''
+      return hit / words.length >= 0.7
+    }
+    const CTA_BLACKLIST = /(пиши|напиши|ответь|отвечай)[^.!?\n]{0,25}(директ|комментар|мне)|листай дальше|смотри до конца|ссылка в шапке|жми[^.!?\n]{0,20}(❤|🤍|сердеч|огон|плюс|\+)/i
+    const splitSentences = (t: string) => t.split(/\n+|(?<=[.!?…])\s+/).map((x) => x.trim()).filter(Boolean)
+    const stripInvented = (t: string, lastFrame: boolean): string => {
+      if (!t) return t
+      const kept = splitSentences(t).filter((sent) => {
+        if (CTA_BLACKLIST.test(sent) && !inScript(sent)) return false
+        if (lastFrame && !inScript(sent)) return false
+        return true
+      })
+      return kept.length > 0 ? kept.join('\n') : (lastFrame ? '' : t)
     }
     const stories = raw
       .map((r, i) => {
         const p = s(r.position).toLowerCase()
+        const last = i === raw.length - 1
         return {
-          headline: s(r.headline), body: s(r.body), cta: ctaFromScript(s(r.cta)),
+          headline: stripInvented(s(r.headline), last),
+          body: stripInvented(s(r.body), last),
+          cta: inScript(s(r.cta)) ? s(r.cta) : '',
           // Validate position; alternate as fallback so the series never stamps
           position: (['top', 'center', 'bottom'].includes(p) ? p : i % 2 === 0 ? 'bottom' : 'top') as 'top' | 'center' | 'bottom',
         }

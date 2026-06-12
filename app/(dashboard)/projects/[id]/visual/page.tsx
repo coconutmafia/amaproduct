@@ -8,17 +8,53 @@
 // is for when the text is already written (or pasted from elsewhere).
 
 import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { ArrowLeft, Images, GalleryHorizontalEnd, ImageIcon, ChevronRight, Palette } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { ArrowLeft, Images, GalleryHorizontalEnd, ImageIcon, ChevronRight, Palette, Bookmark, X } from 'lucide-react'
 import { PostImage } from '@/components/carousel/PostImage'
 import { CarouselSlides } from '@/components/carousel/CarouselSlides'
+import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
+
+interface SavedItem { id: string; title: string | null; body: string; content_type: string | null; created_at: string }
 
 export default function VisualPage() {
   const { id: projectId } = useParams<{ id: string }>()
+  const router = useRouter()
+  const supabase = createClient()
   const [postText, setPostText] = useState('')
   const [carouselText, setCarouselText] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [saved, setSaved] = useState<SavedItem[]>([])
+  const [savedLoading, setSavedLoading] = useState(false)
+
+  // «Выбрать из Готового» — pick a saved text and route it to the right tool
+  async function openPicker() {
+    setPickerOpen(true)
+    if (saved.length > 0) return
+    setSavedLoading(true)
+    const { data } = await supabase.from('saved_content')
+      .select('id, title, body, content_type, created_at')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+      .limit(30)
+    setSaved((data ?? []) as SavedItem[])
+    setSavedLoading(false)
+  }
+
+  function pickSaved(it: SavedItem) {
+    setPickerOpen(false)
+    const isStories = it.content_type === 'stories' || /(сторис|stories|кадр)\s*\d/i.test(it.body)
+    const isCarousel = it.content_type === 'carousel' || /слайд\s*\d/i.test(it.body)
+    if (isStories) {
+      try { localStorage.setItem(`ama_stories_script_${projectId}`, it.body) } catch { /* ignore */ }
+      router.push(`/projects/${projectId}/stories`)
+      return
+    }
+    if (isCarousel) { setCarouselText(it.body); toast.message('Текст подставлен в «Пост-карусель» ниже') }
+    else { setPostText(it.body); toast.message('Текст подставлен в «Картинку к посту» ниже') }
+  }
 
   // Text handed over from «Готовое» («Оформить визуально» on a saved item)
   useEffect(() => {
@@ -47,6 +83,11 @@ export default function VisualPage() {
         <Link href={`/projects/${projectId}/brand`} className="inline-flex items-center gap-1 text-primary underline"><Palette className="h-3.5 w-3.5" /> Настроить стиль</Link>
       </p>
 
+      <button type="button" onClick={openPicker}
+        className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/5 px-3.5 py-2.5 text-sm font-semibold text-primary hover:bg-primary/10">
+        <Bookmark className="h-4 w-4" /> Выбрать текст из «Готового»
+      </button>
+
       {/* 1. Story series → builder */}
       <Link href={`/projects/${projectId}/stories`} className="mt-5 block rounded-2xl border border-border bg-card p-4 hover:border-primary/40 transition-colors">
         <div className="flex items-center gap-3">
@@ -72,9 +113,10 @@ export default function VisualPage() {
             <p className="text-xs text-muted-foreground">Крючок на изображении (своё фото или фирменный фон) + весь текст в подпись.</p>
           </div>
         </div>
-        <textarea value={postText} onChange={(e) => setPostText(e.target.value)} rows={4}
-          placeholder="Вставь текст поста — AI подберёт цепляющий крючок для картинки"
-          className="mt-3 w-full resize-y rounded-lg border border-border bg-background p-3 text-sm" />
+        <div className="mt-3">
+          <VoiceTextarea value={postText} onChange={setPostText} rows={4}
+            placeholder="Вставь ГОТОВЫЙ текст поста (или надиктуй заголовок для картинки) — AI подберёт дословный крючок из текста" />
+        </div>
         {postText.trim().length > 30 && <PostImage text={postText.trim()} projectId={projectId} />}
         {postText.trim().length > 0 && postText.trim().length <= 30 && (
           <p className="mt-1 text-[11px] text-muted-foreground">Вставь текст подлиннее — из пары слов крючок не собрать.</p>
@@ -92,15 +134,38 @@ export default function VisualPage() {
             <p className="text-xs text-muted-foreground">Текст карусели → готовые слайды-картинки (обложка, слайды, финал) + ZIP.</p>
           </div>
         </div>
-        <textarea value={carouselText} onChange={(e) => setCarouselText(e.target.value)} rows={5}
-          placeholder={'Вставь текст карусели — можно прямо «Слайд 1: … Слайд 2: …» или просто связный текст, AI разложит на слайды'}
-          className="mt-3 w-full resize-y rounded-lg border border-border bg-background p-3 text-sm" />
+        <div className="mt-3">
+          <VoiceTextarea value={carouselText} onChange={setCarouselText} rows={5}
+            placeholder={'Вставь ГОТОВЫЙ текст карусели — можно прямо «Слайд 1: … Слайд 2: …» или связный текст; AI разложит ДОСЛОВНО, без переписывания'} />
+        </div>
         {carouselText.trim().length > 30 && <CarouselSlides sourceText={carouselText.trim()} type="carousel" projectId={projectId} />}
       </section>
 
       <p className="mt-4 text-[11px] text-muted-foreground">
         Подсказка: эти же кнопки появляются в чате «Создать контент» под сгенерированным текстом — там текст писать не нужно.
       </p>
+
+      {pickerOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" onClick={() => setPickerOpen(false)}>
+          <div className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl bg-background shadow-xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <p className="text-sm font-bold text-foreground">Из «Готового»</p>
+              <button type="button" onClick={() => setPickerOpen(false)} className="rounded-lg p-1 text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="flex-1 overflow-auto p-3 space-y-2">
+              {savedLoading && <p className="py-8 text-center text-sm text-muted-foreground">Загружаю…</p>}
+              {!savedLoading && saved.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">В «Готовом» этого проекта пока пусто.</p>}
+              {saved.map((it) => (
+                <button key={it.id} type="button" onClick={() => pickSaved(it)}
+                  className="block w-full rounded-xl border border-border p-3 text-left hover:border-primary/40">
+                  <p className="text-sm font-semibold text-foreground line-clamp-1">{it.title || 'Без названия'}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{it.body}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

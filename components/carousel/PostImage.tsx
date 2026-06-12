@@ -30,7 +30,7 @@ export function PostImage({ text, projectId, brand }: { text: string; projectId?
   const [open, setOpen] = useState(false)
   const [headline, setHeadline] = useState(() => firstLine(text))
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
-  const [fmt, setFmt] = useState<'post45' | 'post'>('post45')
+  const [fmt, setFmt] = useState<'post45' | 'post' | 'postWide'>('post45')
   const [uploading, setUploading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [img, setImg] = useState<{ url: string; blob: Blob } | null>(null)
@@ -47,6 +47,10 @@ export function PostImage({ text, projectId, brand }: { text: string; projectId?
         if (r.ok && (d.accentColor || d.bg || d.handle || d.logoUrl)) setEffBrand({ accentColor: d.accentColor, bg: d.bg, text: d.text, bgStyle: d.bgStyle, handle: d.handle, logoUrl: d.logoUrl })
       } catch { /* default theme */ }
     }
+    // The default headline is just the first line — for real posts that's the
+    // worst hook (owner pasted a post and got its opening words on the cover).
+    // Auto-pick a proper hook right away; she can still edit or re-roll it.
+    if (headline === firstLine(text) && text.trim().length > 60) void suggestHook()
   }
 
   async function uploadPhoto(files: FileList | null) {
@@ -143,9 +147,9 @@ export function PostImage({ text, projectId, brand }: { text: string; projectId?
                 {photoUrl && <button type="button" onClick={() => { setPhotoUrl(null); setImg(null) }} className="text-xs text-muted-foreground hover:text-foreground">убрать (фирменный фон)</button>}
               </div>
 
-              <div className="flex items-center gap-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
                 <span className="text-muted-foreground">Формат:</span>
-                {([['post45', '4:5 (лента)'], ['post', '1:1 (квадрат)']] as const).map(([v, label]) => (
+                {([['post45', '4:5 (лента)'], ['post', '1:1 (квадрат)'], ['postWide', 'Горизонтальный']] as const).map(([v, label]) => (
                   <button key={v} type="button" onClick={() => { setFmt(v); setImg(null) }}
                     className={`rounded-lg px-3 py-1.5 font-medium ${fmt === v ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground hover:text-foreground'}`}>{label}</button>
                 ))}

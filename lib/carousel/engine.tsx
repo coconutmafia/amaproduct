@@ -16,6 +16,7 @@ export const FORMATS = {
   carousel: { w: 1080, h: 1350 }, // 4:5
   post: { w: 1080, h: 1080 }, // 1:1
   post45: { w: 1080, h: 1350 }, // 4:5 single post (best for IG feed reach)
+  postWide: { w: 1080, h: 566 }, // 1.91:1 landscape (owner request)
   story: { w: 1080, h: 1920 }, // 9:16
 } as const
 export type FormatKey = keyof typeof FORMATS
@@ -207,9 +208,7 @@ export function RichText({ text, o }: { text: string; o: RichOpts }): ReactEleme
 // одного слова на новую строчку — чтоб такого не было»).
 type WrapTok = { word: string; em: boolean }
 
-function wrapWords(text: string, size: number, maxWidth: number): WrapTok[][] {
-  const tokens = tokenize(text.trim())
-  const maxChars = Math.max(8, Math.floor(maxWidth / (size * 0.62)))
+function wrapOnce(tokens: ReturnType<typeof tokenize>, maxChars: number): WrapTok[][] {
   const lines: WrapTok[][] = [[]]
   let cur = 0
   for (const t of tokens) {
@@ -220,10 +219,25 @@ function wrapWords(text: string, size: number, maxWidth: number): WrapTok[][] {
     lines[lines.length - 1].push({ word: t.word, em: t.em })
     cur += wlen
   }
-  const out = lines.filter((l) => l.length > 0)
-  // Widow-fix: pull a word down from the previous line so the last line has ≥2
+  return lines.filter((l) => l.length > 0)
+}
+
+const hasWidow = (lines: WrapTok[][]) => lines.length > 1 && lines[lines.length - 1].length === 1
+
+function wrapWords(text: string, size: number, maxWidth: number): WrapTok[][] {
+  const tokens = tokenize(text.trim())
+  const maxChars = Math.max(8, Math.floor(maxWidth / (size * 0.62)))
+  // Widow-fix, take 2 (owner: «перенос одного слова — чтоб такого не было», a
+  // 2-word previous line escaped the old pull-down fix): re-wrap with a
+  // slightly narrower measure until the lone last word disappears, then fall
+  // back to pulling a word down.
+  let out = wrapOnce(tokens, maxChars)
+  for (let shrink = 2; hasWidow(out) && shrink <= 8; shrink += 2) {
+    const retry = wrapOnce(tokens, Math.max(8, maxChars - shrink))
+    if (!hasWidow(retry)) { out = retry; break }
+  }
   for (let i = out.length - 1; i > 0; i--) {
-    if (out[i].length === 1 && out[i - 1].length >= 3) {
+    if (out[i].length === 1 && out[i - 1].length >= 2) {
       const moved = out[i - 1].pop()
       if (moved) out[i].unshift(moved)
     }

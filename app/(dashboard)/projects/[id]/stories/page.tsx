@@ -346,6 +346,7 @@ export default function StoriesPage() {
 
       <section className="mt-5 rounded-2xl border border-border bg-card p-4">
         <p className="text-sm font-semibold text-foreground">1. Фото (по одному на кадр; если меньше — повторятся)</p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">В каком порядке загрузишь — в таком и оформит: 1-е фото = 1-й кадр.</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {photos.map((u, i) => (
             // eslint-disable-next-line @next/next/no-img-element
