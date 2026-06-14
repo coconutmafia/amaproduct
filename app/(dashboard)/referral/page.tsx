@@ -98,10 +98,10 @@ export default function ReferralPage() {
     )
   }
 
-  const plan = (stats?.subscription_tier ?? 'free') as SubscriptionPlan
+  const plan = (stats?.subscription_tier ?? 'trial') as SubscriptionPlan
   const planCfg = PLAN_CONFIG[plan]
   const monthlyUsed = stats?.generations_used ?? 0
-  const monthlyLimit = stats?.monthly_limit ?? 5
+  const monthlyLimit = stats?.monthly_limit ?? 300
   const bonusRemaining = stats?.bonus_generations ?? 0
   const monthlyPct = Math.min(100, Math.round((monthlyUsed / monthlyLimit) * 100))
   const resetDate = stats?.generations_reset_at

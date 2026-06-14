@@ -76,7 +76,7 @@ export async function GET() {
       email:            u.email,
       name:             u.full_name,
       role:             u.role,
-      tier:             u.subscription_tier ?? 'free',
+      tier:             u.subscription_tier ?? 'trial',
       trialEndsAt:      u.subscription_expires_at,
       trialActive,
       generationsUsed:  gens,
@@ -114,18 +114,21 @@ export async function PATCH(request: Request) {
   const months = body.months ?? 2
   let patch: Record<string, unknown>
   if (months <= 0) {
-    patch = { subscription_tier: 'free', subscription_expires_at: null }
+    // Revoke: pause access (keep data). 'free' is no longer a valid tier.
+    patch = { subscription_tier: 'trial', subscription_status: 'paused', subscription_expires_at: null, trial_ends_at: null }
   } else {
     const ends = new Date()
     ends.setMonth(ends.getMonth() + months)
-    patch = { subscription_tier: 'trial', subscription_expires_at: ends.toISOString() }
+    // Grant/extend a trial — write both the new trial_ends_at and the legacy
+    // subscription_expires_at the analytics list still reads.
+    patch = { subscription_tier: 'trial', subscription_status: 'trialing', subscription_expires_at: ends.toISOString(), trial_ends_at: ends.toISOString() }
   }
 
   const { data, error } = await supabase
     .from('profiles')
     .update(patch)
     .eq('id', body.userId)
-    .select('id, subscription_tier, subscription_expires_at')
+    .select('id, subscription_tier, subscription_status, subscription_expires_at, trial_ends_at')
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

@@ -42,13 +42,35 @@ export async function checkAndConsumeGeneration(userId: string): Promise<Generat
     .eq('id', userId)
     .single()
 
-  const plan = (profile?.subscription_tier ?? 'free') as SubscriptionPlan
-  const monthlyLimit = PLAN_CONFIG[plan]?.generations ?? 5
+  const plan = (profile?.subscription_tier ?? 'trial') as SubscriptionPlan
+  const monthlyLimit = PLAN_CONFIG[plan]?.generations ?? 300
   const monthlyUsed = profile?.generations_used ?? 0
   const bonusRemaining = profile?.bonus_generations ?? 0
   const remaining = Math.max(0, monthlyLimit - monthlyUsed) + bonusRemaining
 
   return { allowed: allowed as boolean, remaining, monthlyUsed, monthlyLimit, bonusRemaining }
+}
+
+// ──────────────────────────────────────────────────────
+// Enforcement switch — OFF until payment is live (post-launch).
+// Pre-launch: usage is METERED (counters tick, real data accrues) but nobody is
+// ever BLOCKED, so deploying gating cannot lock out the ~50 free-trial users.
+// Flip to hard gating by setting env BILLING_ENFORCED='true' once tariffs +
+// payment + the upgrade screen are ready. See PRICING.md.
+// ──────────────────────────────────────────────────────
+export const BILLING_ENFORCED = process.env.BILLING_ENFORCED === 'true'
+
+export interface GateResult extends GenerationCheckResult {
+  blocked: boolean // true ONLY when enforcement is live AND the quota is exhausted
+}
+
+// One call for every content-PRODUCING route (a finished content unit, a story
+// series, a video overlay). Consumes one unit and reports whether to block.
+// Refinement/edits, slide/image rendering of already-counted content, and brand
+// setup are NOT metered (fair-use) — don't call this there.
+export async function gateContentUnit(userId: string): Promise<GateResult> {
+  const res = await checkAndConsumeGeneration(userId)
+  return { ...res, blocked: BILLING_ENFORCED && !res.allowed }
 }
 
 // Refund one generation — called when a consumed generation produced nothing
@@ -78,8 +100,8 @@ export async function getGenerationStats(userId: string): Promise<GenerationChec
     .eq('id', userId)
     .single()
 
-  const plan = (profile?.subscription_tier ?? 'free') as SubscriptionPlan
-  const monthlyLimit = PLAN_CONFIG[plan]?.generations ?? 5
+  const plan = (profile?.subscription_tier ?? 'trial') as SubscriptionPlan
+  const monthlyLimit = PLAN_CONFIG[plan]?.generations ?? 300
   const monthlyUsed = profile?.generations_used ?? 0
   const bonusRemaining = profile?.bonus_generations ?? 0
   const remaining = Math.max(0, monthlyLimit - monthlyUsed) + bonusRemaining

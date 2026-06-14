@@ -10,6 +10,7 @@ import { CarouselSlides } from '@/components/carousel/CarouselSlides'
 import { PostImage } from '@/components/carousel/PostImage'
 import { StoryDesignButton } from '@/components/carousel/StoryDesignButton'
 import { VoiceRuleButton, maybeSuggestRule } from '@/components/chat/VoiceRuleButton'
+import { showUpgrade } from '@/components/billing/UpgradeDialog'
 import { useChatPin } from '@/lib/useChatPin'
 import { cleanMarkdown } from '@/lib/cleanText'
 
@@ -115,6 +116,7 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
         body: JSON.stringify({ projectId: id, conversationType: 'assistant', messages: next, ...(genContext ? { genFormat: genContext.type } : {}) }),
         signal: controller.signal,
       })
+      if (res.status === 402) { showUpgrade('limit'); return }
       if (!res.ok) {
         const j = await res.json().catch(() => ({})) as { error?: string }
         throw new Error(j.error ?? 'Ошибка')

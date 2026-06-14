@@ -15,7 +15,7 @@ export default async function PricingPage() {
     .eq('id', session.user.id)
     .single()
 
-  const currentPlan = (profile?.subscription_tier ?? 'free') as SubscriptionPlan
+  const currentPlan = (profile?.subscription_tier ?? 'trial') as SubscriptionPlan
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto">

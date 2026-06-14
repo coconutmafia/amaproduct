@@ -5,6 +5,7 @@ import { ImageResponse } from 'next/og'
 import { execFile } from 'node:child_process'
 import { writeFile, readFile, unlink } from 'node:fs/promises'
 import { loadFonts, renderSlide, themeFromBrand, FORMATS, type SlideSpec } from '@/lib/carousel/engine'
+import { gateContentUnit, refundGeneration } from '@/lib/generations'
 
 // Burns the blogger's brand-styled text ONTO a video (owner: «загружаешь видео,
 // а он на него текст накладывает»). The overlay PNG comes from our own slide
@@ -33,6 +34,7 @@ export async function POST(request: Request) {
   const pngPath = `${tmp}-overlay.png`
   const outPath = `${tmp}-out.mp4`
   const cleanup = () => Promise.allSettled([unlink(inPath), unlink(pngPath), unlink(outPath)])
+  let consumed = false
 
   try {
     const supabase = await createClient()
@@ -51,6 +53,13 @@ export async function POST(request: Request) {
       .eq('id', projectId).eq('owner_id', user.id).single()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
+    // Burning text onto a video is an expensive content unit (ffmpeg + render).
+    const gate = await gateContentUnit(user.id)
+    if (gate.blocked) return NextResponse.json({ error: 'limit_reached', code: 'limit_reached', monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit }, { status: 402 })
+    consumed = true
+    // Any failure past this point produced no video — refund the consumed unit.
+    const fail = async (msg: string, status: number) => { await refundGeneration(user.id); return NextResponse.json({ error: msg }, { status }) }
+
     // Brand: story style (brand_kit.story) wins over the posts style
     const kit = (project.brand_kit as Record<string, unknown>) || {}
     const story = (kit.story as Record<string, string>) || {}
@@ -66,11 +75,11 @@ export async function POST(request: Request) {
     // 1. Download the source video
     const admin = createAdminClient()
     const { data: signed, error: signErr } = await admin.storage.from('project-brand').createSignedUrl(videoPath, 600)
-    if (signErr || !signed?.signedUrl) return NextResponse.json({ error: 'Видео не найдено в хранилище' }, { status: 404 })
+    if (signErr || !signed?.signedUrl) return await fail('Видео не найдено в хранилище', 404)
     const vidRes = await fetch(signed.signedUrl)
-    if (!vidRes.ok) return NextResponse.json({ error: 'Не удалось скачать видео' }, { status: 500 })
+    if (!vidRes.ok) return await fail('Не удалось скачать видео', 500)
     const vidBuf = Buffer.from(await vidRes.arrayBuffer())
-    if (vidBuf.length > MAX_INPUT) return NextResponse.json({ error: 'Видео слишком большое (макс ~60 МБ / ~60-90 сек)' }, { status: 400 })
+    if (vidBuf.length > MAX_INPUT) return await fail('Видео слишком большое (макс ~60 МБ / ~60-90 сек)', 400)
     await writeFile(inPath, vidBuf)
 
     // 2. Render the transparent text overlay with our slide engine
@@ -106,13 +115,20 @@ export async function POST(request: Request) {
     const outBuf = await readFile(outPath)
     const outStorage = `${projectId}/videos-out/${Date.now()}.mp4`
     const { error: upErr } = await admin.storage.from('project-brand').upload(outStorage, outBuf, { contentType: 'video/mp4', upsert: true })
-    if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 })
+    if (upErr) return await fail(upErr.message, 500)
     await admin.storage.from('project-brand').remove([videoPath]).catch(() => {})
 
     const url = admin.storage.from('project-brand').getPublicUrl(outStorage).data.publicUrl
     return NextResponse.json({ url })
   } catch (e) {
     console.error('[video/overlay]', e instanceof Error ? e.message : e)
+    if (consumed) {
+      try {
+        const sb = await createClient()
+        const { data: { user: u } } = await sb.auth.getUser()
+        if (u) await refundGeneration(u.id)
+      } catch { /* ignore */ }
+    }
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Не удалось обработать видео' }, { status: 500 })
   } finally {
     await cleanup()

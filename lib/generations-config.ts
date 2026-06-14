@@ -1,73 +1,125 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// PURE CONFIG — no server imports, safe to use in Client Components
+// PURE CONFIG — no server imports, safe to use in Client Components.
+// SINGLE SOURCE OF TRUTH for plans, prices, limits and trial length.
+// Server-side gating + metering live in lib/generations.ts (which re-exports these).
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type SubscriptionPlan = 'free' | 'starter' | 'pro' | 'agency'
+// DB-level access level (profiles.subscription_tier). 'trial' is the free 2-month
+// experience; the three paid plans are the approved pricing (PRICING.md).
+export type SubscriptionTier = 'trial' | 'solo' | 'pro' | 'producer'
+export type PaidPlan = Exclude<SubscriptionTier, 'trial'>
 
-export const PLAN_CONFIG: Record<SubscriptionPlan, {
+// Subscription lifecycle (profiles.subscription_status).
+//  trialing  — inside the free 2-month trial
+//  active    — paying, current
+//  past_due  — payment failed / awaiting retry
+//  view_only — grace week after trial/expiry: content visible, generation off
+//  paused    — fully paused (no access to generation), data kept
+//  canceled  — user canceled (runs until current_period_end, then paused)
+export type SubscriptionStatus =
+  | 'trialing' | 'active' | 'past_due' | 'view_only' | 'paused' | 'canceled'
+
+// Back-compat alias for older imports.
+export type SubscriptionPlan = SubscriptionTier
+
+export interface PlanInfo {
   label: string
-  price: number
-  generations: number
-  projects: number
+  price: number        // $/mo
+  priceRub: number     // ₽/mo
+  generations: number  // monthly content-unit limit (fair-use ceiling for pro/producer)
+  unlimited: boolean   // true → render "безлимит (fair use)" instead of the number
+  projects: number     // -1 = effectively unlimited (grown via add-ons)
+  badge: string | null
+  paid: boolean
   features: string[]
-}> = {
-  free: {
-    label: 'Free',
+}
+
+export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
+  trial: {
+    label: 'Пробный период',
     price: 0,
-    generations: 5,
-    projects: 1,
+    priceRub: 0,
+    generations: 300,
+    unlimited: false,
+    projects: 3,
+    badge: null,
+    paid: false,
     features: [
-      '5 запросов к AI в месяц',
-      '1 проект',
-      'Генератор контента (посты, Reels, Stories)',
-      'Загрузка материалов проекта',
+      'Полный доступ на 2 месяца',
+      '~300 единиц контента в месяц',
+      'Весь визуал и методология',
     ],
   },
-  starter: {
-    label: 'Starter',
-    price: 19,
-    generations: 80,
+  solo: {
+    label: 'Соло',
+    price: 49,
+    priceRub: 4900,
+    generations: 300,
+    unlimited: false,
     projects: 1,
+    badge: 'Оптимальный',
+    paid: true,
     features: [
-      '80 запросов к AI в месяц',
-      '1 проект',
-      'Все форматы контента',
-      'Загрузка материалов проекта',
-      'История созданного контента',
+      '1 проект (блог)',
+      '~300 единиц контента в месяц',
+      'Весь визуал: слайды, бренд-кит, сторис по фото, видео с текстом',
+      'Голос + план прогрева + контент-план + ассистент + тренды + библиотека',
+      'Анализ конкурентов и Instagram (до 5)',
     ],
   },
   pro: {
-    label: 'Pro',
-    price: 49,
-    generations: 250,
-    projects: 5,
+    label: 'Про',
+    price: 149,
+    priceRub: 14900,
+    generations: 2000,
+    unlimited: true,
+    projects: 3,
+    badge: null,
+    paid: true,
     features: [
-      '250 запросов к AI в месяц',
-      '5 проектов',
-      'Все форматы контента',
-      'Анализ стиля твоего контента',
-      'Анализ аккаунта',
-      'История созданного контента',
-      'Ускоренная обработка запросов',
+      '3 проекта',
+      'Безлимит генераций (fair use)',
+      'Всё из тарифа Соло',
+      'Автопостинг Telegram (при запуске)',
+      'Видео-сторис / рилз с титрами (при запуске)',
+      '+1 место в команду',
+      'Приоритетная поддержка',
     ],
   },
-  agency: {
-    label: 'Agency',
-    price: 129,
-    generations: 800,
-    projects: -1,
+  producer: {
+    label: 'Продюсер',
+    price: 299,
+    priceRub: 29900,
+    generations: 8000,
+    unlimited: true,
+    projects: 10,
+    badge: null,
+    paid: true,
     features: [
-      '800 запросов к AI в месяц',
-      'Неограниченное количество проектов',
-      'Все форматы контента',
-      'Анализ стиля твоего контента',
-      'Анализ аккаунта',
-      'Ускоренная обработка запросов',
-      'Ранний доступ к новым функциям',
+      '10 проектов (расширяется пакетами)',
+      'Безлимит генераций (fair use)',
+      'Команда 3–5 + клиентский доступ',
+      'Анализ конкурентов до 10 на проект',
+      'Автопостинг + видео',
+      'Приоритет + персональный менеджер',
     ],
   },
 }
 
+// The plans shown as choosable cards on the pricing/upgrade screen (trial excluded).
+export const PAID_PLANS: PaidPlan[] = ['solo', 'pro', 'producer']
+
+// Free trial length (kept in one place — also encoded in migration 016).
+export const TRIAL_DAYS = 60
+
+// Grace window after the trial/period ends before the project is paused.
+export const VIEW_ONLY_GRACE_DAYS = 7
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEGACY — 2-level referral rewards. The MLM model is being retired in favour of
+// "месяц в подарок" + producer partnership (built alongside billing, Фаза 3).
+// Kept only so the hidden /referral page + route still compile until then.
+// ─────────────────────────────────────────────────────────────────────────────
 export const REFERRAL_REWARDS = {
   invitee_signup:      10,
   referrer_l1_signup:  10,

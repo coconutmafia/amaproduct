@@ -13,6 +13,7 @@ import { ArrowLeft, Upload, Loader2, Sparkles, Download, Trash2, Wand2 } from 'l
 import { downscaleImage } from '@/lib/downscaleImage'
 import { analyzePhotoBands, pickPlacement, type PhotoBands } from '@/lib/photoBands'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
+import { showUpgrade } from '@/components/billing/UpgradeDialog'
 
 interface Brand { accentColor?: string; bg?: string; text?: string; bgStyle?: string; handle?: string; logoUrl?: string }
 interface Frame {
@@ -308,6 +309,7 @@ export default function StoriesPage() {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ projectId, script, count: photos.length || 5 }),
       })
+      if (planRes.status === 402) { showUpgrade('limit'); return }
       const planData = await planRes.json()
       if (!planRes.ok) throw new Error(planData.error || 'Ошибка раскладки')
       const planned = (planData.stories || []) as Frame[]

@@ -4,6 +4,7 @@ import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt } from '@/lib/ai/prompts/system'
 import { AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
+import { gateContentUnit, refundGeneration } from '@/lib/generations'
 import type { Message } from '@/types'
 
 // Vercel Pro allows up to 300s. Multi-item answers ("5 рилзов") on top of a
@@ -25,6 +26,7 @@ const STREAM_HEADERS = {
 function streamingChatResponse(
   system: string,
   messages: { role: 'user' | 'assistant'; content: string }[],
+  onEmptyError?: () => void | Promise<void>,
 ) {
   const encoder = new TextEncoder()
   const readable = new ReadableStream({
@@ -52,6 +54,8 @@ function streamingChatResponse(
           try { controller.enqueue(encoder.encode('\n\n⚠️ Ответ прервался — нажми отправить ещё раз, чтобы продолжить.')) } catch { /* ignore */ }
           try { controller.close() } catch { /* already closed */ }
         } else {
+          // Nothing was produced — refund the consumed content unit (if metered).
+          if (onEmptyError) { try { await onEmptyError() } catch { /* ignore */ } }
           try { controller.error(err) } catch { /* already errored */ }
         }
       }
@@ -124,6 +128,24 @@ export async function POST(request: Request) {
       genFormat?: string
     } = await request.json()
 
+    // A finished content unit (genFormat set = «Сгенерировать пост/рилз/…») costs
+    // one unit; free-form chat / refinement does not. Meter at the moment of
+    // generation. Returns a 402 only when enforcement is live AND the quota is
+    // spent (off pre-launch — see BILLING_ENFORCED). Refund handled per-branch if
+    // the stream produces nothing.
+    const meterGeneration = async (): Promise<Response | null> => {
+      if (!genFormat) return null
+      const gate = await gateContentUnit(user.id)
+      if (gate.blocked) {
+        return NextResponse.json(
+          { error: 'limit_reached', code: 'limit_reached', monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit },
+          { status: 402 },
+        )
+      }
+      return null
+    }
+    const refundIfMetered = genFormat ? () => refundGeneration(user.id) : undefined
+
     // ── Standalone mode (no projectId): a content assistant powered by the
     // methodology/knowledge base, for bloggers without a project yet —
     // testing hypotheses, picking a niche, drafting content. ───────────────
@@ -158,7 +180,9 @@ ${AI_TELLS_TO_AVOID}
 
 ${sysKnowledge ? `═══ МЕТОДОЛОГИЯ (опирайся на неё) ═══\n${sysKnowledge}` : ''}${savedBlock}`
 
-      return streamingChatResponse(standaloneSystem, messages.map((m) => ({ role: m.role, content: m.content })))
+      const blocked = await meterGeneration()
+      if (blocked) return blocked
+      return streamingChatResponse(standaloneSystem, messages.map((m) => ({ role: m.role, content: m.content })), refundIfMetered)
     }
 
     const { data: project } = await supabase
@@ -209,7 +233,9 @@ ${genFormat ? `
 
 ${baseSystem}${savedBlock}`
 
-    return streamingChatResponse(systemPrompt, messages.map((m) => ({ role: m.role, content: m.content })))
+    const blocked = await meterGeneration()
+    if (blocked) return blocked
+    return streamingChatResponse(systemPrompt, messages.map((m) => ({ role: m.role, content: m.content })), refundIfMetered)
   } catch (error) {
     console.error('Chat error:', error)
     const msg = error instanceof Error ? error.message : String(error)

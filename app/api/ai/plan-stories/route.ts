@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
+import { gateContentUnit, refundGeneration } from '@/lib/generations'
 
 // Turns a story idea/script into a sequence of story FRAMES (minimal on-screen
 // text per frame, in the blogger's voice) that the engine renders over their
@@ -15,6 +16,7 @@ function toArray(v: unknown): unknown[] {
 }
 
 export async function POST(request: Request) {
+  let consumed = false
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -26,6 +28,11 @@ export async function POST(request: Request) {
 
     const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).eq('owner_id', user.id).single()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+
+    // A story series is a content unit (it lays out a full storyboard).
+    const gate = await gateContentUnit(user.id)
+    if (gate.blocked) return NextResponse.json({ error: 'limit_reached', code: 'limit_reached', monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit }, { status: 402 })
+    consumed = true
 
     const target = Math.max(3, Math.min(8, Number(count) || 5))
 
@@ -127,11 +134,21 @@ ${ragBlock || '(мало материалов)'}
         }
       })
       .filter((r) => r.headline || r.body)
-    if (stories.length === 0) return NextResponse.json({ error: 'Не удалось собрать сторис — попробуй ещё раз' }, { status: 502 })
+    if (stories.length === 0) {
+      if (consumed) await refundGeneration(user.id)
+      return NextResponse.json({ error: 'Не удалось собрать сторис — попробуй ещё раз' }, { status: 502 })
+    }
 
     return NextResponse.json({ stories })
   } catch (e) {
     console.error('[plan-stories]', e instanceof Error ? e.message : e)
+    if (consumed) {
+      try {
+        const sb = await createClient()
+        const { data: { user: u } } = await sb.auth.getUser()
+        if (u) await refundGeneration(u.id)
+      } catch { /* ignore */ }
+    }
     return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 })
   }
 }

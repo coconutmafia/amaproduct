@@ -3,6 +3,8 @@ import { Header } from '@/components/layout/Header'
 import { AuthRefresh } from '@/components/shared/AuthRefresh'
 import { PageTransition } from '@/components/shared/PageTransition'
 import { BottomNav } from '@/components/layout/BottomNav'
+import { TrialBanner } from '@/components/billing/TrialBanner'
+import { UpgradeDialogHost } from '@/components/billing/UpgradeDialog'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
@@ -64,6 +66,10 @@ export default async function DashboardLayout({
           projects={projects || []}
           isAdmin={isAdmin}
         />
+        <TrialBanner
+          status={(profile as Record<string, unknown>)?.subscription_status as string | undefined}
+          trialEndsAt={(profile as Record<string, unknown>)?.trial_ends_at as string | undefined}
+        />
         {/* pb-24 on mobile = space for the BottomNav */}
         <main className="flex-1 overflow-y-auto relative pb-24 lg:pb-0">
           <AuthRefresh />
@@ -73,6 +79,9 @@ export default async function DashboardLayout({
 
       {/* Bottom nav — mobile only */}
       <BottomNav />
+
+      {/* Upgrade dialog — opened via showUpgrade() from the banner or 402 handlers */}
+      <UpgradeDialogHost />
     </div>
   )
 }

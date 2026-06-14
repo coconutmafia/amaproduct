@@ -43,7 +43,7 @@ export async function GET(request: Request) {
         email: authUser.email || '',
         full_name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || null,
         role: profile?.role ?? 'client',
-        subscription_tier: profile?.subscription_tier ?? 'free',
+        subscription_tier: profile?.subscription_tier ?? 'trial',
         generations_used: profile?.generations_used ?? 0,
         bonus_generations: profile?.bonus_generations ?? 0,
         generations_reset_at: profile?.generations_reset_at ?? null,

@@ -10,6 +10,7 @@ import { CarouselSlides } from '@/components/carousel/CarouselSlides'
 import { PostImage } from '@/components/carousel/PostImage'
 import { StoryDesignButton } from '@/components/carousel/StoryDesignButton'
 import { VoiceRuleButton, maybeSuggestRule } from '@/components/chat/VoiceRuleButton'
+import { showUpgrade } from '@/components/billing/UpgradeDialog'
 import { useChatPin } from '@/lib/useChatPin'
 import { cleanMarkdown } from '@/lib/cleanText'
 
@@ -97,6 +98,7 @@ export default function CreatePage() {
         body: JSON.stringify({ messages: next, projectId: projectId || undefined, conversationType: 'create' }),
         signal: controller.signal,
       })
+      if (res.status === 402) { showUpgrade('limit'); return }
       if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error ?? 'Ошибка') }
       if (!res.body) throw new Error('Нет ответа')
       const reader = res.body.getReader(); const decoder = new TextDecoder()

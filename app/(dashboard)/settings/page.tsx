@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import { User, Key, Zap, Gift } from 'lucide-react'
 import { SettingsClient } from '@/components/settings/SettingsClient'
+import { PLAN_CONFIG } from '@/lib/generations-config'
 
 export default async function SettingsPage() {
   const supabase = await createClient()
@@ -19,7 +20,7 @@ export default async function SettingsPage() {
 
   const bonusGenerations  = (profile as Record<string, unknown>)?.bonus_generations as number ?? 0
   const generationsUsed   = (profile as Record<string, unknown>)?.generations_used   as number ?? 0
-  const subscriptionTier  = (profile as Record<string, unknown>)?.subscription_tier  as string ?? 'free'
+  const subscriptionTier  = (profile as Record<string, unknown>)?.subscription_tier  as string ?? 'trial'
   const aiAssistantName   = (profile as Record<string, unknown>)?.ai_assistant_name  as string | null ?? null
 
   return (
@@ -82,8 +83,8 @@ export default async function SettingsPage() {
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-secondary/20">
             <div>
-              <p className="text-sm font-medium capitalize">{subscriptionTier === 'free' ? 'Free план' : `${subscriptionTier} план`}</p>
-              <p className="text-xs text-muted-foreground">Использовано в этом месяце: {generationsUsed} запросов к AI</p>
+              <p className="text-sm font-medium">{(PLAN_CONFIG as Record<string, { label: string }>)[subscriptionTier]?.label ?? 'Пробный период'}</p>
+              <p className="text-xs text-muted-foreground">Создано единиц контента в этом месяце: {generationsUsed}</p>
             </div>
             <a href="/pricing" className="text-xs text-primary hover:underline font-medium">Улучшить →</a>
           </div>

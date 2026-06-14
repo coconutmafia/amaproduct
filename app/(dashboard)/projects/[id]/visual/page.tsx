@@ -16,6 +16,7 @@ import { ArrowLeft, Images, GalleryHorizontalEnd, ImageIcon, ChevronRight, Palet
 import { PostImage } from '@/components/carousel/PostImage'
 import { CarouselSlides } from '@/components/carousel/CarouselSlides'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
+import { showUpgrade } from '@/components/billing/UpgradeDialog'
 
 interface SavedItem { id: string; title: string | null; body: string; content_type: string | null; created_at: string }
 
@@ -67,6 +68,7 @@ export default function VisualPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId, videoPath: vidPath, text: vidText, position: vidPos, plate: vidPlate }),
       })
+      if (res.status === 402) { showUpgrade('limit'); return }
       const d = await res.json().catch(() => ({} as { url?: string; error?: string }))
       if (!res.ok || !d.url) throw new Error(d.error || 'Не удалось обработать видео')
       setVidUrl(d.url)

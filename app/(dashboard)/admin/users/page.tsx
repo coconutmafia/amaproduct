@@ -308,10 +308,10 @@ export default function AdminUsersPage() {
                           onChange={e => setTierEdit(p => ({ ...p, [user.id]: e.target.value }))}
                           className="flex-1 h-9 text-sm rounded-md border border-input bg-background px-3 focus:outline-none focus:ring-1 focus:ring-ring"
                         >
-                          <option value="free">Free — 5 запросов/мес</option>
-                          <option value="starter">Starter — 80 запросов/мес</option>
-                          <option value="pro">Pro — 250 запросов/мес</option>
-                          <option value="agency">Agency — 800 запросов/мес</option>
+                          <option value="trial">Пробный — 300 единиц/мес</option>
+                          <option value="solo">Соло — 300 единиц/мес</option>
+                          <option value="pro">Про — безлимит (fair use)</option>
+                          <option value="producer">Продюсер — безлимит (fair use)</option>
                         </select>
                         <Button
                           size="sm"

@@ -97,7 +97,7 @@ export default function AdminAnalyticsPage() {
                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                     r.role === 'admin' ? 'bg-purple-100 text-purple-700'
                     : r.trialActive ? 'bg-green-100 text-green-700'
-                    : r.tier === 'free' ? 'bg-gray-100 text-gray-600' : 'bg-blue-100 text-blue-700'
+                    : r.tier === 'trial' ? 'bg-gray-100 text-gray-600' : 'bg-blue-100 text-blue-700'
                   }`}>
                     {r.role === 'admin' ? 'admin' : r.trialActive ? `триал до ${fmtDate(r.trialEndsAt)}` : r.tier}
                   </span>
