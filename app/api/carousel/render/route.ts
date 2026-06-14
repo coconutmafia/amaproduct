@@ -85,13 +85,16 @@ export async function GET(request: Request) {
     }
     if (format === 'story') {
       // Dev eyeball params: &photo=<url> renders the over-photo path,
-      // &pos=top|center|bottom layout, &plate=0 clean text, &tc=ffffff its colour.
+      // &pos=top|center|bottom layout, &plate=0 clean text, &tc=ffffff its colour,
+      // &hl=/&bd= override headline/body (use [[...]] to test selective plating).
       const photo = url.searchParams.get('photo') || undefined
       const pos = (url.searchParams.get('pos') as SlideSpec['position']) || undefined
       const plate = url.searchParams.get('plate') === '0' ? false : undefined
       const tc = url.searchParams.get('tc') ? `#${url.searchParams.get('tc')}` : undefined
       const transparent = url.searchParams.get('transparent') === '1' || undefined
-      const spec: SlideSpec = { kind: 'story', index: 0, total: 1, headline: 'как я набрала **первую 1000** подписчиков', body: 'рассказываю по шагам в следующих сторис', action: 'смотри до конца', photoUrl: photo, position: pos, plate, textColor: tc, transparent }
+      const hl = url.searchParams.get('hl') || undefined
+      const bd = url.searchParams.get('bd') || undefined
+      const spec: SlideSpec = { kind: 'story', index: 0, total: 1, headline: hl ?? 'как я набрала **первую 1000** подписчиков', body: bd ?? 'рассказываю по шагам в следующих сторис', action: 'смотри до конца', photoUrl: photo, position: pos, plate, textColor: tc, transparent }
       return png(spec, 'story', brand)
     }
     const demo: Dict = {

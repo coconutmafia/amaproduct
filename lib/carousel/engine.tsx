@@ -144,7 +144,9 @@ type RichOpts = {
 
 function tokenize(text: string): { word: string; em: boolean; br?: boolean }[] {
   const out: { word: string; em: boolean; br?: boolean }[] = []
-  const segs = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean)
+  // [[...]] are plate-span markers (handled by StoryText); strip them here so
+  // they never render literally on any other surface (RichText, carousels).
+  const segs = text.replace(/\[\[|\]\]/g, '').split(/(\*\*[^*]+\*\*)/g).filter(Boolean)
   for (const seg of segs) {
     const em = seg.startsWith('**') && seg.endsWith('**')
     const raw = em ? seg.slice(2, -2) : seg
@@ -245,42 +247,76 @@ function wrapWords(text: string, size: number, maxWidth: number): WrapTok[][] {
   return out
 }
 
-function StoryText({ text, size, color, accent, bg, weight = 800, accentWeight = 900, align = 'left', maxWidth }: {
+// Selective plating: [[...]] marks a span that gets a plate while the rest sits
+// plain on the photo (owner: «выдели подложкой только первое предложение,
+// остальное не выделяй»). Without any [[]] the whole block follows
+// `defaultPlated` (photo-driven), so existing series are unchanged.
+type PlateSeg = { plated: boolean; text: string }
+
+function parsePlateSegments(text: string, defaultPlated: boolean): PlateSeg[] {
+  if (!text.includes('[[')) return [{ plated: defaultPlated, text }]
+  const segs: PlateSeg[] = []
+  const re = /\[\[([\s\S]+?)\]\]/g
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) { const t = text.slice(last, m.index); if (t.trim()) segs.push({ plated: false, text: t }) }
+    if (m[1].trim()) segs.push({ plated: true, text: m[1] })
+    last = re.lastIndex
+  }
+  if (last < text.length) { const t = text.slice(last); if (t.trim()) segs.push({ plated: false, text: t }) }
+  return segs.length ? segs : [{ plated: defaultPlated, text }]
+}
+
+function StoryText({ text, size, accent, plateBg, platedColor, plainColor, defaultPlated, weight = 800, accentWeight = 900, maxWidth }: {
   text: string
   size: number
-  color: string
   accent: string
-  bg: string | null // null → clean text, no plates
+  plateBg: string      // plate background (brand bg) under plated spans
+  platedColor: string  // text colour on a plate
+  plainColor: string   // text colour without a plate (over photo)
+  defaultPlated: boolean
   weight?: number
   accentWeight?: number
-  align?: 'left' | 'center'
   maxWidth: number
 }): ReactElement {
-  const padX = bg ? Math.round(size * 0.26) : 0
-  const padY = bg ? Math.round(size * 0.14) : 0
-  const rendered = wrapWords(text, size, maxWidth - padX * 2)
+  const segs = parsePlateSegments(text, defaultPlated)
+  const padX = Math.round(size * 0.26)
+  const padY = Math.round(size * 0.14)
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: align === 'center' ? 'center' : 'flex-start', width: '100%' }}>
-      {rendered.map((line, li) => (
-        <div key={li} style={{
-          display: 'flex', flexWrap: 'wrap', maxWidth: '100%',
-          backgroundColor: bg ?? 'transparent',
-          padding: `${padY}px ${padX}px`,
-          borderRadius: bg ? Math.round(size * 0.14) : 0,
-          // Plates sit flush (IG text-bg has no inter-line gaps); clean text
-          // keeps a small natural line gap.
-          marginBottom: li === rendered.length - 1 ? 0 : bg ? 0 : Math.round(size * 0.18),
-        }}>
-          {line.map((t, i) => (
-            <div key={i} style={{
-              display: 'flex', fontFamily: 'Montserrat', fontSize: size, lineHeight: 1.15,
-              color: t.em ? accent : color,
-              fontWeight: t.em ? accentWeight : weight,
-              marginRight: i === line.length - 1 ? 0 : Math.round(size * 0.24),
-            }}>{t.word}</div>
-          ))}
-        </div>
-      ))}
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', width: '100%' }}>
+      {segs.map((seg, si) => {
+        const plated = seg.plated
+        const color = plated ? platedColor : plainColor
+        const lines = wrapWords(seg.text, size, maxWidth - (plated ? padX * 2 : 0))
+        return (
+          <div key={si} style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-start', width: '100%',
+            marginTop: si === 0 ? 0 : Math.round(size * 0.22),
+          }}>
+            {lines.map((line, li) => (
+              <div key={li} style={{
+                display: 'flex', flexWrap: 'wrap', maxWidth: '100%',
+                backgroundColor: plated ? plateBg : 'transparent',
+                padding: plated ? `${padY}px ${padX}px` : '0px',
+                borderRadius: plated ? Math.round(size * 0.14) : 0,
+                // Plates sit flush (IG text-bg has no inter-line gaps); plain
+                // text keeps a small natural line gap.
+                marginBottom: li === lines.length - 1 ? 0 : plated ? 0 : Math.round(size * 0.18),
+              }}>
+                {line.map((t, i) => (
+                  <div key={i} style={{
+                    display: 'flex', fontFamily: 'Montserrat', fontSize: size, lineHeight: 1.15,
+                    color: t.em ? accent : color,
+                    fontWeight: t.em ? accentWeight : weight,
+                    marginRight: i === line.length - 1 ? 0 : Math.round(size * 0.24),
+                  }}>{t.word}</div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -506,6 +542,11 @@ function Story({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: S
   const justify = pos === 'top' ? 'flex-start' : pos === 'center' ? 'center' : 'flex-end'
   const txt = theme.text
   const contentW = size.w - 2 * 72
+  // A frame is "selective" when any [[...]] plate-span marker is present — then
+  // unmarked text renders plain, so «выдели только X» plates X and nothing else.
+  const selective = /\[\[/.test(`${s.headline || ''}${s.body || ''}`)
+  const defaultPlated = selective ? false : s.plate !== false
+  const plainColor = s.textColor || '#FFFFFF'
   return (
     <div style={{ display: 'flex', position: 'relative', width: size.w, height: size.h }}>
       {s.photoUrl ? (
@@ -534,8 +575,8 @@ function Story({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: S
           // Plates carry readability over busy photos; on uniform areas the
           // page passes plate=false → clean text in a photo-picked colour.
           <StoryText text={s.headline || ''} size={58} weight={800} accentWeight={900}
-            color={s.plate === false ? (s.textColor || '#FFFFFF') : txt}
-            accent={theme.accent} bg={s.plate === false ? null : theme.bg} maxWidth={contentW} />
+            accent={theme.accent} plateBg={theme.bg} platedColor={txt}
+            plainColor={plainColor} defaultPlated={defaultPlated} maxWidth={contentW} />
         ) : (
           <RichText text={s.headline || ''} o={{ size: 58, weight: 800, accentWeight: 900, color: txt, accent: theme.accent, lineGap: 14 }} />
         )}
@@ -543,8 +584,8 @@ function Story({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: S
           <div style={{ display: 'flex', marginTop: 26, width: '100%' }}>
             {overPhoto ? (
               <StoryText text={s.body} size={42} weight={600} accentWeight={800}
-                color={s.plate === false ? (s.textColor || '#FFFFFF') : txt}
-                accent={theme.accent} bg={s.plate === false ? null : theme.bg} maxWidth={contentW} />
+                accent={theme.accent} plateBg={theme.bg} platedColor={txt}
+                plainColor={plainColor} defaultPlated={defaultPlated} maxWidth={contentW} />
             ) : (
               <RichText text={s.body} o={{ size: 42, weight: 600, color: txt, accent: theme.accent, lineGap: 12 }} />
             )}
