@@ -39,9 +39,23 @@ export function PricingClient({
   const handleUpgrade = async (plan: PaidPlan) => {
     if (plan === currentPlan) return
     setUpgrading(plan)
-    // TODO (Фаза 2): redirect to Продамус (РФ) / Stripe (мир) checkout.
-    toast.info(`Оплата подключается. Напиши в поддержку для активации тарифа «${plans[plan].label}».`)
-    setUpgrading(null)
+    try {
+      // Stripe (мир). Продамус (РФ) checkout добавится тем же паттерном.
+      const res = await fetch('/api/billing/checkout', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan }),
+      })
+      const d = await res.json().catch(() => ({} as { url?: string; error?: string }))
+      if (res.ok && d.url) { window.location.href = d.url; return }
+      if (res.status === 503 || d.error === 'billing_not_configured') {
+        toast.info('Оплата скоро подключится. Напиши в поддержку для ручной активации.')
+      } else {
+        toast.error('Не удалось открыть оплату — попробуй ещё раз')
+      }
+    } catch {
+      toast.error('Сеть недоступна — попробуй ещё раз')
+    } finally {
+      setUpgrading(null)
+    }
   }
 
   const current = plans[currentPlan]
