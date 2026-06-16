@@ -36,17 +36,27 @@ export function PricingClient({
 }: Props) {
   const [upgrading, setUpgrading] = useState<PaidPlan | null>(null)
 
+  const notConfigured = (status: number, err?: string) =>
+    status === 503 || err === 'billing_not_configured' || err === 'subscription_not_configured'
+
+  const tryProvider = async (endpoint: string, plan: PaidPlan) => {
+    const res = await fetch(endpoint, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan }),
+    })
+    const d = await res.json().catch(() => ({} as { url?: string; error?: string }))
+    return { res, d }
+  }
+
   const handleUpgrade = async (plan: PaidPlan) => {
     if (plan === currentPlan) return
     setUpgrading(plan)
     try {
-      // Stripe (мир). Продамус (РФ) checkout добавится тем же паттерном.
-      const res = await fetch('/api/billing/checkout', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan }),
-      })
-      const d = await res.json().catch(() => ({} as { url?: string; error?: string }))
+      // РФ-аудитория → Продамус первым; если не настроен — Stripe (мир).
+      let { res, d } = await tryProvider('/api/billing/prodamus/checkout', plan)
+      if (notConfigured(res.status, d.error)) ({ res, d } = await tryProvider('/api/billing/checkout', plan))
+
       if (res.ok && d.url) { window.location.href = d.url; return }
-      if (res.status === 503 || d.error === 'billing_not_configured') {
+      if (notConfigured(res.status, d.error)) {
         toast.info('Оплата скоро подключится. Напиши в поддержку для ручной активации.')
       } else {
         toast.error('Не удалось открыть оплату — попробуй ещё раз')
