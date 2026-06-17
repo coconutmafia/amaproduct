@@ -97,6 +97,16 @@ export async function GET(request: Request) {
       const spec: SlideSpec = { kind: 'story', index: 0, total: 1, headline: hl ?? 'как я набрала **первую 1000** подписчиков', body: bd ?? 'рассказываю по шагам в следующих сторис', action: 'смотри до конца', photoUrl: photo, position: pos, plate, textColor: tc, transparent }
       return png(spec, 'story', brand)
     }
+    if (url.searchParams.get('format') === 'free') {
+      const spec: SlideSpec = {
+        kind: 'free', index: 0, total: 1, photoUrl: url.searchParams.get('photo') || undefined,
+        blocks: [
+          { text: 'Снимаю **плёночку** с нового айфона', xPct: 0.06, yPct: 0.10, widthPct: 0.82, size: 58, color: '#FFFFFF', plate: true, align: 'left' },
+          { text: 'а вы себя **радуете**?', xPct: 0.10, yPct: 0.72, widthPct: 0.66, size: 52, plate: true, align: 'left' },
+        ],
+      }
+      return png(spec, 'story', brand)
+    }
     if (url.searchParams.get('format') === 'scheme') {
       const spec: SlideSpec = {
         kind: 'scheme', index: 0, total: 1,

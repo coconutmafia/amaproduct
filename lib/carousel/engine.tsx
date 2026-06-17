@@ -432,7 +432,19 @@ function Frame({
 }
 
 // ── Slide spec ──────────────────────────────────────────────────────────────────
-export type SlideKind = 'cover' | 'content' | 'cta' | 'photo' | 'story' | 'post' | 'scheme'
+export type SlideKind = 'cover' | 'content' | 'cta' | 'photo' | 'story' | 'post' | 'scheme' | 'free'
+
+// A freely-positioned text block for the «Instagram-style» editor (kind 'free').
+export interface FreeBlock {
+  text: string
+  xPct: number          // top-left position as a fraction of the canvas (0..1)
+  yPct: number
+  widthPct?: number     // wrap width as a fraction of canvas width (default 0.8)
+  size?: number         // font size in canvas px (default 56)
+  color?: string        // text colour when not plated (default white)
+  plate?: boolean       // brand plate behind the text
+  align?: 'left' | 'center' | 'right'
+}
 
 export interface SlideSpec {
   kind: SlideKind
@@ -458,6 +470,8 @@ export interface SlideSpec {
   // Scheme frames: ordered stages drawn as staggered blocks joined by hand-drawn
   // connector lines (owner request — «сторис-схемы»). headline = intro line above.
   steps?: string[]
+  // Free editor frames: text blocks positioned anywhere over a photo (drag editor).
+  blocks?: FreeBlock[]
 }
 
 // ── Carousel templates ──────────────────────────────────────────────────────────
@@ -723,6 +737,35 @@ function Scheme({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: 
   )
 }
 
+// ── Free (9:16) — text blocks placed anywhere over a photo (drag editor) ────────
+function Free({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Size }): ReactElement {
+  const W = size.w, H = size.h
+  const blocks = (s.blocks || []).filter((b) => b && b.text && b.text.trim())
+  return (
+    <div style={{ display: 'flex', position: 'relative', width: W, height: H }}>
+      {s.photoUrl
+        ? <img src={s.photoUrl} width={W} height={H} style={{ objectFit: 'cover' }} alt="" />
+        : <Backdrop theme={theme} size={size} />}
+      {blocks.map((b, i) => {
+        const blockW = Math.round((b.widthPct ?? 0.8) * W)
+        return (
+          <div key={i} style={{
+            position: 'absolute',
+            left: Math.round((b.xPct ?? 0) * W),
+            top: Math.round((b.yPct ?? 0) * H),
+            width: blockW, display: 'flex',
+          }}>
+            {b.plate
+              ? <StoryText text={b.text} size={b.size ?? 56} accent={theme.accent} plateBg={theme.bg}
+                  platedColor={theme.text} plainColor={b.color || '#FFFFFF'} defaultPlated maxWidth={blockW} />
+              : <RichText text={b.text} o={{ size: b.size ?? 56, weight: 800, accentWeight: 900, color: b.color || '#FFFFFF', accent: theme.accent, align: b.align || 'left', lineGap: 6 }} />}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export function renderSlide(s: SlideSpec, theme: CarouselTheme, size: Size): ReactElement {
   switch (s.kind) {
     case 'cover':
@@ -737,6 +780,8 @@ export function renderSlide(s: SlideSpec, theme: CarouselTheme, size: Size): Rea
       return <Story s={s} theme={theme} size={size} />
     case 'scheme':
       return <Scheme s={s} theme={theme} size={size} />
+    case 'free':
+      return <Free s={s} theme={theme} size={size} />
     default:
       return <Content s={s} theme={theme} size={size} />
   }

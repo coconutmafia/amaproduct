@@ -17,6 +17,7 @@ import { PostImage } from '@/components/carousel/PostImage'
 import { CarouselSlides } from '@/components/carousel/CarouselSlides'
 import { VideoStory } from '@/components/carousel/VideoStory'
 import { SchemeStory } from '@/components/carousel/SchemeStory'
+import { StoryEditor } from '@/components/carousel/StoryEditor'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 
 interface SavedItem { id: string; title: string | null; body: string; content_type: string | null; created_at: string }
@@ -150,6 +151,11 @@ export default function VisualPage() {
       {/* 5. Story scheme — stages joined by hand-drawn connectors */}
       <div className="mt-4">
         <SchemeStory projectId={projectId} />
+      </div>
+
+      {/* 6. Free drag editor — Instagram-style text-over-photo */}
+      <div className="mt-4">
+        <StoryEditor projectId={projectId} />
       </div>
 
       <p className="mt-4 text-[11px] text-muted-foreground">
