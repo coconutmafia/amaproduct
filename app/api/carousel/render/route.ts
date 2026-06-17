@@ -97,6 +97,14 @@ export async function GET(request: Request) {
       const spec: SlideSpec = { kind: 'story', index: 0, total: 1, headline: hl ?? 'как я набрала **первую 1000** подписчиков', body: bd ?? 'рассказываю по шагам в следующих сторис', action: 'смотри до конца', photoUrl: photo, position: pos, plate, textColor: tc, transparent }
       return png(spec, 'story', brand)
     }
+    if (url.searchParams.get('format') === 'scheme') {
+      const spec: SlideSpec = {
+        kind: 'scheme', index: 0, total: 1,
+        headline: 'а я ей всё разложила по полочкам, показала все пробелы — ей всё понравилось',
+        steps: ['исследование её **ЦА**', 'упаковка в **смыслы**', '**воронки**', 'её личный **продукт**'],
+      }
+      return png(spec, 'story', brand)
+    }
     const demo: Dict = {
       total_slides: 5,
       cover: { headline: 'где брать **клиентов**?', subheadline: 'если таргет не работает, а рекламу у блогеров отменили', emoji: '🤔' },

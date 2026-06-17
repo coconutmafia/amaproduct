@@ -15,6 +15,7 @@ import { analyzePhotoBands, pickPlacement, type PhotoBands } from '@/lib/photoBa
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
 import { VideoStory } from '@/components/carousel/VideoStory'
+import { SchemeStory } from '@/components/carousel/SchemeStory'
 
 interface Brand { accentColor?: string; bg?: string; text?: string; bgStyle?: string; handle?: string; logoUrl?: string }
 interface Frame {
@@ -382,6 +383,12 @@ export default function StoriesPage() {
         <div className="h-px flex-1 bg-border" /> или видео-сторис <div className="h-px flex-1 bg-border" />
       </div>
       <VideoStory projectId={projectId} />
+
+      {/* Story scheme — stages joined by hand-drawn connectors */}
+      <div className="mt-5 mb-2 flex items-center gap-3 text-[11px] uppercase tracking-wide text-muted-foreground">
+        <div className="h-px flex-1 bg-border" /> или схема <div className="h-px flex-1 bg-border" />
+      </div>
+      <SchemeStory projectId={projectId} />
 
       {rendered.length > 0 && (
         <section className="mt-4 rounded-2xl border border-border bg-card p-4">

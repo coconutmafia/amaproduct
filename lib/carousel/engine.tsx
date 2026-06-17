@@ -136,7 +136,7 @@ type RichOpts = {
   weight?: number
   color: string
   accent: string
-  align?: 'center' | 'left'
+  align?: 'center' | 'left' | 'right'
   lineGap?: number
   uppercase?: boolean
   accentWeight?: number
@@ -170,7 +170,7 @@ export function RichText({ text, o }: { text: string; o: RichOpts }): ReactEleme
         display: 'flex',
         flexWrap: 'wrap',
         width: '100%',
-        justifyContent: o.align === 'left' ? 'flex-start' : 'center',
+        justifyContent: o.align === 'left' ? 'flex-start' : o.align === 'right' ? 'flex-end' : 'center',
         alignItems: 'baseline',
         fontFamily: 'Montserrat',
         fontSize: o.size,
@@ -432,7 +432,7 @@ function Frame({
 }
 
 // ── Slide spec ──────────────────────────────────────────────────────────────────
-export type SlideKind = 'cover' | 'content' | 'cta' | 'photo' | 'story' | 'post'
+export type SlideKind = 'cover' | 'content' | 'cta' | 'photo' | 'story' | 'post' | 'scheme'
 
 export interface SlideSpec {
   kind: SlideKind
@@ -455,6 +455,9 @@ export interface SlideSpec {
   // Render on a TRANSPARENT background (no Backdrop) — used to burn brand text
   // over a VIDEO with ffmpeg (the overlay PNG keeps its alpha channel).
   transparent?: boolean
+  // Scheme frames: ordered stages drawn as staggered blocks joined by hand-drawn
+  // connector lines (owner request — «сторис-схемы»). headline = intro line above.
+  steps?: string[]
 }
 
 // ── Carousel templates ──────────────────────────────────────────────────────────
@@ -662,6 +665,64 @@ function Photo({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: S
   )
 }
 
+// ── Scheme (9:16) — staggered stages joined by hand-drawn connectors ────────────
+// Owner request («сторис-схемы»): an intro line + a flow of stages that descend,
+// alternating left/right, linked by curved hand-drawn strokes. Reads best on a
+// dark backdrop (her reference). **word** = brand-accent.
+function Scheme({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Size }): ReactElement {
+  const W = size.w, H = size.h
+  const pad = 96
+  const steps = (s.steps || []).filter((t) => t && t.trim()).slice(0, 6)
+  const n = steps.length
+  const bg = '#121214'
+  const fg = '#FFFFFF'
+  const yStart = s.headline ? 600 : 380
+  const yEnd = H - 230
+  const rowH = n > 0 ? (yEnd - yStart) / n : 0
+  // Each stage alternates side; connector anchor sits on its inner edge.
+  const rows = steps.map((_, i) => {
+    const cy = yStart + rowH * (i + 0.5)
+    const left = i % 2 === 0
+    return { cy, left, ax: left ? 300 : W - 300 }
+  })
+
+  return (
+    <div style={{ display: 'flex', position: 'relative', width: W, height: H, backgroundColor: bg }}>
+      {/* hand-drawn connectors between consecutive stages */}
+      <svg width={W} height={H} style={{ position: 'absolute', top: 0, left: 0 }}>
+        {rows.slice(0, -1).map((a, i) => {
+          const b = rows[i + 1]
+          const x1 = a.ax, y1 = a.cy + 46
+          const x2 = b.ax, y2 = b.cy - 46
+          const d = `M ${x1} ${y1} C ${x1 + (b.left ? -40 : 40)} ${y1 + 70}, ${x2 + (a.left ? 40 : -40)} ${y2 - 70}, ${x2} ${y2}`
+          return <path key={i} d={d} stroke={fg} strokeWidth={5} fill="none" strokeLinecap="round" opacity={0.9} />
+        })}
+      </svg>
+
+      {/* intro line */}
+      {s.headline ? (
+        <div style={{ position: 'absolute', top: 170, left: pad, right: pad, display: 'flex', justifyContent: 'center' }}>
+          <RichText text={s.headline} o={{ size: 40, weight: 500, color: 'rgba(255,255,255,0.9)', accent: theme.accent, align: 'center', lineGap: 10 }} />
+        </div>
+      ) : <div style={{ display: 'flex' }} />}
+
+      {/* stages */}
+      {steps.map((stp, i) => {
+        const a = rows[i]
+        return (
+          <div key={i} style={{
+            position: 'absolute', top: a.cy - 46, display: 'flex',
+            maxWidth: W - 2 * pad - 80,
+            ...(a.left ? { left: pad } : { right: pad }),
+          }}>
+            <RichText text={stp} o={{ size: 60, weight: 800, accentWeight: 900, color: fg, accent: theme.accent, align: a.left ? 'left' : 'right', lineGap: 4 }} />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export function renderSlide(s: SlideSpec, theme: CarouselTheme, size: Size): ReactElement {
   switch (s.kind) {
     case 'cover':
@@ -674,6 +735,8 @@ export function renderSlide(s: SlideSpec, theme: CarouselTheme, size: Size): Rea
       return <Photo s={s} theme={theme} size={size} />
     case 'story':
       return <Story s={s} theme={theme} size={size} />
+    case 'scheme':
+      return <Scheme s={s} theme={theme} size={size} />
     default:
       return <Content s={s} theme={theme} size={size} />
   }

@@ -16,6 +16,7 @@ import { ArrowLeft, Images, GalleryHorizontalEnd, ImageIcon, ChevronRight, Palet
 import { PostImage } from '@/components/carousel/PostImage'
 import { CarouselSlides } from '@/components/carousel/CarouselSlides'
 import { VideoStory } from '@/components/carousel/VideoStory'
+import { SchemeStory } from '@/components/carousel/SchemeStory'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 
 interface SavedItem { id: string; title: string | null; body: string; content_type: string | null; created_at: string }
@@ -144,6 +145,11 @@ export default function VisualPage() {
       {/* 4. Video + text overlay (same component is reused on the stories page) */}
       <div className="mt-4">
         <VideoStory projectId={projectId} />
+      </div>
+
+      {/* 5. Story scheme — stages joined by hand-drawn connectors */}
+      <div className="mt-4">
+        <SchemeStory projectId={projectId} />
       </div>
 
       <p className="mt-4 text-[11px] text-muted-foreground">
