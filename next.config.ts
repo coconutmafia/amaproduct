@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["ffmpeg-static"],
   outputFileTracingIncludes: {
     "/api/video/overlay": ["./node_modules/ffmpeg-static/ffmpeg*"],
+    "/api/ai/transcribe": ["./node_modules/ffmpeg-static/ffmpeg*"],
   },
 };
 

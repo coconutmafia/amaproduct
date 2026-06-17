@@ -116,6 +116,10 @@ export function AiEditChat({
     // Build message history for API (only role+content)
     const apiMessages = messages.map((m) => ({ role: m.role, content: m.content }))
 
+    // Weak-LTE resilience: abort if the response stalls too long, and surface a
+    // human error (the raw "Load failed" was confusing testers).
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 150_000)
     try {
       const res = await fetch('/api/ai/edit', {
         method: 'POST',
@@ -131,6 +135,7 @@ export function AiEditChat({
           // Which week is on screen → lets the AI resolve "Wednesday" to a real day
           ...(weekContext ? { weekContext } : {}),
         }),
+        signal: controller.signal,
       })
 
       if (!res.ok) {
@@ -201,9 +206,17 @@ export function AiEditChat({
         if (done) break
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Ошибка')
+      const msg = error instanceof Error ? error.message : String(error)
+      const friendly = (error as Error)?.name === 'AbortError'
+        ? 'Ответ долго не приходил — похоже, слабый интернет. Нажми отправить ещё раз.'
+        : /load failed|failed to fetch|networkerror|network error|сеть/i.test(msg)
+        ? 'Сеть оборвалась — проверь интернет и отправь ещё раз.'
+        : msg || 'Ошибка'
+      toast.error(friendly)
       setMessages((prev) => prev.filter((m) => m !== userMsg))
+      setInput(instruction) // restore the text so she can resend without retyping
     } finally {
+      clearTimeout(timeout)
       setLoading(false)
       setStreamingText('')
     }

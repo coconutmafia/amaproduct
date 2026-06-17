@@ -39,8 +39,23 @@ const BLOCK_COLORS: Record<string, string> = {
 // Whisper's hard limit is 25 MB per request.
 // We slice into 24 MB chunks on the client side — safely under Whisper's cap.
 // The file is uploaded directly to Supabase Storage (bypassing Vercel's
-// ~4.5 MB body limit), and the API route fetches byte-ranges from there.
-const CHUNK_BYTES = 24 * 1024 * 1024 // 24 MB
+// ~4.5 MB body limit), and the API route cuts TIME windows from there with ffmpeg.
+
+// Read an audio file's duration on-device (to split it into time windows).
+// Returns 0 if the format/stub can't report it → server does one whole-file pass.
+function getAudioDuration(file: File): Promise<number> {
+  return new Promise((resolve) => {
+    try {
+      const el = document.createElement('audio')
+      el.preload = 'metadata'
+      const url = URL.createObjectURL(file)
+      const finish = (d: number) => { try { URL.revokeObjectURL(url) } catch { /* */ }; resolve(Number.isFinite(d) && d > 0 ? d : 0) }
+      el.onloadedmetadata = () => finish(el.duration)
+      el.onerror = () => finish(0)
+      el.src = url
+    } catch { resolve(0) }
+  })
+}
 
 type ProgressState =
   | { stage: 'uploading';     fileIndex: number; totalFiles: number }
@@ -71,7 +86,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   // ── Transcription ───────────────────────────────────────────────────────────
   // Uses file.slice() — a lazy Blob that lets iOS download iCloud files on
   // demand when fetch() reads it. No FileReader, no ArrayBuffer intermediary.
-  // Files > CHUNK_BYTES are split and sent sequentially.
+  // Long files are split into time windows and sent sequentially.
 
   const transcribeFiles = useCallback(async (files: File[]) => {
     setStep('transcribing')
@@ -106,8 +121,6 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       try {
         const file = files[fi]
         let fileName = initNames[fi]
-        let fileSize = 0
-        try { fileSize = file.size } catch { /* iCloud stub */ }
 
         const rawExt = fileName.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? ''
         const ext    = rawExt || 'mp3'
@@ -135,31 +148,26 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         if (uploadError) throw new Error(`Ошибка загрузки: ${uploadError.message}`)
         uploadedPaths.push(storagePath)
 
-        // Resolve actual size (iCloud stubs may report 0)
-        let actualSize = fileSize
-        if (actualSize === 0) {
-          const { data: sd } = await supabase.storage.from('audio-temp').createSignedUrl(storagePath, 60)
-          if (sd?.signedUrl) {
-            const hd = await fetch(sd.signedUrl, { method: 'HEAD' })
-            actualSize = parseInt(hd.headers.get('content-length') ?? '0', 10)
-          }
-        }
-
-        // ── 2. Transcribe in 24 MB chunks ───────────────────────────────────
-        const totalChunks = actualSize > 0 ? Math.ceil(actualSize / CHUNK_BYTES) : 1
+        // ── 2. Transcribe in TIME chunks — server cuts valid audio with ffmpeg ──
+        // (Byte-range slicing produced invalid audio for m4a/mp4/ogg → Whisper
+        //  failed on every chunk past the first. Time windows always decode.)
+        const CHUNK_SEC = 600 // 10-min windows keep each Whisper call within limits
+        const durationSec = await getAudioDuration(file)
+        const totalChunks = durationSec > 0 ? Math.max(1, Math.ceil(durationSec / CHUNK_SEC)) : 1
         const fileParts: string[] = []
 
         for (let ci = 0; ci < totalChunks; ci++) {
           updateFile(fi, { status: 'transcribing', chunkIndex: ci + 1, totalChunks })
 
-          const start       = ci * CHUNK_BYTES
-          const end         = actualSize > 0 ? Math.min(start + CHUNK_BYTES, actualSize) : undefined
+          const startSec    = ci * CHUNK_SEC
+          // Unknown duration (iCloud stub / odd format) → one pass over the whole file.
+          const durSec      = durationSec > 0 ? CHUNK_SEC : undefined
           const isLastChunk = ci === totalChunks - 1
 
           const res      = await fetch('/api/ai/transcribe', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ storagePath, start, end, ext, isLastChunk }),
+            body:    JSON.stringify({ storagePath, startSec, durSec, ext, isLastChunk }),
           })
           const bodyText = await res.text()
           let data: { text?: string; error?: string }
