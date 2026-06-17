@@ -21,6 +21,16 @@ export function prodamusSubId(plan: PaidPlan): string | undefined {
   }[plan]
 }
 
+// Direct per-subscription payform links (as created in the ЛК, e.g.
+// https://payform.ru/k4bMP2U/). Preferred over base-form + subscription id.
+export function prodamusLink(plan: PaidPlan): string | undefined {
+  return {
+    solo: process.env.PRODAMUS_LINK_SOLO,
+    pro: process.env.PRODAMUS_LINK_PRO,
+    producer: process.env.PRODAMUS_LINK_PRODUCER,
+  }[plan]
+}
+
 // ── HMAC signature (Продамус Hmac) ────────────────────────────────────────────
 // Algorithm (per Продамус docs): cast every value to string, recursively sort by
 // key, json_encode with UNESCAPED unicode but ESCAPED slashes, then

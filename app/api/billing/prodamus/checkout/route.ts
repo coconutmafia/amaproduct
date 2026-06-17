@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { prodamusConfigured, prodamusFormUrl, prodamusSubId, buildOrderId } from '@/lib/billing/prodamus'
+import { prodamusConfigured, prodamusFormUrl, prodamusSubId, prodamusLink, buildOrderId } from '@/lib/billing/prodamus'
 import { PAID_PLANS, type PaidPlan } from '@/lib/generations-config'
 
 export const runtime = 'nodejs'
@@ -19,20 +19,22 @@ export async function POST(request: Request) {
     const { plan } = (await request.json()) as { plan?: string }
     if (!plan || !PAID_PLANS.includes(plan as PaidPlan)) return NextResponse.json({ error: 'invalid_plan' }, { status: 400 })
 
+    const link = prodamusLink(plan as PaidPlan)
     const subId = prodamusSubId(plan as PaidPlan)
-    if (!subId) return NextResponse.json({ error: 'subscription_not_configured' }, { status: 503 })
+    if (!link && !subId) return NextResponse.json({ error: 'subscription_not_configured' }, { status: 503 })
 
     const origin = request.headers.get('origin') || 'https://amaproduct.com'
     const orderId = buildOrderId(user.id, plan as PaidPlan, Date.now())
 
-    const url = new URL(prodamusFormUrl())
+    // Prefer the ready subscription link from the ЛК (e.g. payform.ru/k4bMP2U/);
+    // else fall back to the base form + subscription id.
+    const url = new URL(link || prodamusFormUrl())
     url.searchParams.set('order_id', orderId)
     if (user.email) url.searchParams.set('customer_email', user.email)
-    url.searchParams.set('subscription', subId)
+    if (!link && subId) url.searchParams.set('subscription', subId)
     url.searchParams.set('urlSuccess', `${origin}/pricing?status=success`)
     url.searchParams.set('urlReturn', `${origin}/pricing`)
     url.searchParams.set('urlNotification', `${origin}/api/billing/prodamus/webhook`)
-    url.searchParams.set('do', 'pay')
 
     return NextResponse.json({ url: url.toString() })
   } catch (e) {
