@@ -102,7 +102,7 @@ export async function GET(request: Request) {
         kind: 'free', index: 0, total: 1, photoUrl: url.searchParams.get('photo') || undefined,
         blocks: [
           { text: 'Снимаю **плёночку** с нового айфона', xPct: 0.06, yPct: 0.10, widthPct: 0.82, size: 58, color: '#FFFFFF', plate: true, align: 'left' },
-          { text: 'а вы себя **радуете**?', xPct: 0.10, yPct: 0.72, widthPct: 0.66, size: 52, plate: true, align: 'left' },
+          { text: 'а вы себя **радуете**?', xPct: 0.10, yPct: 0.72, widthPct: 0.66, size: 52, plate: true, align: 'left', rotation: -7 },
         ],
       }
       return png(spec, 'story', brand)

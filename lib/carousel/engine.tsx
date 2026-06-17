@@ -444,6 +444,7 @@ export interface FreeBlock {
   color?: string        // text colour when not plated (default white)
   plate?: boolean       // brand plate behind the text
   align?: 'left' | 'center' | 'right'
+  rotation?: number     // degrees, rotated around the block centre
 }
 
 export interface SlideSpec {
@@ -754,6 +755,7 @@ function Free({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Si
             left: Math.round((b.xPct ?? 0) * W),
             top: Math.round((b.yPct ?? 0) * H),
             width: blockW, display: 'flex',
+            ...(b.rotation ? { transform: `rotate(${b.rotation}deg)`, transformOrigin: 'center' } : {}),
           }}>
             {b.plate
               ? <StoryText text={b.text} size={b.size ?? 56} accent={theme.accent} plateBg={theme.bg}
