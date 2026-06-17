@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -35,6 +36,15 @@ export function PricingClient({
   currentPlan, bonusGenerations, generationsUsed, monthlyLimit, plans, resetAt,
 }: Props) {
   const [upgrading, setUpgrading] = useState<PaidPlan | null>(null)
+  const searchParams = useSearchParams()
+
+  // Stripe/Продамус return here after checkout (?status=success|cancel) — make
+  // the outcome visible instead of silently landing back on the pricing page.
+  useEffect(() => {
+    const s = searchParams.get('status')
+    if (s === 'success') toast.success('Оплата прошла! Тариф активируется в течение минуты — обнови страницу.')
+    else if (s === 'cancel') toast.info('Оплата отменена — тариф не изменился.')
+  }, [searchParams])
 
   const notConfigured = (status: number, err?: string) =>
     status === 503 || err === 'billing_not_configured' || err === 'subscription_not_configured'
@@ -59,7 +69,8 @@ export function PricingClient({
       if (notConfigured(res.status, d.error)) {
         toast.info('Оплата скоро подключится. Напиши в поддержку для ручной активации.')
       } else {
-        toast.error('Не удалось открыть оплату — попробуй ещё раз')
+        // Surface the real reason so a screenshot pinpoints the issue.
+        toast.error(d.error ? `Оплата недоступна: ${String(d.error).slice(0, 90)}` : `Не удалось открыть оплату (код ${res.status})`)
       }
     } catch {
       toast.error('Сеть недоступна — попробуй ещё раз')
