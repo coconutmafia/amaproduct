@@ -36,6 +36,7 @@ export function PricingClient({
   currentPlan, bonusGenerations, generationsUsed, monthlyLimit, plans, resetAt,
 }: Props) {
   const [upgrading, setUpgrading] = useState<PaidPlan | null>(null)
+  const [region, setRegion] = useState<'ru' | 'intl'>('ru') // ru → Продамус (₽), intl → Stripe ($)
   const searchParams = useSearchParams()
 
   // Stripe/Продамус return here after checkout (?status=success|cancel) — make
@@ -61,13 +62,13 @@ export function PricingClient({
     if (plan === currentPlan) return
     setUpgrading(plan)
     try {
-      // РФ-аудитория → Продамус первым; если не настроен — Stripe (мир).
-      let { res, d } = await tryProvider('/api/billing/prodamus/checkout', plan)
-      if (notConfigured(res.status, d.error)) ({ res, d } = await tryProvider('/api/billing/checkout', plan))
+      // Explicit choice: РФ → Продамус (₽), зарубежная → Stripe ($).
+      const endpoint = region === 'ru' ? '/api/billing/prodamus/checkout' : '/api/billing/checkout'
+      const { res, d } = await tryProvider(endpoint, plan)
 
       if (res.ok && d.url) { window.location.href = d.url; return }
       if (notConfigured(res.status, d.error)) {
-        toast.info('Оплата скоро подключится. Напиши в поддержку для ручной активации.')
+        toast.info(region === 'ru' ? 'Оплата картой РФ скоро подключится.' : 'Оплата зарубежной картой скоро подключится.')
       } else {
         // Surface the real reason so a screenshot pinpoints the issue.
         toast.error(d.error ? `Оплата недоступна: ${String(d.error).slice(0, 90)}` : `Не удалось открыть оплату (код ${res.status})`)
@@ -120,6 +121,19 @@ export function PricingClient({
         </CardContent>
       </Card>
 
+      {/* Payment region — РФ (Продамус, ₽) vs зарубежная карта (Stripe, $) */}
+      <div className="flex items-center justify-center gap-2">
+        <span className="text-xs text-muted-foreground">Оплата:</span>
+        <div className="inline-flex rounded-lg border border-border p-0.5">
+          {([['ru', '🇷🇺 Карта РФ'], ['intl', '🌍 Зарубежная']] as const).map(([v, label]) => (
+            <button key={v} type="button" onClick={() => setRegion(v)}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold ${region === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Plan cards — Solo is the hero */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {PAID_PLANS.map((key) => {
@@ -140,7 +154,7 @@ export function PricingClient({
                   <CardTitle className="text-base">{cfg.label}</CardTitle>
                 </div>
                 <div className="flex items-end gap-1">
-                  <span className="text-3xl font-bold">{cfg.priceRub.toLocaleString('ru-RU')} ₽</span>
+                  <span className="text-3xl font-bold">{region === 'ru' ? `${cfg.priceRub.toLocaleString('ru-RU')} ₽` : `$${cfg.price}`}</span>
                   <span className="text-muted-foreground text-sm mb-1">/мес</span>
                 </div>
                 <CardDescription className="text-xs">
