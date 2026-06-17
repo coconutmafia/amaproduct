@@ -14,6 +14,7 @@ import { downscaleImage } from '@/lib/downscaleImage'
 import { analyzePhotoBands, pickPlacement, type PhotoBands } from '@/lib/photoBands'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
+import { VideoStory } from '@/components/carousel/VideoStory'
 
 interface Brand { accentColor?: string; bg?: string; text?: string; bgStyle?: string; handle?: string; logoUrl?: string }
 interface Frame {
@@ -375,6 +376,12 @@ export default function StoriesPage() {
         </button>
         {busy && <p className="mt-2 text-[11px] text-muted-foreground">Обычно 1-2 минуты: раскладываю сценарий на кадры и оформляю каждый в твоём стиле. Не закрывай страницу.</p>}
       </section>
+
+      {/* Video stories — text over a video (was only on «Создать визуал»; owner looked for it here) */}
+      <div className="mt-5 mb-2 flex items-center gap-3 text-[11px] uppercase tracking-wide text-muted-foreground">
+        <div className="h-px flex-1 bg-border" /> или видео-сторис <div className="h-px flex-1 bg-border" />
+      </div>
+      <VideoStory projectId={projectId} />
 
       {rendered.length > 0 && (
         <section className="mt-4 rounded-2xl border border-border bg-card p-4">
