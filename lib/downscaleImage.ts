@@ -9,10 +9,19 @@
 //
 // Safari applies EXIF orientation in drawImage (iOS 13.4+), so portrait photos
 // stay upright. On any failure we fall back to the original file.
-export async function downscaleImage(file: File, maxEdge = 2000, quality = 0.85): Promise<File> {
+// `outType` lets callers preserve transparency: pass 'image/png' for stickers /
+// cut-outs (the default 'image/jpeg' flattens alpha onto black). Omitting it
+// keeps the original photo behaviour byte-for-byte.
+export async function downscaleImage(
+  file: File,
+  maxEdge = 2000,
+  quality = 0.85,
+  outType?: 'image/jpeg' | 'image/png',
+): Promise<File> {
   try {
     if (!file.type.startsWith('image/')) return file
     const needsConvert = /heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name)
+    const target = outType || 'image/jpeg'
     const url = URL.createObjectURL(file)
     try {
       const img = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -25,8 +34,9 @@ export async function downscaleImage(file: File, maxEdge = 2000, quality = 0.85)
       const h = img.naturalHeight
       if (!w || !h) return file
       const scale = Math.min(1, maxEdge / Math.max(w, h))
-      // Already small AND a safe format AND under the body limit → keep as is.
-      if (scale === 1 && !needsConvert && file.size < 3 * 1024 * 1024) return file
+      // Already small AND already in the target format AND under the body limit → keep as is.
+      const sameFmt = target === 'image/png' ? /png/i.test(file.type) : !needsConvert
+      if (scale === 1 && sameFmt && file.size < 3 * 1024 * 1024) return file
       const cw = Math.max(1, Math.round(w * scale))
       const ch = Math.max(1, Math.round(h * scale))
       const canvas = document.createElement('canvas')
@@ -35,10 +45,11 @@ export async function downscaleImage(file: File, maxEdge = 2000, quality = 0.85)
       const ctx = canvas.getContext('2d')
       if (!ctx) return file
       ctx.drawImage(img, 0, 0, cw, ch)
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality))
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, target, quality))
       if (!blob || blob.size === 0) return file
-      const name = (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg'
-      return new File([blob], name, { type: 'image/jpeg' })
+      const ext = target === 'image/png' ? '.png' : '.jpg'
+      const name = (file.name || 'photo').replace(/\.[^.]+$/, '') + ext
+      return new File([blob], name, { type: target })
     } finally {
       URL.revokeObjectURL(url)
     }

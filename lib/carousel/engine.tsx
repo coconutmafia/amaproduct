@@ -10,6 +10,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ReactElement } from 'react'
+import { ArrowSvg, Badge, SHAPE_ASPECT, type FreeShape } from './shapes'
 
 // ── Formats ─────────────────────────────────────────────────────────────────────
 export const FORMATS = {
@@ -434,14 +435,21 @@ function Frame({
 // ── Slide spec ──────────────────────────────────────────────────────────────────
 export type SlideKind = 'cover' | 'content' | 'cta' | 'photo' | 'story' | 'post' | 'scheme' | 'free'
 
-// A freely-positioned text block for the «Instagram-style» editor (kind 'free').
+// A freely-positioned block for the «Instagram-style» editor (kind 'free').
+// type 'text' is the default (back-compat: older saved blocks carry no type).
+// Element library (step b): 'shape' = arrow / curved arrow / numbered badge;
+// 'image' = a sticker / flat illustration (uploaded or AI-generated).
 export interface FreeBlock {
-  text: string
+  type?: 'text' | 'image' | 'shape'
+  text?: string         // text (and the number for a 'badge' shape)
+  src?: string          // image source (type 'image')
+  shape?: FreeShape     // shape kind (type 'shape')
   xPct: number          // top-left position as a fraction of the canvas (0..1)
   yPct: number
-  widthPct?: number     // wrap width as a fraction of canvas width (default 0.8)
-  size?: number         // font size in canvas px (default 56)
-  color?: string        // text colour when not plated (default white)
+  widthPct?: number     // width as a fraction of canvas width (text wrap / element size)
+  aspect?: number       // w/h ratio for image & shape blocks (height = width/aspect)
+  size?: number         // text font size in canvas px (default 56)
+  color?: string        // text colour / shape stroke or fill (default white / accent)
   plate?: boolean       // brand plate behind the text
   align?: 'left' | 'center' | 'right'
   rotation?: number     // degrees, rotated around the block centre
@@ -738,29 +746,62 @@ function Scheme({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: 
   )
 }
 
-// ── Free (9:16) — text blocks placed anywhere over a photo (drag editor) ────────
+// ── Free (9:16) — text / shapes / images placed anywhere (drag editor) ──────────
+// Element library (step b): besides text, blocks can be draggable arrows, curved
+// arrows, numbered badges (shape) and stickers / illustrations (image). Drag /
+// scale / rotate live in the editor; this just renders the final positions.
 function Free({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Size }): ReactElement {
   const W = size.w, H = size.h
-  const blocks = (s.blocks || []).filter((b) => b && b.text && b.text.trim())
+  const blocks = (s.blocks || []).filter((b) => b && (
+    (b.type === 'image' && b.src) ||
+    (b.type === 'shape' && b.shape) ||
+    (!!b.text && b.text.trim().length > 0)   // text / icon (default)
+  ))
   return (
     <div style={{ display: 'flex', position: 'relative', width: W, height: H }}>
       {s.photoUrl
         ? <img src={s.photoUrl} width={W} height={H} style={{ objectFit: 'cover' }} alt="" />
         : <Backdrop theme={theme} size={size} />}
       {blocks.map((b, i) => {
+        const left = Math.round((b.xPct ?? 0) * W)
+        const top = Math.round((b.yPct ?? 0) * H)
+        const rot = b.rotation ? { transform: `rotate(${b.rotation}deg)`, transformOrigin: 'center' as const } : {}
+        const type = b.type || 'text'
+
+        if (type === 'image' && b.src) {
+          const w = Math.round((b.widthPct ?? 0.4) * W)
+          const h = Math.round(w / (b.aspect || 1))
+          return (
+            <div key={i} style={{ position: 'absolute', left, top, width: w, height: h, display: 'flex', ...rot }}>
+              <img src={b.src} width={w} height={h} style={{ objectFit: 'contain' }} alt="" />
+            </div>
+          )
+        }
+        if (type === 'shape' && b.shape) {
+          const w = Math.round((b.widthPct ?? 0.4) * W)
+          if (b.shape === 'badge') {
+            return (
+              <div key={i} style={{ position: 'absolute', left, top, display: 'flex', ...rot }}>
+                <Badge size={w} color={b.color || theme.accent} label={(b.text || '1').trim() || '1'} />
+              </div>
+            )
+          }
+          const h = Math.round(w / (b.aspect || SHAPE_ASPECT[b.shape] || 3))
+          return (
+            <div key={i} style={{ position: 'absolute', left, top, width: w, height: h, display: 'flex', ...rot }}>
+              <ArrowSvg w={w} h={h} color={b.color || theme.accent} curve={b.shape === 'arrow-curve'} />
+            </div>
+          )
+        }
+
+        // text / icon (default)
         const blockW = Math.round((b.widthPct ?? 0.8) * W)
         return (
-          <div key={i} style={{
-            position: 'absolute',
-            left: Math.round((b.xPct ?? 0) * W),
-            top: Math.round((b.yPct ?? 0) * H),
-            width: blockW, display: 'flex',
-            ...(b.rotation ? { transform: `rotate(${b.rotation}deg)`, transformOrigin: 'center' } : {}),
-          }}>
+          <div key={i} style={{ position: 'absolute', left, top, width: blockW, display: 'flex', ...rot }}>
             {b.plate
-              ? <StoryText text={b.text} size={b.size ?? 56} accent={theme.accent} plateBg={theme.bg}
+              ? <StoryText text={b.text || ''} size={b.size ?? 56} accent={theme.accent} plateBg={theme.bg}
                   platedColor={theme.text} plainColor={b.color || '#FFFFFF'} defaultPlated maxWidth={blockW} />
-              : <RichText text={b.text} o={{ size: b.size ?? 56, weight: 800, accentWeight: 900, color: b.color || '#FFFFFF', accent: theme.accent, align: b.align || 'left', lineGap: 6 }} />}
+              : <RichText text={b.text || ''} o={{ size: b.size ?? 56, weight: 800, accentWeight: 900, color: b.color || '#FFFFFF', accent: theme.accent, align: b.align || 'left', lineGap: 6 }} />}
           </div>
         )
       })}

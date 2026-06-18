@@ -1,26 +1,53 @@
 'use client'
 
-// «Редактор сторис как в Инстаграме» — drop a photo, add text blocks, then DRAG
-// to move, PINCH to scale + rotate (two fingers), and tune size/colour/plate.
-// Exports a 1080×1920 image through the slide engine (kind 'free') so fonts +
-// plates match the rest of the app. Brand colours (accent/plate) come from the
-// project; the preview uses Montserrat too, so what you see ≈ what you get.
+// «Редактор сторис как в Инстаграме» + библиотека элементов (Canva-style).
+// Drop a photo (or pick a designed backdrop), then add TEXT, ARROWS, NUMBERED
+// BADGES, EMOJI ICONS or your own STICKER/illustration. Every element drags
+// (1 finger), pinches to scale + rotate (2 fingers) and exports 1080×1920 through
+// the slide engine (kind 'free') so fonts / plates / shapes match what you see.
+// Brand colours (accent/plate) come from the project.
 
 import { useRef, useState, useEffect } from 'react'
 import { toast } from 'sonner'
-import { Upload, Loader2, Plus, Trash2, Download, Type, Copy, RotateCw } from 'lucide-react'
+import {
+  Upload, Loader2, Plus, Trash2, Download, Type, Copy, RotateCw,
+  ArrowUpRight, Spline, Hash, Smile, Image as ImageIcon,
+} from 'lucide-react'
 import { downscaleImage } from '@/lib/downscaleImage'
+import { ArrowSvg, Badge, SHAPE_ASPECT, type FreeShape } from '@/lib/carousel/shapes'
 
 let _idc = 0
 const newId = () => `b${++_idc}`
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
 
+type BType = 'text' | 'image' | 'shape'
+
 interface Block {
-  id: string; text: string
+  id: string
+  type: BType
+  text: string                 // text content / number for a 'badge'
+  src?: string                 // image source (type 'image')
+  shape?: FreeShape            // shape kind (type 'shape')
+  aspect?: number              // w/h for image & shape
   xPct: number; yPct: number; widthPct: number
   size: number; color: string; plate: boolean; align: 'left' | 'center'; rotation: number
 }
 interface Brand { accentColor: string; bg: string; text: string; bgStyle?: string }
+
+const ICONS = ['⚠️', '✅', '❌', '💡', '🔥', '⭐', '👉', '💰', '📌', '❤️', '🎯', '✨', '🙌', '🤔', '📈', '🎁']
+
+// Read an image's aspect ratio (w/h) without uploading it.
+async function imageAspect(file: File): Promise<number> {
+  try {
+    const url = URL.createObjectURL(file)
+    try {
+      const img = await new Promise<HTMLImageElement>((res, rej) => {
+        const el = new Image(); el.onload = () => res(el); el.onerror = () => rej(new Error('x')); el.src = url
+      })
+      return img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 1
+    } finally { URL.revokeObjectURL(url) }
+  } catch { return 1 }
+}
 
 function PreviewText({ text, plate, color, brand }: { text: string; plate: boolean; color: string; brand: Brand }) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean)
@@ -40,8 +67,10 @@ function PreviewText({ text, plate, color, brand }: { text: string; plate: boole
 export function StoryEditor({ projectId }: { projectId: string }) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [uploadingSticker, setUploadingSticker] = useState(false)
   const [blocks, setBlocks] = useState<Block[]>([])
   const [selected, setSelected] = useState<string | null>(null)
+  const [showIcons, setShowIcons] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [canvasW, setCanvasW] = useState(360)
@@ -76,10 +105,11 @@ export function StoryEditor({ projectId }: { projectId: string }) {
   const patch = (id: string, p: Partial<Block>) => setBlocks((prev) => prev.map((b) => b.id === id ? { ...b, ...p } : b))
 
   // ── Touch/mouse gesture: 1 finger = drag, 2 fingers = scale + rotate ──────────
+  // Text scales its font `size`; shapes / images scale their `widthPct`.
   const pointers = useRef<Map<number, { x: number; y: number }>>(new Map())
   const gesture = useRef<null | {
-    id: string; mode: 'drag' | 'pinch'; w: number; h: number; x0: number; y0: number
-    px?: number; py?: number; size0?: number; rot0?: number; dist0?: number; ang0?: number; mx0?: number; my0?: number
+    id: string; type: BType; mode: 'drag' | 'pinch'; w: number; h: number; x0: number; y0: number
+    px?: number; py?: number; size0?: number; wpct0?: number; rot0?: number; dist0?: number; ang0?: number; mx0?: number; my0?: number
   }>(null)
 
   function initGesture(id: string) {
@@ -90,14 +120,14 @@ export function StoryEditor({ projectId }: { projectId: string }) {
     if (ps.length >= 2) {
       const [p1, p2] = ps
       gesture.current = {
-        id, mode: 'pinch', w: r.width, h: r.height, x0: b.xPct, y0: b.yPct,
-        size0: b.size, rot0: b.rotation,
+        id, type: b.type, mode: 'pinch', w: r.width, h: r.height, x0: b.xPct, y0: b.yPct,
+        size0: b.size, wpct0: b.widthPct, rot0: b.rotation,
         dist0: Math.hypot(p2.x - p1.x, p2.y - p1.y),
         ang0: Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI,
         mx0: (p1.x + p2.x) / 2, my0: (p1.y + p2.y) / 2,
       }
     } else if (ps.length === 1) {
-      gesture.current = { id, mode: 'drag', w: r.width, h: r.height, x0: b.xPct, y0: b.yPct, px: ps[0].x, py: ps[0].y }
+      gesture.current = { id, type: b.type, mode: 'drag', w: r.width, h: r.height, x0: b.xPct, y0: b.yPct, px: ps[0].x, py: ps[0].y }
     }
   }
   function applyGesture() {
@@ -112,12 +142,15 @@ export function StoryEditor({ projectId }: { projectId: string }) {
       const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y)
       const ang = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI
       const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2
-      patch(g.id, {
-        size: clamp(Math.round((g.size0 || 56) * (dist / (g.dist0 || dist))), 22, 240),
+      const factor = dist / (g.dist0 || dist)
+      const next: Partial<Block> = {
         rotation: Math.round((g.rot0 || 0) + (ang - (g.ang0 || ang))),
         xPct: clamp(g.x0 + (mx - (g.mx0 || mx)) / g.w, 0, 0.99),
         yPct: clamp(g.y0 + (my - (g.my0 || my)) / g.h, 0, 0.99),
-      })
+      }
+      if (g.type === 'text') next.size = clamp(Math.round((g.size0 || 56) * factor), 22, 240)
+      else next.widthPct = clamp(+((g.wpct0 || 0.4) * factor).toFixed(3), 0.05, 1)
+      patch(g.id, next)
     }
   }
   function onBlockDown(e: React.PointerEvent, id: string) {
@@ -156,9 +189,48 @@ export function StoryEditor({ projectId }: { projectId: string }) {
     finally { setUploadingPhoto(false) }
   }
 
-  function addBlock() {
+  async function uploadSticker(files: FileList | null) {
+    const f = files?.[0]
+    if (!f) return
+    setUploadingSticker(true)
+    try {
+      const isPng = /png/i.test(f.type)
+      const small = await downscaleImage(f, 1400, 0.92, isPng ? 'image/png' : 'image/jpeg')
+      const aspect = await imageAspect(small)
+      const fd = new FormData()
+      fd.append('projectId', projectId); fd.append('kind', 'story'); fd.append('files', small)
+      const res = await fetch('/api/brand-kit/upload', { method: 'POST', body: fd })
+      const d = await res.json().catch(() => ({} as { urls?: string[]; error?: string }))
+      if (!res.ok || !d.urls?.[0]) throw new Error(d.error || (res.status === 413 ? 'Картинка слишком большая' : 'Не удалось загрузить картинку'))
+      const id = newId()
+      setBlocks((p) => [...p, {
+        id, type: 'image', text: '', src: d.urls![0], aspect,
+        xPct: 0.3, yPct: 0.38, widthPct: 0.42, size: 56, color: '#FFFFFF', plate: false, align: 'center', rotation: 0,
+      }])
+      setSelected(id)
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось загрузить картинку') }
+    finally { setUploadingSticker(false) }
+  }
+
+  function addText() {
     const id = newId()
-    setBlocks((p) => [...p, { id, text: 'Текст', xPct: 0.1, yPct: 0.42, widthPct: 0.8, size: 56, color: '#FFFFFF', plate: true, align: 'left', rotation: 0 }])
+    setBlocks((p) => [...p, { id, type: 'text', text: 'Текст', xPct: 0.1, yPct: 0.42, widthPct: 0.8, size: 56, color: '#FFFFFF', plate: true, align: 'left', rotation: 0 }])
+    setSelected(id)
+  }
+  function addIcon(emoji: string) {
+    const id = newId()
+    setBlocks((p) => [...p, { id, type: 'text', text: emoji, xPct: 0.4, yPct: 0.4, widthPct: 0.3, size: 120, color: '#FFFFFF', plate: false, align: 'center', rotation: 0 }])
+    setSelected(id)
+  }
+  function addArrow(shape: 'arrow' | 'arrow-curve') {
+    const id = newId()
+    setBlocks((p) => [...p, { id, type: 'shape', shape, aspect: SHAPE_ASPECT[shape], text: '', xPct: 0.28, yPct: 0.46, widthPct: 0.45, size: 56, color: brand.accentColor, plate: false, align: 'center', rotation: 0 }])
+    setSelected(id)
+  }
+  function addBadge() {
+    const id = newId()
+    const n = blocksRef.current.filter((b) => b.shape === 'badge').length + 1
+    setBlocks((p) => [...p, { id, type: 'shape', shape: 'badge', aspect: 1, text: String(n), xPct: 0.12, yPct: 0.3, widthPct: 0.16, size: 56, color: brand.accentColor, plate: false, align: 'center', rotation: 0 }])
     setSelected(id)
   }
   function duplicate(id: string) {
@@ -169,9 +241,15 @@ export function StoryEditor({ projectId }: { projectId: string }) {
   }
   const removeBlock = (id: string) => { setBlocks((prev) => prev.filter((b) => b.id !== id)); setSelected(null) }
 
+  // Size ±: font size for text, element width for shapes / images.
+  function resizeSel(sel: Block, dir: 1 | -1) {
+    if (sel.type === 'text') patch(sel.id, { size: clamp(sel.size + dir * 8, 22, 240) })
+    else patch(sel.id, { widthPct: clamp(+(sel.widthPct + dir * 0.05).toFixed(3), 0.05, 1) })
+  }
+
   async function exportImg() {
-    if (bgMode === 'photo' ? !photoUrl : false) { toast.error('Сначала загрузи фото или выбери фон'); return }
-    if (blocks.length === 0) { toast.error('Добавь хотя бы один текст'); return }
+    if (bgMode === 'photo' && !photoUrl) { toast.error('Сначала загрузи фото или выбери фон'); return }
+    if (blocks.length === 0) { toast.error('Добавь хотя бы один элемент'); return }
     setExporting(true)
     try {
       // Non-photo backgrounds render via the engine's Backdrop using these brand hints.
@@ -186,7 +264,11 @@ export function StoryEditor({ projectId }: { projectId: string }) {
           slide: {
             kind: 'free', index: 0, total: 1,
             ...(bgMode === 'photo' ? { photoUrl } : {}),
-            blocks: blocks.map((b) => ({ text: b.text, xPct: b.xPct, yPct: b.yPct, widthPct: b.widthPct, size: b.size, color: b.color, plate: b.plate, align: b.align, rotation: b.rotation })),
+            blocks: blocks.map((b) => ({
+              type: b.type, text: b.text, src: b.src, shape: b.shape, aspect: b.aspect,
+              xPct: b.xPct, yPct: b.yPct, widthPct: b.widthPct, size: b.size,
+              color: b.color, plate: b.plate, align: b.align, rotation: b.rotation,
+            })),
           },
           format: 'story', projectId, brand: exportBrand,
         }),
@@ -203,6 +285,11 @@ export function StoryEditor({ projectId }: { projectId: string }) {
   const sel = blocks.find((b) => b.id === selected) || null
   const swatches = ['#FFFFFF', brand.text, brand.accentColor]
   const fontStack = "'MontserratEd', system-ui, sans-serif"
+  const isShape = sel?.type === 'shape'
+  const isBadge = sel?.shape === 'badge'
+  const isArrow = isShape && !isBadge
+  const isImage = sel?.type === 'image'
+  const addBtn = 'inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold hover:border-primary/40 disabled:opacity-40'
 
   return (
     <section className="rounded-2xl border border-border bg-card p-4">
@@ -217,8 +304,8 @@ export function StoryEditor({ projectId }: { projectId: string }) {
           <Type className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-foreground">Редактор сторис (двигай текст)</p>
-          <p className="text-xs text-muted-foreground">Перетаскивай текст пальцем, двумя пальцами — масштаб и поворот. Слово в **звёздочках** = акцент.</p>
+          <p className="text-sm font-semibold text-foreground">Редактор сторис (двигай элементы)</p>
+          <p className="text-xs text-muted-foreground">Добавляй текст, стрелки, иконки, номера и картинки. Перетаскивай пальцем, двумя пальцами — масштаб и поворот.</p>
         </div>
       </div>
 
@@ -230,18 +317,35 @@ export function StoryEditor({ projectId }: { projectId: string }) {
             className={`rounded-lg px-2.5 py-1.5 font-medium ${bgMode === m ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground hover:text-foreground'}`}>{label}</button>
         ))}
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        {bgMode === 'photo' && (
+      {bgMode === 'photo' && (
+        <div className="mt-2">
           <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold hover:border-primary/40">
             {uploadingPhoto ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Загружаю…</> : <><Upload className="h-3.5 w-3.5" /> {photoUrl ? 'Сменить фото' : 'Загрузить фото'}</>}
             <input type="file" accept="image/*" className="hidden" disabled={uploadingPhoto} onChange={(e) => uploadPhoto(e.target.files)} />
           </label>
-        )}
-        <button type="button" onClick={addBlock} disabled={!hasBg}
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold hover:border-primary/40 disabled:opacity-40">
-          <Plus className="h-3.5 w-3.5" /> Добавить текст
-        </button>
+        </div>
+      )}
+
+      {/* Element library */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground">Добавить:</span>
+        <button type="button" onClick={addText} disabled={!hasBg} className={addBtn}><Plus className="h-3.5 w-3.5" /> Текст</button>
+        <button type="button" onClick={() => addArrow('arrow')} disabled={!hasBg} className={addBtn}><ArrowUpRight className="h-3.5 w-3.5" /> Стрелка</button>
+        <button type="button" onClick={() => addArrow('arrow-curve')} disabled={!hasBg} className={addBtn}><Spline className="h-3.5 w-3.5" /> Дуга</button>
+        <button type="button" onClick={addBadge} disabled={!hasBg} className={addBtn}><Hash className="h-3.5 w-3.5" /> Номер</button>
+        <button type="button" onClick={() => setShowIcons((v) => !v)} disabled={!hasBg} className={`${addBtn} ${showIcons ? 'border-primary/50 text-foreground' : ''}`}><Smile className="h-3.5 w-3.5" /> Иконка</button>
+        <label className={`${addBtn} cursor-pointer ${!hasBg ? 'pointer-events-none opacity-40' : ''}`}>
+          {uploadingSticker ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Загружаю…</> : <><ImageIcon className="h-3.5 w-3.5" /> Картинка</>}
+          <input type="file" accept="image/*" className="hidden" disabled={!hasBg || uploadingSticker} onChange={(e) => uploadSticker(e.target.files)} />
+        </label>
       </div>
+      {showIcons && hasBg && (
+        <div className="mt-2 flex flex-wrap gap-1.5 rounded-xl border border-primary/20 bg-primary/5 p-2">
+          {ICONS.map((emo) => (
+            <button key={emo} type="button" onClick={() => addIcon(emo)} className="h-9 w-9 rounded-lg text-xl hover:bg-primary/10" aria-label="иконка">{emo}</button>
+          ))}
+        </div>
+      )}
 
       {/* Canvas */}
       <div
@@ -258,63 +362,93 @@ export function StoryEditor({ projectId }: { projectId: string }) {
           <img src={photoUrl} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover" draggable={false} />
         )}
         {bgMode === 'photo' && !photoUrl && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center text-xs text-white/70">Загрузи фото — потом добавишь текст и расставишь его как захочешь</div>
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center text-xs text-white/70">Загрузи фото — потом добавляй текст, стрелки, иконки и расставляй как захочешь</div>
         )}
         {bgMode !== 'photo' && (
           <div className="pointer-events-none absolute inset-0"
             style={bgMode === 'paper' ? { backgroundImage: "url('/textures/paper.png')", backgroundSize: 'cover', backgroundPosition: 'center' } : { background: bgMode === 'dark' ? '#121214' : brand.bg }} />
         )}
-        {blocks.map((b) => (
-          <div
-            key={b.id}
-            onPointerDown={(e) => onBlockDown(e, b.id)}
-            style={{
-              position: 'absolute', left: `${b.xPct * 100}%`, top: `${b.yPct * 100}%`, width: `${b.widthPct * 100}%`,
-              fontSize: Math.max(8, b.size * scale), fontFamily: fontStack, lineHeight: 1.18,
-              textAlign: b.align, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-              transform: b.rotation ? `rotate(${b.rotation}deg)` : undefined, transformOrigin: 'center',
-              cursor: 'move', touchAction: 'none',
-              outline: selected === b.id ? `2px solid ${brand.accentColor}` : 'none', outlineOffset: 3,
-            }}
-          >
-            <PreviewText text={b.text} plate={b.plate} color={b.color} brand={brand} />
-          </div>
-        ))}
+        {blocks.map((b) => {
+          const isTxt = b.type === 'text'
+          const pxW = b.widthPct * canvasW
+          return (
+            <div
+              key={b.id}
+              onPointerDown={(e) => onBlockDown(e, b.id)}
+              style={{
+                position: 'absolute', left: `${b.xPct * 100}%`, top: `${b.yPct * 100}%`,
+                ...(isTxt ? {
+                  width: `${b.widthPct * 100}%`,
+                  fontSize: Math.max(8, b.size * scale), fontFamily: fontStack, lineHeight: 1.18,
+                  textAlign: b.align, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                } : { display: 'flex' }),
+                transform: b.rotation ? `rotate(${b.rotation}deg)` : undefined, transformOrigin: 'center',
+                cursor: 'move', touchAction: 'none',
+                outline: selected === b.id ? `2px solid ${brand.accentColor}` : 'none', outlineOffset: 3,
+              }}
+            >
+              {b.type === 'image' && b.src ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={b.src} alt="" draggable={false} style={{ width: pxW, height: pxW / (b.aspect || 1), objectFit: 'contain', pointerEvents: 'none' }} />
+              ) : b.type === 'shape' && b.shape === 'badge' ? (
+                <Badge size={pxW} color={b.color} label={b.text || '1'} fontFamily="'MontserratEd'" />
+              ) : b.type === 'shape' && b.shape ? (
+                <ArrowSvg w={pxW} h={pxW / (b.aspect || SHAPE_ASPECT[b.shape])} color={b.color} curve={b.shape === 'arrow-curve'} />
+              ) : (
+                <PreviewText text={b.text} plate={b.plate} color={b.color} brand={brand} />
+              )}
+            </div>
+          )
+        })}
       </div>
 
       {/* Selected-block controls */}
       {sel && (
         <div className="mt-3 space-y-2 rounded-xl border border-primary/25 bg-primary/5 p-3">
-          <textarea value={sel.text} onChange={(e) => patch(sel.id, { text: e.target.value })} rows={2}
-            placeholder="Текст блока (слово в **звёздочках** = акцент)"
-            className="w-full resize-none rounded-lg border border-border bg-background p-2.5 text-sm" />
+          {sel.type === 'text' && (
+            <textarea value={sel.text} onChange={(e) => patch(sel.id, { text: e.target.value })} rows={2}
+              placeholder="Текст блока (слово в **звёздочках** = акцент)"
+              className="w-full resize-none rounded-lg border border-border bg-background p-2.5 text-sm" />
+          )}
+          {isBadge && (
+            <input value={sel.text} onChange={(e) => patch(sel.id, { text: e.target.value.slice(0, 3) })} maxLength={3}
+              placeholder="№" className="w-20 rounded-lg border border-border bg-background p-2 text-center text-sm font-bold" />
+          )}
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <div className="inline-flex items-center gap-1">
-              <button type="button" onClick={() => patch(sel.id, { size: clamp(sel.size - 8, 22, 240) })} className="h-7 w-7 rounded-md border border-border font-bold">−</button>
-              <span className="w-7 text-center text-muted-foreground">{sel.size}</span>
-              <button type="button" onClick={() => patch(sel.id, { size: clamp(sel.size + 8, 22, 240) })} className="h-7 w-7 rounded-md border border-border font-bold">+</button>
+              <button type="button" onClick={() => resizeSel(sel, -1)} className="h-7 w-7 rounded-md border border-border font-bold">−</button>
+              <span className="w-10 text-center text-muted-foreground">{sel.type === 'text' ? sel.size : `${Math.round(sel.widthPct * 100)}%`}</span>
+              <button type="button" onClick={() => resizeSel(sel, 1)} className="h-7 w-7 rounded-md border border-border font-bold">+</button>
             </div>
-            <button type="button" onClick={() => patch(sel.id, { rotation: (sel.rotation - 10) })} className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 font-medium text-muted-foreground"><RotateCw className="h-3 w-3 -scale-x-100" /> −10°</button>
-            <button type="button" onClick={() => patch(sel.id, { rotation: (sel.rotation + 10) })} className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 font-medium text-muted-foreground"><RotateCw className="h-3 w-3" /> +10°</button>
+            <button type="button" onClick={() => patch(sel.id, { rotation: sel.rotation - 10 })} className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 font-medium text-muted-foreground"><RotateCw className="h-3 w-3 -scale-x-100" /> −10°</button>
+            <button type="button" onClick={() => patch(sel.id, { rotation: sel.rotation + 10 })} className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 font-medium text-muted-foreground"><RotateCw className="h-3 w-3" /> +10°</button>
             {sel.rotation !== 0 && <button type="button" onClick={() => patch(sel.id, { rotation: 0 })} className="text-[11px] text-muted-foreground underline">сброс ↻</button>}
-            {swatches.map((c, i) => (
+
+            {/* Colour: text colour / shape stroke or fill (not for images) */}
+            {!isImage && swatches.map((c, i) => (
               <button key={i} type="button" onClick={() => patch(sel.id, { color: c })} aria-label="цвет"
                 className={`h-7 w-7 rounded-full border ${sel.color === c ? 'ring-2 ring-primary ring-offset-1' : 'border-border'}`} style={{ background: c }} />
             ))}
-            <button type="button" onClick={() => patch(sel.id, { plate: !sel.plate })}
-              className={`rounded-lg px-2.5 py-1.5 font-medium ${sel.plate ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground'}`}>
-              {sel.plate ? 'на плашке' : 'без плашки'}
-            </button>
-            <button type="button" onClick={() => patch(sel.id, { align: sel.align === 'left' ? 'center' : 'left' })}
-              className="rounded-lg border border-border px-2.5 py-1.5 font-medium text-muted-foreground">
-              {sel.align === 'left' ? 'слева' : 'по центру'}
-            </button>
+
+            {sel.type === 'text' && (
+              <>
+                <button type="button" onClick={() => patch(sel.id, { plate: !sel.plate })}
+                  className={`rounded-lg px-2.5 py-1.5 font-medium ${sel.plate ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground'}`}>
+                  {sel.plate ? 'на плашке' : 'без плашки'}
+                </button>
+                <button type="button" onClick={() => patch(sel.id, { align: sel.align === 'left' ? 'center' : 'left' })}
+                  className="rounded-lg border border-border px-2.5 py-1.5 font-medium text-muted-foreground">
+                  {sel.align === 'left' ? 'слева' : 'по центру'}
+                </button>
+              </>
+            )}
             <button type="button" onClick={() => duplicate(sel.id)} className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 font-medium text-muted-foreground"><Copy className="h-3.5 w-3.5" /> копия</button>
             <button type="button" onClick={() => removeBlock(sel.id)} className="ml-auto inline-flex items-center gap-1 rounded-lg border border-rose-300 px-2.5 py-1.5 font-medium text-rose-600"><Trash2 className="h-3.5 w-3.5" /> удалить</button>
           </div>
+          {isArrow && <p className="text-[11px] text-muted-foreground">Поверни элемент (двумя пальцами или ±10°), чтобы направить стрелку.</p>}
         </div>
       )}
-      {!sel && blocks.length > 0 && <p className="mt-2 text-[11px] text-muted-foreground">Нажми на текст, чтобы выбрать и настроить. Двумя пальцами — размер и поворот.</p>}
+      {!sel && blocks.length > 0 && <p className="mt-2 text-[11px] text-muted-foreground">Нажми на элемент, чтобы выбрать и настроить. Двумя пальцами — размер и поворот.</p>}
 
       <button type="button" onClick={exportImg} disabled={exporting || !hasBg || blocks.length === 0}
         className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40">

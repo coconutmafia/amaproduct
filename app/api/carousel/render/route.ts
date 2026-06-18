@@ -98,11 +98,18 @@ export async function GET(request: Request) {
       return png(spec, 'story', brand)
     }
     if (url.searchParams.get('format') === 'free') {
+      // Exercises the element library: text + arrow + curved arrow + numbered
+      // badges + an emoji icon (icon = a text block with an emoji).
       const spec: SlideSpec = {
         kind: 'free', index: 0, total: 1, photoUrl: url.searchParams.get('photo') || undefined,
         blocks: [
-          { text: 'Снимаю **плёночку** с нового айфона', xPct: 0.06, yPct: 0.10, widthPct: 0.82, size: 58, color: '#FFFFFF', plate: true, align: 'left' },
-          { text: 'а вы себя **радуете**?', xPct: 0.10, yPct: 0.72, widthPct: 0.66, size: 52, plate: true, align: 'left', rotation: -7 },
+          { type: 'text', text: 'Снимаю **плёночку** с нового айфона', xPct: 0.06, yPct: 0.08, widthPct: 0.82, size: 58, color: '#FFFFFF', plate: true, align: 'left' },
+          { type: 'shape', shape: 'badge', text: '1', xPct: 0.10, yPct: 0.40, widthPct: 0.14, color: '#EC1E8C' },
+          { type: 'shape', shape: 'badge', text: '2', xPct: 0.10, yPct: 0.52, widthPct: 0.14, color: '#EC1E8C' },
+          { type: 'shape', shape: 'arrow', xPct: 0.30, yPct: 0.30, widthPct: 0.5, color: '#FFFFFF', rotation: 18 },
+          { type: 'shape', shape: 'arrow-curve', xPct: 0.40, yPct: 0.60, widthPct: 0.42, color: '#EC1E8C', rotation: -10 },
+          { type: 'text', text: '⚠️', xPct: 0.70, yPct: 0.10, widthPct: 0.2, size: 120, plate: false, align: 'center' },
+          { type: 'text', text: 'а вы себя **радуете**?', xPct: 0.10, yPct: 0.78, widthPct: 0.66, size: 52, plate: true, align: 'left', rotation: -7 },
         ],
       }
       return png(spec, 'story', brand)
