@@ -15,6 +15,7 @@ import { createClient } from '@/lib/supabase/client'
 import { ArrowLeft, Images, GalleryHorizontalEnd, ImageIcon, ChevronRight, Palette, Bookmark, X } from 'lucide-react'
 import { PostImage } from '@/components/carousel/PostImage'
 import { CarouselSlides } from '@/components/carousel/CarouselSlides'
+import { CarouselDesigner } from '@/components/carousel/CarouselDesigner'
 import { VideoStory } from '@/components/carousel/VideoStory'
 import { SchemeStory } from '@/components/carousel/SchemeStory'
 import { StoryEditor } from '@/components/carousel/StoryEditor'
@@ -142,6 +143,11 @@ export default function VisualPage() {
         </div>
         {carouselText.trim().length > 30 && <CarouselSlides sourceText={carouselText.trim()} type="carousel" projectId={projectId} />}
       </section>
+
+      {/* 3b. Design carousel from scratch — full designer per slide (4:5) */}
+      <div className="mt-4">
+        <CarouselDesigner projectId={projectId} />
+      </div>
 
       {/* 4. Video + text overlay (same component is reused on the stories page) */}
       <div className="mt-4">

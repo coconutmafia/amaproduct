@@ -118,7 +118,8 @@ export async function GET(request: Request) {
           { type: 'text', text: 'а вы себя **радуете**?', xPct: 0.10, yPct: 0.78, widthPct: 0.66, size: 52, plate: true, align: 'left', rotation: -7 },
         ],
       }
-      return png(spec, 'story', brand)
+      // &cf=1 renders the free slide at carousel ratio (4:5) — the design-carousel path.
+      return png(spec, url.searchParams.get('cf') === '1' ? 'carousel' : 'story', brand)
     }
     if (url.searchParams.get('format') === 'scheme') {
       const spec: SlideSpec = {
