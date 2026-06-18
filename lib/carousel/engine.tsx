@@ -141,6 +141,22 @@ type RichOpts = {
   lineGap?: number
   uppercase?: boolean
   accentWeight?: number
+  // When set, **accent** words get a gradient fill (background-clip:text) instead
+  // of the flat accent colour — owner reference: headline accents in a warm
+  // pink→orange gradient. Satori supports backgroundClip:'text' + transparent.
+  accentGrad?: { from: string; mid: string; to: string }
+}
+
+// Emphasis (**word**) colour: a clipped gradient when accentGrad is set, else flat.
+function emFill(o: RichOpts): Record<string, string> {
+  if (!o.accentGrad) return { color: o.accent }
+  return {
+    backgroundImage: `linear-gradient(110deg, ${o.accentGrad.from}, ${o.accentGrad.mid}, ${o.accentGrad.to})`,
+    backgroundClip: 'text',
+    WebkitBackgroundClip: 'text',
+    color: 'transparent',
+    WebkitTextFillColor: 'transparent',
+  }
 }
 
 function tokenize(text: string): { word: string; em: boolean; br?: boolean }[] {
@@ -186,7 +202,7 @@ export function RichText({ text, o }: { text: string; o: RichOpts }): ReactEleme
             key={i}
             style={{
               display: 'flex',
-              color: it.em ? o.accent : o.color,
+              ...(it.em ? emFill(o) : { color: o.color }),
               fontSize: o.size,
               fontWeight: it.em ? o.accentWeight ?? 800 : o.weight ?? 500,
               marginRight: gap,
@@ -491,7 +507,7 @@ function Cover({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: S
   return (
     <Frame theme={theme} size={size} index={s.index} total={s.total} photo={s.photoUrl}>
       {s.emoji ? <div style={{ display: 'flex', fontSize: 120, marginBottom: 30 }}>{s.emoji}</div> : <div style={{ display: 'flex' }} />}
-      <RichText text={s.headline || ''} o={{ size: 92, weight: 900, accentWeight: 900, color: tx, accent: theme.accent, uppercase: true, lineGap: 8 }} />
+      <RichText text={s.headline || ''} o={{ size: 92, weight: 900, accentWeight: 900, color: tx, accent: theme.accent, accentGrad: { from: theme.gradFrom, mid: theme.gradMid, to: theme.gradTo }, uppercase: true, lineGap: 8 }} />
       {s.subheadline ? (
         <div style={{ display: 'flex', marginTop: 40, width: '100%', justifyContent: 'center' }}>
           <RichText text={s.subheadline} o={{ size: 38, weight: 500, color: mu, accent: theme.accent }} />
@@ -511,7 +527,7 @@ function Content({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size:
       {s.emoji ? <div style={{ display: 'flex', fontSize: 96, marginBottom: 28 }}>{s.emoji}</div> : <div style={{ display: 'flex' }} />}
       {s.headline ? (
         <div style={{ display: 'flex', width: '100%', justifyContent: 'center', marginBottom: 36 }}>
-          <RichText text={s.headline} o={{ size: 58, weight: 800, accentWeight: 800, color: tx, accent: theme.accent, uppercase: true, lineGap: 6 }} />
+          <RichText text={s.headline} o={{ size: 58, weight: 800, accentWeight: 800, color: tx, accent: theme.accent, accentGrad: { from: theme.gradFrom, mid: theme.gradMid, to: theme.gradTo }, uppercase: true, lineGap: 6 }} />
         </div>
       ) : (
         <div style={{ display: 'flex' }} />
@@ -544,7 +560,7 @@ function Post({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Si
   return (
     <Frame theme={theme} size={size} index={0} total={1}>
       {s.emoji ? <div style={{ display: 'flex', fontSize: 100, marginBottom: 26 }}>{s.emoji}</div> : <div style={{ display: 'flex' }} />}
-      <RichText text={s.headline || ''} o={{ size: 76, weight: 900, accentWeight: 900, color: theme.text, accent: theme.accent, uppercase: true, lineGap: 6 }} />
+      <RichText text={s.headline || ''} o={{ size: 76, weight: 900, accentWeight: 900, color: theme.text, accent: theme.accent, accentGrad: { from: theme.gradFrom, mid: theme.gradMid, to: theme.gradTo }, uppercase: true, lineGap: 6 }} />
       {s.body ? (
         <div style={{ display: 'flex', marginTop: 34, width: '100%', justifyContent: 'center' }}>
           <RichText text={s.body} o={{ size: 38, weight: 500, color: theme.textMuted, accent: theme.accent, lineGap: 12 }} />
@@ -738,7 +754,7 @@ function Scheme({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: 
             maxWidth: W - 2 * pad - 80,
             ...(a.left ? { left: pad } : { right: pad }),
           }}>
-            <RichText text={stp} o={{ size: 60, weight: 800, accentWeight: 900, color: fg, accent: theme.accent, align: a.left ? 'left' : 'right', lineGap: 4 }} />
+            <RichText text={stp} o={{ size: 60, weight: 800, accentWeight: 900, color: fg, accent: theme.accent, accentGrad: { from: theme.gradFrom, mid: theme.gradMid, to: theme.gradTo }, align: a.left ? 'left' : 'right', lineGap: 4 }} />
           </div>
         )
       })}
