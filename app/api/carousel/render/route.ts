@@ -99,10 +99,13 @@ export async function GET(request: Request) {
     }
     if (url.searchParams.get('format') === 'free') {
       // Exercises the element library: text + arrow + curved arrow + numbered
-      // badges + an emoji icon (icon = a text block with an emoji).
+      // badges + an emoji icon (icon = a text block with an emoji). Dev params:
+      // &photo=<url> background, &sticker=<url> adds an AI-image block.
+      const sticker = url.searchParams.get('sticker') || undefined
       const spec: SlideSpec = {
         kind: 'free', index: 0, total: 1, photoUrl: url.searchParams.get('photo') || undefined,
         blocks: [
+          ...(sticker ? [{ type: 'image' as const, src: sticker, xPct: 0.55, yPct: 0.5, widthPct: 0.4, aspect: 1, rotation: 6 }] : []),
           { type: 'text', text: 'Снимаю **плёночку** с нового айфона', xPct: 0.06, yPct: 0.08, widthPct: 0.82, size: 58, color: '#FFFFFF', plate: true, align: 'left' },
           { type: 'shape', shape: 'badge', text: '1', xPct: 0.10, yPct: 0.40, widthPct: 0.14, color: '#EC1E8C' },
           { type: 'shape', shape: 'badge', text: '2', xPct: 0.10, yPct: 0.52, widthPct: 0.14, color: '#EC1E8C' },

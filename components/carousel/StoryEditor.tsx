@@ -11,9 +11,10 @@ import { useRef, useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import {
   Upload, Loader2, Plus, Trash2, Download, Type, Copy, RotateCw,
-  ArrowUpRight, Spline, Hash, Smile, Image as ImageIcon,
+  ArrowUpRight, Spline, Hash, Smile, Image as ImageIcon, Sparkles,
 } from 'lucide-react'
 import { downscaleImage } from '@/lib/downscaleImage'
+import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { ArrowSvg, Badge, SHAPE_ASPECT, type FreeShape } from '@/lib/carousel/shapes'
 
 let _idc = 0
@@ -71,6 +72,10 @@ export function StoryEditor({ projectId }: { projectId: string }) {
   const [blocks, setBlocks] = useState<Block[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [showIcons, setShowIcons] = useState(false)
+  const [showAi, setShowAi] = useState(false)
+  const [aiPrompt, setAiPrompt] = useState('')
+  const [aiMode, setAiMode] = useState<'sticker' | 'background'>('sticker')
+  const [aiBusy, setAiBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [canvasW, setCanvasW] = useState(360)
@@ -212,6 +217,35 @@ export function StoryEditor({ projectId }: { projectId: string }) {
     finally { setUploadingSticker(false) }
   }
 
+  // AI image (step a): a flat-illustration sticker (transparent → image block)
+  // or a full story background (→ becomes the photo background).
+  async function generateAi() {
+    if (!aiPrompt.trim()) { toast.error('Опиши, что нарисовать'); return }
+    setAiBusy(true)
+    try {
+      const res = await fetch('/api/ai/generate-image', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, prompt: aiPrompt, mode: aiMode }),
+      })
+      const d = await res.json().catch(() => ({} as { url?: string; aspect?: number; error?: string }))
+      if (!res.ok || !d.url) throw new Error(d.error || 'Не удалось сгенерировать картинку')
+      if (aiMode === 'background') {
+        setBgMode('photo'); setPhotoUrl(d.url)
+        toast.success('Фон готов — добавляй текст и элементы')
+      } else {
+        const id = newId()
+        setBlocks((p) => [...p, {
+          id, type: 'image', text: '', src: d.url!, aspect: d.aspect || 1,
+          xPct: 0.3, yPct: 0.34, widthPct: 0.46, size: 56, color: '#FFFFFF', plate: false, align: 'center', rotation: 0,
+        }])
+        setSelected(id)
+        toast.success('Картинка добавлена — двигай и масштабируй')
+      }
+      setShowAi(false); setAiPrompt('')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Ошибка') }
+    finally { setAiBusy(false) }
+  }
+
   function addText() {
     const id = newId()
     setBlocks((p) => [...p, { id, type: 'text', text: 'Текст', xPct: 0.1, yPct: 0.42, widthPct: 0.8, size: 56, color: '#FFFFFF', plate: true, align: 'left', rotation: 0 }])
@@ -333,12 +367,34 @@ export function StoryEditor({ projectId }: { projectId: string }) {
         <button type="button" onClick={() => addArrow('arrow')} disabled={!hasBg} className={addBtn}><ArrowUpRight className="h-3.5 w-3.5" /> Стрелка</button>
         <button type="button" onClick={() => addArrow('arrow-curve')} disabled={!hasBg} className={addBtn}><Spline className="h-3.5 w-3.5" /> Дуга</button>
         <button type="button" onClick={addBadge} disabled={!hasBg} className={addBtn}><Hash className="h-3.5 w-3.5" /> Номер</button>
-        <button type="button" onClick={() => setShowIcons((v) => !v)} disabled={!hasBg} className={`${addBtn} ${showIcons ? 'border-primary/50 text-foreground' : ''}`}><Smile className="h-3.5 w-3.5" /> Иконка</button>
+        <button type="button" onClick={() => { setShowIcons((v) => !v); setShowAi(false) }} disabled={!hasBg} className={`${addBtn} ${showIcons ? 'border-primary/50 text-foreground' : ''}`}><Smile className="h-3.5 w-3.5" /> Иконка</button>
         <label className={`${addBtn} cursor-pointer ${!hasBg ? 'pointer-events-none opacity-40' : ''}`}>
           {uploadingSticker ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Загружаю…</> : <><ImageIcon className="h-3.5 w-3.5" /> Картинка</>}
           <input type="file" accept="image/*" className="hidden" disabled={!hasBg || uploadingSticker} onChange={(e) => uploadSticker(e.target.files)} />
         </label>
+        <button type="button" onClick={() => { setShowAi((v) => !v); setShowIcons(false) }} className={`${addBtn} ${showAi ? 'border-primary/50 text-foreground' : ''}`}><Sparkles className="h-3.5 w-3.5" /> AI-картинка</button>
       </div>
+      {showAi && (
+        <div className="mt-2 space-y-2 rounded-xl border border-primary/20 bg-primary/5 p-3">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-muted-foreground">Нарисовать:</span>
+            {([['sticker', 'Стикер (без фона)'], ['background', 'Фон сторис']] as const).map(([m, label]) => (
+              <button key={m} type="button" onClick={() => setAiMode(m)}
+                className={`rounded-lg px-2.5 py-1 font-medium ${aiMode === m ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground'}`}>{label}</button>
+            ))}
+          </div>
+          <VoiceTextarea value={aiPrompt} onChange={setAiPrompt} rows={2}
+            placeholder={aiMode === 'sticker' ? 'напр.: розовая копилка-свинка, флэт-иллюстрация' : 'напр.: мягкий бежевый фон с лёгкими бликами'} />
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={generateAi} disabled={aiBusy || !aiPrompt.trim()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40">
+              {aiBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              {aiBusy ? 'Рисую… (до ~30 сек)' : 'Сгенерировать'}
+            </button>
+            <span className="text-[11px] text-muted-foreground">без текста на картинке — текст добавишь сверху сам</span>
+          </div>
+        </div>
+      )}
       {showIcons && hasBg && (
         <div className="mt-2 flex flex-wrap gap-1.5 rounded-xl border border-primary/20 bg-primary/5 p-2">
           {ICONS.map((emo) => (
