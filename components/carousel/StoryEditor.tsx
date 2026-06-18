@@ -46,6 +46,7 @@ export function StoryEditor({ projectId }: { projectId: string }) {
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [canvasW, setCanvasW] = useState(360)
   const [brand, setBrand] = useState<Brand>({ accentColor: '#EC1E8C', bg: '#F5F0E8', text: '#1A1A1A' })
+  const [bgMode, setBgMode] = useState<'photo' | 'paper' | 'dark' | 'light'>('photo')
 
   const canvasRef = useRef<HTMLDivElement>(null)
   const blocksRef = useRef(blocks)
@@ -169,18 +170,25 @@ export function StoryEditor({ projectId }: { projectId: string }) {
   const removeBlock = (id: string) => { setBlocks((prev) => prev.filter((b) => b.id !== id)); setSelected(null) }
 
   async function exportImg() {
-    if (!photoUrl) { toast.error('Сначала загрузи фото'); return }
+    if (bgMode === 'photo' ? !photoUrl : false) { toast.error('Сначала загрузи фото или выбери фон'); return }
     if (blocks.length === 0) { toast.error('Добавь хотя бы один текст'); return }
     setExporting(true)
     try {
+      // Non-photo backgrounds render via the engine's Backdrop using these brand hints.
+      const exportBrand =
+        bgMode === 'paper' ? { accentColor: brand.accentColor, text: brand.text, bgStyle: 'paper' }
+        : bgMode === 'dark' ? { accentColor: brand.accentColor, bg: '#121214', text: '#FFFFFF', bgStyle: 'solid' }
+        : bgMode === 'light' ? { accentColor: brand.accentColor, bg: brand.bg, text: brand.text, bgStyle: 'solid' }
+        : { accentColor: brand.accentColor, bg: brand.bg, text: brand.text, bgStyle: brand.bgStyle }
       const res = await fetch('/api/carousel/render', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           slide: {
-            kind: 'free', index: 0, total: 1, photoUrl,
+            kind: 'free', index: 0, total: 1,
+            ...(bgMode === 'photo' ? { photoUrl } : {}),
             blocks: blocks.map((b) => ({ text: b.text, xPct: b.xPct, yPct: b.yPct, widthPct: b.widthPct, size: b.size, color: b.color, plate: b.plate, align: b.align, rotation: b.rotation })),
           },
-          format: 'story', projectId, brand: { accentColor: brand.accentColor, bg: brand.bg, text: brand.text, bgStyle: brand.bgStyle },
+          format: 'story', projectId, brand: exportBrand,
         }),
       })
       if (!res.ok) throw new Error('Не удалось собрать картинку — попробуй ещё раз')
@@ -191,6 +199,7 @@ export function StoryEditor({ projectId }: { projectId: string }) {
   }
 
   const scale = canvasW / 1080
+  const hasBg = bgMode === 'photo' ? !!photoUrl : true
   const sel = blocks.find((b) => b.id === selected) || null
   const swatches = ['#FFFFFF', brand.text, brand.accentColor]
   const fontStack = "'MontserratEd', system-ui, sans-serif"
@@ -213,12 +222,22 @@ export function StoryEditor({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold hover:border-primary/40">
-          {uploadingPhoto ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Загружаю…</> : <><Upload className="h-3.5 w-3.5" /> {photoUrl ? 'Сменить фото' : 'Загрузить фото'}</>}
-          <input type="file" accept="image/*" className="hidden" disabled={uploadingPhoto} onChange={(e) => uploadPhoto(e.target.files)} />
-        </label>
-        <button type="button" onClick={addBlock} disabled={!photoUrl}
+      {/* Background: a photo OR a designed backdrop (paper / dark / brand) */}
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-muted-foreground">Фон:</span>
+        {([['photo', 'Фото'], ['paper', 'Бумага'], ['dark', 'Тёмный'], ['light', 'Светлый']] as const).map(([m, label]) => (
+          <button key={m} type="button" onClick={() => setBgMode(m)}
+            className={`rounded-lg px-2.5 py-1.5 font-medium ${bgMode === m ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground hover:text-foreground'}`}>{label}</button>
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {bgMode === 'photo' && (
+          <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold hover:border-primary/40">
+            {uploadingPhoto ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Загружаю…</> : <><Upload className="h-3.5 w-3.5" /> {photoUrl ? 'Сменить фото' : 'Загрузить фото'}</>}
+            <input type="file" accept="image/*" className="hidden" disabled={uploadingPhoto} onChange={(e) => uploadPhoto(e.target.files)} />
+          </label>
+        )}
+        <button type="button" onClick={addBlock} disabled={!hasBg}
           className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold hover:border-primary/40 disabled:opacity-40">
           <Plus className="h-3.5 w-3.5" /> Добавить текст
         </button>
@@ -234,10 +253,17 @@ export function StoryEditor({ projectId }: { projectId: string }) {
         className="relative mx-auto mt-3 w-full max-w-[360px] select-none overflow-hidden rounded-xl bg-neutral-800"
         style={{ aspectRatio: '9 / 16', touchAction: 'none' }}
       >
-        {photoUrl
+        {bgMode === 'photo' && photoUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          ? <img src={photoUrl} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover" draggable={false} />
-          : <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center text-xs text-white/70">Загрузи фото — потом добавишь текст и расставишь его как захочешь</div>}
+          <img src={photoUrl} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover" draggable={false} />
+        )}
+        {bgMode === 'photo' && !photoUrl && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center text-xs text-white/70">Загрузи фото — потом добавишь текст и расставишь его как захочешь</div>
+        )}
+        {bgMode !== 'photo' && (
+          <div className="pointer-events-none absolute inset-0"
+            style={bgMode === 'paper' ? { backgroundImage: "url('/textures/paper.png')", backgroundSize: 'cover', backgroundPosition: 'center' } : { background: bgMode === 'dark' ? '#121214' : brand.bg }} />
+        )}
         {blocks.map((b) => (
           <div
             key={b.id}
@@ -290,7 +316,7 @@ export function StoryEditor({ projectId }: { projectId: string }) {
       )}
       {!sel && blocks.length > 0 && <p className="mt-2 text-[11px] text-muted-foreground">Нажми на текст, чтобы выбрать и настроить. Двумя пальцами — размер и поворот.</p>}
 
-      <button type="button" onClick={exportImg} disabled={exporting || !photoUrl || blocks.length === 0}
+      <button type="button" onClick={exportImg} disabled={exporting || !hasBg || blocks.length === 0}
         className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40">
         {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
         {exporting ? 'Собираю картинку…' : 'Сохранить картинку'}
