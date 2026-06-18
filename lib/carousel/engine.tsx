@@ -497,6 +497,9 @@ export interface SlideSpec {
   steps?: string[]
   // Free editor frames: text blocks positioned anywhere over a photo (drag editor).
   blocks?: FreeBlock[]
+  // Free editor: two photos stacked (top half / bottom half) — owner's «2 фото на
+  // слайд» storytelling layout (Да, я … / Но …). Blocks sit on top of both.
+  split?: { top?: string; bottom?: string }
 }
 
 // ── Carousel templates ──────────────────────────────────────────────────────────
@@ -773,9 +776,23 @@ function Free({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Si
     (b.type === 'shape' && b.shape) ||
     (!!b.text && b.text.trim().length > 0)   // text / icon (default)
   ))
+  const half = Math.round(H / 2)
   return (
     <div style={{ display: 'flex', position: 'relative', width: W, height: H }}>
-      {s.photoUrl
+      {s.split && (s.split.top || s.split.bottom) ? (
+        <div style={{ display: 'flex', flexDirection: 'column', position: 'absolute', top: 0, left: 0, width: W, height: H }}>
+          <div style={{ display: 'flex', width: W, height: half, overflow: 'hidden' }}>
+            {s.split.top
+              ? <img src={s.split.top} width={W} height={half} style={{ objectFit: 'cover' }} alt="" />
+              : <div style={{ display: 'flex', width: W, height: half, backgroundColor: '#1c1c1e' }} />}
+          </div>
+          <div style={{ display: 'flex', width: W, height: H - half, overflow: 'hidden' }}>
+            {s.split.bottom
+              ? <img src={s.split.bottom} width={W} height={H - half} style={{ objectFit: 'cover' }} alt="" />
+              : <div style={{ display: 'flex', width: W, height: H - half, backgroundColor: '#1c1c1e' }} />}
+          </div>
+        </div>
+      ) : s.photoUrl
         ? <img src={s.photoUrl} width={W} height={H} style={{ objectFit: 'cover' }} alt="" />
         : <Backdrop theme={theme} size={size} />}
       {blocks.map((b, i) => {

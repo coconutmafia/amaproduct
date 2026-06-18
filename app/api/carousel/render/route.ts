@@ -102,8 +102,11 @@ export async function GET(request: Request) {
       // badges + an emoji icon (icon = a text block with an emoji). Dev params:
       // &photo=<url> background, &sticker=<url> adds an AI-image block.
       const sticker = url.searchParams.get('sticker') || undefined
+      const top = url.searchParams.get('top') || undefined
+      const bottom = url.searchParams.get('bottom') || undefined
       const spec: SlideSpec = {
         kind: 'free', index: 0, total: 1, photoUrl: url.searchParams.get('photo') || undefined,
+        ...(top || bottom ? { split: { top, bottom } } : {}),
         blocks: [
           ...(sticker ? [{ type: 'image' as const, src: sticker, xPct: 0.55, yPct: 0.5, widthPct: 0.4, aspect: 1, rotation: 6 }] : []),
           { type: 'text', text: 'Снимаю **плёночку** с нового айфона', xPct: 0.06, yPct: 0.08, widthPct: 0.82, size: 58, color: '#FFFFFF', plate: true, align: 'left' },

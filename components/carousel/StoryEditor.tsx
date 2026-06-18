@@ -69,6 +69,9 @@ export function StoryEditor({ projectId }: { projectId: string }) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [uploadingSticker, setUploadingSticker] = useState(false)
+  const [photoTop, setPhotoTop] = useState<string | null>(null)
+  const [photoBottom, setPhotoBottom] = useState<string | null>(null)
+  const [uploadingHalf, setUploadingHalf] = useState<'top' | 'bottom' | null>(null)
   const [blocks, setBlocks] = useState<Block[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [showIcons, setShowIcons] = useState(false)
@@ -80,7 +83,7 @@ export function StoryEditor({ projectId }: { projectId: string }) {
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [canvasW, setCanvasW] = useState(360)
   const [brand, setBrand] = useState<Brand>({ accentColor: '#EC1E8C', bg: '#F5F0E8', text: '#1A1A1A' })
-  const [bgMode, setBgMode] = useState<'photo' | 'paper' | 'dark' | 'light'>('photo')
+  const [bgMode, setBgMode] = useState<'photo' | 'split' | 'paper' | 'dark' | 'light'>('photo')
 
   const canvasRef = useRef<HTMLDivElement>(null)
   const blocksRef = useRef(blocks)
@@ -178,20 +181,35 @@ export function StoryEditor({ projectId }: { projectId: string }) {
     else if (gesture.current) initGesture(gesture.current.id) // re-baseline for the finger still down
   }
 
+  async function uploadOne(f: File): Promise<string> {
+    const small = await downscaleImage(f, 2000)
+    const fd = new FormData()
+    fd.append('projectId', projectId); fd.append('kind', 'story'); fd.append('files', small)
+    const res = await fetch('/api/brand-kit/upload', { method: 'POST', body: fd })
+    const d = await res.json().catch(() => ({} as { urls?: string[]; error?: string }))
+    if (!res.ok || !d.urls?.[0]) throw new Error(d.error || (res.status === 413 ? 'Фото слишком большое' : 'Не удалось загрузить фото'))
+    return d.urls[0]
+  }
+
   async function uploadPhoto(files: FileList | null) {
     const f = files?.[0]
     if (!f) return
     setUploadingPhoto(true)
-    try {
-      const small = await downscaleImage(f, 2000)
-      const fd = new FormData()
-      fd.append('projectId', projectId); fd.append('kind', 'story'); fd.append('files', small)
-      const res = await fetch('/api/brand-kit/upload', { method: 'POST', body: fd })
-      const d = await res.json().catch(() => ({} as { urls?: string[]; error?: string }))
-      if (!res.ok || !d.urls?.[0]) throw new Error(d.error || (res.status === 413 ? 'Фото слишком большое' : 'Не удалось загрузить фото'))
-      setPhotoUrl(d.urls[0])
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось загрузить фото') }
+    try { setPhotoUrl(await uploadOne(f)) }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось загрузить фото') }
     finally { setUploadingPhoto(false) }
+  }
+
+  // «2 фото на слайд»: upload the top or bottom half separately.
+  async function uploadHalf(files: FileList | null, which: 'top' | 'bottom') {
+    const f = files?.[0]
+    if (!f) return
+    setUploadingHalf(which)
+    try {
+      const url = await uploadOne(f)
+      if (which === 'top') setPhotoTop(url); else setPhotoBottom(url)
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось загрузить фото') }
+    finally { setUploadingHalf(null) }
   }
 
   async function uploadSticker(files: FileList | null) {
@@ -283,6 +301,7 @@ export function StoryEditor({ projectId }: { projectId: string }) {
 
   async function exportImg() {
     if (bgMode === 'photo' && !photoUrl) { toast.error('Сначала загрузи фото или выбери фон'); return }
+    if (bgMode === 'split' && !(photoTop && photoBottom)) { toast.error('Загрузи оба фото — верх и низ'); return }
     if (blocks.length === 0) { toast.error('Добавь хотя бы один элемент'); return }
     setExporting(true)
     try {
@@ -298,6 +317,7 @@ export function StoryEditor({ projectId }: { projectId: string }) {
           slide: {
             kind: 'free', index: 0, total: 1,
             ...(bgMode === 'photo' ? { photoUrl } : {}),
+            ...(bgMode === 'split' ? { split: { top: photoTop, bottom: photoBottom } } : {}),
             blocks: blocks.map((b) => ({
               type: b.type, text: b.text, src: b.src, shape: b.shape, aspect: b.aspect,
               xPct: b.xPct, yPct: b.yPct, widthPct: b.widthPct, size: b.size,
@@ -315,7 +335,7 @@ export function StoryEditor({ projectId }: { projectId: string }) {
   }
 
   const scale = canvasW / 1080
-  const hasBg = bgMode === 'photo' ? !!photoUrl : true
+  const hasBg = bgMode === 'photo' ? !!photoUrl : bgMode === 'split' ? !!(photoTop && photoBottom) : true
   const sel = blocks.find((b) => b.id === selected) || null
   const swatches = ['#FFFFFF', brand.text, brand.accentColor]
   const fontStack = "'MontserratEd', system-ui, sans-serif"
@@ -346,7 +366,7 @@ export function StoryEditor({ projectId }: { projectId: string }) {
       {/* Background: a photo OR a designed backdrop (paper / dark / brand) */}
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
         <span className="text-muted-foreground">Фон:</span>
-        {([['photo', 'Фото'], ['paper', 'Бумага'], ['dark', 'Тёмный'], ['light', 'Светлый']] as const).map(([m, label]) => (
+        {([['photo', 'Фото'], ['split', '2 фото'], ['paper', 'Бумага'], ['dark', 'Тёмный'], ['light', 'Светлый']] as const).map(([m, label]) => (
           <button key={m} type="button" onClick={() => setBgMode(m)}
             className={`rounded-lg px-2.5 py-1.5 font-medium ${bgMode === m ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground hover:text-foreground'}`}>{label}</button>
         ))}
@@ -357,6 +377,19 @@ export function StoryEditor({ projectId }: { projectId: string }) {
             {uploadingPhoto ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Загружаю…</> : <><Upload className="h-3.5 w-3.5" /> {photoUrl ? 'Сменить фото' : 'Загрузить фото'}</>}
             <input type="file" accept="image/*" className="hidden" disabled={uploadingPhoto} onChange={(e) => uploadPhoto(e.target.files)} />
           </label>
+        </div>
+      )}
+      {bgMode === 'split' && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold hover:border-primary/40">
+            {uploadingHalf === 'top' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Загружаю…</> : <><Upload className="h-3.5 w-3.5" /> {photoTop ? 'Сменить верх' : 'Фото сверху'}</>}
+            <input type="file" accept="image/*" className="hidden" disabled={uploadingHalf !== null} onChange={(e) => uploadHalf(e.target.files, 'top')} />
+          </label>
+          <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold hover:border-primary/40">
+            {uploadingHalf === 'bottom' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Загружаю…</> : <><Upload className="h-3.5 w-3.5" /> {photoBottom ? 'Сменить низ' : 'Фото снизу'}</>}
+            <input type="file" accept="image/*" className="hidden" disabled={uploadingHalf !== null} onChange={(e) => uploadHalf(e.target.files, 'bottom')} />
+          </label>
+          <span className="text-[11px] text-muted-foreground">два фото (верх/низ) — текст добавляй сверху</span>
         </div>
       )}
 
@@ -420,7 +453,19 @@ export function StoryEditor({ projectId }: { projectId: string }) {
         {bgMode === 'photo' && !photoUrl && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center text-xs text-white/70">Загрузи фото — потом добавляй текст, стрелки, иконки и расставляй как захочешь</div>
         )}
-        {bgMode !== 'photo' && (
+        {bgMode === 'split' && (
+          <div className="pointer-events-none absolute inset-0 flex flex-col">
+            <div className="h-1/2 w-full overflow-hidden bg-neutral-700">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {photoTop ? <img src={photoTop} alt="" className="h-full w-full object-cover" draggable={false} /> : <div className="flex h-full items-center justify-center text-[11px] text-white/60">Фото сверху</div>}
+            </div>
+            <div className="h-1/2 w-full overflow-hidden bg-neutral-700">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {photoBottom ? <img src={photoBottom} alt="" className="h-full w-full object-cover" draggable={false} /> : <div className="flex h-full items-center justify-center text-[11px] text-white/60">Фото снизу</div>}
+            </div>
+          </div>
+        )}
+        {bgMode !== 'photo' && bgMode !== 'split' && (
           <div className="pointer-events-none absolute inset-0"
             style={bgMode === 'paper' ? { backgroundImage: "url('/textures/paper.png')", backgroundSize: 'cover', backgroundPosition: 'center' } : { background: bgMode === 'dark' ? '#121214' : brand.bg }} />
         )}
