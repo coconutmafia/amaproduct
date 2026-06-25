@@ -7,6 +7,7 @@ import { Bookmark, Copy, Check, Trash2, Loader2, Plus, X, Pencil, Palette } from
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { toast } from 'sonner'
 import type { SavedContentRow } from '@/lib/saveContent'
+import { isReelsScript } from '@/lib/contentKind'
 
 // Group order + Russian labels for the content-type sections.
 const TYPE_ORDER = ['post', 'carousel', 'reels', 'stories', 'email', 'live', 'other'] as const
@@ -100,7 +101,8 @@ export default function LibraryPage() {
     .map(key => ({ key, label: TYPE_LABELS[key], rows: items.filter(i => (i.content_type || 'other') === key) }))
     .filter(g => g.rows.length > 0)
 
-  const isStories = (it: SavedContentRow) => it.content_type === 'stories' || /(сторис|stories|кадр)\s*\d/i.test(it.body)
+  // «кадр N» also numbers reels scenes, so exclude reels from the stories route.
+  const isStories = (it: SavedContentRow) => it.content_type === 'stories' || (it.content_type !== 'reels' && !isReelsScript(it.body) && /(сторис|stories|кадр)\s*\d/i.test(it.body))
   const isCarousel = (it: SavedContentRow) => it.content_type === 'carousel' || /слайд\s*\d/i.test(it.body)
 
   // «Редактировать» → the create chat opens the text and asks what to change

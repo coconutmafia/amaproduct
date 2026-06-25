@@ -13,6 +13,7 @@ import { VoiceRuleButton, maybeSuggestRule } from '@/components/chat/VoiceRuleBu
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
 import { useChatPin } from '@/lib/useChatPin'
 import { cleanMarkdown } from '@/lib/cleanText'
+import { isReelsScript } from '@/lib/contentKind'
 
 interface ChatMessage { role: 'user' | 'assistant'; content: string }
 interface ProjectLite { id: string; name: string }
@@ -202,6 +203,9 @@ export default function CreatePage() {
                   <VoiceRuleButton projectId={projectId} />
                   {/слайд\s*\d/i.test(text) ? (
                     <CarouselSlides sourceText={text} type="carousel" projectId={projectId || undefined} />
+                  ) : isReelsScript(text) ? (
+                    // A reels script is a filming script — no «design» button.
+                    null
                   ) : /(сторис|stories|кадр)\s*\d/i.test(text) ? (
                     projectId ? <StoryDesignButton text={text} projectId={projectId} /> : null
                   ) : text.length > 150 ? (

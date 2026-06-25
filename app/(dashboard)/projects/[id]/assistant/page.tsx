@@ -13,6 +13,7 @@ import { VoiceRuleButton, maybeSuggestRule } from '@/components/chat/VoiceRuleBu
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
 import { useChatPin } from '@/lib/useChatPin'
 import { cleanMarkdown } from '@/lib/cleanText'
+import { isReelsScript } from '@/lib/contentKind'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -273,6 +274,10 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
                   {genContext && <SaveToPlanButton projectId={id} ctx={genContext} text={text} />}
                   {(genContext?.type === 'carousel' || /слайд\s*\d/i.test(text)) ? (
                     <CarouselSlides sourceText={text} type="carousel" projectId={id} />
+                  ) : (genContext?.type === 'reels' || isReelsScript(text)) ? (
+                    // A reels script is a filming script, not a post image or a
+                    // stories series — offer no «design» button (owner feedback).
+                    null
                   ) : (genContext?.type === 'stories' || /(сторис|stories|кадр)\s*\d/i.test(text)) ? (
                     <StoryDesignButton text={text} projectId={id} />
                   ) : (genContext?.type === 'post' || text.length > 150) ? (

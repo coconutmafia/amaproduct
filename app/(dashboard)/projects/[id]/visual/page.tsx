@@ -12,6 +12,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import { isReelsScript } from '@/lib/contentKind'
 import { ArrowLeft, Images, GalleryHorizontalEnd, ImageIcon, ChevronRight, Palette, Bookmark, X } from 'lucide-react'
 import { PostImage } from '@/components/carousel/PostImage'
 import { CarouselSlides } from '@/components/carousel/CarouselSlides'
@@ -48,7 +49,8 @@ export default function VisualPage() {
 
   function pickSaved(it: SavedItem) {
     setPickerOpen(false)
-    const isStories = it.content_type === 'stories' || /(сторис|stories|кадр)\s*\d/i.test(it.body)
+    // «кадр N» also numbers reels scenes, so exclude reels from the stories route.
+    const isStories = it.content_type === 'stories' || (it.content_type !== 'reels' && !isReelsScript(it.body) && /(сторис|stories|кадр)\s*\d/i.test(it.body))
     const isCarousel = it.content_type === 'carousel' || /слайд\s*\d/i.test(it.body)
     if (isStories) {
       try { localStorage.setItem(`ama_stories_script_${projectId}`, it.body) } catch { /* ignore */ }
