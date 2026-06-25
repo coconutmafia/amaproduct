@@ -4,16 +4,27 @@
 // (owner request). The user types an optional intro + the stages (one per line);
 // we render it via the slide engine's `scheme` template.
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import { GitBranch, Loader2, Download } from 'lucide-react'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
+
+type SchemeBrand = { accentColor?: string; font?: string; accentStyle?: 'gradient' | 'flat' }
 
 export function SchemeStory({ projectId }: { projectId: string }) {
   const [intro, setIntro] = useState('')
   const [stepsText, setStepsText] = useState('')
   const [busy, setBusy] = useState(false)
   const [url, setUrl] = useState<string | null>(null)
+  // Load the brand kit so schemes render in the creator's accent + font (the
+  // scheme template fixes its own dark bg, so only accent/font/accentStyle matter).
+  const [brand, setBrand] = useState<SchemeBrand | undefined>()
+  useEffect(() => {
+    if (!projectId) return
+    fetch(`/api/brand-kit?projectId=${projectId}`).then((r) => r.json()).then((d) => {
+      if (d && !d.error) setBrand({ accentColor: d.accentColor || undefined, font: d.font || undefined, accentStyle: d.accentStyle === 'flat' ? 'flat' : 'gradient' })
+    }).catch(() => {})
+  }, [projectId])
 
   async function build() {
     const steps = stepsText.split('\n').map((s) => s.trim()).filter(Boolean).slice(0, 6)
@@ -22,7 +33,7 @@ export function SchemeStory({ projectId }: { projectId: string }) {
     try {
       const res = await fetch('/api/carousel/render', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slide: { kind: 'scheme', index: 0, total: 1, headline: intro.trim() || undefined, steps }, format: 'story', projectId }),
+        body: JSON.stringify({ slide: { kind: 'scheme', index: 0, total: 1, headline: intro.trim() || undefined, steps }, format: 'story', projectId, brand }),
       })
       if (!res.ok) throw new Error('Не удалось собрать схему — попробуй ещё раз')
       const blob = await res.blob()

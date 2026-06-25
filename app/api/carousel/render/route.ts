@@ -76,7 +76,16 @@ export async function GET(request: Request) {
   if (url.searchParams.get('demo') == null) return new Response('POST a carousel to render', { status: 400 })
   const format = (url.searchParams.get('format') as FormatKey) || 'carousel'
   const i = Number(url.searchParams.get('i') ?? 0)
-  const brand: BrandInput = { handle: '@ama', paperUrl: paperUrlFrom(request) }
+  // Dev eyeball: &font=<key> &accent=<hex> &bg=<hex> &as=gradient|flat exercise
+  // the brand font + accent-fill paths without a saved brand kit.
+  const hexParam = (k: string) => { const v = url.searchParams.get(k); return v ? `#${v.replace(/^#/, '')}` : undefined }
+  const brand: BrandInput = {
+    handle: '@ama', paperUrl: paperUrlFrom(request),
+    font: url.searchParams.get('font') || undefined,
+    accentColor: hexParam('accent'),
+    bg: hexParam('bg'),
+    accentStyle: (url.searchParams.get('as') as 'gradient' | 'flat') || undefined,
+  }
 
   try {
     if (format === 'post') {

@@ -12,9 +12,12 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { text } = (await request.json()) as { text?: string }
+    const { text, styleNotes } = (await request.json()) as { text?: string; styleNotes?: string }
     if (!text || !text.trim()) return NextResponse.json({ error: 'Нет текста' }, { status: 400 })
 
+    // Free-text brand wishes (set on the brand page) — let the creator steer the
+    // hook by hand: which words to emphasise, or to skip emphasis entirely, etc.
+    const notes = (styleNotes || '').trim().slice(0, 600)
     const prompt = `Вот текст от блогера. Нужен ОДИН короткий цепляющий крючок для картинки поста — фраза, которая остановит скролл и заставит захотеть прочитать пост целиком.
 Правила:
 - Если текст — это ЗАДАНИЕ с готовым заголовком («сделай картинку с заголовком…», «заголовок: …», «напиши на картинке…») — верни РОВНО этот заголовок (без слов задания).
@@ -22,7 +25,7 @@ export async function POST(request: Request) {
 - Очень коротко: 3-7 слов, максимум ~45 символов. Это НЕ весь пост, а хук на обложку.
 - Выбирай самое яркое/интригующее (боль, обещание, неожиданность, цифру).
 - Без кавычек, без хэштегов, без эмодзи, без точки в конце.
-- Выдели 1 ключевое слово двойными звёздочками **слово** — оно станет акцентом на картинке.
+- Выдели 1 ключевое слово двойными звёздочками **слово** — оно станет акцентом на картинке.${notes ? `\n- ПОЖЕЛАНИЯ АВТОРА по оформлению (учти их, особенно про выделение слов — например «выдели 2 слова», «не выделяй ничего»): ${notes}` : ''}
 
 ТЕКСТ ПОСТА:
 ${text.slice(0, 4000)}

@@ -20,6 +20,9 @@ interface Brand {
   bgStyle?: 'paper' | 'solid' | 'gradient'
   handle?: string
   logoUrl?: string
+  font?: string
+  accentStyle?: 'gradient' | 'flat'
+  styleNotes?: string
 }
 
 function slideCount(carousel: Dict): number {
@@ -133,8 +136,8 @@ export function CarouselSlides({
         try {
           const r = await fetch(`/api/brand-kit?projectId=${projectId}`)
           const d = await r.json()
-          if (r.ok && (d.accentColor || d.bg || d.handle || d.logoUrl)) {
-            b = { accentColor: d.accentColor, bg: d.bg, text: d.text, bgStyle: d.bgStyle, handle: d.handle, logoUrl: d.logoUrl }
+          if (r.ok && (d.accentColor || d.bg || d.handle || d.logoUrl || d.font)) {
+            b = { accentColor: d.accentColor, bg: d.bg, text: d.text, bgStyle: d.bgStyle, handle: d.handle, logoUrl: d.logoUrl, font: d.font, accentStyle: d.accentStyle, styleNotes: d.styleNotes }
           }
         } catch { /* default theme */ }
       }
@@ -146,7 +149,7 @@ export function CarouselSlides({
         setStatus('Раскладываю на слайды…')
         const r = await fetch('/api/carousel/structure', {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ text: sourceText, type }),
+          body: JSON.stringify({ text: sourceText, type, styleNotes: b?.styleNotes }),
         })
         const d = await r.json()
         if (!r.ok) throw new Error(d.error || 'Не удалось разложить на слайды')

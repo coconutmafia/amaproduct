@@ -19,6 +19,7 @@ import {
 import { downscaleImage } from '@/lib/downscaleImage'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { ArrowSvg, Badge, SHAPE_ASPECT, type FreeShape } from '@/lib/carousel/shapes'
+import { fontFamilyOf } from '@/lib/fonts'
 
 let _idc = 0
 const newId = () => `b${++_idc}`
@@ -37,7 +38,7 @@ export interface Block {
   xPct: number; yPct: number; widthPct: number
   size: number; color: string; plate: boolean; align: 'left' | 'center'; rotation: number
 }
-export interface Brand { accentColor: string; bg: string; text: string; bgStyle?: string }
+export interface Brand { accentColor: string; bg: string; text: string; bgStyle?: string; font?: string; accentStyle?: 'gradient' | 'flat' }
 
 // One slide's data — the controlled value of FreeCanvas.
 export interface SlideValue {
@@ -57,10 +58,13 @@ export function slideHasBg(v: SlideValue): boolean {
 }
 export function exportBrandFor(v: SlideValue, brand: Brand) {
   // Non-photo backgrounds render via the engine's Backdrop using these hints.
-  return v.bgMode === 'paper' ? { accentColor: brand.accentColor, text: brand.text, bgStyle: 'paper' }
-    : v.bgMode === 'dark' ? { accentColor: brand.accentColor, bg: '#121214', text: '#FFFFFF', bgStyle: 'solid' }
-    : v.bgMode === 'light' ? { accentColor: brand.accentColor, bg: brand.bg, text: brand.text, bgStyle: 'solid' }
-    : { accentColor: brand.accentColor, bg: brand.bg, text: brand.text, bgStyle: brand.bgStyle }
+  // font + accentStyle travel with every bg mode so the chosen font / accent
+  // fill apply to the free designer too.
+  const base = { accentColor: brand.accentColor, font: brand.font, accentStyle: brand.accentStyle }
+  return v.bgMode === 'paper' ? { ...base, text: brand.text, bgStyle: 'paper' }
+    : v.bgMode === 'dark' ? { ...base, bg: '#121214', text: '#FFFFFF', bgStyle: 'solid' }
+    : v.bgMode === 'light' ? { ...base, bg: brand.bg, text: brand.text, bgStyle: 'solid' }
+    : { ...base, bg: brand.bg, text: brand.text, bgStyle: brand.bgStyle }
 }
 export function buildFreeSlide(v: SlideValue, index = 0, total = 1) {
   return {
@@ -333,7 +337,11 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
   const hasBg = slideHasBg(value)
   const sel = blocks.find((b) => b.id === selected) || null
   const swatches = ['#FFFFFF', brand.text, brand.accentColor]
-  const fontStack = "'MontserratEd', system-ui, sans-serif"
+  // WYSIWYG: the canvas previews in the project's chosen font (matching the PNG
+  // output). Only the active @font-face below actually downloads. MontserratEd
+  // stays as the fallback while a face loads or for the default.
+  const editorFam = fontFamilyOf(brand.font)
+  const fontStack = `'${editorFam === 'Montserrat' ? 'MontserratEd' : editorFam}', 'MontserratEd', system-ui, sans-serif`
   const isBadge = sel?.shape === 'badge'
   const isArrow = sel?.type === 'shape' && !isBadge
   const isImage = sel?.type === 'image'
@@ -345,6 +353,12 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
         @font-face{font-family:'MontserratEd';src:url('/fonts/Montserrat-Bold.ttf') format('truetype');font-weight:700;font-display:swap}
         @font-face{font-family:'MontserratEd';src:url('/fonts/Montserrat-ExtraBold.ttf') format('truetype');font-weight:800;font-display:swap}
         @font-face{font-family:'MontserratEd';src:url('/fonts/Montserrat-Black.ttf') format('truetype');font-weight:900;font-display:swap}
+        @font-face{font-family:'PT Serif';src:url('/fonts/PTSerif-Regular.ttf') format('truetype');font-weight:400;font-display:swap}
+        @font-face{font-family:'PT Serif';src:url('/fonts/PTSerif-Bold.ttf') format('truetype');font-weight:700;font-display:swap}
+        @font-face{font-family:'PT Sans Narrow';src:url('/fonts/PTSansNarrow-Regular.ttf') format('truetype');font-weight:400;font-display:swap}
+        @font-face{font-family:'PT Sans Narrow';src:url('/fonts/PTSansNarrow-Bold.ttf') format('truetype');font-weight:700;font-display:swap}
+        @font-face{font-family:'Yeseva One';src:url('/fonts/YesevaOne-Regular.ttf') format('truetype');font-weight:400;font-display:swap}
+        @font-face{font-family:'Marck Script';src:url('/fonts/MarckScript-Regular.ttf') format('truetype');font-weight:400;font-display:swap}
       `}</style>
 
       {/* Background: a photo / 2 photos / a designed backdrop */}

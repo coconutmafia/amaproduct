@@ -18,7 +18,7 @@ import { VideoStory } from '@/components/carousel/VideoStory'
 import { SchemeStory } from '@/components/carousel/SchemeStory'
 import { StoryEditor } from '@/components/carousel/StoryEditor'
 
-interface Brand { accentColor?: string; bg?: string; text?: string; bgStyle?: string; handle?: string; logoUrl?: string }
+interface Brand { accentColor?: string; bg?: string; text?: string; bgStyle?: string; handle?: string; logoUrl?: string; font?: string; accentStyle?: 'gradient' | 'flat' }
 interface Frame {
   headline: string; body: string; cta: string
   position?: 'top' | 'center' | 'bottom'
@@ -70,6 +70,9 @@ export default function StoriesPage() {
           text: story.text || d.text,
           bgStyle: story.bgStyle || d.bgStyle,
           handle: d.handle, logoUrl: d.logoUrl,
+          // font + accent style are project-wide (not stored per story style)
+          font: d.font || undefined,
+          accentStyle: d.accentStyle === 'flat' ? 'flat' : 'gradient',
         })
       }
     }).catch(() => {})

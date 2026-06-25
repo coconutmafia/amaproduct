@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { FONT_KEYS } from '@/lib/fonts'
 
 // Read / manually-save a project's brand kit (colours, bg style, handle, logo).
 // GET ?projectId=  → brand fields (used by the brand page + slide renderer).
@@ -9,6 +10,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 const ALLOWED_BG = ['paper', 'solid', 'gradient']
 
 function shape(p: Record<string, unknown>) {
+  const kit = (p.brand_kit as Record<string, unknown>) || {}
   return {
     accentColor: (p.brand_accent_color as string) || null,
     bg: (p.brand_bg_color as string) || null,
@@ -17,6 +19,12 @@ function shape(p: Record<string, unknown>) {
     handle: (p.brand_handle as string) || null,
     logoUrl: (p.brand_logo_url as string) || null,
     status: (p.brand_kit_status as string) || 'none',
+    // Font / accent style / free-text style notes live in the jsonb (no column
+    // migration) — surface them top-level so the renderer + UI read them like
+    // the other brand fields.
+    font: (kit.font as string) || null,
+    accentStyle: (kit.accentStyle as string) || null,
+    styleNotes: (kit.styleNotes as string) || null,
     kit: (p.brand_kit as Record<string, unknown>) || null,
   }
 }
@@ -59,9 +67,17 @@ export async function POST(request: Request) {
     if ('bgStyle' in body) update.brand_bg_style = ALLOWED_BG.includes(String(body.bgStyle)) ? String(body.bgStyle) : null
     if ('handle' in body) update.brand_handle = String(body.handle || '').trim().slice(0, 40) || null
 
-    // Separate STORY style — lives inside the brand_kit jsonb (no migration
-    // needed): merged over the main brand when rendering story frames.
+    // Font / accent style / free-text style notes, plus the separate STORY style,
+    // all live inside the brand_kit jsonb (no column migration). Build the patch,
+    // then merge over the existing jsonb so unrelated keys (summary, samples)
+    // survive an edit.
     const admin = createAdminClient()
+    const kitPatch: Record<string, unknown> = {}
+    if ('font' in body) kitPatch.font = (FONT_KEYS as string[]).includes(String(body.font)) ? String(body.font) : null
+    if ('accentStyle' in body) kitPatch.accentStyle = body.accentStyle === 'flat' ? 'flat' : body.accentStyle === 'gradient' ? 'gradient' : null
+    if ('styleNotes' in body) kitPatch.styleNotes = String(body.styleNotes || '').trim().slice(0, 600) || null
+
+    let storyPatch: Record<string, unknown> | null = null
     if (body.story && typeof body.story === 'object') {
       const s = body.story as Record<string, unknown>
       const story: Record<string, unknown> = {}
@@ -69,12 +85,15 @@ export async function POST(request: Request) {
       if ('bg' in s) story.bg = hex(s.bg)
       if ('text' in s) story.text = hex(s.text)
       if ('bgStyle' in s) story.bgStyle = ALLOWED_BG.includes(String(s.bgStyle)) ? String(s.bgStyle) : null
-      if (Object.keys(story).length > 0) {
-        const { data: row } = await admin.from('projects').select('brand_kit').eq('id', projectId).single()
-        const kit = (row?.brand_kit as Record<string, unknown>) || {}
-        const prevStory = (kit.story as Record<string, unknown>) || {}
-        update.brand_kit = { ...kit, story: { ...prevStory, ...story } }
-      }
+      if (Object.keys(story).length > 0) storyPatch = story
+    }
+
+    if (Object.keys(kitPatch).length > 0 || storyPatch) {
+      const { data: row } = await admin.from('projects').select('brand_kit').eq('id', projectId).single()
+      const kit = (row?.brand_kit as Record<string, unknown>) || {}
+      const merged: Record<string, unknown> = { ...kit, ...kitPatch }
+      if (storyPatch) merged.story = { ...((kit.story as Record<string, unknown>) || {}), ...storyPatch }
+      update.brand_kit = merged
     }
 
     if (Object.keys(update).length === 0) return NextResponse.json({ ok: true })

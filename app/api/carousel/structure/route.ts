@@ -20,8 +20,9 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { text } = (await request.json()) as { text?: string; type?: string }
+    const { text, styleNotes } = (await request.json()) as { text?: string; type?: string; styleNotes?: string }
     if (!text || !text.trim()) return NextResponse.json({ error: 'Нет текста' }, { status: 400 })
+    const notes = (styleNotes || '').trim().slice(0, 600)
 
     const tool = {
       name: 'structure_carousel',
@@ -42,7 +43,7 @@ export async function POST(request: Request) {
 - cover — обложка (первый слайд): заголовок и подзаголовок — дословные фразы из текста (обычно первые).
 - slides — остальные смысловые слайды по порядку: headline = фраза-тезис из текста (дословно), body = его текст (дословно). Если в тексте есть маркеры «Слайд N» — это готовые границы, используй ровно их.
 - last_slide — финальный призыв (text + action) ТОЛЬКО если он написан в тексте — дословно. НИКАКОЙ отсебятины («пиши в директ» и т.п. не добавлять).
-- Единственное, что МОЖНО добавить: выделение 1-2 КЛЮЧЕВЫХ слов слайда двойными звёздочками **слово** (акцент фирменным цветом) и переносы строк для перечислений.
+- Единственное, что МОЖНО добавить: выделение 1-2 КЛЮЧЕВЫХ слов слайда двойными звёздочками **слово** (акцент фирменным цветом) и переносы строк для перечислений.${notes ? `\n- ПОЖЕЛАНИЯ АВТОРА по выделению слов (учитывай: например «выделяй 2 слова», «не выделяй ничего»): ${notes}` : ''}
 
 ТЕКСТ КАРУСЕЛИ:
 ${text.slice(0, 6000)}

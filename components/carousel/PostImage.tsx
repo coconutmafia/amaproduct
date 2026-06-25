@@ -12,6 +12,7 @@ import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 interface Brand {
   accentColor?: string; bg?: string; text?: string
   bgStyle?: 'paper' | 'solid' | 'gradient'; handle?: string; logoUrl?: string
+  font?: string; accentStyle?: 'gradient' | 'flat'; styleNotes?: string
 }
 
 function firstLine(text: string): string {
@@ -44,7 +45,7 @@ export function PostImage({ text, projectId, brand }: { text: string; projectId?
       try {
         const r = await fetch(`/api/brand-kit?projectId=${projectId}`)
         const d = await r.json()
-        if (r.ok && (d.accentColor || d.bg || d.handle || d.logoUrl)) setEffBrand({ accentColor: d.accentColor, bg: d.bg, text: d.text, bgStyle: d.bgStyle, handle: d.handle, logoUrl: d.logoUrl })
+        if (r.ok && (d.accentColor || d.bg || d.handle || d.logoUrl || d.font)) setEffBrand({ accentColor: d.accentColor, bg: d.bg, text: d.text, bgStyle: d.bgStyle, handle: d.handle, logoUrl: d.logoUrl, font: d.font, accentStyle: d.accentStyle, styleNotes: d.styleNotes })
       } catch { /* default theme */ }
     }
     // The default headline is just the first line — for real posts that's the
@@ -87,7 +88,7 @@ export function PostImage({ text, projectId, brand }: { text: string; projectId?
   async function suggestHook() {
     setHooking(true)
     try {
-      const res = await fetch('/api/post-hook', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) })
+      const res = await fetch('/api/post-hook', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, styleNotes: effBrand?.styleNotes }) })
       const d = await res.json()
       if (!res.ok || !d.hook) throw new Error(d.error || 'Не удалось')
       setHeadline(d.hook); setImg(null)

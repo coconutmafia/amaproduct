@@ -39,6 +39,8 @@ export function CarouselDesigner({ projectId }: { projectId: string }) {
         bg: d.bg || b.bg,
         text: d.text || b.text,
         bgStyle: d.bgStyle || undefined,
+        font: d.font || undefined,
+        accentStyle: d.accentStyle === 'flat' ? 'flat' : 'gradient',
       }))
     }).catch(() => {})
   }, [projectId])

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { anthropic, MODEL } from '@/lib/ai/client'
+import { FONT_KEYS, FONTS } from '@/lib/fonts'
 import sharp from 'sharp'
 
 // Claude-vision brand extraction: reads the uploaded style samples and infers the
@@ -50,6 +51,8 @@ export async function POST(request: Request) {
           bg_color: { type: 'string', description: 'типичный фон, hex' },
           text_color: { type: 'string', description: 'цвет основного текста, hex' },
           bg_style: { type: 'string', description: 'paper | solid | gradient' },
+          font: { type: 'string', enum: [...FONT_KEYS], description: 'ближайший из доступных шрифтов к типографике примеров' },
+          accent_style: { type: 'string', enum: ['gradient', 'flat'], description: 'как оформлены выделенные ключевые слова: flat = один сплошной цвет (так чаще всего); gradient = цветовой градиент/переход' },
           mood: { type: 'string' },
           font_style: { type: 'string' },
           summary: { type: 'string' },
@@ -57,7 +60,8 @@ export async function POST(request: Request) {
         required: ['accent_color', 'bg_color', 'text_color', 'bg_style'],
       },
     }
-    const prompt = `Ты — бренд-дизайнер. Перед тобой примеры оформления ${forStory ? 'СТОРИС блогера' : 'контента блогера (посты/карусели/обложки)'}. Определи его ФИРМЕННЫЙ СТИЛЬ${forStory ? ' ИМЕННО ДЛЯ СТОРИС' : ''}, чтобы генерировать ${forStory ? 'оформление сторис' : 'карусели и посты'} в этом же стиле. Верни через инструмент extract_brand_kit: accent_color (главный акцент для выделения ключевых слов, hex), bg_color (типичный фон, hex), text_color (цвет текста, hex), bg_style (paper если фактура бумаги, solid если однотонный фон, gradient если градиент), mood (1-3 слова), font_style (короткое описание шрифта), summary (1-2 предложения о стиле).`
+    const fontOpts = FONT_KEYS.map((k) => `${k} (${FONTS[k].label})`).join('; ')
+    const prompt = `Ты — бренд-дизайнер. Перед тобой примеры оформления ${forStory ? 'СТОРИС блогера' : 'контента блогера (посты/карусели/обложки)'}. Определи его ФИРМЕННЫЙ СТИЛЬ${forStory ? ' ИМЕННО ДЛЯ СТОРИС' : ''}, чтобы генерировать ${forStory ? 'оформление сторис' : 'карусели и посты'} в этом же стиле. Верни через инструмент extract_brand_kit: accent_color (главный акцент для выделения ключевых слов, hex), bg_color (типичный фон, hex), text_color (цвет текста, hex), bg_style (paper если фактура бумаги, solid если однотонный фон, gradient если градиент), font (ВЫБЕРИ ближайший по духу к шрифту примеров из: ${fontOpts}), accent_style (как выделены ключевые слова: flat = один сплошной цвет — так в большинстве примеров; gradient = заметный цветовой градиент/переливание), mood (1-3 слова), font_style (короткое описание шрифта), summary (1-2 предложения о стиле).`
 
     let kit: Record<string, unknown> | null = null
     for (let attempt = 0; attempt < 3 && !kit; attempt++) {
@@ -94,7 +98,13 @@ export async function POST(request: Request) {
     // keys (story style, saved story sets) survive a re-recognition.
     const { data: prevRow } = await admin.from('projects').select('brand_kit').eq('id', projectId).single()
     const existingKit = (prevRow?.brand_kit as Record<string, unknown>) || {}
-    const brandKit: Record<string, unknown> = { ...existingKit, mood: String(kit.mood ?? ''), font_style: String(kit.font_style ?? ''), summary: String(kit.summary ?? ''), samples: urls }
+    const font = (FONT_KEYS as string[]).includes(String(kit.font)) ? String(kit.font) : undefined
+    const accentStyle = kit.accent_style === 'flat' ? 'flat' : kit.accent_style === 'gradient' ? 'gradient' : undefined
+    const brandKit: Record<string, unknown> = {
+      ...existingKit, mood: String(kit.mood ?? ''), font_style: String(kit.font_style ?? ''), summary: String(kit.summary ?? ''), samples: urls,
+      ...(font ? { font } : {}),
+      ...(accentStyle ? { accentStyle } : {}),
+    }
 
     const { error } = await admin.from('projects').update({
       brand_accent_color: accent,

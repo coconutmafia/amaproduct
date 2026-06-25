@@ -11,6 +11,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ReactElement } from 'react'
 import { ArrowSvg, Badge, SHAPE_ASPECT, type FreeShape } from './shapes'
+import { FONTS, fontFamilyOf } from '@/lib/fonts'
 
 // ── Formats ─────────────────────────────────────────────────────────────────────
 export const FORMATS = {
@@ -37,6 +38,7 @@ export interface CarouselTheme {
   gradFrom: string
   gradMid: string
   gradTo: string
+  accentStyle: 'gradient' | 'flat' // **word** fill: brand gradient sheen, or flat accent
   fontFamily: string
   handle: string
   logoUrl?: string
@@ -53,6 +55,7 @@ export const DEFAULT_THEME: CarouselTheme = {
   gradFrom: '#F9A03F',
   gradMid: '#F86E80',
   gradTo: '#EC4899',
+  accentStyle: 'gradient',
   fontFamily: 'Montserrat',
   handle: '',
   onPhotoText: '#262321',
@@ -67,6 +70,8 @@ export interface BrandInput {
   handle?: string | null
   logoUrl?: string | null
   paperUrl?: string | null
+  font?: string | null              // bundled font key (see FONTS); default Montserrat
+  accentStyle?: 'gradient' | 'flat' | null // **word** fill style; default gradient
 }
 
 function hexLum(hex?: string): number {
@@ -85,13 +90,35 @@ function lighten(hex: string, amt: number): string {
   }
   return `#${ch(0)}${ch(2)}${ch(4)}`
 }
+function darken(hex: string, amt: number): string {
+  const h = hex.replace('#', '')
+  if (h.length < 6) return hex
+  const ch = (i: number) => {
+    const v = parseInt(h.slice(i, i + 2), 16)
+    return Math.round(v * (1 - amt)).toString(16).padStart(2, '0')
+  }
+  return `#${ch(0)}${ch(2)}${ch(4)}`
+}
 
 export function themeFromBrand(brand?: BrandInput): CarouselTheme {
   const bg = brand?.bg?.trim() || DEFAULT_THEME.bg
   const dark = hexLum(bg) < 0.5 // dark brand → white text + light-on-dark muted
+  const accentColor = brand?.accentColor?.trim()
+  const accent = accentColor || DEFAULT_THEME.accent
+  // Emphasis (**word**) gradient follows the brand accent so accent words come
+  // out in the creator's own colour — not a fixed warm pink→orange. Owner
+  // feedback (25 Jun): a teal-brand post still rendered pink accents («убрать
+  // эти розовые»). A subtle light→accent→deep ramp keeps the gradient sheen on
+  // any hue. With no brand accent we keep the curated warm default.
+  const grad = accentColor
+    ? { gradFrom: lighten(accent, 0.22), gradMid: accent, gradTo: darken(accent, 0.1) }
+    : { gradFrom: DEFAULT_THEME.gradFrom, gradMid: DEFAULT_THEME.gradMid, gradTo: DEFAULT_THEME.gradTo }
   return {
     ...DEFAULT_THEME,
-    accent: brand?.accentColor?.trim() || DEFAULT_THEME.accent,
+    accent,
+    ...grad,
+    accentStyle: brand?.accentStyle === 'flat' ? 'flat' : 'gradient',
+    fontFamily: fontFamilyOf(brand?.font),
     bg,
     bgAlt: brand?.bgAlt?.trim() || (dark ? lighten(bg, 0.14) : DEFAULT_THEME.bgAlt),
     bgStyle: brand?.bgStyle || (dark ? 'solid' : DEFAULT_THEME.bgStyle),
@@ -110,23 +137,19 @@ let fontCache: FontDef[] | null = null
 export async function loadFonts(): Promise<FontDef[]> {
   if (fontCache) return fontCache
   const dir = join(process.cwd(), 'public/fonts')
-  const load = (f: string) => readFile(join(dir, f))
-  const [reg, med, bold, xbold, black, italic] = await Promise.all([
-    load('Montserrat-Regular.ttf'),
-    load('Montserrat-Medium.ttf'),
-    load('Montserrat-Bold.ttf'),
-    load('Montserrat-ExtraBold.ttf'),
-    load('Montserrat-Black.ttf'),
-    load('Montserrat-Italic.ttf'),
-  ])
-  fontCache = [
-    { name: 'Montserrat', data: reg, weight: 400, style: 'normal' },
-    { name: 'Montserrat', data: med, weight: 500, style: 'normal' },
-    { name: 'Montserrat', data: bold, weight: 700, style: 'normal' },
-    { name: 'Montserrat', data: xbold, weight: 800, style: 'normal' },
-    { name: 'Montserrat', data: black, weight: 900, style: 'normal' },
-    { name: 'Montserrat', data: italic, weight: 400, style: 'italic' },
-  ]
+  // Register EVERY bundled family so any project's chosen font renders. Satori
+  // matches family + nearest weight, so single-weight faces still serve any size.
+  const defs = await Promise.all(
+    Object.values(FONTS).flatMap((fam) =>
+      fam.files.map(async (f): Promise<FontDef> => ({
+        name: fam.name,
+        data: await readFile(join(dir, f.file)),
+        weight: f.weight,
+        style: f.style ?? 'normal',
+      })),
+    ),
+  )
+  fontCache = defs
   return fontCache
 }
 
@@ -159,6 +182,15 @@ function emFill(o: RichOpts): Record<string, string> {
   }
 }
 
+// The accent gradient to hand a headline RichText — or undefined when the brand
+// chose a flat accent (then emFill renders the solid accent colour, no sheen).
+// Lets a creator turn the gradient off entirely (owner feedback: «без розового»).
+function headlineGrad(theme: CarouselTheme): RichOpts['accentGrad'] {
+  return theme.accentStyle === 'flat'
+    ? undefined
+    : { from: theme.gradFrom, mid: theme.gradMid, to: theme.gradTo }
+}
+
 function tokenize(text: string): { word: string; em: boolean; br?: boolean }[] {
   const out: { word: string; em: boolean; br?: boolean }[] = []
   // [[...]] are plate-span markers (handled by StoryText); strip them here so
@@ -189,7 +221,8 @@ export function RichText({ text, o }: { text: string; o: RichOpts }): ReactEleme
         width: '100%',
         justifyContent: o.align === 'left' ? 'flex-start' : o.align === 'right' ? 'flex-end' : 'center',
         alignItems: 'baseline',
-        fontFamily: 'Montserrat',
+        // fontFamily inherited from the slide root (theme.fontFamily) so the
+        // creator's chosen font drives all text. Falls back to Montserrat.
         fontSize: o.size,
         lineHeight: 1.18,
       }}
@@ -323,7 +356,8 @@ function StoryText({ text, size, accent, plateBg, platedColor, plainColor, defau
               }}>
                 {line.map((t, i) => (
                   <div key={i} style={{
-                    display: 'flex', fontFamily: 'Montserrat', fontSize: size, lineHeight: 1.15,
+                    // fontFamily inherited from the slide root (theme.fontFamily).
+                    display: 'flex', fontSize: size, lineHeight: 1.15,
                     color: t.em ? accent : color,
                     fontWeight: t.em ? accentWeight : weight,
                     marginRight: i === line.length - 1 ? 0 : Math.round(size * 0.24),
@@ -417,7 +451,7 @@ function Frame({
 }): ReactElement {
   const footerTheme = photo ? { ...theme, textMuted: 'rgba(255,255,255,0.85)' } : theme
   return (
-    <div style={{ display: 'flex', position: 'relative', width: size.w, height: size.h }}>
+    <div style={{ display: 'flex', position: 'relative', width: size.w, height: size.h, fontFamily: theme.fontFamily }}>
       {photo ? (
         <img src={photo} width={size.w} height={size.h} style={{ objectFit: 'cover' }} alt="" />
       ) : (
@@ -510,7 +544,7 @@ function Cover({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: S
   return (
     <Frame theme={theme} size={size} index={s.index} total={s.total} photo={s.photoUrl}>
       {s.emoji ? <div style={{ display: 'flex', fontSize: 120, marginBottom: 30 }}>{s.emoji}</div> : <div style={{ display: 'flex' }} />}
-      <RichText text={s.headline || ''} o={{ size: 92, weight: 900, accentWeight: 900, color: tx, accent: theme.accent, accentGrad: { from: theme.gradFrom, mid: theme.gradMid, to: theme.gradTo }, uppercase: true, lineGap: 8 }} />
+      <RichText text={s.headline || ''} o={{ size: 92, weight: 900, accentWeight: 900, color: tx, accent: theme.accent, accentGrad: headlineGrad(theme), uppercase: true, lineGap: 8 }} />
       {s.subheadline ? (
         <div style={{ display: 'flex', marginTop: 40, width: '100%', justifyContent: 'center' }}>
           <RichText text={s.subheadline} o={{ size: 38, weight: 500, color: mu, accent: theme.accent }} />
@@ -530,7 +564,7 @@ function Content({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size:
       {s.emoji ? <div style={{ display: 'flex', fontSize: 96, marginBottom: 28 }}>{s.emoji}</div> : <div style={{ display: 'flex' }} />}
       {s.headline ? (
         <div style={{ display: 'flex', width: '100%', justifyContent: 'center', marginBottom: 36 }}>
-          <RichText text={s.headline} o={{ size: 58, weight: 800, accentWeight: 800, color: tx, accent: theme.accent, accentGrad: { from: theme.gradFrom, mid: theme.gradMid, to: theme.gradTo }, uppercase: true, lineGap: 6 }} />
+          <RichText text={s.headline} o={{ size: 58, weight: 800, accentWeight: 800, color: tx, accent: theme.accent, accentGrad: headlineGrad(theme), uppercase: true, lineGap: 6 }} />
         </div>
       ) : (
         <div style={{ display: 'flex' }} />
@@ -563,7 +597,7 @@ function Post({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Si
   return (
     <Frame theme={theme} size={size} index={0} total={1}>
       {s.emoji ? <div style={{ display: 'flex', fontSize: 100, marginBottom: 26 }}>{s.emoji}</div> : <div style={{ display: 'flex' }} />}
-      <RichText text={s.headline || ''} o={{ size: 76, weight: 900, accentWeight: 900, color: theme.text, accent: theme.accent, accentGrad: { from: theme.gradFrom, mid: theme.gradMid, to: theme.gradTo }, uppercase: true, lineGap: 6 }} />
+      <RichText text={s.headline || ''} o={{ size: 76, weight: 900, accentWeight: 900, color: theme.text, accent: theme.accent, accentGrad: headlineGrad(theme), uppercase: true, lineGap: 6 }} />
       {s.body ? (
         <div style={{ display: 'flex', marginTop: 34, width: '100%', justifyContent: 'center' }}>
           <RichText text={s.body} o={{ size: 38, weight: 500, color: theme.textMuted, accent: theme.accent, lineGap: 12 }} />
@@ -593,7 +627,7 @@ function Story({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: S
   const defaultPlated = selective ? false : s.plate !== false
   const plainColor = s.textColor || '#FFFFFF'
   return (
-    <div style={{ display: 'flex', position: 'relative', width: size.w, height: size.h }}>
+    <div style={{ display: 'flex', position: 'relative', width: size.w, height: size.h, fontFamily: theme.fontFamily }}>
       {s.photoUrl ? (
         <img src={s.photoUrl} width={size.w} height={size.h} style={{ objectFit: 'cover' }} alt="" />
       ) : s.transparent ? (
@@ -669,7 +703,7 @@ function Photo({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: S
   const hl = s.headline || ''
   const hlSize = hl.length <= 24 ? 78 : hl.length <= 40 ? 66 : hl.length <= 60 ? 54 : 46
   return (
-    <div style={{ display: 'flex', position: 'relative', width: size.w, height: size.h }}>
+    <div style={{ display: 'flex', position: 'relative', width: size.w, height: size.h, fontFamily: theme.fontFamily }}>
       {s.photoUrl ? (
         <img src={s.photoUrl} width={size.w} height={size.h} style={{ objectFit: 'cover' }} alt="" />
       ) : (
@@ -729,7 +763,7 @@ function Scheme({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: 
   })
 
   return (
-    <div style={{ display: 'flex', position: 'relative', width: W, height: H, backgroundColor: bg }}>
+    <div style={{ display: 'flex', position: 'relative', width: W, height: H, backgroundColor: bg, fontFamily: theme.fontFamily }}>
       {/* hand-drawn connectors between consecutive stages */}
       <svg width={W} height={H} style={{ position: 'absolute', top: 0, left: 0 }}>
         {rows.slice(0, -1).map((a, i) => {
@@ -757,7 +791,7 @@ function Scheme({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: 
             maxWidth: W - 2 * pad - 80,
             ...(a.left ? { left: pad } : { right: pad }),
           }}>
-            <RichText text={stp} o={{ size: 60, weight: 800, accentWeight: 900, color: fg, accent: theme.accent, accentGrad: { from: theme.gradFrom, mid: theme.gradMid, to: theme.gradTo }, align: a.left ? 'left' : 'right', lineGap: 4 }} />
+            <RichText text={stp} o={{ size: 60, weight: 800, accentWeight: 900, color: fg, accent: theme.accent, accentGrad: headlineGrad(theme), align: a.left ? 'left' : 'right', lineGap: 4 }} />
           </div>
         )
       })}
@@ -778,7 +812,7 @@ function Free({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Si
   ))
   const half = Math.round(H / 2)
   return (
-    <div style={{ display: 'flex', position: 'relative', width: W, height: H }}>
+    <div style={{ display: 'flex', position: 'relative', width: W, height: H, fontFamily: theme.fontFamily }}>
       {s.split && (s.split.top || s.split.bottom) ? (
         <div style={{ display: 'flex', flexDirection: 'column', position: 'absolute', top: 0, left: 0, width: W, height: H }}>
           <div style={{ display: 'flex', width: W, height: half, overflow: 'hidden' }}>

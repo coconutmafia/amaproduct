@@ -14,8 +14,10 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { Loader2, Upload, Sparkles, ArrowLeft, ImageIcon, CheckCircle2, X } from 'lucide-react'
 import { downscaleImage } from '@/lib/downscaleImage'
+import { FONTS, FONT_KEYS } from '@/lib/fonts'
 
 type BgStyle = 'paper' | 'solid' | 'gradient'
+type AccentStyle = 'gradient' | 'flat'
 interface Brand {
   accentColor: string
   bg: string
@@ -23,8 +25,13 @@ interface Brand {
   bgStyle: BgStyle
   handle: string
   logoUrl: string | null
+  // Project-wide (apply to posts AND stories): chosen font, how **key words** are
+  // filled (brand-gradient sheen vs a flat accent colour), and free-text notes.
+  font: string
+  accentStyle: AccentStyle
+  styleNotes: string
 }
-const DEFAULTS: Brand = { accentColor: '#EC1E8C', bg: '#F3EEE7', text: '#262321', bgStyle: 'paper', handle: '', logoUrl: null }
+const DEFAULTS: Brand = { accentColor: '#EC1E8C', bg: '#F3EEE7', text: '#262321', bgStyle: 'paper', handle: '', logoUrl: null, font: 'montserrat', accentStyle: 'gradient', styleNotes: '' }
 
 const DEMO = {
   cover: { headline: 'твой **заголовок** в твоём стиле', subheadline: 'так будут выглядеть твои карусели и посты' },
@@ -76,6 +83,9 @@ export default function BrandPage() {
           bgStyle: (d.bgStyle as BgStyle) || DEFAULTS.bgStyle,
           handle: d.handle || '',
           logoUrl: d.logoUrl || null,
+          font: d.font || DEFAULTS.font,
+          accentStyle: d.accentStyle === 'flat' ? 'flat' : 'gradient',
+          styleNotes: d.styleNotes || '',
         }
         setBrand(main)
         if (d.kit?.summary) setKitSummary(d.kit.summary)
@@ -114,14 +124,15 @@ export default function BrandPage() {
   // Story preview renders OVER the first uploaded story example — her stories
   // are live photos with text plates, a flat-colour 9:16 looked «не моё»
   // (owner video). Falls back to the flat brand bg when nothing is uploaded.
-  const renderStoryPreview = useCallback(async (b: typeof storyBrand, handle: string, logoUrl: string | null, photoUrl?: string) => {
+  const renderStoryPreview = useCallback(async (b: typeof storyBrand, handle: string, logoUrl: string | null, photoUrl: string | undefined, font: string, accentStyle: AccentStyle) => {
     setStoryPreviewing(true)
     try {
       const res = await fetch('/api/carousel/render', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           format: 'story',
-          brand: { ...b, handle, logoUrl },
+          // Font + accent style are project-wide → borrow them from the posts brand.
+          brand: { ...b, handle, logoUrl, font, accentStyle },
           slide: { kind: 'story', headline: 'твой **заголовок**', body: 'так будут выглядеть твои сторис', action: 'это твой стиль сториз', photoUrl },
         }),
       })
@@ -134,7 +145,7 @@ export default function BrandPage() {
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => {
       if (tab === 'posts') void renderPreview(brand, previewIdx)
-      else void renderStoryPreview(storyBrand, brand.handle, brand.logoUrl, storySamples[0])
+      else void renderStoryPreview(storyBrand, brand.handle, brand.logoUrl, storySamples[0], brand.font, brand.accentStyle)
     }, 350)
     return () => { if (timer.current) clearTimeout(timer.current) }
   }, [tab, brand, previewIdx, storyBrand, storySamples, renderPreview, renderStoryPreview])
@@ -209,7 +220,11 @@ export default function BrandPage() {
         setHasStoryStyle(true)
         toast.success('Стиль сториз распознан и сохранён — смотри превью')
       } else {
-        set({ accentColor: d.accentColor, bg: d.bg, text: d.text, bgStyle: d.bgStyle })
+        set({
+          accentColor: d.accentColor, bg: d.bg, text: d.text, bgStyle: d.bgStyle,
+          ...(d.kit?.font ? { font: d.kit.font as string } : {}),
+          ...(d.kit?.accentStyle ? { accentStyle: d.kit.accentStyle as AccentStyle } : {}),
+        })
         if (d.kit?.summary) setKitSummary(d.kit.summary)
         toast.success('Стиль распознан и сохранён — смотри превью')
       }
@@ -236,7 +251,8 @@ export default function BrandPage() {
     try {
       const res = await fetch('/api/brand-kit', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ projectId, story: storyBrand }),
+        // Persist the project-wide controls too — they're editable from this tab.
+        body: JSON.stringify({ projectId, story: storyBrand, font: brand.font, accentStyle: brand.accentStyle, styleNotes: brand.styleNotes }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Ошибка')
@@ -378,6 +394,33 @@ export default function BrandPage() {
                 <p className="text-[11px] text-muted-foreground">Ник и лого — общие, задаются во вкладке «Стиль постов».</p>
               </>
             )}
+
+            {/* Project-wide controls (apply to posts AND stories): font, how key
+                words are filled, and free-text wishes for the AI. */}
+            <div className="mt-1 flex flex-col gap-3 border-t border-border pt-3">
+              <label className="flex flex-col gap-1 text-xs font-medium text-foreground">
+                Шрифт <span className="font-normal text-muted-foreground">(общий для постов и сторис)</span>
+                <select value={brand.font} onChange={(e) => set({ font: e.target.value })}
+                  className="h-9 rounded-lg border border-border bg-background px-2 text-sm">
+                  {FONT_KEYS.map((k) => <option key={k} value={k}>{FONTS[k].label}</option>)}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-foreground">
+                Выделение ключевых слов
+                <select value={brand.accentStyle} onChange={(e) => set({ accentStyle: e.target.value as AccentStyle })}
+                  className="h-9 rounded-lg border border-border bg-background px-2 text-sm">
+                  <option value="gradient">Градиент в цвете акцента</option>
+                  <option value="flat">Один цвет (без градиента)</option>
+                </select>
+                <span className="font-normal text-muted-foreground">Цвет берётся из «Акцент». «Один цвет» — если переливающийся градиент не нужен.</span>
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-foreground">
+                Пожелания к оформлению <span className="font-normal text-muted-foreground">(свободно, не обязательно)</span>
+                <textarea value={brand.styleNotes} onChange={(e) => set({ styleNotes: e.target.value.slice(0, 600) })} rows={3}
+                  placeholder="Напиши словами: какой шрифт, какие слова выделять (или не выделять), без обводки и т.п. — AI учтёт это при подборе крючка на картинке."
+                  className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm leading-relaxed" />
+              </label>
+            </div>
           </div>
         </div>
 
