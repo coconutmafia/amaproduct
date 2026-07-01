@@ -13,8 +13,8 @@ export interface RAGContext {
 // Per-material_type raw_content budget for the ALWAYS_INCLUDE layer (chars).
 // Long verbatim sources carry the audience's own language and must reach the
 // model in full-ish; short curated maps stay small.
-const DEFAULT_RAW_LIMIT = 3000
-const RAW_LIMIT: Record<string, number> = {
+export const DEFAULT_RAW_LIMIT = 3000
+export const RAW_LIMIT: Record<string, number> = {
   interview_transcript: 15000,
   audience_research: 15000,
   audience_survey: 12000,
@@ -23,9 +23,35 @@ const RAW_LIMIT: Record<string, number> = {
 // Materials still processing or failed hold placeholder/diagnostic text
 // («⏳ анализируется…», «❌ Ошибка …\n\nСтек: …»), NOT real content. They must
 // never be fed to generation as if they were the tone of voice / a case / etc.
-const BLOCKED_STATUS = new Set(['processing', 'error', 'failed', 'pending'])
-const isUsableMaterial = (status: unknown) =>
+export const BLOCKED_STATUS = new Set(['processing', 'error', 'failed', 'pending'])
+export const isUsableMaterial = (status: unknown) =>
   !BLOCKED_STATUS.has((status as string) ?? '')
+
+// Curated identity/voice material types pulled RAW (not via embedding) into
+// every generation. Exported so the context inspector reads the exact same
+// source of truth (no drift between what generation uses and what QA shows).
+export const ALWAYS_INCLUDE = [
+  'my_instagram',        // own IG profile + posts analysis
+  'competitors',         // competitor IG accounts analysis
+  'tone_of_voice',       // explicit ToV
+  'meanings_map',        // audience language map
+  'unpacking_map',       // personality / story
+  'blog_lines',          // narrative lines
+  'audience_research',   // research tables / audience analysis
+  'interview_transcript',// raw customer-interview quotes — prime audience language
+  'audience_survey',     // survey results
+  'additional',          // user-uploaded extra materials
+  'cases_reviews',       // client cases & reviews
+  'funnel_description',  // sales funnel
+  'marketing_strategy',  // marketing strategy
+  'marketing_tactics',   // marketing tactics
+  'product_description', // product
+  'content_reference',   // reference content
+  'chatbot_description', // chatbots
+  'other',               // uploader "Другое" — a misc catch-all the user chose
+                         // to attach; must reach generation like 'additional'
+                         // (also recovers pre-fix scrape-social rows saved as 'other')
+] as const
 
 // Try OpenAI embedding — returns null if key missing or request fails
 async function tryCreateEmbedding(text: string): Promise<number[] | null> {
@@ -152,33 +178,13 @@ export async function buildRAGContext(
   // Every substantive material the user uploads must reach generation — not
   // just the voice set. Previously cases/funnel/strategy/tactics were left to
   // the embedding match (unreliable), so the AI often said "у меня нет кейсов".
-  const ALWAYS_INCLUDE = [
-    'my_instagram',        // own IG profile + posts analysis
-    'competitors',         // competitor IG accounts analysis
-    'tone_of_voice',       // explicit ToV
-    'meanings_map',        // audience language map
-    'unpacking_map',       // personality / story
-    'blog_lines',          // narrative lines
-    'audience_research',   // research tables / audience analysis
-    'interview_transcript',// raw customer-interview quotes — prime audience language
-    'audience_survey',     // survey results
-    'additional',          // user-uploaded extra materials
-    'cases_reviews',       // client cases & reviews  ← was missing
-    'funnel_description',  // sales funnel            ← was missing
-    'marketing_strategy',  // marketing strategy      ← was missing
-    'marketing_tactics',   // marketing tactics       ← was missing
-    'product_description', // product                 ← was missing
-    'content_reference',   // reference content
-    'chatbot_description', // chatbots
-    'other',               // uploader "Другое" — a misc catch-all the user chose
-                           // to attach; must reach generation like 'additional'
-                           // (also recovers pre-fix scrape-social rows saved as 'other')
-  ]
+  // ALWAYS_INCLUDE is now a module-level export (source of truth, shared with
+  // the context inspector).
   const { data: alwaysMats } = await supabase
     .from('project_materials')
     .select('title, material_type, raw_content, processing_status')
     .eq('project_id', projectId)
-    .in('material_type', ALWAYS_INCLUDE)
+    .in('material_type', [...ALWAYS_INCLUDE])
 
   if (alwaysMats && alwaysMats.length > 0) {
     // De-dup key must NOT collapse two distinct long materials that share a

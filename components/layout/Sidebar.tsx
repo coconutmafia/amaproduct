@@ -19,6 +19,7 @@ import {
   TrendingUp,
   BarChart3,
   Film,
+  Layers,
   Bookmark,
 } from 'lucide-react'
 import { useState, useCallback } from 'react'
@@ -318,6 +319,26 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
           >
             <TrendingUp className="h-4 w-4 shrink-0" />
             Тренды месяца
+            <span className="ml-auto text-[10px] bg-[#F5A84A]/20 text-[#D44E7E] px-1.5 py-0.5 rounded-full">
+              Admin
+            </span>
+          </Link>
+        )}
+
+        {/* Admin: context inspector — what reaches generation per project */}
+        {isAdmin && (
+          <Link
+            href="/admin/context-inspector"
+            onClick={() => onNavigate?.()}
+            className={cn(
+              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+              pathname === '/admin/context-inspector'
+                ? 'bg-primary/20 text-primary font-medium'
+                : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+            )}
+          >
+            <Layers className="h-4 w-4 shrink-0" />
+            Инспектор контекста
             <span className="ml-auto text-[10px] bg-[#F5A84A]/20 text-[#D44E7E] px-1.5 py-0.5 rounded-full">
               Admin
             </span>
