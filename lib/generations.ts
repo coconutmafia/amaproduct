@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 export { PLAN_CONFIG, REFERRAL_REWARDS } from '@/lib/generations-config'
 export type { SubscriptionPlan } from '@/lib/generations-config'
-import { PLAN_CONFIG } from '@/lib/generations-config'
+import { PLAN_CONFIG, PAID_PLANS } from '@/lib/generations-config'
 import type { SubscriptionPlan } from '@/lib/generations-config'
 
 // ──────────────────────────────────────────────────────
@@ -64,11 +64,56 @@ export interface GateResult extends GenerationCheckResult {
   blocked: boolean // true ONLY when enforcement is live AND the quota is exhausted
 }
 
+// Entitlement — is the account allowed to generate at all, independent of the
+// monthly quota? Blocks the launch code-gap where a user kept generating for
+// free AFTER the 2-month trial expired (consume_generation only ever checked
+// the monthly counter, never trial_ends_at / subscription status).
+// Fail-OPEN on any read error or missing data so we never lock out a legit user.
+export async function isEntitled(userId: string): Promise<boolean> {
+  try {
+    const supabase = await createClient()
+    const { data: p } = await supabase
+      .from('profiles')
+      .select('role, subscription_tier, subscription_status, trial_ends_at, current_period_end')
+      .eq('id', userId)
+      .single()
+    if (!p) return true
+    if (p.role === 'admin') return true
+
+    const status = (p.subscription_status as string | null) ?? null
+    const tier = (p.subscription_tier as string) ?? 'trial'
+    const now = Date.now()
+
+    // Active paying subscription (respect period end if we track it).
+    if (status === 'active' && (PAID_PLANS as string[]).includes(tier)) {
+      if (p.current_period_end && new Date(p.current_period_end as string).getTime() < now) return false
+      return true
+    }
+    // Trial: entitled only while trial_ends_at is in the future.
+    if (status === 'trialing' || status === null) {
+      if (!p.trial_ends_at) return true // pre-migration row — don't lock out
+      return new Date(p.trial_ends_at as string).getTime() > now
+    }
+    // past_due / view_only / paused / canceled, or expired trial → not entitled.
+    return false
+  } catch (e) {
+    console.error('isEntitled failed (fail-open):', e)
+    return true
+  }
+}
+
 // One call for every content-PRODUCING route (a finished content unit, a story
 // series, a video overlay). Consumes one unit and reports whether to block.
 // Refinement/edits, slide/image rendering of already-counted content, and brand
 // setup are NOT metered (fair-use) — don't call this there.
 export async function gateContentUnit(userId: string): Promise<GateResult> {
+  // Check entitlement BEFORE consuming so an un-entitled user (expired trial /
+  // lapsed subscription) isn't charged a unit just to be blocked. Only enforced
+  // when BILLING_ENFORCED is live — pre-launch this is inert and metering runs.
+  if (BILLING_ENFORCED && !(await isEntitled(userId))) {
+    const stats = await getGenerationStats(userId)
+    return { ...stats, allowed: false, blocked: true }
+  }
   const res = await checkAndConsumeGeneration(userId)
   return { ...res, blocked: BILLING_ENFORCED && !res.allowed }
 }

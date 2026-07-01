@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { prodamusConfigured, prodamusVerify, parseFormNested, parseOrderId, mapProdamusStatus } from '@/lib/billing/prodamus'
+import { PLAN_CONFIG, type SubscriptionTier } from '@/lib/generations-config'
 
 export const runtime = 'nodejs'
 
@@ -44,11 +45,27 @@ export async function POST(request: Request) {
         userId = prof?.id
       }
       if (userId) {
+        // Guard against order_id tampering → tier escalation. The plan is encoded
+        // in order_id (a URL query param the payer can edit before paying), but
+        // the actual PRICE is fixed by the Продамус link/subscription. So a payer
+        // could open the "solo" link, rewrite order_id to "producer" and get the
+        // top tier for the cheap price. Only grant the tier if the paid `sum`
+        // covers that plan's price. Fail-safe: if we can't read a sum, keep prior
+        // behaviour (Продамус is not live-verified yet — see ⚠️ above).
+        let grantedPlan = parsed?.plan
+        if (grantedPlan) {
+          const expected = PLAN_CONFIG[grantedPlan as SubscriptionTier]?.priceRub
+          const paid = Number(data.sum ?? (data as Record<string, unknown>).amount ?? NaN)
+          if (expected && Number.isFinite(paid) && paid + 1 < expected) {
+            console.error(`[prodamus/webhook] amount mismatch: paid ${paid}₽ < ${grantedPlan} (${expected}₽) — refusing tier escalation; order_id=${orderId}`)
+            grantedPlan = undefined // underpaid → don't escalate tier
+          }
+        }
         const patch: Record<string, unknown> = {
           subscription_status: mapProdamusStatus(status),
           payment_provider: 'prodamus',
           current_period_end: new Date(Date.now() + 31 * 24 * 3600 * 1000).toISOString(),
-          ...(parsed?.plan ? { subscription_tier: parsed.plan } : {}),
+          ...(grantedPlan ? { subscription_tier: grantedPlan } : {}),
           ...(subId ? { provider_subscription_id: String(subId) } : {}),
         }
         await admin.from('profiles').update(patch).eq('id', userId)
