@@ -69,6 +69,8 @@ async function scrapeInstagram(username: string, token: string) {
       usernames:    [username],
       resultsLimit: 25,
     }),
+    // Cap the Apify run so a hung actor can't hang the request until maxDuration.
+    signal: AbortSignal.timeout(80000),
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')

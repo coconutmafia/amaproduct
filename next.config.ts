@@ -7,8 +7,13 @@ const nextConfig: NextConfig = {
   // downscale → base64 for Claude vision).
   serverExternalPackages: ["ffmpeg-static", "sharp"],
   outputFileTracingIncludes: {
-    "/api/video/overlay": ["./node_modules/ffmpeg-static/ffmpeg*"],
+    // Font TTFs are read at runtime from public/fonts via readFile
+    // (lib/carousel/engine.tsx). Vercel serves public/ statically but does NOT
+    // bundle it into the serverless function, so without tracing these the
+    // render throws ENOENT and EVERY carousel/story/video render fails.
+    "/api/video/overlay": ["./node_modules/ffmpeg-static/ffmpeg*", "./public/fonts/**"],
     "/api/ai/transcribe": ["./node_modules/ffmpeg-static/ffmpeg*"],
+    "/api/carousel/render": ["./public/fonts/**"],
   },
 };
 

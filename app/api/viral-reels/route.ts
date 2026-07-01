@@ -21,6 +21,8 @@ async function scrapeReel(url: string, token: string): Promise<ScrapedReel> {
     const res = await fetch(api, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ directUrls: [url], resultsType: 'posts', resultsLimit: 1, addParentData: false }),
+      // Cap the Apify run so a hung actor can't burn the whole 300s function budget.
+      signal: AbortSignal.timeout(80000),
     })
     if (!res.ok) return { ...empty, error: `Apify ${res.status}` }
     const data = await res.json() as unknown

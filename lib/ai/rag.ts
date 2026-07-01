@@ -20,6 +20,13 @@ const RAW_LIMIT: Record<string, number> = {
   audience_survey: 12000,
 }
 
+// Materials still processing or failed hold placeholder/diagnostic text
+// («⏳ анализируется…», «❌ Ошибка …\n\nСтек: …»), NOT real content. They must
+// never be fed to generation as if they were the tone of voice / a case / etc.
+const BLOCKED_STATUS = new Set(['processing', 'error', 'failed', 'pending'])
+const isUsableMaterial = (status: unknown) =>
+  !BLOCKED_STATUS.has((status as string) ?? '')
+
 // Try OpenAI embedding — returns null if key missing or request fails
 async function tryCreateEmbedding(text: string): Promise<number[] | null> {
   if (!process.env.OPENAI_API_KEY) return null
@@ -120,13 +127,13 @@ export async function buildRAGContext(
       // If no chunks yet — load raw content from project_materials
       const { data: materials } = await supabase
         .from('project_materials')
-        .select('title, material_type, raw_content')
+        .select('title, material_type, raw_content, processing_status')
         .eq('project_id', projectId)
         .limit(10)
 
       if (materials) {
         projectChunks = materials
-          .filter(m => m.raw_content)
+          .filter(m => m.raw_content && isUsableMaterial(m.processing_status))
           .map(m => ({
             chunk_text: `[${m.material_type}] ${m.title}:\n${(m.raw_content ?? '').slice(0, 800)}`,
             material_type: m.material_type as string,
@@ -163,10 +170,13 @@ export async function buildRAGContext(
     'product_description', // product                 ← was missing
     'content_reference',   // reference content
     'chatbot_description', // chatbots
+    'other',               // uploader "Другое" — a misc catch-all the user chose
+                           // to attach; must reach generation like 'additional'
+                           // (also recovers pre-fix scrape-social rows saved as 'other')
   ]
   const { data: alwaysMats } = await supabase
     .from('project_materials')
-    .select('title, material_type, raw_content')
+    .select('title, material_type, raw_content, processing_status')
     .eq('project_id', projectId)
     .in('material_type', ALWAYS_INCLUDE)
 
@@ -178,6 +188,7 @@ export async function buildRAGContext(
       `${mt}::${title}::${raw.length}::${raw.slice(0, 120)}`
     const seen = new Set(projectChunks.map(c => `${c.material_type}::${c.chunk_text.slice(0, 120)}`))
     for (const m of alwaysMats) {
+      if (!isUsableMaterial(m.processing_status)) continue
       const raw = (m.raw_content ?? '').toString()
       if (!raw.trim()) continue
       // Per-type budget. Long raw materials (interview transcripts, research
