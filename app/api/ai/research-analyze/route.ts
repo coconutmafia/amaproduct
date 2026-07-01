@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { upsertProjectMaterial } from '@/lib/supabase/upsertMaterial'
+import { embedMaterialChunks } from '@/lib/ai/embed'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { NextResponse } from 'next/server'
 
@@ -349,23 +350,29 @@ export async function POST(request: Request) {
       return `${header}\n\n${answers}`
     }).join('\n\n---\n\n')
 
-    // Insert transcript
-    await supabase.from('project_materials').insert({
+    // Insert transcript + research table, capturing ids so we can embed the
+    // FULL text into project_chunks. These materials run tens of thousands of
+    // chars (a 60-min interview ≈ 100k+); the ALWAYS_INCLUDE raw layer keeps a
+    // truncated baseline, and the embeddings make the whole thing retrievable
+    // by relevance → nothing is lost.
+    const { data: trRow } = await supabase.from('project_materials').insert({
       project_id:        projectId,
       title:             `Расшифровка интервью · ${dateLabel}`,
       material_type:     'interview_transcript',
       raw_content:       transcription,
       processing_status: 'ready',
-    })
+    }).select('id').single()
 
-    // Insert research table
-    await supabase.from('project_materials').insert({
+    const { data: tblRow } = await supabase.from('project_materials').insert({
       project_id:        projectId,
       title:             `Таблица исследования · ${dateLabel}`,
       material_type:     'audience_research',
       raw_content:       tableText,
       processing_status: 'ready',
-    })
+    }).select('id').single()
+
+    if (trRow?.id) await embedMaterialChunks(trRow.id, projectId, transcription)
+    if (tblRow?.id) await embedMaterialChunks(tblRow.id, projectId, tableText)
 
     return NextResponse.json({ ok: true })
   }
