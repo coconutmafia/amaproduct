@@ -106,17 +106,22 @@ export async function buildRAGContext(
 
   if (embedding) {
     // Semantic search via vector similarity
+    // Thresholds calibrated for text-embedding-3-small: relevant cosine sims for
+    // this model sit ~0.3–0.5, so the old 0.78/0.72 gates returned almost nothing
+    // even when chunks existed (the methodology foundation never surfaced). Lower
+    // gates + higher counts so the system methodology and project embeddings
+    // actually reach generation.
     const [sysResult, projResult] = await Promise.all([
       supabase.rpc('match_knowledge_chunks', {
         query_embedding: embedding,
-        match_threshold: 0.78,
-        match_count: 10,
+        match_threshold: 0.35,
+        match_count: 14,
       }),
       supabase.rpc('match_project_chunks', {
         query_embedding: embedding,
         project_id: projectId,
-        match_threshold: 0.72,
-        match_count: 12,
+        match_threshold: 0.4,
+        match_count: 14,
       }),
     ])
     systemChunks = (sysResult.data as typeof systemChunks) || []

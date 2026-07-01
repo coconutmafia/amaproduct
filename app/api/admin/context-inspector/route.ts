@@ -105,7 +105,38 @@ export async function GET(request: Request) {
   const blocked = materials.filter(m => m.reaches === 'blocked')
   const embeddingOnly = materials.filter(m => m.reaches === 'embedding_only')
 
+  // ── Optional retrieval probe (?q=…) — proves how many chunks actually surface
+  // at the live thresholds for a real query (methodology reaching generation). ──
+  let retrieval: unknown = null
+  const q = searchParams.get('q')?.trim()
+  if (q && process.env.OPENAI_API_KEY) {
+    try {
+      const embRes = await fetch('https://api.openai.com/v1/embeddings', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'text-embedding-3-small', input: q }),
+      })
+      if (embRes.ok) {
+        const emb = (await embRes.json()).data?.[0]?.embedding as number[] | undefined
+        if (emb) {
+          const [sys, proj] = await Promise.all([
+            admin.rpc('match_knowledge_chunks', { query_embedding: emb, match_threshold: 0.35, match_count: 14 }),
+            admin.rpc('match_project_chunks', { query_embedding: emb, project_id: projectId, match_threshold: 0.4, match_count: 14 }),
+          ])
+          const sysRows = (sys.data as Array<{ similarity: number }>) ?? []
+          const projRows = (proj.data as Array<{ similarity: number; material_type?: string }>) ?? []
+          retrieval = {
+            query: q,
+            systemKnowledge: { matched: sysRows.length, topSimilarity: sysRows[0]?.similarity ?? null },
+            projectEmbeddings: { matched: projRows.length, topSimilarity: projRows[0]?.similarity ?? null },
+          }
+        }
+      }
+    } catch { /* diagnostic only */ }
+  }
+
   return NextResponse.json({
+    retrieval,
     project: { id: project.id, name: project.name },
     layers: {
       // 1. системная методология
