@@ -245,20 +245,22 @@ async function processContent(
       embeddings.push(...data.data.map((d: { embedding: number[] }) => d.embedding))
     }
 
-    // Сохраняем чанки
+    // Сохраняем чанки. ВАЖНО: проверяем ошибку вставки — раньше она глоталась,
+    // и когда RLS отклонял запись в knowledge_chunks (не было insert-политики),
+    // векторизация «успешно» завершалась с 0 чанков (методология не доходила).
     const chunkTable = isSystemVault ? 'knowledge_chunks' : 'project_chunks'
     const idField    = isSystemVault ? 'vault_id'         : 'material_id'
 
-    for (let i = 0; i < chunks.length; i++) {
-      await supabase.from(chunkTable).insert({
-        [idField]:   materialId,
-        ...(isSystemVault ? {} : { project_id: projectId }),
-        chunk_index: i,
-        chunk_text:  chunks[i],
-        embedding:   embeddings[i],
-        metadata:    { chunk_index: i, total_chunks: chunks.length },
-      })
-    }
+    const rows = chunks.map((chunk_text, i) => ({
+      [idField]:   materialId,
+      ...(isSystemVault ? {} : { project_id: projectId }),
+      chunk_index: i,
+      chunk_text,
+      embedding:   embeddings[i],
+      metadata:    { chunk_index: i, total_chunks: chunks.length },
+    }))
+    const { error: chunkErr } = await supabase.from(chunkTable).insert(rows)
+    if (chunkErr) throw new Error(`chunk insert failed: ${chunkErr.message}`)
 
     await supabase
       .from(statusTable)
