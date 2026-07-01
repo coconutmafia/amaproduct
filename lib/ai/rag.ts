@@ -10,6 +10,16 @@ export interface RAGContext {
   voiceRules?: string
 }
 
+// Per-material_type raw_content budget for the ALWAYS_INCLUDE layer (chars).
+// Long verbatim sources carry the audience's own language and must reach the
+// model in full-ish; short curated maps stay small.
+const DEFAULT_RAW_LIMIT = 3000
+const RAW_LIMIT: Record<string, number> = {
+  interview_transcript: 15000,
+  audience_research: 15000,
+  audience_survey: 12000,
+}
+
 // Try OpenAI embedding — returns null if key missing or request fails
 async function tryCreateEmbedding(text: string): Promise<number[] | null> {
   if (!process.env.OPENAI_API_KEY) return null
@@ -161,14 +171,23 @@ export async function buildRAGContext(
     .in('material_type', ALWAYS_INCLUDE)
 
   if (alwaysMats && alwaysMats.length > 0) {
-    const seen = new Set(projectChunks.map(c => `${c.material_type}::${c.chunk_text.slice(0, 60)}`))
+    // De-dup key must NOT collapse two distinct long materials that share a
+    // title prefix (e.g. two customer interviews saved the same day). Key on
+    // material_type + full title + length + a wider content sample.
+    const rawKey = (mt: string, title: string, raw: string) =>
+      `${mt}::${title}::${raw.length}::${raw.slice(0, 120)}`
+    const seen = new Set(projectChunks.map(c => `${c.material_type}::${c.chunk_text.slice(0, 120)}`))
     for (const m of alwaysMats) {
       const raw = (m.raw_content ?? '').toString()
       if (!raw.trim()) continue
-      // Cases/funnel/strategy hold multiple items — give them more room so a
-      // full case actually reaches the model (3000 ≈ a few cases).
-      const chunk_text = `[${m.material_type}] ${m.title}:\n${raw.slice(0, 3000)}`
-      const key = `${m.material_type}::${chunk_text.slice(0, 60)}`
+      // Per-type budget. Long raw materials (interview transcripts, research
+      // tables, surveys) hold the audience's own language — the whole point of
+      // the moat — so a blanket 3000-char cut dropped ~95% of a 60-min
+      // interview. Cases/funnel/strategy stay at the smaller default (they hold
+      // several short items; 3000 ≈ a few cases).
+      const limit = RAW_LIMIT[m.material_type as string] ?? DEFAULT_RAW_LIMIT
+      const chunk_text = `[${m.material_type}] ${m.title}:\n${raw.slice(0, limit)}`
+      const key = rawKey(m.material_type as string, (m.title ?? '').toString(), raw)
       if (seen.has(key)) continue
       seen.add(key)
       projectChunks.push({ chunk_text, material_type: m.material_type as string, metadata: {} })

@@ -283,6 +283,27 @@ export function ProjectWizard() {
           }))
         )
         if (prodError) console.error('Products insert error:', prodError.message)
+
+        // Also persist products as a `product_description` material so the sales
+        // offer reaches generation. buildRAGContext (ALWAYS_INCLUDE) reads only
+        // project_materials — the `products` table is never fed to the model —
+        // so without this the entered/scanned product silently never influenced
+        // content. material_type 'product_description' is in ALWAYS_INCLUDE.
+        const productMaterials = validProducts.map(p => ({
+          project_id:   project.id,
+          material_type: 'product_description',
+          title:        p.name.trim(),
+          raw_content: [
+            `Продукт: ${p.name.trim()}`,
+            p.product_type            ? `Тип: ${p.product_type}` : '',
+            p.price                   ? `Цена: ${p.price} ${p.currency}` : '',
+            p.description.trim()      ? `Описание: ${p.description.trim()}` : '',
+            p.sales_page_url.trim()   ? `Страница продаж: ${p.sales_page_url.trim()}` : '',
+          ].filter(Boolean).join('\n'),
+          processing_status: 'ready',
+        }))
+        const { error: matError } = await supabase.from('project_materials').insert(productMaterials)
+        if (matError) console.error('Product material insert error:', matError.message)
       }
 
       // Insert funnels (skip empty)
