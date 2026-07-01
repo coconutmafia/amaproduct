@@ -14,10 +14,22 @@ export interface RAGContext {
 // Long verbatim sources carry the audience's own language and must reach the
 // model in full-ish; short curated maps stay small.
 export const DEFAULT_RAW_LIMIT = 3000
+// Tuned against real project data (Этап-2 live inspector run): the owner's core
+// voice/meaning materials run 9–12k chars and a blanket 3000 cut dropped most of
+// the moat (my_instagram 11.9k, meanings_map 11.4k, blog_lines/cases ~10k). Opus
+// has a 200k window — spend it on the highest-value context. Short curated
+// materials (funnel/strategy/tactics/product) keep the small default.
 export const RAW_LIMIT: Record<string, number> = {
-  interview_transcript: 15000,
-  audience_research: 15000,
-  audience_survey: 12000,
+  interview_transcript: 15000, // full customer interviews (audience language)
+  audience_research:     15000, // research tables / касдевы
+  audience_survey:       12000,
+  meanings_map:          10000, // карта смыслов — core audience language
+  my_instagram:          10000, // owner's own voice (bio + posts)
+  cases_reviews:          8000, // social proof — several cases
+  blog_lines:             8000, // narrative lines
+  tone_of_voice:          6000, // explicit ToV
+  competitors:            5000, // per competitor account
+  unpacking_map:          4000, // personality / story
 }
 
 // Materials still processing or failed hold placeholder/diagnostic text
