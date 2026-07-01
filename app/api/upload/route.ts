@@ -113,6 +113,17 @@ export async function POST(request: Request) {
         }
       }
 
+      // Audio/video have no text extraction here → without this they'd fall
+      // through to the generic «Нет текста для обработки» 400. Give a clear path
+      // to the transcription flow instead of a confusing error (esp. on drag&drop,
+      // which bypasses the file-picker's accept filter).
+      if (!rawContent && (file.type.startsWith('audio/') || file.type.startsWith('video/') ||
+          /\.(mp3|m4a|wav|ogg|oga|opus|aac|flac|mp4|mov|m4v|webm)$/i.test(name))) {
+        return NextResponse.json({
+          error: 'Аудио и видео здесь не расшифровываются. Загрузи запись созвона/интервью в разделе «Исследование» — там сработает автоматическая расшифровка, и текст попадёт в материалы.',
+        }, { status: 400 })
+      }
+
       // Загружаем файл в Supabase Storage
       const bytes = await file.arrayBuffer()
       const buffer = Buffer.from(bytes)

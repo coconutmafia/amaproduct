@@ -510,7 +510,7 @@ export async function POST(request: Request) {
             } catch { /* swallow */ }
             send({
               type: 'error',
-              message: `Не удалось разобрать ответ AI. Открой «Карта смыслов блога» в материалах и скачай — там полный текст ответа AI для диагностики.`,
+              message: `Не удалось разобрать ответ AI. Открой «${MEANINGS_TITLE}» в материалах и скачай — там полный текст ответа AI для диагностики.`,
             })
             return
           }

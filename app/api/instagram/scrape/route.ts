@@ -188,6 +188,16 @@ export async function POST(request: Request) {
         const profile = await scrapeInstagram(username, apifyToken)
 
         send({ type: 'status', message: 'Готовлю текст и анализ...' })
+        // Chain-integrity guard: if the actor returns neither bio nor posts
+        // (private profile OR the actor changed its field names), DON'T save a
+        // near-empty my_instagram/competitors material — surface the failure so
+        // the link doesn't silently degrade. Log the keys to catch schema drift.
+        const hasBio = !!(profile.biography || profile.bio)
+        const postsArr = (profile.latestPosts || profile.posts) as unknown[] | undefined
+        if (!hasBio && (!Array.isArray(postsArr) || postsArr.length === 0)) {
+          console.warn('[instagram/scrape] empty profile — keys:', Object.keys(profile).join(','))
+          throw new Error('Instagram не вернул ни описания, ни постов (приватный профиль или изменился формат данных). Материал не сохранён — попробуй ещё раз или добавь тексты вручную.')
+        }
         const accountText = buildAccountText(profile)
 
         // AI analysis (small, fast — ~30s)

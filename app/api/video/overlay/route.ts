@@ -19,7 +19,10 @@ const MAX_INPUT = 60 * 1024 * 1024 // ~60 MB ≈ a 60-90s phone story clip
 function runFfmpeg(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const bin = require('ffmpeg-static') as string
+    const bin = require('ffmpeg-static') as string | null
+    // ffmpeg-static exports null on unsupported platform/arch → fail readably
+    // (into the refund catch) instead of execFile getting a null path.
+    if (!bin) { reject(new Error('ffmpeg binary unavailable on this platform')); return }
     const child = execFile(bin, args, { timeout: 240_000, maxBuffer: 16 * 1024 * 1024 }, (err) => {
       if (err) reject(new Error(`ffmpeg: ${err.message.slice(0, 300)}`))
       else resolve()

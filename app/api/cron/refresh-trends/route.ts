@@ -89,18 +89,32 @@ async function handle(request: Request) {
     }
   }
 
-  // Replace the previous auto batch only if we generated fresh ones.
-  if (rows.length > 0) {
+  // Replace auto-trends PER NICHE-SLOT: only slots that actually produced fresh
+  // trends get their old auto-trends removed. A failed/empty batch keeps last
+  // week's trends instead of going blank — before, one failed niche wiped ALL
+  // auto-trends and left that niche without context for a week.
+  const bySlot = new Map<string, Record<string, unknown>[]>()
+  for (const r of rows) {
+    const ns = r.niches as string[] | null
+    const key = ns && ns.length ? ns[0] : '__general__'
+    if (!bySlot.has(key)) bySlot.set(key, [])
+    bySlot.get(key)!.push(r)
+  }
+  const replaced: string[] = []
+  for (const [key, slotRows] of bySlot) {
     try {
-      await admin.from('content_trends').delete().eq('scope', 'system').is('created_by', null)
-      const { error } = await admin.from('content_trends').insert(rows)
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      let del = admin.from('content_trends').delete().eq('scope', 'system').is('created_by', null)
+      del = key === '__general__' ? del.is('niches', null) : del.contains('niches', [key])
+      await del
+      const { error } = await admin.from('content_trends').insert(slotRows)
+      if (error) { console.error('[refresh-trends] insert slot failed:', key, error.message); continue }
+      replaced.push(key)
     } catch (e) {
-      return NextResponse.json({ error: e instanceof Error ? e.message : 'insert failed' }, { status: 500 })
+      console.error('[refresh-trends] replace slot failed:', key, e instanceof Error ? e.message : e)
     }
   }
 
-  return NextResponse.json({ ok: true, inserted: rows.length, report })
+  return NextResponse.json({ ok: true, inserted: rows.length, report, replacedSlots: replaced })
 }
 
 export async function GET(request: Request) { return handle(request) }

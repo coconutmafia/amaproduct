@@ -212,19 +212,27 @@ ${contentType === 'email' ? `Напиши письмо для email-рассыл
           })
 
           finalText = ''
-          for await (const chunk of validatorStream) {
-            if (
-              chunk.type === 'content_block_delta' &&
-              chunk.delta.type === 'text_delta'
-            ) {
-              finalText += chunk.delta.text
-              // Stream each text delta to client — user sees content being typed
-              send({ type: 'text', delta: chunk.delta.text })
+          try {
+            for await (const chunk of validatorStream) {
+              if (
+                chunk.type === 'content_block_delta' &&
+                chunk.delta.type === 'text_delta'
+              ) {
+                finalText += chunk.delta.text
+                // Stream each text delta to client — user sees content being typed
+                send({ type: 'text', delta: chunk.delta.text })
+              }
             }
+            // Only trust the validated text if the validator finished CLEANLY.
+            // A truncated (max_tokens) or aborted validator would otherwise
+            // overwrite the good generated post with a half-finished one.
+            const vFinal = await validatorStream.finalMessage()
+            wasValidated = vFinal.stop_reason === 'end_turn' && finalText.length > 50
+          } catch (e) {
+            console.error('[generate] validator stream failed:', e)
+            wasValidated = false
           }
-
-          wasValidated = finalText.length > 50
-          if (!wasValidated) finalText = generatedText // fallback
+          if (!wasValidated) finalText = generatedText // fallback to unvalidated
         }
 
         // ── Step 4: Parse output ────────────────────────────────────────────

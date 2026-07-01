@@ -47,8 +47,21 @@ async function transcribeVideo(videoUrl: string, apiKey: string): Promise<string
   try {
     const vid = await fetch(videoUrl)
     if (!vid.ok) return ''
+    // Skip BEFORE buffering the whole video into memory when the size is known
+    // (avoids an OOM peak on the serverless function for big reels). Log the skip
+    // so «нет транскрипта» is diagnosable instead of silent — analysis then falls
+    // back to the caption, which is acceptable.
+    const declared = Number(vid.headers.get('content-length') || 0)
+    if (declared > WHISPER_MAX) {
+      console.warn(`[viral-reels] video ${declared}B > Whisper cap ${WHISPER_MAX}B — пропускаю транскрипт, анализ по подписи`)
+      return ''
+    }
     const blob = await vid.blob()
-    if (blob.size === 0 || blob.size > WHISPER_MAX) return ''
+    if (blob.size === 0) return ''
+    if (blob.size > WHISPER_MAX) {
+      console.warn(`[viral-reels] video ${blob.size}B > Whisper cap — пропускаю транскрипт, анализ по подписи`)
+      return ''
+    }
     const { default: OpenAI, toFile } = await import('openai')
     const openai = new OpenAI({ apiKey })
     const audio = await toFile(blob, 'reel.mp4', { type: blob.type || 'video/mp4' })

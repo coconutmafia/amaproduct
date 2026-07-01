@@ -332,13 +332,17 @@ export async function buildRAGContext(
   // ── Standing voice rules (owner-dictated, e.g. via 📌 in the chat) ────────
   let voiceRules: string | undefined
   try {
-    const { data: rulesRow } = await supabase
+    // Take the most recent row rather than .maybeSingle() — the latter throws
+    // a 406 (PGRST116) if more than one voice_rules row ever exists, which would
+    // silently drop the whole layer. order+limit(1) is robust to duplicates.
+    const { data: rulesRows } = await supabase
       .from('project_materials')
       .select('raw_content')
       .eq('project_id', projectId)
       .eq('material_type', 'voice_rules')
-      .maybeSingle()
-    const raw = (rulesRow?.raw_content as string | null)?.trim()
+      .order('updated_at', { ascending: false })
+      .limit(1)
+    const raw = (rulesRows?.[0]?.raw_content as string | null)?.trim()
     if (raw) voiceRules = raw.slice(0, 3000)
   } catch { /* unavailable */ }
 
