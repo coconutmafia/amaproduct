@@ -55,13 +55,21 @@ export async function POST(request: Request) {
         .replace(/<header[\s\S]*?<\/header>/gi, '')
         .replace(/<footer[\s\S]*?<\/footer>/gi, '')
 
-      // Extract text from h1/h2/h3/p/li blocks
+      // Extract text from h1/h2/h3/p/li blocks. Track a running length instead of
+      // re-joining every iteration (was O(n²)); collect up to ~8000 chars so the
+      // 5000-char prompt slice below has clean, deduped content to work from.
       const blockRe = /<(h[1-3]|p|li)[^>]*>([\s\S]*?)<\/\1>/gi
       let m: RegExpExecArray | null
       const chunks: string[] = []
-      while ((m = blockRe.exec(cleaned)) !== null && pageText.length + chunks.join(' ').length < 6000) {
+      const seen = new Set<string>()
+      let collected = pageText.length
+      while ((m = blockRe.exec(cleaned)) !== null && collected < 8000) {
         const t = decodeHtml(m[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
-        if (t.length > 20) chunks.push(t)
+        if (t.length > 20 && !seen.has(t)) {
+          seen.add(t)
+          chunks.push(t)
+          collected += t.length + 1
+        }
       }
       pageText += chunks.join('\n')
     } catch (e) {
@@ -113,10 +121,24 @@ ${pageText.slice(0, 5000)}
       description?: string
     }
 
+    // Normalize product_type to the wizard's whitelist so a synonym / English /
+    // capitalized value from the model isn't silently dropped to the default.
+    const VALID_TYPES = ['курс', 'консультация', 'марафон', 'интенсив', 'мастер-класс', 'наставничество', 'подписка', 'другое']
+    const SYNONYMS: Record<string, string> = {
+      course: 'курс', consultation: 'консультация', consult: 'консультация',
+      marathon: 'марафон', intensive: 'интенсив', workshop: 'мастер-класс',
+      masterclass: 'мастер-класс', 'мастер класс': 'мастер-класс',
+      mentorship: 'наставничество', mentoring: 'наставничество',
+      subscription: 'подписка', membership: 'подписка', other: 'другое',
+    }
+    const rawType = (parsed.product_type || '').trim().toLowerCase()
+    const product_type = VALID_TYPES.includes(rawType) ? rawType
+      : (SYNONYMS[rawType] ?? (rawType ? 'другое' : ''))
+
     return NextResponse.json({
       success: true,
       name: parsed.name || '',
-      product_type: parsed.product_type || '',
+      product_type,
       description: parsed.description || '',
     })
   } catch (err) {

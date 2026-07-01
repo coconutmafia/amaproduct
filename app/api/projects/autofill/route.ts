@@ -90,6 +90,7 @@ async function scrapeInstagram(username: string): Promise<{ bio: string; posts: 
   // residential infra and is the same reliable path used by /api/instagram/scrape.
   // Falls through to best-effort methods if the token is missing or Apify errors.
   const apifyToken = process.env.APIFY_TOKEN
+  if (!apifyToken) console.warn('[autofill] APIFY_TOKEN не настроен — надёжный Apify-путь IG отключён, работают только хрупкие фолбэки (IG блокирует их с серверных IP)')
   if (apifyToken) {
     try {
       const res = await fetch(
@@ -98,7 +99,9 @@ async function scrapeInstagram(username: string): Promise<{ bio: string; posts: 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ usernames: [username], resultsLimit: 20 }),
-          signal: AbortSignal.timeout(80000),
+          // 60s (not 80s): autofill may scrape Telegram (~36s) THEN IG in one
+          // request under maxDuration=90 — leave budget for both + Claude.
+          signal: AbortSignal.timeout(60000),
         },
       )
       if (res.ok) {
