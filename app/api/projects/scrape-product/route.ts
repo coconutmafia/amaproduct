@@ -17,6 +17,7 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: 'AI не настроен (нет ANTHROPIC_API_KEY)' }, { status: 500 })
 
     const { url } = await request.json() as { url: string }
     if (!url?.trim()) return NextResponse.json({ error: 'URL не указан' }, { status: 400 })

@@ -312,15 +312,24 @@ export function ProjectWizard() {
       ].filter(s => s.url)
 
       if (socialUrls.length > 0) {
-        Promise.all(socialUrls.map(({ platform, url }) =>
+        // Background enrichment — but DON'T swallow failures silently (owner
+        // feedback: "загрузил → ничего, и непонятно почему"). Aggregate one
+        // gentle, non-blocking note if any profile couldn't be auto-loaded.
+        Promise.allSettled(socialUrls.map(({ platform, url }) =>
           fetch('/api/projects/scrape-social', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ projectId: project.id, platform, username: url }),
-          }).then(r => r.json()).then((d: { message?: string }) => {
+          }).then(async (r) => {
+            const d = await r.json().catch(() => ({} as { message?: string; error?: string }))
+            if (!r.ok) throw new Error(d.error || platform)
             if (d.message) toast.success(d.message)
-          }).catch(() => {})
-        ))
+          })
+        )).then((results) => {
+          if (results.some((r) => r.status === 'rejected')) {
+            toast.message('Часть профилей не удалось подгрузить автоматически — можно добавить материалы вручную в разделе «Материалы».')
+          }
+        })
       }
 
       router.push(`/projects/${project.id}`)

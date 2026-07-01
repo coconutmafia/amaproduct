@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 90 // Apify profile scrape can take up to ~60-80s on cold start
 
 function decodeHtml(s: string): string {
   return s
@@ -82,6 +82,46 @@ async function scrapeTelegram(channel: string): Promise<{ bio: string; posts: st
 async function scrapeInstagram(username: string): Promise<{ bio: string; posts: string[] }> {
   const posts: string[] = []
   let bio = ''
+
+  // ── Method 0 (PRIMARY): Apify official profile scraper ───────────────────────
+  // Methods 1-5 below scrape Instagram/mirrors directly, which Instagram blocks
+  // from datacenter IPs (Vercel) — so on production they almost always fail and
+  // the user wrongly sees «проверь, что аккаунт публичный». Apify runs from
+  // residential infra and is the same reliable path used by /api/instagram/scrape.
+  // Falls through to best-effort methods if the token is missing or Apify errors.
+  const apifyToken = process.env.APIFY_TOKEN
+  if (apifyToken) {
+    try {
+      const res = await fetch(
+        `https://api.apify.com/v2/acts/apify~instagram-profile-scraper/run-sync-get-dataset-items?token=${encodeURIComponent(apifyToken)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ usernames: [username], resultsLimit: 20 }),
+          signal: AbortSignal.timeout(80000),
+        },
+      )
+      if (res.ok) {
+        const data = (await res.json()) as Array<Record<string, unknown>>
+        const prof = Array.isArray(data) ? data[0] : undefined
+        if (prof) {
+          bio = (prof.biography as string) || ''
+          const latest =
+            (prof.latestPosts as Array<Record<string, unknown>>) ||
+            (prof.posts as Array<Record<string, unknown>>) || []
+          for (const pst of latest) {
+            const cap = (pst.caption as string) || (pst.text as string) || ''
+            if (cap && cap.length > 20) posts.push(cap)
+          }
+          if (bio || posts.length > 0) return { bio, posts: posts.slice(0, 20) }
+        }
+      } else {
+        console.warn('[autofill] Apify IG failed:', res.status)
+      }
+    } catch (e) {
+      console.warn('[autofill] Apify IG error:', e instanceof Error ? e.message : e)
+    }
+  }
 
   // ── Method 1: Instagram internal API ────────────────────────────────────────
   try {
@@ -275,8 +315,10 @@ export async function POST(request: Request) {
 
     if (!bio && posts.length === 0) {
       const tried = [telegramRaw && 'Telegram', instagramRaw && 'Instagram'].filter(Boolean).join(' и ')
+      // Honest message: usually it's a temporary block / private account, not the
+      // user's fault. Always offer the manual path so onboarding is never a dead end.
       return NextResponse.json({
-        error: `Не удалось загрузить данные из ${tried}. Проверь что аккаунты публичные и попробуй ещё раз.`,
+        error: `Не удалось автоматически загрузить данные из ${tried} (профиль закрыт или сервис временно недоступен). Ничего страшного — можно заполнить поля вручную ниже.`,
       }, { status: 422 })
     }
 

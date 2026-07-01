@@ -95,6 +95,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
 
     const supabase  = createSupabaseClient()
     const allParts: { name: string; text: string }[] = []
+    const fileErrors: string[] = []
 
     // Initialise per-file queue so the user sees all files upfront
     const initNames = files.map((f, i) => {
@@ -153,28 +154,33 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         //  failed on every chunk past the first. Time windows always decode.)
         const CHUNK_SEC = 600 // 10-min windows keep each Whisper call within limits
         const durationSec = await getAudioDuration(file)
-        const totalChunks = durationSec > 0 ? Math.max(1, Math.ceil(durationSec / CHUNK_SEC)) : 1
+        const known = durationSec > 0
+        // Known duration → exact chunk count. Unknown (iOS Safari often can't read
+        // audio duration) → chunk blindly in bounded 10-min windows and stop when
+        // the server signals the file ended. Removes the fragile "whole file in one
+        // pass" branch that blew Whisper's 25 MB limit on long interviews.
+        const MAX_CHUNKS = 48 // safety cap ≈ 8 h
+        const totalChunks = known ? Math.max(1, Math.ceil(durationSec / CHUNK_SEC)) : MAX_CHUNKS
         const fileParts: string[] = []
 
         for (let ci = 0; ci < totalChunks; ci++) {
-          updateFile(fi, { status: 'transcribing', chunkIndex: ci + 1, totalChunks })
+          updateFile(fi, { status: 'transcribing', chunkIndex: ci + 1, totalChunks: known ? totalChunks : ci + 1 })
 
           const startSec    = ci * CHUNK_SEC
-          // Unknown duration (iCloud stub / odd format) → one pass over the whole file.
-          const durSec      = durationSec > 0 ? CHUNK_SEC : undefined
-          const isLastChunk = ci === totalChunks - 1
+          const isLastChunk = known && ci === totalChunks - 1
 
           const res      = await fetch('/api/ai/transcribe', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ storagePath, startSec, durSec, ext, isLastChunk }),
+            body:    JSON.stringify({ storagePath, startSec, durSec: CHUNK_SEC, ext, isLastChunk }),
           })
           const bodyText = await res.text()
-          let data: { text?: string; error?: string }
+          let data: { text?: string; error?: string; ended?: boolean }
           try { data = JSON.parse(bodyText) as typeof data }
           catch { throw new Error(`Сервер вернул ошибку ${res.status}`) }
           if (!res.ok || data.error) throw new Error(data.error ?? `Часть ${ci + 1}: ошибка`)
-          fileParts.push(data.text ?? '')
+          if (data.ended) break // reached end of an unknown-length file
+          if (data.text) fileParts.push(data.text)
         }
 
         allParts.push({ name: fileName, text: fileParts.join(' ') })
@@ -183,6 +189,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       } catch (err) {
         // ── One file failed — mark it and continue with the rest ────────────
         const msg = err instanceof Error ? err.message : 'Неизвестная ошибка'
+        fileErrors.push(msg)
         updateFile(fi, { status: 'error', error: msg })
       } finally {
         if (uploadedPaths.length > 0) {
@@ -198,7 +205,10 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       setTranscription(allParts.map(p => p.text).join('\n\n'))
       setStep('transcribed')
     } else {
-      toast.error('Ни один файл не удалось расшифровать')
+      // Surface the ACTUAL reason (quota / ffmpeg / empty iCloud stub / storage)
+      // instead of a generic message — so the user (and we) see what to fix.
+      const reason = [...new Set(fileErrors)].join('; ').slice(0, 300)
+      toast.error(reason ? `Не удалось расшифровать: ${reason}` : 'Ни один файл не удалось расшифровать')
       setStep('upload')
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

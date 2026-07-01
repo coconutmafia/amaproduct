@@ -70,7 +70,17 @@ export async function POST(request: Request) {
     await runFfmpeg(args)
 
     const seg = await readFile(outPath)
-    if (seg.length === 0) return NextResponse.json({ error: 'Пустой фрагмент файла' }, { status: 400 })
+    // A cut starting at/after the end of the file yields an empty segment. That
+    // is NOT an error — it means the whole file is already transcribed. Signal
+    // `ended` so the client can stop cleanly even when it never knew the duration
+    // (iOS Safari often can't read it). Only an empty FIRST chunk is a real fail.
+    if (seg.length < 1024) {
+      if ((startSec ?? 0) > 0) {
+        if (isLastChunk) await admin.storage.from('audio-temp').remove([storagePath]).catch(() => {})
+        return NextResponse.json({ text: '', ended: true })
+      }
+      return NextResponse.json({ error: 'Пустой файл — возможно, он не докачался из iCloud. Открой его в «Файлах» и попробуй снова.' }, { status: 400 })
+    }
     if (seg.length > 25 * 1024 * 1024) {
       return NextResponse.json({ error: 'Фрагмент слишком большой — уменьши длительность куска' }, { status: 400 })
     }
