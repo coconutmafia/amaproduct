@@ -83,7 +83,7 @@ export async function POST(request: Request) {
         }
       }
 
-      // Excel (.xlsx / .xls) — извлекаем все листы как текст через SheetJS
+      // Excel (.xlsx / .xls) — извлекаем все листы как текст через SheetJS.
       if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
         try {
           const XLSX = await import('xlsx')
@@ -91,24 +91,31 @@ export async function POST(request: Request) {
           // SheetJS требует Uint8Array, не ArrayBuffer
           const workbook = XLSX.read(new Uint8Array(arrayBuf), { type: 'array' })
           const lines: string[] = []
+          let cellChars = 0 // реальные символы В ЯЧЕЙКАХ (без разделителей)
           for (const sheetName of workbook.SheetNames) {
             const sheet = workbook.Sheets[sheetName]
             const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false })
-            if (csv.trim()) {
+            const meaningful = csv.replace(/[,;"\s]/g, '')
+            if (meaningful.length > 0) {
+              cellChars += meaningful.length
               lines.push(`=== Лист: ${sheetName} ===`)
               lines.push(csv)
             }
           }
           rawContent = lines.join('\n\n')
-          if (!rawContent.trim()) {
+          // «Карту смыслов» часто делают в Excel как СХЕМУ / текстовые блоки /
+          // картинку — а это живёт ВНЕ ячеек, поэтому чтение ячеек находит мало
+          // или ничего, хотя человек «у себя видит». Даём понятное сообщение
+          // вместо тихого сохранения пустого материала, который не дойдёт до AI.
+          if (cellChars < 15) {
             return NextResponse.json({
-              error: 'Excel-файл пустой или не содержит текстовых данных',
+              error: 'В Excel почти нет текста в ЯЧЕЙКАХ. Если карта смыслов сделана как схема, текстовые блоки или картинка — Excel хранит их отдельно от ячеек, и прочитать не получается. Сохрани данные обычной таблицей (текст в ячейках), экспортируй в CSV, или вставь текст через «Добавить текст» ниже.',
             }, { status: 400 })
           }
         } catch (xlsxErr) {
           console.error('xlsx parse error:', xlsxErr)
           return NextResponse.json({
-            error: 'Не удалось прочитать Excel-файл. Попробуйте сохранить как .csv и загрузить заново.',
+            error: 'Не удалось прочитать Excel-файл (возможно, он защищён паролем или это не настоящий .xlsx). Сохрани как .csv или вставь текст через «Добавить текст».',
           }, { status: 400 })
         }
       }
