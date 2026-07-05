@@ -7,6 +7,7 @@ import { checkAndConsumeGeneration, refundGeneration } from '@/lib/generations'
 import { contentItemToText } from '@/lib/contentToText'
 import { NextResponse } from 'next/server'
 import type { WarmupPhase } from '@/types'
+import { rateLimit } from '@/lib/rateLimit'
 
 // Vercel Pro allows up to 300s. This route runs RAG + a blocking generation +
 // (for posts) a validator pass. The old 60s cap could kill the function mid-call
@@ -19,6 +20,9 @@ export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const rl = await rateLimit(user.id, 'generate')
+  if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
 
   const genCheck = await checkAndConsumeGeneration(user.id)
   if (!genCheck.allowed) {

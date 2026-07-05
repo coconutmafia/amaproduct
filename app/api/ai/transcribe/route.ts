@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse }       from 'next/server'
 import { execFile } from 'node:child_process'
 import { writeFile, readFile, unlink } from 'node:fs/promises'
+import { rateLimit } from '@/lib/rateLimit'
 
 // ffmpeg needs the Node runtime + the binary (traced in next.config).
 export const runtime     = 'nodejs'
@@ -30,6 +31,9 @@ export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const rl = await rateLimit(user.id, 'transcribe')
+  if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
 
   // Client uploads the file to Storage, then calls this route per TIME chunk
   // (startSec/durSec) so each Whisper call stays under the 25 MB / 300 s limits.

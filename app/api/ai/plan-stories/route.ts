@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { gateContentUnit, refundGeneration } from '@/lib/generations'
+import { rateLimit } from '@/lib/rateLimit'
 
 // Turns a story idea/script into a sequence of story FRAMES (minimal on-screen
 // text per frame, in the blogger's voice) that the engine renders over their
@@ -21,6 +22,9 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const rl = await rateLimit(user.id, 'plan-stories')
+    if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
 
     const { projectId, script = '', count } = (await request.json()) as { projectId?: string; script?: string; count?: number }
     if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })

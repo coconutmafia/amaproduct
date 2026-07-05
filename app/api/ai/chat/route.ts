@@ -6,6 +6,7 @@ import { buildSystemPrompt } from '@/lib/ai/prompts/system'
 import { AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
 import { gateContentUnit, refundGeneration } from '@/lib/generations'
 import type { Message } from '@/types'
+import { rateLimit } from '@/lib/rateLimit'
 
 // Vercel Pro allows up to 300s. Multi-item answers ("5 рилзов") on top of a
 // large RAG system prompt routinely take well over 60s — the old 60s cap was
@@ -118,6 +119,9 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const rl = await rateLimit(user.id, 'chat')
+    if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
 
     const { messages, projectId, genFormat }: {
       messages: Message[]

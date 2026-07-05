@@ -6,6 +6,7 @@ import { execFile } from 'node:child_process'
 import { writeFile, readFile, unlink } from 'node:fs/promises'
 import { loadFonts, renderSlide, themeFromBrand, FORMATS, type SlideSpec } from '@/lib/carousel/engine'
 import { gateContentUnit, refundGeneration } from '@/lib/generations'
+import { rateLimit } from '@/lib/rateLimit'
 
 // Burns the blogger's brand-styled text ONTO a video (owner: «загружаешь видео,
 // а он на него текст накладывает»). The overlay PNG comes from our own slide
@@ -43,6 +44,9 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const rl = await rateLimit(user.id, 'video')
+    if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
 
     const { projectId, videoPath, text, position, plate } = (await request.json()) as {
       projectId?: string; videoPath?: string; text?: string; position?: string; plate?: boolean

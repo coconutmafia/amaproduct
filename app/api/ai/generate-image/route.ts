@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { rateLimit } from '@/lib/rateLimit'
 
 // AI image generation for the «free» designer (step a): turn a text description
 // into a flat-illustration STICKER (transparent PNG, dropped on a story as an
@@ -37,6 +38,9 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const rl = await rateLimit(user.id, 'image')
+    if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
 
     const { projectId, prompt, mode: rawMode } = (await request.json()) as {
       projectId?: string; prompt?: string; mode?: string

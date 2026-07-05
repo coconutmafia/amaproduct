@@ -1,0 +1,107 @@
+import { NextResponse } from 'next/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { ALWAYS_INCLUDE, BLOCKED_STATUS } from '@/lib/ai/rag'
+
+// Daily chain-integrity watchdog (Vercel Cron, see vercel.json).
+//
+// Almost every launch-audit finding was a SILENT break: a material saved under
+// the wrong type, an RLS-denied insert swallowed, an empty layer nobody noticed.
+// This cron re-runs the context-inspector checks across active projects every
+// day and raises the flag the moment quality degrades — instead of the owner
+// discovering it weeks later through «контент стал хуже».
+//
+// Alerting: warnings go to console.error (visible in Vercel logs / log drains)
+// and, if ALERT_WEBHOOK_URL is set, POSTed there as JSON — point it at a
+// Telegram-bot bridge / Slack webhook / Zapier when ready.
+export const maxDuration = 300
+
+const ALWAYS = new Set<string>(ALWAYS_INCLUDE)
+
+async function handle(request: Request) {
+  // ── Auth (same pattern as refresh-trends) ─────────────────────────────────
+  const secret = process.env.CRON_SECRET
+  const auth = request.headers.get('authorization')
+  const isVercelCron = request.headers.get('x-vercel-cron') != null
+  if (secret) {
+    if (auth !== `Bearer ${secret}`) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  } else if (!isVercelCron) {
+    console.warn('[chain-watch] CRON_SECRET not set — set it in env for security.')
+    return NextResponse.json({ error: 'Forbidden (set CRON_SECRET)' }, { status: 403 })
+  }
+
+  const admin = createAdminClient()
+  const warnings: string[] = []
+
+  // ── 1. System methodology layer — the product's foundation ────────────────
+  const { count: sysChunks } = await admin
+    .from('knowledge_chunks').select('id', { count: 'exact', head: true })
+  if (!sysChunks || sysChunks === 0) {
+    warnings.push('🔴 knowledge_chunks = 0 — методология сервиса НЕ доходит до генерации (см. миграцию 021 + /api/admin/knowledge-reembed)')
+  }
+
+  // ── 2. Per-project chain checks (active in the last 14 days) ──────────────
+  const since = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString()
+  const { data: projects } = await admin
+    .from('projects')
+    .select('id, name, updated_at')
+    .eq('status', 'active')
+    .gte('updated_at', since)
+    .order('updated_at', { ascending: false })
+    .limit(50)
+
+  const oneHourAgo = Date.now() - 3600 * 1000
+  let projectsChecked = 0
+  for (const p of (projects ?? [])) {
+    projectsChecked++
+    const { data: mats } = await admin
+      .from('project_materials')
+      .select('title, material_type, raw_content, processing_status, created_at')
+      .eq('project_id', p.id)
+    if (!mats) continue
+
+    for (const m of mats) {
+      const status = (m.processing_status as string) ?? ''
+      const empty = !(m.raw_content ?? '').toString().trim()
+      const inChain = ALWAYS.has(m.material_type as string)
+      if (status === 'error') {
+        warnings.push(`⚠️ [${p.name}] «${m.title}» (${m.material_type}) в статусе error — материал не дойдёт до генерации`)
+      } else if (BLOCKED_STATUS.has(status) && new Date(m.created_at as string).getTime() < oneHourAgo) {
+        warnings.push(`⚠️ [${p.name}] «${m.title}» (${m.material_type}) завис в «${status}» >1ч`)
+      } else if (inChain && empty && !BLOCKED_STATUS.has(status)) {
+        warnings.push(`⚠️ [${p.name}] «${m.title}» (${m.material_type}) — пустой raw_content, звено выпадает из цепи`)
+      }
+    }
+  }
+
+  // ── 3. Housekeeping: purge old rate-limit windows ─────────────────────────
+  try {
+    await admin.from('rate_limits').delete()
+      .lt('window_start', new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString())
+  } catch { /* table may not exist until migration 022 is applied */ }
+
+  // ── 4. Report / alert ──────────────────────────────────────────────────────
+  const report = { ok: warnings.length === 0, projectsChecked, systemChunks: sysChunks ?? 0, warnings }
+  if (warnings.length > 0) {
+    console.error(`[chain-watch] ${warnings.length} warning(s):\n` + warnings.join('\n'))
+    const hook = process.env.ALERT_WEBHOOK_URL
+    if (hook) {
+      try {
+        await fetch(hook, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: 'ama chain-watch', ...report }),
+          signal: AbortSignal.timeout(10000),
+        })
+      } catch (e) {
+        console.error('[chain-watch] alert webhook failed:', e instanceof Error ? e.message : e)
+      }
+    }
+  } else {
+    console.log(`[chain-watch] OK — ${projectsChecked} projects, ${sysChunks} system chunks`)
+  }
+
+  return NextResponse.json(report)
+}
+
+export async function GET(request: Request) { return handle(request) }
+export async function POST(request: Request) { return handle(request) }

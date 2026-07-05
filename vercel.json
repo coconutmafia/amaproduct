@@ -1,5 +1,6 @@
 {
   "crons": [
-    { "path": "/api/cron/refresh-trends", "schedule": "0 6 * * 1" }
+    { "path": "/api/cron/refresh-trends", "schedule": "0 6 * * 1" },
+    { "path": "/api/cron/chain-watch", "schedule": "0 7 * * *" }
   ]
 }
