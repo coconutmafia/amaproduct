@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ALWAYS_INCLUDE, BLOCKED_STATUS } from '@/lib/ai/rag'
+import { BILLING_ENFORCED } from '@/lib/generations'
+import { emailConfigured, sendEmail, trialEndingEmail, trialEndedEmail } from '@/lib/email'
 
 // Daily chain-integrity watchdog (Vercel Cron, see vercel.json).
 //
@@ -79,8 +81,63 @@ async function handle(request: Request) {
       .lt('window_start', new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString())
   } catch { /* table may not exist until migration 022 is applied */ }
 
-  // ── 4. Report / alert ──────────────────────────────────────────────────────
-  const report = { ok: warnings.length === 0, projectsChecked, systemChunks: sysChunks ?? 0, warnings }
+  // ── 4. Trial lifecycle ──────────────────────────────────────────────────────
+  // (a) State transition trialing→view_only when the trial expired. ONLY when
+  //     enforcement is live — flipping it earlier would make the TrialBanner
+  //     claim «генерация на паузе» while nothing is actually blocked.
+  // (b) Trial emails (dormant until RESEND_API_KEY is set). Idempotent via
+  //     billing_events — the same dedupe pattern the payment webhooks use.
+  const nowIso = new Date().toISOString()
+  let trialTransitions = 0
+  let trialEmails = 0
+  if (BILLING_ENFORCED) {
+    const { data: flipped } = await admin
+      .from('profiles')
+      .update({ subscription_status: 'view_only' })
+      .eq('subscription_status', 'trialing')
+      .lt('trial_ends_at', nowIso)
+      .select('id')
+    trialTransitions = flipped?.length ?? 0
+
+    if (emailConfigured()) {
+      for (const p of (flipped ?? [])) {
+        const key = `email:trial-ended:${p.id}`
+        const { error: dup } = await admin.from('billing_events').insert({ id: key, provider: 'email', type: 'trial-ended' })
+        if (dup) continue // already sent
+        const { data: u } = await admin.auth.admin.getUserById(p.id as string)
+        const addr = u?.user?.email
+        if (!addr) continue
+        const { subject, html } = trialEndedEmail()
+        if (await sendEmail(addr, subject, html)) trialEmails++
+      }
+    }
+  }
+
+  if (emailConfigured()) {
+    // «заканчивается через ≤7 дней» — once per user (dedupe key without date)
+    const in7d = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString()
+    const { data: ending } = await admin
+      .from('profiles')
+      .select('id, trial_ends_at')
+      .eq('subscription_status', 'trialing')
+      .gt('trial_ends_at', nowIso)
+      .lte('trial_ends_at', in7d)
+      .limit(200)
+    for (const p of (ending ?? [])) {
+      const key = `email:trial-ending:${p.id}`
+      const { error: dup } = await admin.from('billing_events').insert({ id: key, provider: 'email', type: 'trial-ending' })
+      if (dup) continue
+      const { data: u } = await admin.auth.admin.getUserById(p.id as string)
+      const addr = u?.user?.email
+      if (!addr) continue
+      const daysLeft = Math.max(1, Math.ceil((new Date(p.trial_ends_at as string).getTime() - Date.now()) / (24 * 3600 * 1000)))
+      const { subject, html } = trialEndingEmail(daysLeft)
+      if (await sendEmail(addr, subject, html)) trialEmails++
+    }
+  }
+
+  // ── 5. Report / alert ──────────────────────────────────────────────────────
+  const report = { ok: warnings.length === 0, projectsChecked, systemChunks: sysChunks ?? 0, trialTransitions, trialEmails, warnings }
   if (warnings.length > 0) {
     console.error(`[chain-watch] ${warnings.length} warning(s):\n` + warnings.join('\n'))
     const hook = process.env.ALERT_WEBHOOK_URL
