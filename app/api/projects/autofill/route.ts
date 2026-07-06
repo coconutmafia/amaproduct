@@ -80,7 +80,7 @@ async function scrapeTelegram(channel: string): Promise<{ bio: string; posts: st
   return { bio, posts: [...new Set(posts)].slice(0, 30) }
 }
 
-async function scrapeInstagram(username: string): Promise<{ bio: string; posts: string[] }> {
+async function scrapeInstagram(username: string, apifyTimeoutMs = 80000): Promise<{ bio: string; posts: string[] }> {
   const posts: string[] = []
   let bio = ''
 
@@ -100,9 +100,10 @@ async function scrapeInstagram(username: string): Promise<{ bio: string; posts: 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ usernames: [username], resultsLimit: 20 }),
-          // 60s (not 80s): autofill may scrape Telegram (~36s) THEN IG in one
-          // request under maxDuration=90 — leave budget for both + Claude.
-          signal: AbortSignal.timeout(60000),
+          // Adaptive budget (caller decides): 80s when IG is the only source
+          // (Apify cold start runs 60-80s), tighter when Telegram already ate
+          // part of the 90s maxDuration.
+          signal: AbortSignal.timeout(apifyTimeoutMs),
         },
       )
       if (res.ok) {
@@ -309,7 +310,9 @@ export async function POST(request: Request) {
     if (!platformLabel && instagramRaw) {
       try {
         const { username } = extractUsername(instagramRaw)
-        const result = await scrapeInstagram(username)
+        // Full 80s Apify budget when IG is the only source; tighter when the
+        // Telegram scrape already consumed part of the 90s function budget.
+        const result = await scrapeInstagram(username, telegramRaw ? 55000 : 80000)
         if (result.bio || result.posts.length > 0) {
           bio = result.bio
           posts = result.posts
