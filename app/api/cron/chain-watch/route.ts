@@ -153,6 +153,25 @@ async function handle(request: Request) {
         console.error('[chain-watch] alert webhook failed:', e instanceof Error ? e.message : e)
       }
     }
+    // Telegram alert — the owner's native channel. Dormant until
+    // TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID are set in env.
+    const tgToken = process.env.TELEGRAM_BOT_TOKEN
+    const tgChat = process.env.TELEGRAM_CHAT_ID
+    if (tgToken && tgChat) {
+      try {
+        const text = `⚠️ AMA сторож цепи: ${warnings.length} предупр.\n\n` +
+          warnings.slice(0, 15).join('\n').slice(0, 3500) +
+          (warnings.length > 15 ? `\n…и ещё ${warnings.length - 15}` : '')
+        await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: tgChat, text }),
+          signal: AbortSignal.timeout(10000),
+        })
+      } catch (e) {
+        console.error('[chain-watch] telegram alert failed:', e instanceof Error ? e.message : e)
+      }
+    }
   } else {
     console.log(`[chain-watch] OK — ${projectsChecked} projects, ${sysChunks} system chunks`)
   }
