@@ -104,6 +104,11 @@ export async function POST(request: Request) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Transcription failed'
     console.error('Transcribe error:', msg)
+    // Storage cleanup previously only ran on the SUCCESS/ended paths — if
+    // ffmpeg/Whisper threw on the LAST chunk, the temp audio orphaned in
+    // Storage forever (server-side; the client also best-effort-cleans on its
+    // own, but shouldn't be the only line of defense). Best-effort here too.
+    if (isLastChunk) await admin.storage.from('audio-temp').remove([storagePath]).catch(() => {})
     return NextResponse.json({ error: `Ошибка расшифровки: ${msg}` }, { status: 500 })
   } finally {
     await cleanup()
