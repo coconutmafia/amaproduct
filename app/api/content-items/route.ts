@@ -17,8 +17,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
+    // RLS (content_items_write, migration 025) is the access boundary — the
+    // session client enforces editor+ directly on the insert below.
     const { data: project } = await supabase
-      .from('projects').select('id').eq('id', projectId).eq('owner_id', user.id).single()
+      .from('projects').select('id').eq('id', projectId).single()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
     // Map any phase name → a value allowed by the content_items CHECK constraint.

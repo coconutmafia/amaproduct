@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireProjectAccess } from '@/lib/projects/access'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 // Saved DESIGNED-STORIES sets («Мои оформленные сторис») — the gallery the
 // owner asked for («я выйду, и оно всё — теперь не найду»). Frame images live
@@ -21,10 +23,11 @@ function pathFromUrl(url: string): string | null {
   return decodeURIComponent(url.slice(i + marker.length).split('?')[0])
 }
 
-async function ownedProject(projectId: string, userId: string) {
-  const supabase = await createClient()
-  const { data } = await supabase.from('projects').select('id').eq('id', projectId).eq('owner_id', userId).single()
-  return !!data
+// Writes below go through the admin client (brand_kit jsonb merge + storage) —
+// this check IS the access boundary, editor+ required.
+async function canEditProject(supabase: SupabaseClient, projectId: string, userId: string) {
+  const access = await requireProjectAccess(supabase, projectId, userId, 'editor')
+  return access.ok
 }
 
 function readSets(kit: Record<string, unknown>): StorySet[] {
@@ -44,7 +47,7 @@ export async function GET(request: Request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const projectId = new URL(request.url).searchParams.get('projectId')
     if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
-    const { data } = await supabase.from('projects').select('brand_kit').eq('id', projectId).eq('owner_id', user.id).single()
+    const { data } = await supabase.from('projects').select('brand_kit').eq('id', projectId).single()
     if (!data) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     return NextResponse.json({ sets: readSets((data.brand_kit as Record<string, unknown>) || {}) })
   } catch (e) {
@@ -62,7 +65,7 @@ export async function POST(request: Request) {
     const projectId = String(body.projectId || '')
     const frames = (body.frames || []).filter((f) => f && typeof f.url === 'string' && f.url.includes('/project-brand/'))
     if (!projectId || frames.length === 0) return NextResponse.json({ error: 'projectId и frames обязательны' }, { status: 400 })
-    if (!(await ownedProject(projectId, user.id))) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    if (!(await canEditProject(supabase, projectId, user.id))) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
     const admin = createAdminClient()
     const { data: row } = await admin.from('projects').select('brand_kit').eq('id', projectId).single()
@@ -120,7 +123,7 @@ export async function DELETE(request: Request) {
     const projectId = url.searchParams.get('projectId') || ''
     const setId = url.searchParams.get('setId') || ''
     if (!projectId || !setId) return NextResponse.json({ error: 'projectId и setId обязательны' }, { status: 400 })
-    if (!(await ownedProject(projectId, user.id))) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    if (!(await canEditProject(supabase, projectId, user.id))) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
     const admin = createAdminClient()
     const { data: row } = await admin.from('projects').select('brand_kit').eq('id', projectId).single()

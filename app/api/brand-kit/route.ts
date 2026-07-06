@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireProjectAccess } from '@/lib/projects/access'
 import { FONT_KEYS } from '@/lib/fonts'
 
 // Read / manually-save a project's brand kit (colours, bg style, handle, logo).
@@ -39,7 +40,7 @@ export async function GET(request: Request) {
     const { data } = await supabase
       .from('projects')
       .select('brand_accent_color, brand_bg_color, brand_text_color, brand_bg_style, brand_handle, brand_logo_url, brand_kit_status, brand_kit')
-      .eq('id', projectId).eq('owner_id', user.id).single()
+      .eq('id', projectId).single()
     if (!data) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     return NextResponse.json(shape(data))
   } catch (e) {
@@ -56,8 +57,10 @@ export async function POST(request: Request) {
     const projectId = String(body.projectId || '')
     if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
 
-    const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).eq('owner_id', user.id).single()
-    if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    // Writes below go through the admin client (brand_kit jsonb merge) — this
+    // check IS the access boundary, not a redundant one.
+    const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
     const hex = (v: unknown) => { const s = String(v ?? '').trim(); return /^#?[0-9a-fA-F]{6}$/.test(s) ? (s.startsWith('#') ? s : '#' + s) : null }
     const update: Record<string, unknown> = {}

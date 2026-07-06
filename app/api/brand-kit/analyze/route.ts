@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireProjectAccess } from '@/lib/projects/access'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { FONT_KEYS, FONTS } from '@/lib/fonts'
 import sharp from 'sharp'
@@ -25,8 +26,10 @@ export async function POST(request: Request) {
     const urls = (sampleUrls || []).filter(Boolean).slice(0, 5)
     if (urls.length === 0) return NextResponse.json({ error: 'Сначала загрузи примеры стиля' }, { status: 400 })
 
-    const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).eq('owner_id', user.id).single()
-    if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    // Writes below go through the admin client — this check IS the access
+    // boundary, not a redundant one.
+    const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
     // Fetch + downscale each sample → base64 (keeps the vision payload small).
     const images: { type: 'image'; source: { type: 'base64'; media_type: 'image/jpeg'; data: string } }[] = []

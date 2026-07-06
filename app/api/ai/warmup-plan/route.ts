@@ -28,7 +28,6 @@ export async function POST(request: Request) {
       .from('projects')
       .select('id, name, niche, description, target_audience, instagram_url, telegram_url')
       .eq('id', projectId)
-      .eq('owner_id', user.id)
       .single()
     if (!project) {
       console.error(`[warmup-plan] Project not found: id=${projectId} user=${user.id}`)

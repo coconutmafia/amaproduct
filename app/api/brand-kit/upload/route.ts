@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireProjectAccess } from '@/lib/projects/access'
 
 // Uploads brand-kit assets (style samples or a logo) to the public project-brand
 // bucket. Writes go through the service role after an ownership check (the bucket
@@ -20,8 +21,10 @@ export async function POST(request: Request) {
     const kind = rawKind === 'logo' ? 'logo' : rawKind === 'story' ? 'story' : rawKind === 'post' ? 'post' : rawKind === 'story-out' ? 'story-out' : 'sample'
     if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
 
-    const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).eq('owner_id', user.id).single()
-    if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    // Upload goes through the admin client (storage + brand_logo_url write) —
+    // this check IS the access boundary, not a redundant one.
+    const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
     const files = form.getAll('files').filter((f): f is File => f instanceof File)
     if (files.length === 0) return NextResponse.json({ error: 'Нет файлов' }, { status: 400 })
@@ -64,8 +67,8 @@ export async function DELETE(request: Request) {
     const { projectId, url, target } = (await request.json()) as { projectId?: string; url?: string; target?: string }
     if (!projectId || !url) return NextResponse.json({ error: 'projectId и url обязательны' }, { status: 400 })
 
-    const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).eq('owner_id', user.id).single()
-    if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
     const marker = '/project-brand/'
     const i = url.indexOf(marker)

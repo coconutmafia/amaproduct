@@ -29,6 +29,7 @@ export interface PlanInfo {
   generations: number  // monthly content-unit limit (fair-use ceiling for pro/producer)
   unlimited: boolean   // true → render "безлимит (fair use)" instead of the number
   projects: number     // -1 = effectively unlimited (grown via add-ons)
+  teamSeats: number    // extra project_members (editor/viewer) seats per project, beyond the owner
   badge: string | null
   paid: boolean
   features: string[]
@@ -42,6 +43,7 @@ export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
     generations: 300,
     unlimited: false,
     projects: 3,
+    teamSeats: 0,
     badge: null,
     paid: false,
     features: [
@@ -57,6 +59,7 @@ export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
     generations: 300,
     unlimited: false,
     projects: 1,
+    teamSeats: 0,
     badge: 'Оптимальный',
     paid: true,
     features: [
@@ -74,6 +77,7 @@ export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
     generations: 2000,
     unlimited: true,
     projects: 3,
+    teamSeats: 1,
     badge: null,
     paid: true,
     features: [
@@ -93,6 +97,7 @@ export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
     generations: 8000,
     unlimited: true,
     projects: 10,
+    teamSeats: 5,
     badge: null,
     paid: true,
     features: [

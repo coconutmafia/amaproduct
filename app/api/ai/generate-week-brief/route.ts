@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { getSchemaForPhase, getEmotionalMechanics, getCTAEngine } from '@/lib/ai/prompts/content-brain'
+import { requireProjectAccess } from '@/lib/projects/access'
 import { NextResponse } from 'next/server'
 
 export const maxDuration = 90
@@ -21,11 +22,13 @@ export async function POST(request: Request) {
 
   const { projectId, days } = await request.json() as { projectId: string; days: BriefDay[] }
 
+  const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
+
   const { data: project } = await supabase
     .from('projects')
     .select('*')
     .eq('id', projectId)
-    .eq('owner_id', user.id)
     .single()
 
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })

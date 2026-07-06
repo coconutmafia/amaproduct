@@ -12,6 +12,7 @@ import {
 } from '@/lib/ai/prompts/content-brain'
 import { contentItemToText } from '@/lib/contentToText'
 import { cleanMarkdown } from '@/lib/cleanText'
+import { requireProjectAccess } from '@/lib/projects/access'
 import { NextResponse } from 'next/server'
 import type { WarmupPlanData, WarmupPhaseData } from '@/types'
 
@@ -69,12 +70,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Missing contextId' }, { status: 400 })
   }
 
+  // AI generation costs real money and has no RLS-gated write here — check
+  // editor+ explicitly.
+  const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
+
   // Load project
   const { data: project } = await supabase
     .from('projects')
     .select('*')
     .eq('id', projectId)
-    .eq('owner_id', user.id)
     .single()
 
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })

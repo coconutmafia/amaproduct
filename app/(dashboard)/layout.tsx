@@ -28,10 +28,11 @@ export default async function DashboardLayout({
   // Параллельно загружаем профиль и проекты
   const [{ data: profile }, { data: projects }] = await Promise.all([
     supabase.from('profiles').select('*').eq('id', userId).single(),
+    // RLS (projects_select, migration 025) scopes this to owned + member
+    // projects — no app-layer owner_id filter needed.
     supabase
       .from('projects')
       .select('id, name, completeness_score')
-      .eq('owner_id', userId)
       .eq('status', 'active')
       .order('updated_at', { ascending: false }),
   ])

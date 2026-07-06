@@ -18,7 +18,9 @@ export default async function StrategyPage({ params }: Props) {
   const user = session?.user
   if (!user) redirect('/login')
 
-  const { data: project } = await supabase.from('projects').select('*').eq('id', id).eq('owner_id', user.id).single()
+  // RLS (projects_select, migration 025) scopes this to owned + member
+  // projects — no app-layer owner_id filter needed.
+  const { data: project } = await supabase.from('projects').select('*').eq('id', id).single()
   if (!project) notFound()
 
   const [{ data: products }, { data: funnels }, { data: warmupPlans }] = await Promise.all([

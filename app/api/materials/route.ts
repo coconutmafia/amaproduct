@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireProjectAccess } from '@/lib/projects/access'
 import { computeCompleteness } from '@/lib/completeness'
 
 // Material types that are "evergreen" — done once, reused across products/launches
@@ -93,15 +94,10 @@ export async function DELETE(request: Request) {
 
     if (!material) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    // Check user owns the project
-    const { data: project } = await supabase
-      .from('projects')
-      .select('id')
-      .eq('id', material.project_id)
-      .eq('owner_id', user.id)
-      .single()
-
-    if (!project) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    // Storage removal below goes through the admin client — this check IS
+    // the access boundary, not a redundant one.
+    const access = await requireProjectAccess(supabase, material.project_id, user.id, 'editor')
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
     // Delete chunks first
     await supabase.from('project_chunks').delete().eq('material_id', id)
@@ -130,7 +126,10 @@ export async function DELETE(request: Request) {
       .eq('project_id', material.project_id)
       .eq('processing_status', 'ready')
     const score = computeCompleteness(remaining?.map(m => m.material_type) || [])
-    await supabase
+    // Auto-computed field — projects' session-client UPDATE policy is
+    // owner-only (migration 025), so use the admin client here too.
+    const admin = createAdminClient()
+    await admin
       .from('projects')
       .update({ completeness_score: score })
       .eq('id', material.project_id)

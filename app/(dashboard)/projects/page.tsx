@@ -21,10 +21,11 @@ export default async function ProjectsPage() {
   const user = session?.user
   if (!user) redirect('/login')
 
+  // RLS (projects_select, migration 025) scopes this to owned + member
+  // projects — no app-layer owner_id filter needed.
   const { data: projects } = await supabase
     .from('projects')
     .select('*')
-    .eq('owner_id', user.id)
     .order('updated_at', { ascending: false })
 
   return (

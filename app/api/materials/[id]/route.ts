@@ -22,16 +22,6 @@ export async function GET(
 
     if (!material) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    // Verify user owns the project
-    const { data: project } = await supabase
-      .from('projects')
-      .select('id')
-      .eq('id', material.project_id)
-      .eq('owner_id', user.id)
-      .single()
-
-    if (!project) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-
     return NextResponse.json({
       id: material.id,
       raw_content: material.raw_content,
@@ -69,17 +59,8 @@ export async function PATCH(
 
     if (!material) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    // Verify user owns the project
-    const { data: project } = await supabase
-      .from('projects')
-      .select('id')
-      .eq('id', material.project_id)
-      .eq('owner_id', user.id)
-      .single()
-
-    if (!project) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-
-    // Update raw_content
+    // Update raw_content — RLS (project_materials_write, editor+) is the
+    // access boundary here; the session client enforces it directly.
     const { error } = await supabase
       .from('project_materials')
       .update({ raw_content: body.raw_content })

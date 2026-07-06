@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireProjectAccess } from '@/lib/projects/access'
 import { ImageResponse } from 'next/og'
 import { execFile } from 'node:child_process'
 import { writeFile, readFile, unlink } from 'node:fs/promises'
@@ -54,10 +55,15 @@ export async function POST(request: Request) {
     if (!projectId || !videoPath || !text?.trim()) return NextResponse.json({ error: 'projectId, videoPath и text обязательны' }, { status: 400 })
     if (!videoPath.startsWith(`${projectId}/videos/`)) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
 
+    // Output goes through the admin/service-role client (storage) — this check
+    // IS the access boundary, not a redundant one.
+    const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
+
     const { data: project } = await supabase
       .from('projects')
       .select('id, brand_accent_color, brand_bg_color, brand_text_color, brand_bg_style, brand_handle, brand_logo_url, brand_kit')
-      .eq('id', projectId).eq('owner_id', user.id).single()
+      .eq('id', projectId).single()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
     // Burning text onto a video is an expensive content unit (ffmpeg + render).

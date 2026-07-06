@@ -188,7 +188,7 @@ export async function POST(request: Request) {
 
     if (!projectId || !platform || !username) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
 
-    const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).eq('owner_id', user.id).single()
+    const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).single()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
     let contentText = ''

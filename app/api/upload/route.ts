@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { computeCompleteness } from '@/lib/completeness'
 
 // 60 секунд — для векторизации через OpenAI
@@ -308,7 +309,12 @@ async function recalculateCompleteness(projectId: string) {
 
   const score = computeCompleteness(materials?.map(m => m.material_type) || [])
 
-  await supabase
+  // Auto-computed field, not a user-editable project setting — an editor
+  // (not just the owner) can trigger this via an upload, and projects'
+  // session-client UPDATE policy is owner-only (migration 025). Admin client
+  // bypasses that deliberately, same reasoning as video/overlay's output write.
+  const admin = createAdminClient()
+  await admin
     .from('projects')
     .update({ completeness_score: score })
     .eq('id', projectId)

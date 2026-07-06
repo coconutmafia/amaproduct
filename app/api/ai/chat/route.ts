@@ -7,6 +7,7 @@ import { AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
 import { gateContentUnit, refundGeneration } from '@/lib/generations'
 import type { Message } from '@/types'
 import { rateLimit } from '@/lib/rateLimit'
+import { requireProjectAccess } from '@/lib/projects/access'
 
 // Vercel Pro allows up to 300s. Multi-item answers ("5 рилзов") on top of a
 // large RAG system prompt routinely take well over 60s — the old 60s cap was
@@ -189,11 +190,15 @@ ${sysKnowledge ? `═══ МЕТОДОЛОГИЯ (опирайся на неё
       return streamingChatResponse(standaloneSystem, messages.map((m) => ({ role: m.role, content: m.content })), refundIfMetered)
     }
 
+    // AI generation costs real money and no RLS-gated table write happens in
+    // this route to naturally block a viewer — check editor+ explicitly.
+    const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
+
     const { data: project } = await supabase
       .from('projects')
       .select('*')
       .eq('id', projectId)
-      .eq('owner_id', user.id)
       .single()
 
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { suggestTrends } from '@/lib/ai/suggestTrends'
+import { requireProjectAccess } from '@/lib/projects/access'
 import { NextResponse } from 'next/server'
 
 // Web search + our own niche data → a LIST of candidate "тренды месяца" the user
@@ -22,8 +23,10 @@ export async function POST(request: Request) {
 
   if (scope === 'project') {
     if (!body.projectId) return NextResponse.json({ error: 'projectId обязателен' }, { status: 400 })
+    const access = await requireProjectAccess(supabase, body.projectId, user.id, 'editor')
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
     const { data: project } = await supabase
-      .from('projects').select('*').eq('id', body.projectId).eq('owner_id', user.id).single()
+      .from('projects').select('*').eq('id', body.projectId).single()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     niche = niche || (project.niche || '').trim()
 

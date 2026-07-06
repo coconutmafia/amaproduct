@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { requireProjectAccess } from '@/lib/projects/access'
 
 // GET /api/materials/[id]/file — short-lived signed URL to download the
 // original uploaded file. 'materials' is a PRIVATE bucket (may hold sensitive
@@ -25,9 +26,10 @@ export async function GET(
     .single()
   if (!material?.file_url) return NextResponse.json({ error: 'У этого материала нет файла' }, { status: 404 })
 
-  const { data: project } = await supabase
-    .from('projects').select('id').eq('id', material.project_id).eq('owner_id', user.id).single()
-  if (!project) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  // Signed-URL minting goes through the admin client — this check IS the
+  // access boundary. Reading a file only needs viewer-level access.
+  const access = await requireProjectAccess(supabase, material.project_id, user.id, 'viewer')
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
   const admin = createAdminClient()
   const { data: signed, error } = await admin.storage

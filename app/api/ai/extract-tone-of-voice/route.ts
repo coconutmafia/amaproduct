@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { upsertProjectMaterial } from '@/lib/supabase/upsertMaterial'
 import { anthropic, MODEL } from '@/lib/ai/client'
+import { requireProjectAccess } from '@/lib/projects/access'
 import { NextResponse } from 'next/server'
 
 export const dynamic     = 'force-dynamic'
@@ -64,14 +65,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Нужно минимум 3 текста по 30+ символов каждый. Желательно 7-10, написанных тобой лично.' }, { status: 400 })
   }
 
-  // Verify project ownership
-  const { data: project } = await supabase
-    .from('projects')
-    .select('id')
-    .eq('id', projectId)
-    .eq('owner_id', user.id)
-    .single()
-  if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+  const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
   const TOV_TITLE = 'Tone of Voice (извлечён из твоих текстов)'
 

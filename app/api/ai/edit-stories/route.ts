@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { AI_TELLS_TO_AVOID, VISUAL_RULES } from '@/lib/ai/prompts/content-brain'
+import { requireProjectAccess } from '@/lib/projects/access'
 
 // Chat/voice edits to an already-designed stories series («на третьей сторис
 // поменяй…», owner request). Takes the current frames + a free-form instruction
@@ -28,8 +29,10 @@ export async function POST(request: Request) {
     if (!frames || frames.length === 0) return NextResponse.json({ error: 'Нет кадров для правки' }, { status: 400 })
     if (!instruction || !instruction.trim()) return NextResponse.json({ error: 'Скажи, что поменять' }, { status: 400 })
 
-    const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).eq('owner_id', user.id).single()
-    if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    // AI generation costs real money and has no RLS-gated write here — check
+    // editor+ explicitly.
+    const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
     const current = frames.map((f, i) =>
       `Кадр ${i + 1} (position: ${f.position || 'auto'}, подложка: ${f.plate === false ? 'без' : 'с подложкой'}):\n  headline: ${f.headline || ''}\n  body: ${f.body || ''}\n  cta: ${f.cta || ''}`

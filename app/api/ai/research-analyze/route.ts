@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { upsertProjectMaterial } from '@/lib/supabase/upsertMaterial'
 import { embedMaterialChunks } from '@/lib/ai/embed'
 import { anthropic, MODEL } from '@/lib/ai/client'
+import { requireProjectAccess } from '@/lib/projects/access'
 import { NextResponse } from 'next/server'
 
 export const maxDuration = 300
@@ -261,12 +262,13 @@ export async function POST(request: Request) {
 
   if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
 
-  // Verify project ownership
+  const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
+
   const { data: project } = await supabase
     .from('projects')
     .select('id, name')
     .eq('id', projectId)
-    .eq('owner_id', user.id)
     .single()
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 

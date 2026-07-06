@@ -4,7 +4,62 @@
 > Здесь — то, чего в коде не видно: решения, статус, дорожная карта, ограничения.
 > ОБНОВЛЯЙ этот файл по мере работы (особенно «Не доделано» и «Решения»).
 
-## 🚦 ПЕРЕДАЧА СЕССИИ (7 июля 2026, вечер) — ЧИТАТЬ ПЕРВЫМ
+## 🚦 ПЕРЕДАЧА СЕССИИ (7 июля 2026, ночь) — ЧИТАТЬ ПЕРВЫМ
+
+**✅ ПРИОРИТЕТ №1 ПРОШЛОЙ СЕССИИ СДЕЛАН: фоновые задачи для Instagram-скрейпа и виральных рилз (commit 089c0d5, main, задеплоено).**
+Тот же паттерн `jobs` + `after()`, что для транскрипции (roadmap №8), теперь и на `/api/instagram/scrape` и `/api/viral-reels` (POST). Оба роута теперь только валидируют вход и создают строку в `jobs`, обработка (Apify-скрейп → [для рилз] Whisper-транскрипция → Claude-анализ → запись в `project_materials`/`viral_reels`) идёт через `after()` — клиент только поллит `GET /api/jobs/[id]`, больше не держит SSE-соединение открытым (тот же выигрыш в надёжности: заблокированный/свёрнутый телефон не роняет анализ). В отличие от транскрипции, самопродолжение (`/api/jobs/continue`) НЕ нужно — один скрейп+анализ укладывается в `maxDuration=300` за один заход. Общая скрейп-логика вынесена в `lib/instagram/scrapeAccount.ts` и `lib/reels/scrapeReel.ts`, раннеры — `lib/jobs/runInstagramScrapeJob.ts` / `lib/jobs/runViralReelJob.ts`, клиентский поллер — `lib/jobs/pollJob.ts` (используется в `InstagramAccountDialog.tsx` и `ViralReelsManager.tsx`; `research/page.tsx` не трогал — там свой самостоятельный поллер, работает, регрессировать незачем).
+**Миграция НЕ нужна** — `jobs.type` (024_jobs.sql) не имеет CHECK-констрейнта, только `jobs.status` его имеет.
+**✅ Проверено живьём на проде (аккаунт Августы, claude-in-chrome):** добавлен тестовый конкурент `@natgeo` через новый `/api/instagram/scrape` → job создался → after() отработал → поллинг `GET /api/jobs/[id]` (10 запросов, все 200) → материал сохранён → диалог закрылся с успехом. Тестовый рилз (`instagram.com/reel/DYrJtH1NWD4/`) через новый `/api/viral-reels` → job `done` → Whisper-транскрипт пришёл («Как удержать мужчину?...») → сохранено в `viral_reels`. Побочно замечено (НЕ регресс, поведение идентично старому SSE-коду): на этом конкретном рилз Claude вернул не-JSON текст → `analysis`/`reel_type` не распарсились → упало на дефолт «Виральный рилз» без анализа — это существовавший ограничитель парсинга промпта, не связан с переходом на jobs. Оба тестовых артефакта (`@natgeo`, тестовый рилз) удалены после проверки.
+
+### ✅ ЗАДАЧА №2 ЭТОЙ СЕССИИ СДЕЛАНА: мультипользовательские проекты (роли + приглашения по email)
+Раньше этого не было вообще — каждый проект жёстко привязан к одному `owner_id`, RLS **везде** проверяла только его.
+Проверено владельцем 7 июля: тариф «Продюсер» уже ОБЕЩАЕТ «команда 3–5 + клиентский доступ», «Про» — «+1 место» (см.
+`lib/generations-config.ts` PLAN_CONFIG) — а функциональности не было. Полный план — `/Users/macbook/.claude/plans/zazzy-purring-ladybug.md`.
+
+**⚠️ МИГРАЦИЯ 025_project_members.sql — ВЛАДЕЛЬЦУ ПРИМЕНИТЬ через SQL Editor (как 018-024), иначе фича не работает.**
+Добавляет: таблица `project_members` (project_id, user_id?, invited_email, role editor|viewer, status pending|active),
+функция `has_project_access(project_id, min_role)`, RLS на `projects`/`project_members` (SELECT — owner+member;
+settings/удаление проекта — owner-only), ретрофит RLS на 11 project-scoped таблиц (`project_materials`,
+`project_chunks`, `products`, `funnels`, `warmup_plans`, `content_plans`, `content_items`, `content_versions`,
+`ai_conversations`, `style_examples`) + `viral_reels`/`content_trends` (project-scope ветка) + `saved_content`
+(добавлена read-видимость команде, запись осталась личной). Триггер на `profiles` (after insert) авто-привязывает
+pending-приглашение по email при регистрации — реального письма НЕ нужно (RESEND_API_KEY всё ещё не стоит), хотя
+письмо-уведомление тоже пробуется через `lib/email.ts` (тихо no-op без ключа, как письма конца триала).
+
+**Роли:** owner (неявно, `projects.owner_id`, полный доступ + управление командой + danger zone) · editor (весь
+контент, не может пригласить/удалить проект) · viewer («клиентский доступ», только чтение).
+
+**Ключевой архитектурный вывод (важно для будущих правок):** RLS — реальная граница безопасности. НО ~10 роутов
+пишут через **admin/service-role клиент** (обходит RLS): `brand-kit` (route/upload/analyze), `video/upload-url`,
+`video/overlay`, `materials` DELETE (storage), `materials/[id]/file` (signed URL), `stories/sets`,
+`instagram/scrape`, `viral-reels` POST, `jobs/transcribe` — там app-код через `requireProjectAccess(supabase,
+projectId, userId, 'editor'|'viewer')` (`lib/projects/access.ts`) — ЭТО и есть граница, не RLS. Плюс ai/* роуты
+(chat/generate/edit/suggest-*/analyze-competitors/research-analyze/extract-tone-of-voice/generate-image/
+generate-week-brief/plan-stories/edit-stories) явно требуют editor+ — они жгут реальные деньги (Claude/OpenAI) и
+не все из них вообще пишут в RLS-таблицу (viewer иначе мог бы палить чужую квоту). Все ОСТАЛЬНЫЕ ~15 роутов —
+просто убран избыточный `.eq('owner_id', user.id)`, RLS фильтрует сама (тот же результат для owner, + доступ
+участникам). Осознанно НЕ трогал: `app/api/projects/route.ts` (PATCH настройки/DELETE — owner-only, danger zone),
+`materials/route.ts` GET + `materials/import/route.ts` (это «переиспользовать материалы из МОИХ ДРУГИХ проектов»,
+намеренно owner_id-scoped — иначе продюсер-редактор одного клиента мог бы утащить материалы в проект другого).
+
+**UI:** `/projects/[id]/team` (owner-only, скрыт если `teamSeats=0` на тарифе) — `components/projects/TeamMembers.tsx`
+(инвайт по email + роль, список команды, смена роли, удаление). Кнопка «Команда» на `/projects/[id]` видна только
+владельцу при `teamSeats>0`. `getProjectRole()`/`requireProjectAccess()` в `lib/projects/access.ts` — UI-гейтинг,
+не сама граница безопасности (это RLS).
+
+**Не доделано (осознанно, безопасно отложено — RLS уже расширяет доступ, эти места просто продолжат писать «not
+found» участнику до правки, НЕ дыра в безопасности):** длинный хвост нишевых роутов — `admin/context-inspector`,
+`admin/context-backfill` (остаются owner+admin, диагностика), `carousel/render`, `carousel/structure`,
+`projects/scrape-product`, `projects/autofill`, `content/route.ts`. Плюс UI других страниц (materials upload,
+content-plan, visual) пока не скрывает кнопки редактирования от viewer — RLS всё равно заблокирует запись, но
+сообщение об ошибке будет не самое дружелюбное («new row violates row-level security policy»).
+
+**Живая проверка на проде НЕ проводилась** (миграция не применена владельцем — фича физически не активна в проде
+до этого). Проверить после применения 025: пригласить тестовый email редактором/просмотрщиком в проект Августы →
+проверить `GET /api/projects/[id]/members` → залогиниться под приглашённым (если есть доступ) → убедиться, что
+проект появляется в его списке и роль работает как задумано.
+
+## 🚦 (архив) ПЕРЕДАЧА СЕССИИ (7 июля 2026, вечер)
 
 **Что произошло за 1–7 июля:** полный причинно-следственный предзапусковый аудит продукта (см. блок «ЭТАП 1» ниже + `AUDIT_REGISTRY.md`) → все launch-blocker'ы починены и живьём проверены на проде (аккаунт Августы) → нашли и починили КРИТИЧЕСКИЙ баг (методология сервиса никогда не векторизовалась — RLS) → построили и реализовали roadmap к масштабу: CI, Sentry, rate-limiting, сторож цепи (`chain-watch` cron), замкнут цикл обучения на результатах, приватный бакет materials, **фоновая транскрипция** (roadmap №8, `after()`-паттерн, проверено живым циклом), защита контента от занижения охватов Instagram/Meta. Всё в `main`, задеплоено, `tsc`+24 теста (`npm test`)+`build` зелёные на каждом шаге.
 

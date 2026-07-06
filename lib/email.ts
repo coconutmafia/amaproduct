@@ -55,3 +55,16 @@ export function trialEndedEmail(): { subject: string; html: string } {
       <p style="margin:20px 0"><a href="https://amaproduct.com/pricing" style="background:#d44e7e;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:600">Продолжить с тарифом</a></p>`),
   }
 }
+
+export function projectInviteEmail(projectName: string, role: 'editor' | 'viewer'): { subject: string; html: string } {
+  const roleLabel = role === 'editor' ? 'редактором' : 'с доступом только на просмотр'
+  return {
+    subject: `Тебя пригласили в проект «${projectName}» на AMAproduct`,
+    html: wrap(`
+      <h2 style="margin:0 0 12px">Приглашение в проект</h2>
+      <p>Тебя добавили в проект «${projectName}» ${roleLabel}.</p>
+      <p>Если у тебя уже есть аккаунт на AMAproduct — просто зайди, проект появится в списке.
+      Если аккаунта ещё нет — зарегистрируйся на amaproduct.com с этим email, и доступ подключится автоматически.</p>
+      <p style="margin:20px 0"><a href="https://amaproduct.com/login" style="background:#d44e7e;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:600">Открыть AMAproduct</a></p>`),
+  }
+}

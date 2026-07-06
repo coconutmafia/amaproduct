@@ -37,12 +37,10 @@ export async function GET(request: Request) {
 
     if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
 
-    // Verify project ownership
     const { data: project } = await supabase
       .from('projects')
       .select('id')
       .eq('id', projectId)
-      .eq('owner_id', user.id)
       .single()
 
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
@@ -114,12 +112,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'projectId required' }, { status: 400 })
     }
 
-    // Verify project ownership
     const { data: project } = await supabase
       .from('projects')
       .select('id')
       .eq('id', projectId)
-      .eq('owner_id', user.id)
       .single()
 
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })

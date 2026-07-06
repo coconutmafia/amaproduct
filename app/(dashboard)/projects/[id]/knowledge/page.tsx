@@ -16,8 +16,10 @@ export default async function KnowledgePage({ params }: Props) {
   const user = session?.user
   if (!user) redirect('/login')
 
+  // RLS (projects_select / project_materials_select, migration 025) scopes
+  // these to owned + member projects — no app-layer owner_id filter needed.
   const [{ data: project }, { data: profile }, { data: materials }] = await Promise.all([
-    supabase.from('projects').select('*').eq('id', id).eq('owner_id', user.id).single(),
+    supabase.from('projects').select('*').eq('id', id).single(),
     supabase.from('profiles').select('full_name').eq('id', user.id).single(),
     supabase.from('project_materials').select('*').eq('project_id', id).order('created_at', { ascending: false }),
   ])

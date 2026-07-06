@@ -25,8 +25,11 @@ import {
   Bookmark,
   Flame,
   Palette,
+  UsersRound,
 } from 'lucide-react'
 import { ProjectInfoSection } from '@/components/projects/ProjectInfoSection'
+import { PLAN_CONFIG } from '@/lib/generations-config'
+import type { SubscriptionTier } from '@/lib/generations-config'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -38,23 +41,30 @@ export default async function ProjectPage({ params }: Props) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
+  // RLS (projects_select, migration 025) scopes this to projects the user owns
+  // OR is an active member of — no app-layer owner_id filter needed.
   const { data: project } = await supabase
     .from('projects')
     .select('*')
     .eq('id', id)
-    .eq('owner_id', user.id)
     .single()
 
   if (!project) notFound()
+  const isOwner = project.owner_id === user.id
 
-  const [{ data: products }, { data: funnels }, { data: warmupPlans }, { data: recentContent }, { count: materialsCount }] =
+  const [{ data: products }, { data: funnels }, { data: warmupPlans }, { data: recentContent }, { count: materialsCount }, { data: ownerProfile }] =
     await Promise.all([
       supabase.from('products').select('*').eq('project_id', id).eq('is_active', true),
       supabase.from('funnels').select('*').eq('project_id', id).eq('is_active', true),
       supabase.from('warmup_plans').select('*').eq('project_id', id).order('created_at', { ascending: false }).limit(3),
       supabase.from('content_items').select('*').eq('project_id', id).order('created_at', { ascending: false }).limit(5),
       supabase.from('project_materials').select('*', { count: 'exact', head: true }).eq('project_id', id),
+      // Only meaningful (and only readable via RLS) when the viewer IS the owner.
+      isOwner ? supabase.from('profiles').select('subscription_tier').eq('id', user.id).single() : Promise.resolve({ data: null }),
     ])
+
+  const teamSeats = PLAN_CONFIG[(ownerProfile?.subscription_tier ?? 'trial') as SubscriptionTier]?.teamSeats ?? 0
+  const canManageTeam = isOwner && teamSeats > 0
 
   // Step completion state
   const hasMaterials = (materialsCount ?? 0) > 0
@@ -195,6 +205,7 @@ export default async function ProjectPage({ params }: Props) {
                 { href: `/projects/${id}/visual`, icon: Palette, label: 'Создать визуал', desc: 'Сторис, картинка поста, карусель', color: 'text-[#D44E7E] bg-[#D44E7E]/10' },
                 { href: `/library?project=${id}`, icon: Bookmark, label: 'Готовое', desc: 'AI учится на твоём контенте', color: 'text-primary bg-primary/10' },
                 { href: `/projects/${id}/results`, icon: TrendingUp, label: 'Результаты', desc: 'Охваты → AI усиливает', color: 'text-[#E86BA0] bg-[#E86BA0]/10' },
+                ...(canManageTeam ? [{ href: `/projects/${id}/team`, icon: UsersRound, label: 'Команда', desc: 'Роли и приглашения по email', color: 'text-[#F5A84A] bg-[#F5A84A]/10' }] : []),
               ].map(({ href, icon: Icon, label, desc, color }) => (
                 <Link key={href} href={href}>
                   <Card className="border-border bg-card hover:bg-card/80 hover:border-primary/30 transition-all cursor-pointer h-full">

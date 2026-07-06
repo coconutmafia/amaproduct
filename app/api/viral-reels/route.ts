@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { after } from 'next/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { processViralReelJob } from '@/lib/jobs/runViralReelJob'
+import { requireProjectAccess } from '@/lib/projects/access'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 300
@@ -70,8 +71,10 @@ export async function POST(request: Request) {
     if (prof?.role !== 'admin') return NextResponse.json({ error: 'Только админ может добавлять общие референсы' }, { status: 403 })
   } else {
     if (!body.projectId) return NextResponse.json({ error: 'projectId обязателен' }, { status: 400 })
-    const { data: proj } = await supabase.from('projects').select('id').eq('id', body.projectId).eq('owner_id', user.id).single()
-    if (!proj) return NextResponse.json({ error: 'Проект не найден' }, { status: 404 })
+    // Apify/Whisper/Claude cost + viral_reels write happen via the admin
+    // client in the background job — check editor+ explicitly here.
+    const access = await requireProjectAccess(supabase, body.projectId, user.id, 'editor')
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
   }
 
   const admin = createAdminClient()

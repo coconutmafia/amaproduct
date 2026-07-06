@@ -17,9 +17,8 @@ export async function GET(request: Request) {
   const projectId = searchParams.get('projectId')
   if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
 
-  // ownership
   const { data: project } = await supabase
-    .from('projects').select('id').eq('id', projectId).eq('owner_id', user.id).single()
+    .from('projects').select('id').eq('id', projectId).single()
   if (!project) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { data: plan } = await supabase
@@ -84,14 +83,14 @@ export async function PATCH(request: Request) {
   let warmupPhase: string | null = null
 
   if (source === 'plan') {
+    // RLS (content_items_select, viewer+) already scopes this read; the
+    // .update() below is separately gated by content_items_write (editor+).
     const { data: item } = await supabase
       .from('content_items')
-      .select('id, project_id, content_type, title, body_text, warmup_phase, projects!inner(owner_id)')
+      .select('id, project_id, content_type, title, body_text, warmup_phase')
       .eq('id', body.itemId)
       .single()
-    if (!item || (item.projects as unknown as { owner_id: string }).owner_id !== user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    if (!item) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     projectId = item.project_id as string
     contentType = (item.content_type as string) || 'post'
     title = item.title as string | null

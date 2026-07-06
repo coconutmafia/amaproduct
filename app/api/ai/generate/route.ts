@@ -8,6 +8,7 @@ import { contentItemToText } from '@/lib/contentToText'
 import { NextResponse } from 'next/server'
 import type { WarmupPhase } from '@/types'
 import { rateLimit } from '@/lib/rateLimit'
+import { requireProjectAccess } from '@/lib/projects/access'
 
 // Vercel Pro allows up to 300s. This route runs RAG + a blocking generation +
 // (for posts) a validator pass. The old 60s cap could kill the function mid-call
@@ -37,11 +38,18 @@ export async function POST(request: Request) {
   const body = await request.json()
   const { projectId, contentType, dayNumber, totalDays, phase, additionalInstructions, dayMeaning } = body
 
+  // AI generation costs real money and has no RLS-gated write here — check
+  // editor+ explicitly.
+  const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+  if (!access.ok) {
+    await refundGeneration(user.id)
+    return NextResponse.json({ error: access.error }, { status: access.status })
+  }
+
   const { data: project } = await supabase
     .from('projects')
     .select('*')
     .eq('id', projectId)
-    .eq('owner_id', user.id)
     .single()
 
   if (!project) {

@@ -5,6 +5,7 @@ import { after } from 'next/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { parseUsername } from '@/lib/instagram/scrapeAccount'
 import { processInstagramScrapeJob } from '@/lib/jobs/runInstagramScrapeJob'
+import { requireProjectAccess } from '@/lib/projects/access'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 300
@@ -48,14 +49,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Не удалось распознать имя пользователя. Используй формат instagram.com/handle или просто @handle.' }, { status: 400 })
   }
 
-  // Verify project ownership
-  const { data: project } = await supabase
-    .from('projects')
-    .select('id')
-    .eq('id', projectId)
-    .eq('owner_id', user.id)
-    .single()
-  if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+  // Apify cost + project_materials write happen via the admin client in the
+  // background job — check editor+ explicitly here.
+  const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
   // Enforce quota — count existing accounts of this type for the project
   const { count } = await supabase

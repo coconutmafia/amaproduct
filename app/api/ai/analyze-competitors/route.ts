@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL } from '@/lib/ai/client'
+import { requireProjectAccess } from '@/lib/projects/access'
 
 // Builds a competitor-comparison TABLE from the scraped Instagram data the
 // project already has (project_materials.material_type = 'competitors', plus the
@@ -35,7 +36,10 @@ export async function POST(request: Request) {
     const { projectId } = (await request.json()) as { projectId?: string }
     if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
 
-    const { data: project } = await supabase.from('projects').select('id, niche').eq('id', projectId).eq('owner_id', user.id).single()
+    const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
+
+    const { data: project } = await supabase.from('projects').select('id, niche').eq('id', projectId).single()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
     const { data: comp } = await supabase

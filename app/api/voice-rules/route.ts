@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     const clean = (rule || '').trim().replace(/\s+/g, ' ').slice(0, 300)
     if (!projectId || !clean) return NextResponse.json({ error: 'projectId и rule обязательны' }, { status: 400 })
 
-    const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).eq('owner_id', user.id).single()
+    const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).single()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
     const { data: existing } = await supabase

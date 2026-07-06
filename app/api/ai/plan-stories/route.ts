@@ -4,6 +4,7 @@ import { anthropic, MODEL } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { gateContentUnit, refundGeneration } from '@/lib/generations'
 import { rateLimit } from '@/lib/rateLimit'
+import { requireProjectAccess } from '@/lib/projects/access'
 
 // Turns a story idea/script into a sequence of story FRAMES (minimal on-screen
 // text per frame, in the blogger's voice) that the engine renders over their
@@ -30,8 +31,8 @@ export async function POST(request: Request) {
     if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
     if (!script.trim()) return NextResponse.json({ error: 'Напиши сценарий/идею сторис' }, { status: 400 })
 
-    const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).eq('owner_id', user.id).single()
-    if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
     // A story series is a content unit (it lays out a full storyboard).
     const gate = await gateContentUnit(user.id)

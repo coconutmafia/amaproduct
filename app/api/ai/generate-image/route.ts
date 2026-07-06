@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { rateLimit } from '@/lib/rateLimit'
+import { requireProjectAccess } from '@/lib/projects/access'
 
 // AI image generation for the «free» designer (step a): turn a text description
 // into a flat-illustration STICKER (transparent PNG, dropped on a story as an
@@ -49,8 +50,10 @@ export async function POST(request: Request) {
     if (!projectId) return NextResponse.json({ error: 'projectId обязателен' }, { status: 400 })
     if (!prompt || !prompt.trim()) return NextResponse.json({ error: 'Опиши, что нарисовать' }, { status: 400 })
 
-    const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).eq('owner_id', user.id).single()
-    if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    // Real OpenAI cost + upload goes through the admin client — check editor+
+    // explicitly.
+    const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
     const size = mode === 'background' ? '1024x1536' : '1024x1024'
     const aspect = mode === 'background' ? 1024 / 1536 : 1
