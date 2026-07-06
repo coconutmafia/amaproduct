@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
+import { AI_TELLS_TO_AVOID, PLATFORM_SAFE_LANGUAGE } from '@/lib/ai/prompts/content-brain'
 
 // Владелец продукта (Августа) лично ловила эти GPT-измы в контенте и требовала
 // их убрать НАВСЕГДА («я с ними борюсь-борюсь, они всё равно возникают»).
@@ -25,5 +25,18 @@ describe('запреты Августы закреплены в промпте',
   it('запрет тире и существительных через точку на месте', () => {
     expect(AI_TELLS_TO_AVOID).toContain('ТИРЕ')
     expect(AI_TELLS_TO_AVOID).toContain('СУЩЕСТВИТЕЛЬНЫЕ ЧЕРЕЗ ТОЧКУ')
+  })
+})
+
+describe('безопасность охватов Instagram/Meta закреплена в промпте', () => {
+  it('запрещает абсолютные гарантии и generic engagement-bait', () => {
+    expect(PLATFORM_SAFE_LANGUAGE).toContain('Гарантированный результат')
+    expect(PLATFORM_SAFE_LANGUAGE).toContain('Гарантированный доход')
+    expect(PLATFORM_SAFE_LANGUAGE.toLowerCase()).toContain('лайкни, если согласен'.toLowerCase())
+    expect(PLATFORM_SAFE_LANGUAGE.toLowerCase()).toContain('отметь друга'.toLowerCase())
+  })
+  it('НЕ запрещает продуктовый лид-магнит CTA (специфичный, не generic bait)', () => {
+    expect(PLATFORM_SAFE_LANGUAGE).toContain('СТРАТЕГИЯ')
+    expect(PLATFORM_SAFE_LANGUAGE).toContain('оставляй как есть')
   })
 })

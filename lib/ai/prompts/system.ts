@@ -6,6 +6,7 @@ import {
   RETENTION_ENGINE,
   CONTENT_BRAIN_ANTI_PATTERNS,
   AI_TELLS_TO_AVOID,
+  PLATFORM_SAFE_LANGUAGE,
 } from './content-brain'
 
 // Phrases that immediately signal AI-generated generic text — never use these
@@ -28,6 +29,8 @@ const BANNED_PHRASES = `
 ${CONTENT_BRAIN_ANTI_PATTERNS}
 
 ${AI_TELLS_TO_AVOID}
+
+${PLATFORM_SAFE_LANGUAGE}
 `.trim()
 
 export function buildSystemPrompt(context: RAGContext, project: Project): string {
