@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { ALWAYS_INCLUDE, BLOCKED_STATUS } from '@/lib/ai/rag'
 import { BILLING_ENFORCED } from '@/lib/generations'
 import { emailConfigured, sendEmail, trialEndingEmail, trialEndedEmail } from '@/lib/email'
+import { captureMessage } from '@/lib/sentry'
 
 // Daily chain-integrity watchdog (Vercel Cron, see vercel.json).
 //
@@ -140,6 +141,9 @@ async function handle(request: Request) {
   const report = { ok: warnings.length === 0, projectsChecked, systemChunks: sysChunks ?? 0, trialTransitions, trialEmails, warnings }
   if (warnings.length > 0) {
     console.error(`[chain-watch] ${warnings.length} warning(s):\n` + warnings.join('\n'))
+    // Sentry: the curated «chain broke silently» signal (try/catch'ed paths
+    // never reach onRequestError — this is how they surface).
+    await captureMessage(`chain-watch: ${warnings.length} предупреждений\n` + warnings.slice(0, 20).join('\n'), 'warning', { projectsChecked })
     const hook = process.env.ALERT_WEBHOOK_URL
     if (hook) {
       try {
