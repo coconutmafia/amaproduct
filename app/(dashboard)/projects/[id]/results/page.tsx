@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 
 interface Item {
   id: string
+  source: 'plan' | 'saved'
   content_type: string
   title: string | null
   body_text: string | null
@@ -33,7 +34,7 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
       const data = await res.json() as { items: Item[] }
       setItems(data.items || [])
       const e: Record<string, { reach: string; reactions: string; saves: string }> = {}
-      for (const it of data.items || []) e[it.id] = { reach: it.reach?.toString() ?? '', reactions: it.reactions?.toString() ?? '', saves: it.saves?.toString() ?? '' }
+      for (const it of data.items || []) e[`${it.source}:${it.id}`] = { reach: it.reach?.toString() ?? '', reactions: it.reactions?.toString() ?? '', saves: it.saves?.toString() ?? '' }
       setEdits(e)
     } catch { toast.error('Ошибка загрузки') }
     setLoading(false)
@@ -41,13 +42,14 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
   useEffect(() => { load() }, [load])
 
   const save = async (item: Item) => {
-    const e = edits[item.id]
-    setSavingId(item.id)
+    const e = edits[`${item.source}:${item.id}`]
+    setSavingId(`${item.source}:${item.id}`)
     try {
       const res = await fetch('/api/content/results', {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: item.id,
+          source: item.source,
           reach: parseInt(e.reach) || 0,
           reactions: parseInt(e.reactions) || 0,
           saves: parseInt(e.saves) || 0,
@@ -56,7 +58,7 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      setItems(prev => prev.map(x => x.id === item.id ? { ...x, reach: parseInt(e.reach) || 0, reactions: parseInt(e.reactions) || 0, saves: parseInt(e.saves) || 0 } : x))
+      setItems(prev => prev.map(x => (x.id === item.id && x.source === item.source) ? { ...x, reach: parseInt(e.reach) || 0, reactions: parseInt(e.reactions) || 0, saves: parseInt(e.saves) || 0 } : x))
       toast.success('Результаты сохранены — AI учтёт что зашло')
     } catch (err) { toast.error(err instanceof Error ? err.message : 'Ошибка') }
     finally { setSavingId(null) }
@@ -89,7 +91,7 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
               <p className="text-xs font-bold text-primary mb-2 flex items-center gap-1"><TrendingUp className="h-3.5 w-3.5" /> Что зашло лучше всего</p>
               <div className="space-y-1.5">
                 {top.map((t, i) => (
-                  <div key={t.id} className="flex items-center gap-2 text-xs">
+                  <div key={`${t.source}:${t.id}`} className="flex items-center gap-2 text-xs">
                     <span className="font-bold text-primary">#{i + 1}</span>
                     <span className="flex-1 truncate text-foreground">{t.title || (t.body_text || '').slice(0, 50)}</span>
                     <span className="flex items-center gap-0.5 text-pink-600"><Heart className="h-3 w-3" />{t.reactions}</span>
@@ -101,11 +103,12 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
 
           <div className="space-y-2">
             {items.map(item => {
-              const e = edits[item.id] ?? { reach: '', reactions: '', saves: '' }
+              const k = `${item.source}:${item.id}`
+              const e = edits[k] ?? { reach: '', reactions: '', saves: '' }
               return (
-                <div key={item.id} className="rounded-xl border border-border bg-card p-3.5 space-y-2.5">
+                <div key={k} className="rounded-xl border border-border bg-card p-3.5 space-y-2.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">{TYPE_RU[item.content_type] ?? item.content_type}{item.day_number ? ` · день ${item.day_number}` : ''}</span>
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">{TYPE_RU[item.content_type] ?? item.content_type}{item.day_number ? ` · день ${item.day_number}` : ''}{item.source === 'saved' ? ' · Готовое' : ''}</span>
                     <span className="text-sm font-medium text-foreground truncate flex-1">{item.title || (item.body_text || '').slice(0, 40)}</span>
                   </div>
                   <div className="grid grid-cols-3 gap-2">
@@ -117,14 +120,14 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
                       <div key={key} className="space-y-1">
                         <label className="text-[10px] text-muted-foreground flex items-center gap-1"><Icon className="h-3 w-3" />{label}</label>
                         <input type="number" inputMode="numeric" value={(e as Record<string, string>)[key]}
-                          onChange={ev => setEdits(prev => ({ ...prev, [item.id]: { ...e, [key]: ev.target.value } }))}
+                          onChange={ev => setEdits(prev => ({ ...prev, [k]: { ...e, [key]: ev.target.value } }))}
                           className="w-full h-9 rounded-lg border border-input bg-background px-2 text-sm" placeholder="0" />
                       </div>
                     ))}
                   </div>
-                  <button onClick={() => save(item)} disabled={savingId === item.id}
+                  <button onClick={() => save(item)} disabled={savingId === k}
                     className="w-full flex items-center justify-center gap-1.5 text-sm font-medium text-white gradient-accent rounded-xl py-2">
-                    {savingId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    {savingId === k ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                     Сохранить результаты
                   </button>
                 </div>

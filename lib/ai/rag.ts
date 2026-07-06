@@ -268,15 +268,24 @@ export async function buildRAGContext(
   //    same-format rows by sorting them first.
   if (styleExamples.length < 5) {
     try {
+      // Metric columns arrive with migration 023 — select * so the query keeps
+      // working pre-migration (missing columns would 400 an explicit select).
       const { data: savedData } = await supabase
         .from('saved_content')
-        .select('id, project_id, content_type, title, body, created_at')
+        .select('*')
         .eq('project_id', projectId)
         .order('created_at', { ascending: false })
-        .limit(12)
+        .limit(24)
 
-      const rows = ((savedData as Array<{ id: string; project_id: string | null; content_type: string | null; title: string | null; body: string; created_at: string }>) || [])
-        .sort((a, b) => (contentType ? Number(b.content_type === contentType) - Number(a.content_type === contentType) : 0))
+      type SavedRow = { id: string; project_id: string | null; content_type: string | null; title: string | null; body: string; created_at: string; reach?: number | null; reactions?: number | null; saves?: number | null }
+      // Learning loop: prefer what the audience actually rewarded. Saves signal
+      // depth of value → weigh above likes; reach normalized. Rows without
+      // metrics score 0 and keep the recent-first order from the query.
+      const engagement = (r: SavedRow) => (r.reactions ?? 0) + (r.saves ?? 0) * 2 + Math.floor((r.reach ?? 0) / 100)
+      const rows = ((savedData as SavedRow[]) || [])
+        .sort((a, b) =>
+          (contentType ? Number(b.content_type === contentType) - Number(a.content_type === contentType) : 0) ||
+          (engagement(b) - engagement(a)))
 
       const seen = new Set(styleExamples.map(e => (e.body_text || '').slice(0, 80)))
       for (const s of rows) {
@@ -293,7 +302,7 @@ export async function buildRAGContext(
           title: s.title ?? null,
           body_text: body,
           warmup_phase: null,
-          performance_score: 0,
+          performance_score: engagement(s),
           tags: ['saved'],
           is_active: true,
           source_content_item_id: null,
