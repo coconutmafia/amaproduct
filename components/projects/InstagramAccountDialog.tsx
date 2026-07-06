@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Sparkles, Loader2, Info, AtSign } from 'lucide-react'
 import { toast } from 'sonner'
+import { pollJob } from '@/lib/jobs/pollJob'
 
 interface Props {
   projectId:      string
@@ -26,7 +27,9 @@ export function InstagramAccountDialog({ projectId, accountType, remainingSlots,
 
   const setUrl = (i: number, v: string) => setUrls(prev => prev.map((u, j) => (j === i ? v : u)))
 
-  // Scrape + analyze ONE account.
+  // Scrape + analyze ONE account — enqueues a background job (roadmap #8
+  // pattern) and polls it, so a locked/backgrounded phone doesn't lose the
+  // in-flight analysis the way a held-open SSE connection would.
   const scrapeOne = async (v: string): Promise<{ ok: boolean; error?: string }> => {
     try {
       const res = await fetch('/api/instagram/scrape', {
@@ -34,33 +37,10 @@ export function InstagramAccountDialog({ projectId, accountType, remainingSlots,
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ projectId, instagramUrl: v, accountType }),
       })
-      if (!res.ok && res.headers.get('content-type')?.includes('application/json')) {
-        const j = await res.json().catch(() => ({})) as { error?: string }
-        return { ok: false, error: j.error ?? 'Ошибка' }
-      }
-      if (!res.body) return { ok: false, error: 'Нет ответа от сервера' }
+      const startBody = await res.json().catch(() => ({})) as { jobId?: string; error?: string }
+      if (!res.ok || !startBody.jobId) return { ok: false, error: startBody.error ?? 'Ошибка' }
 
-      const reader  = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = '', done = false, errMsg = ''
-      while (true) {
-        const { value, done: streamDone } = await reader.read()
-        if (streamDone) break
-        buffer += decoder.decode(value, { stream: true })
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() ?? ''
-        for (const ev of parts) {
-          const line = ev.split('\n').find(l => l.startsWith('data: '))
-          if (!line) continue
-          try {
-            const m = JSON.parse(line.slice(6)) as { type: string; message?: string }
-            if (m.type === 'done')  done = true
-            else if (m.type === 'error') errMsg = m.message ?? 'Ошибка'
-          } catch { /* heartbeat */ }
-        }
-      }
-      if (errMsg) return { ok: false, error: errMsg }
-      if (!done)  return { ok: false, error: 'Связь оборвалась' }
+      await pollJob(startBody.jobId)
       return { ok: true }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : 'Ошибка' }

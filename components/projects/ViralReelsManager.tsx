@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Loader2, Plus, Trash2, Film, Eye, Heart, MessageCircle, Sparkles } from 'lucide-react'
+import { pollJob } from '@/lib/jobs/pollJob'
 
 interface Reel {
   id: string
@@ -48,6 +49,8 @@ export function ViralReelsManager({ scope, projectId }: Props) {
     const v = url.trim()
     if (!/instagram\.com\/(reel|p|tv)\//.test(v)) { toast.error('Вставь ссылку на Instagram рилз'); return }
     setAdding(true)
+    // Background job (roadmap #8 pattern) — the client just enqueues + polls,
+    // so a locked/backgrounded phone doesn't lose the in-flight analysis.
     const t = toast.loading('Загружаю рилз…')
     try {
       const res = await fetch('/api/viral-reels', {
@@ -57,28 +60,11 @@ export function ViralReelsManager({ scope, projectId }: Props) {
           niches: scope === 'system' ? nichesInput.split(',').map(s => s.trim()).filter(Boolean) : undefined,
         }),
       })
-      if (!res.ok && res.headers.get('content-type')?.includes('application/json')) {
-        const j = await res.json().catch(() => ({})); throw new Error(j.error ?? 'Ошибка')
-      }
-      if (!res.body) throw new Error('Нет ответа')
-      const reader = res.body.getReader(); const dec = new TextDecoder()
-      let buf = '', done = false, err = ''
-      while (true) {
-        const { value, done: sd } = await reader.read(); if (sd) break
-        buf += dec.decode(value, { stream: true })
-        const parts = buf.split('\n\n'); buf = parts.pop() ?? ''
-        for (const ev of parts) {
-          const line = ev.split('\n').find(l => l.startsWith('data: ')); if (!line) continue
-          try {
-            const m = JSON.parse(line.slice(6)) as { type: string; message?: string }
-            if (m.type === 'status' && m.message) toast.loading(m.message, { id: t })
-            else if (m.type === 'done') done = true
-            else if (m.type === 'error') err = m.message ?? 'Ошибка'
-          } catch { /* heartbeat */ }
-        }
-      }
-      if (err) throw new Error(err)
-      if (!done) throw new Error('Прервалось — попробуй ещё раз')
+      const startBody = await res.json().catch(() => ({})) as { jobId?: string; error?: string }
+      if (!res.ok || !startBody.jobId) throw new Error(startBody.error ?? 'Ошибка')
+
+      toast.loading('Разбираю рилз — обычно 30-60 секунд…', { id: t })
+      await pollJob(startBody.jobId)
       toast.dismiss(t); toast.success('Рилз разобран и добавлен')
       setUrl(''); setNichesInput(''); await load()
     } catch (e) { toast.dismiss(t); toast.error(e instanceof Error ? e.message : 'Ошибка', { duration: 12000 }) }
