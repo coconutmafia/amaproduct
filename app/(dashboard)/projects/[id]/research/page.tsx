@@ -57,6 +57,46 @@ function getAudioDuration(file: File): Promise<number> {
   })
 }
 
+// Poll a background transcription job (roadmap #8) until it's done or errors.
+// Safe across a locked/backgrounded phone: setTimeout is throttled while the
+// tab is backgrounded, not cancelled — polling simply resumes once it wakes,
+// and by then the server-side job may already be finished.
+function pollTranscribeJob(
+  jobId: string,
+  onProgress: (doneChunks: number, totalChunks: number | null) => void,
+): Promise<string> {
+  let consecutiveFailures = 0
+  const MAX_CONSECUTIVE_FAILURES = 30 // ~2 min of nothing-but-errors → genuinely give up
+  return new Promise((resolve, reject) => {
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/jobs/${jobId}`)
+        const body = await res.json() as {
+          job?: { status: string; progress?: { doneChunks?: number; totalChunks?: number | null }; result?: { text?: string }; error?: string }
+          error?: string
+        }
+        if (!res.ok || !body.job) { reject(new Error(body.error ?? 'Не удалось получить статус расшифровки')); return }
+        consecutiveFailures = 0
+        const { status, progress, result, error } = body.job
+        onProgress(progress?.doneChunks ?? 0, progress?.totalChunks ?? null)
+        if (status === 'done') { resolve(result?.text ?? ''); return }
+        if (status === 'error') { reject(new Error(error ?? 'Ошибка расшифровки')); return }
+        setTimeout(poll, 2500)
+      } catch {
+        // Transient network hiccup (e.g. tab just woke up) — keep polling
+        // rather than failing the whole transcription over one dropped request.
+        consecutiveFailures++
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+          reject(new Error('Нет связи с сервером — проверь интернет и попробуй снова'))
+          return
+        }
+        setTimeout(poll, 4000)
+      }
+    }
+    poll()
+  })
+}
+
 type ProgressState =
   | { stage: 'uploading';     fileIndex: number; totalFiles: number }
   | { stage: 'transcribing';  fileIndex: number; totalFiles: number; chunkIndex: number; totalChunks: number }
@@ -149,41 +189,30 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         if (uploadError) throw new Error(`Ошибка загрузки: ${uploadError.message}`)
         uploadedPaths.push(storagePath)
 
-        // ── 2. Transcribe in TIME chunks — server cuts valid audio with ffmpeg ──
-        // (Byte-range slicing produced invalid audio for m4a/mp4/ogg → Whisper
-        //  failed on every chunk past the first. Time windows always decode.)
-        const CHUNK_SEC = 600 // 10-min windows keep each Whisper call within limits
+        // ── 2. Transcribe as a BACKGROUND JOB — server runs it to completion ────
+        // (roadmap #8). Previously the client itself looped chunk-by-chunk over
+        // HTTP, which meant a locked/backgrounded phone could stall or drop the
+        // whole transcription mid-way. Now one call starts a server-side job
+        // (self-continuing across invocations via next/server's `after()`), and
+        // the client just polls status — safe to lock the screen; the job keeps
+        // running either way, and polling simply resumes once the tab wakes.
         const durationSec = await getAudioDuration(file)
-        const known = durationSec > 0
-        // Known duration → exact chunk count. Unknown (iOS Safari often can't read
-        // audio duration) → chunk blindly in bounded 10-min windows and stop when
-        // the server signals the file ended. Removes the fragile "whole file in one
-        // pass" branch that blew Whisper's 25 MB limit on long interviews.
-        const MAX_CHUNKS = 48 // safety cap ≈ 8 h
-        const totalChunks = known ? Math.max(1, Math.ceil(durationSec / CHUNK_SEC)) : MAX_CHUNKS
-        const fileParts: string[] = []
 
-        for (let ci = 0; ci < totalChunks; ci++) {
-          updateFile(fi, { status: 'transcribing', chunkIndex: ci + 1, totalChunks: known ? totalChunks : ci + 1 })
-
-          const startSec    = ci * CHUNK_SEC
-          const isLastChunk = known && ci === totalChunks - 1
-
-          const res      = await fetch('/api/ai/transcribe', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ storagePath, startSec, durSec: CHUNK_SEC, ext, isLastChunk }),
-          })
-          const bodyText = await res.text()
-          let data: { text?: string; error?: string; ended?: boolean }
-          try { data = JSON.parse(bodyText) as typeof data }
-          catch { throw new Error(`Сервер вернул ошибку ${res.status}`) }
-          if (!res.ok || data.error) throw new Error(data.error ?? `Часть ${ci + 1}: ошибка`)
-          if (data.ended) break // reached end of an unknown-length file
-          if (data.text) fileParts.push(data.text)
+        const startRes = await fetch('/api/jobs/transcribe', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ projectId: id, storagePath, ext, durationSec: durationSec > 0 ? durationSec : undefined }),
+        })
+        const startBody = await startRes.json() as { jobId?: string; error?: string }
+        if (!startRes.ok || startBody.error || !startBody.jobId) {
+          throw new Error(startBody.error ?? 'Не удалось запустить расшифровку')
         }
 
-        allParts.push({ name: fileName, text: fileParts.join(' ') })
+        const finalText = await pollTranscribeJob(startBody.jobId, (doneChunks, totalChunks) => {
+          updateFile(fi, { status: 'transcribing', chunkIndex: doneChunks, totalChunks: totalChunks ?? doneChunks })
+        })
+
+        allParts.push({ name: fileName, text: finalText })
         updateFile(fi, { status: 'done' })
 
       } catch (err) {
@@ -462,7 +491,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                     )
                   })()}
 
-                  <p className="text-xs text-muted-foreground text-center">Не закрывай страницу — это займёт несколько минут</p>
+                  <p className="text-xs text-muted-foreground text-center">Расшифровка идёт на сервере — экран телефона можно заблокировать. Просто не закрывай эту вкладку</p>
                 </div>
               </>
             ) : (

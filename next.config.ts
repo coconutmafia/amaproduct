@@ -14,6 +14,10 @@ const nextConfig: NextConfig = {
     "/api/video/overlay": ["./node_modules/ffmpeg-static/ffmpeg*", "./public/fonts/**"],
     "/api/ai/transcribe": ["./node_modules/ffmpeg-static/ffmpeg*"],
     "/api/carousel/render": ["./public/fonts/**"],
+    // Background transcription job runner (roadmap #8) — same ffmpeg-static
+    // dependency as /api/ai/transcribe, needed on both legs (start + continue).
+    "/api/jobs/transcribe": ["./node_modules/ffmpeg-static/ffmpeg*"],
+    "/api/jobs/continue": ["./node_modules/ffmpeg-static/ffmpeg*"],
   },
 };
 
