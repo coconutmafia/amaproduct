@@ -147,10 +147,11 @@ export async function POST(request: Request) {
         console.error('Storage upload error:', uploadError)
         // Продолжаем без файла — главное текст
       } else {
-        const { data: urlData } = supabase.storage
-          .from('materials')
-          .getPublicUrl(storagePath)
-        fileUrl = urlData.publicUrl
+        // 'materials' is a PRIVATE bucket (may hold sensitive business/client
+        // data) — store the bare storage PATH, not a permanent public URL.
+        // The file is served later via a short-lived signed URL, minted
+        // on-demand by GET /api/materials/[id]/file after an ownership check.
+        fileUrl = storagePath
       }
     }
 

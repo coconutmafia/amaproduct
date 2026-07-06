@@ -105,13 +105,10 @@ export async function DELETE(request: Request) {
     // Delete chunks first
     await supabase.from('project_chunks').delete().eq('material_id', id)
 
-    // Delete storage file if exists
+    // Delete storage file if exists. file_url now stores the bare storage
+    // path (private bucket — no more permanent public URL to parse a path out of).
     if (material.file_url) {
-      const url = material.file_url as string
-      const match = url.match(/materials\/(.+)$/)
-      if (match) {
-        await supabase.storage.from('materials').remove([match[1]])
-      }
+      await supabase.storage.from('materials').remove([material.file_url as string])
     }
 
     // Delete the material record
