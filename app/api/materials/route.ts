@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { computeCompleteness } from '@/lib/completeness'
 
 // Material types that are "evergreen" — done once, reused across products/launches
@@ -106,9 +107,15 @@ export async function DELETE(request: Request) {
     await supabase.from('project_chunks').delete().eq('material_id', id)
 
     // Delete storage file if exists. file_url now stores the bare storage
-    // path (private bucket — no more permanent public URL to parse a path out of).
+    // path (private bucket — no more permanent public URL to parse a path out
+    // of). Use the ADMIN client: ownership was already verified above, and the
+    // user-session client's own DELETE previously failed this SILENTLY
+    // (unchecked error) leaving orphaned files in storage forever. Matches the
+    // admin-client pattern already used for storage in video/overlay.
     if (material.file_url) {
-      await supabase.storage.from('materials').remove([material.file_url as string])
+      const admin = createAdminClient()
+      const { error: removeErr } = await admin.storage.from('materials').remove([material.file_url as string])
+      if (removeErr) console.error('[materials DELETE] storage remove failed:', removeErr.message, material.file_url)
     }
 
     // Delete the material record
