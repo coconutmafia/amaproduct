@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { ArrowLeft, TrendingUp, Plus, Trash2, Loader2, Sparkles, Wand2, Check, Globe, Users, Film } from 'lucide-react'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { ViralReelsManager } from '@/components/projects/ViralReelsManager'
+import { isRlsError, READ_ONLY_MESSAGE } from '@/lib/projects/access'
 import { toast } from 'sonner'
 
 interface Trend {
@@ -95,7 +96,7 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
       })
       if (error) {
         if (/scope|column|does not exist/i.test(error.message)) { setNeedsSetup(true); throw new Error('Тренды ещё не настроены (нужна миграция БД)') }
-        throw new Error(error.message)
+        throw new Error(isRlsError(error) ? READ_ONLY_MESSAGE : error.message)
       }
       setTitle(''); setDescription(''); setExample(''); setFormatType('any')
       toast.success('Добавлено в «Мои тренды» — AI вплетёт его в контент-план')
@@ -107,7 +108,7 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
   const remove = async (tid: string) => {
     setDeletingId(tid)
     const { error } = await supabase.from('content_trends').delete().eq('id', tid)
-    if (error) { toast.error('Не удалось удалить'); setDeletingId(null); return }
+    if (error) { toast.error(isRlsError(error) ? READ_ONLY_MESSAGE : 'Не удалось удалить'); setDeletingId(null); return }
     setMine(prev => prev.filter(t => t.id !== tid))
     setDeletingId(null)
     toast.success('Удалено')
@@ -148,7 +149,7 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
         title: c.title, description: c.description, example: c.example, format_type: c.format_type,
       }))
       const { error } = await supabase.from('content_trends').insert(rows)
-      if (error) throw new Error(error.message)
+      if (error) throw new Error(isRlsError(error) ? READ_ONLY_MESSAGE : error.message)
       toast.success(`Добавлено в «Мои тренды»: ${rows.length}. AI вплетёт их в контент-план 👇`)
       // Drop the adopted ones from the candidate list
       setCandidates(prev => prev.filter((_, i) => !picked.has(i)))

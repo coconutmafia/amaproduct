@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { upsertProjectMaterial } from '@/lib/supabase/upsertMaterial'
+import { isRlsError, READ_ONLY_MESSAGE } from '@/lib/projects/access'
 
 // Standing per-project voice rules the blogger dictates («не пиши так», «всегда
 // начинай с…»). Stored as a project material (material_type='voice_rules') so
@@ -44,7 +45,10 @@ export async function POST(request: Request) {
       raw_content: next,
       processing_status: 'ready',
     })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      if (isRlsError(error)) return NextResponse.json({ error: READ_ONLY_MESSAGE }, { status: 403 })
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
     return NextResponse.json({ ok: true, rules: next })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 })

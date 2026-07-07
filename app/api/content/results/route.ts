@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isRlsError, READ_ONLY_MESSAGE } from '@/lib/projects/access'
 
 // Results = the learning loop: create → publish → measure → improve.
 // Covers BOTH content sources:
@@ -119,7 +120,10 @@ export async function PATCH(request: Request) {
 
   const table = source === 'plan' ? 'content_items' : 'saved_content'
   const { error } = await supabase.from(table).update(patch).eq('id', body.itemId)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    if (isRlsError(error)) return NextResponse.json({ error: READ_ONLY_MESSAGE }, { status: 403 })
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
 
   // ── Learning loop: a TEXT piece that performed becomes a style example,
   // weighted by engagement, so future generations lean on what worked.

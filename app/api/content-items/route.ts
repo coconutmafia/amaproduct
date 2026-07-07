@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isRlsError, READ_ONLY_MESSAGE } from '@/lib/projects/access'
 import type { WarmupPhase } from '@/types'
 
 // Save a content unit straight into the content plan (no AI) — used when the
@@ -54,7 +55,10 @@ export async function POST(request: Request) {
       .select()
       .single()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      if (isRlsError(error)) return NextResponse.json({ error: READ_ONLY_MESSAGE }, { status: 403 })
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
     return NextResponse.json({ item })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed' }, { status: 500 })

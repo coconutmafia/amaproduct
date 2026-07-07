@@ -47,7 +47,16 @@ export async function requireProjectAccess(
   const role = await getProjectRole(supabase, projectId, userId)
   if (!role) return { ok: false, status: 404, error: 'Проект не найден' }
   if (minRole === 'editor' && role === 'viewer') {
-    return { ok: false, status: 403, error: 'Доступно только владельцу или редактору проекта' }
+    return { ok: false, status: 403, error: READ_ONLY_MESSAGE }
   }
   return { ok: true, role }
+}
+
+// Friendly copy shown when a viewer-role member tries to write. RLS is the
+// enforcement; this just replaces the raw Postgres "violates row-level
+// security policy" text with something a client (non-technical) understands.
+export const READ_ONLY_MESSAGE = 'Доступно только редакторам — у тебя доступ на просмотр'
+
+export function isRlsError(error: { message?: string } | null | undefined): boolean {
+  return !!error?.message && /row-level security/i.test(error.message)
 }
