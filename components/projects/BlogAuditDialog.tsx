@@ -122,9 +122,9 @@ export function BlogAuditScorecard({ result, onRerun, rerunning }: {
       {result.notAssessableCount > 0 && (
         <p className="text-xs text-muted-foreground flex items-start gap-1.5">
           <Lock className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          {result.notAssessableCount} пунктов{lockedBlocks.length ? ` (${lockedBlocks.join(', ')})` : ''} не видны
-          с поверхности профиля{result.blocks.some(b => b.key === 'highlights' && b.assessableMax === 0)
-            ? ' (напр. содержимое актуальных Instagram не отдаёт)' : ''} — их разберём вручную на консультации.
+          {result.notAssessableCount} пунктов{lockedBlocks.length ? ` (${lockedBlocks.join(', ')})` : ''} обсуждаются
+          на консультации — их не считать автоматически с поверхности профиля{result.blocks.some(b => b.key === 'highlights' && b.assessableMax === 0)
+            ? ' (напр. содержимое актуальных Instagram не отдаёт)' : ''}.
         </p>
       )}
 

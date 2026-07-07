@@ -1,4 +1,4 @@
-import { anthropic, MODEL } from '@/lib/ai/client'
+import { anthropic, MODEL, MODEL_HAIKU } from '@/lib/ai/client'
 import { CHECKLIST, diagnose } from '@/lib/blogAudit/checklist'
 import { IMAGE_URLS_HEADER } from '@/lib/instagram/scrapeAccount'
 
@@ -92,6 +92,11 @@ ${profileText.slice(0, 24000)}
 
 ${blocks}
 
+ВАЖНО — не выдумывай пробелы, которых нет. Первая строка Bio — это «жирная строка» профиля.
+Внимательно перечитай Bio и посты ПЕРЕД тем, как отметить что-то отсутствующим: если город/локация,
+ниша, услуга, ссылка, оффер, продукт или CTA уже есть в тексте — НЕ считай это пробелом, НЕ занижай балл
+и НЕ советуй это добавить. Рекомендации давай только по тому, чего в профиле реально нет.
+
 Для КАЖДОГО пункта верни объект { "score": 0|1|2|null, "note": "..." }:
 - score 0–2 — если пункт можно оценить по тексту (0 нет / 1 слабо / 2 хорошо).
 - score null — ТОЛЬКО для пунктов, помеченных «[НЕ ВИДНО ИЗ ТЕКСТА]».
@@ -99,7 +104,7 @@ ${blocks}
 
 Также верни:
 - "topGaps": массив из 3–6 САМЫХ важных пробелов, которые сильнее всего мешают блогу продавать
-  (короткие конкретные фразы для автора блога, на «ты», без воды).
+  (короткие конкретные фразы для автора блога, на «ты», без воды). НЕ включай то, что в профиле уже есть.
 - "summary": 1–2 предложения — общий честный вердикт по блогу.
 
 Формат ответа — СТРОГО такой JSON, без markdown, без пояснений вокруг:
@@ -141,6 +146,29 @@ function clampScore(v: unknown): number | null {
 
 function asString(v: unknown): string {
   return typeof v === 'string' ? v.trim() : ''
+}
+
+// Второй проход (дёшево, на Haiku): выкидывает рекомендации, которые противоречат
+// профилю — советуют добавить то, что УЖЕ есть (тестер поймала кейс: город есть в
+// жирной строке, а совет «добавь город»). Best-effort: при сбое отдаём исходные.
+async function verifyGaps(profileText: string, gaps: string[]): Promise<string[]> {
+  if (gaps.length === 0) return gaps
+  try {
+    const resp = await anthropic.messages.create({
+      model:      MODEL_HAIKU,
+      max_tokens: 1200,
+      system:     'Ты придирчивый редактор. Тебе дают текст Instagram-профиля и список рекомендаций «что улучшить». Убери те рекомендации, которые советуют добавить то, что в профиле УЖЕ ЕСТЬ (город/локация, ниша, услуга, ссылка, оффер, продукт, CTA, цифры/соц-доказательство и т.п.). Ничего нового не придумывай, формулировки оставшихся не меняй. Отвечай только JSON.',
+      messages:   [{ role: 'user', content: `ТЕКСТ ПРОФИЛЯ:\n${profileText.slice(0, 12000)}\n\nРЕКОМЕНДАЦИИ:\n${gaps.map((g, i) => `${i + 1}. ${g}`).join('\n')}\n\nВерни строго JSON вида {"gaps": ["...", ...]} — оставь ТОЛЬКО те рекомендации, которых в профиле реально не хватает по тексту выше. Порядок сохрани.` }],
+    })
+    const raw = resp.content.map(b => (b.type === 'text' ? b.text : '')).join('\n')
+    const parsed = parseJson(raw) as { gaps?: unknown }
+    if (Array.isArray(parsed.gaps)) {
+      const cleaned = parsed.gaps.map(asString).filter(Boolean)
+      // Не отдаём пустоту, если верификатор перестарался/сломался.
+      if (cleaned.length > 0) return cleaned.slice(0, 6)
+    }
+  } catch { /* верификация best-effort */ }
+  return gaps
 }
 
 /**
@@ -186,8 +214,10 @@ export async function runBlogAudit(handle: string, profileText: string): Promise
       const mi = modelItems[i] ?? {}
       const note = asString(mi.note)
       if (!itemVisible(block.key, item.fromText, hasImages)) {
-        // Не оцениваем — этого не видно (актуальные, визуал без картинок, назначение ссылки).
-        return { label: item.label, assessable: false, score: null, note: note || 'Проверим вручную на консультации' }
+        // Не оцениваем автоматически — этого не видно с поверхности профиля
+        // (актуальные, визуал без картинок, назначение ссылки). Единая честная
+        // формулировка (просил тестер) вместо разнородного «не видно…».
+        return { label: item.label, assessable: false, score: null, note: 'Обсуждается на консультации' }
       }
       const score = clampScore(mi.score)
       if (score === null) {
@@ -212,9 +242,11 @@ export async function runBlogAudit(handle: string, profileText: string): Promise
     (n, b) => n + b.items.filter(it => !it.assessable).length, 0,
   )
 
-  const topGaps = Array.isArray(parsed.topGaps)
+  const rawGaps = Array.isArray(parsed.topGaps)
     ? parsed.topGaps.map(asString).filter(Boolean).slice(0, 6)
     : []
+  // Проверяем рекомендации на противоречие профилю (второй проход).
+  const topGaps = await verifyGaps(profileText, rawGaps)
 
   return {
     blocks,
