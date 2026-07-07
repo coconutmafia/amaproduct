@@ -37,15 +37,50 @@ async function sendEvent(event: Record<string, unknown>): Promise<void> {
   } catch { /* observability must never break the app */ }
 }
 
+// Also persist the event to our own error_events table (migration 028) so the
+// team + the assistant can read recent failures directly via /api/admin/errors,
+// without the Sentry dashboard. Best-effort: server-only (dynamic import keeps
+// the admin client out of any edge bundle), and it can NEVER throw or it would
+// break the very error path it's logging. Does not call captureException, so no
+// loop. If the table doesn't exist yet (migration unapplied) the insert just
+// fails silently and Sentry still gets the event.
+async function logToDb(row: { level: string; message: string; stack?: string; context?: Record<string, unknown> }): Promise<void> {
+  try {
+    const { createAdminClient } = await import('@/lib/supabase/admin')
+    const admin = createAdminClient()
+    const ctx = row.context ?? {}
+    const route = (ctx.route ?? ctx.path ?? ctx.where) as unknown
+    const routeStr = typeof route === 'string' ? route : undefined
+    const source = ctx.jobId ? 'job' : (routeStr && /cron/.test(routeStr)) ? 'cron' : 'server'
+    const userId = (ctx.userId ?? ctx.user_id) as unknown
+    await admin.from('error_events').insert({
+      level: row.level,
+      source,
+      route: routeStr ? routeStr.slice(0, 300) : null,
+      message: (row.message || 'Unknown error').slice(0, 2000),
+      stack: row.stack ? row.stack.slice(0, 6000) : null,
+      context: ctx,
+      user_id: typeof userId === 'string' ? userId : null,
+    })
+  } catch { /* logging must never break the app */ }
+}
+
 export async function captureException(err: unknown, context?: Record<string, unknown>): Promise<void> {
   const e = err instanceof Error ? err : new Error(String(err))
-  await sendEvent({
-    level: 'error',
-    exception: { values: [{ type: e.name || 'Error', value: e.message }] },
-    extra: { stack: (e.stack || '').slice(0, 4000), ...context },
-  })
+  const stack = (e.stack || '').slice(0, 4000)
+  await Promise.allSettled([
+    sendEvent({
+      level: 'error',
+      exception: { values: [{ type: e.name || 'Error', value: e.message }] },
+      extra: { stack, ...context },
+    }),
+    logToDb({ level: 'error', message: e.message || String(err), stack, context }),
+  ])
 }
 
 export async function captureMessage(message: string, level: 'warning' | 'error' | 'info' = 'warning', context?: Record<string, unknown>): Promise<void> {
-  await sendEvent({ level, message: { formatted: message.slice(0, 8000) }, extra: context })
+  await Promise.allSettled([
+    sendEvent({ level, message: { formatted: message.slice(0, 8000) }, extra: context }),
+    logToDb({ level, message, context }),
+  ])
 }

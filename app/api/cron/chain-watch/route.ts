@@ -76,11 +76,17 @@ async function handle(request: Request) {
     }
   }
 
-  // ── 3. Housekeeping: purge old rate-limit windows ─────────────────────────
+  // ── 3. Housekeeping: purge old rate-limit windows + error log ─────────────
   try {
     await admin.from('rate_limits').delete()
       .lt('window_start', new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString())
   } catch { /* table may not exist until migration 022 is applied */ }
+  try {
+    // Keep the in-app error log (migration 028) bounded — 30 days is plenty for
+    // "what broke recently"; Sentry is the long-term archive.
+    await admin.from('error_events').delete()
+      .lt('created_at', new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString())
+  } catch { /* table may not exist until migration 028 is applied */ }
 
   // ── 4. Trial lifecycle ──────────────────────────────────────────────────────
   // (a) State transition trialing→view_only when the trial expired. ONLY when
