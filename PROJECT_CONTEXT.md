@@ -7,8 +7,15 @@
 ## 🚦 ПЕРЕДАЧА СЕССИИ (7 июля 2026, ночь) — ЧИТАТЬ ПЕРВЫМ
 
 ### ⚠️ НЕПРИМЕНЁННЫЕ МИГРАЦИИ (владельцу применить через SQL Editor, порядок важен):
-- **028_error_events.sql** — встроенный лог ошибок (Sentry-этап, см. блок ниже). До применения лог пуст, ничего не ломается.
-- (025/026/027 project_members — УЖЕ применены владельцем ранее в этой сессии.)
+- 🔴 **029_fix_projects_select_insert_returning.sql — СРОЧНО.** Регрессия от 026: создание ЛЮБОГО проекта падало с
+  «new row violates row-level security policy for table projects». Причина: мастер делает `.insert().select()`
+  (INSERT RETURNING), а `projects_select` (026) проверял владельца через `has_project_access`→`is_project_owner`,
+  который ЗАНОВО запрашивает `projects` по id — только что вставленная строка ещё не видна под-запросу → политика
+  чтения-после-вставки false → 42501. Диагностировано живьём: INSERT return=minimal→201, return=representation→403.
+  Фикс: в `projects_select` проверять `owner_id = auth.uid()` НАПРЯМУЮ (колонка на новой строке видна в RETURNING),
+  членство — через `is_active_project_member` (DEFINER, query к project_members, не к projects → нет рекурсии).
+  Контент-таблицы НЕ затронуты (их has_project_access читает projects, чья строка уже существует, а не вставляемую).
+- (025/026/027 project_members + 028 error_events — УЖЕ применены владельцем ранее в этой сессии.)
 
 ### ✅ SENTRY-ЭТАП: ВСТРОЕННЫЙ ЛОГ ОШИБОК (7 июля)
 У ассистента нет доступа к панели Sentry владельца → раньше «ошибка → письмо Sentry → ручная пересылка мне».
