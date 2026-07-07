@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { computeCompleteness } from '@/lib/completeness'
+import { ocrPdf, ocrImage, imageMediaType } from '@/lib/ai/ocr'
 
-// 60 секунд — для векторизации через OpenAI
-export const maxDuration = 60
+// 120 секунд — векторизация через OpenAI + возможный OCR скана/картинки через Claude vision
+export const maxDuration = 120
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024 // 20MB
 
@@ -49,24 +50,32 @@ export async function POST(request: Request) {
         rawContent = await file.text()
       }
 
-      // PDF — извлекаем текст через pdf-parse v1
+      // PDF — сначала пробуем извлечь текстовый СЛОЙ через pdf-parse v1.
       if (name.endsWith('.pdf') || file.type === 'application/pdf') {
+        const pdfBuf = Buffer.from(await file.arrayBuffer())
         try {
           // pdf-parse v1: default export is a function(Buffer) => Promise<{text, numpages}>
           // eslint-disable-next-line @typescript-eslint/no-require-imports
           const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string; numpages: number }>
-          const bytes = await file.arrayBuffer()
-          const result = await pdfParse(Buffer.from(bytes))
+          const result = await pdfParse(pdfBuf)
           rawContent = result.text
+        } catch {
+          rawContent = null
+        }
+        // Скан / PDF-картинка (без текстового слоя) — читаем страницы как изображения
+        // через Claude vision. Раздел «Кейсы и отзывы» приглашает грузить скриншоты,
+        // а у них текстового слоя нет — раньше это падало на «PDF не содержит текста».
+        if (!rawContent || rawContent.trim().length < 10) {
+          try {
+            rawContent = await ocrPdf(pdfBuf)
+          } catch (e) {
+            console.error('[upload] pdf OCR failed:', e)
+          }
           if (!rawContent || rawContent.trim().length < 10) {
             return NextResponse.json({
-              error: 'PDF не содержит читаемого текста. Возможно, это скан. Скопируй текст вручную и вставь в поле ниже.',
+              error: 'Не удалось распознать текст в PDF. Если это фото/скан — загрузи его как изображение (JPG/PNG), или вставь текст через «Добавить текст».',
             }, { status: 400 })
           }
-        } catch {
-          return NextResponse.json({
-            error: 'Не удалось прочитать PDF. Попробуй скопировать текст и вставить в поле ниже.',
-          }, { status: 400 })
         }
       }
 
@@ -117,6 +126,26 @@ export async function POST(request: Request) {
           console.error('xlsx parse error:', xlsxErr)
           return NextResponse.json({
             error: 'Не удалось прочитать Excel-файл (возможно, он защищён паролем или это не настоящий .xlsx). Сохрани как .csv или вставь текст через «Добавить текст».',
+          }, { status: 400 })
+        }
+      }
+
+      // Изображения (скриншоты отзывов, кейсы, фото документов) — распознаём текст
+      // через Claude vision. Раньше картинки вообще не обрабатывались и падали на
+      // «Нет текста для обработки». Оригинал файла всё равно сохраняется в Storage ниже.
+      const imgType = imageMediaType(name, file.type)
+      if (!rawContent && imgType) {
+        try {
+          rawContent = await ocrImage(Buffer.from(await file.arrayBuffer()), imgType)
+        } catch (e) {
+          console.error('[upload] image OCR failed:', e)
+          return NextResponse.json({
+            error: 'Не удалось распознать текст на изображении. Возможно, оно слишком большое — сожми фото и попробуй снова, или вставь текст через «Добавить текст».',
+          }, { status: 400 })
+        }
+        if (!rawContent || rawContent.trim().length < 10) {
+          return NextResponse.json({
+            error: 'На изображении не найден читаемый текст. Загрузи скриншот отзыва с текстом или вставь текст через «Добавить текст».',
           }, { status: 400 })
         }
       }

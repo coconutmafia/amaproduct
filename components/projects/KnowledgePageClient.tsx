@@ -334,7 +334,7 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
               onClick={() => setShowText(!showText)}
               className="w-full flex items-center justify-between px-4 py-3 text-sm hover:bg-secondary/50 transition-colors text-muted-foreground"
             >
-              <span className="flex items-center gap-2"><FileText className="h-4 w-4" /> Добавить текст (PDF, Google Docs)</span>
+              <span className="flex items-center gap-2"><FileText className="h-4 w-4" /> Добавить текст</span>
               {showText ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </button>
             {showText && (
@@ -966,6 +966,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
   const [showToneFromContent, setShowToneFromContent] = useState(false)
   const [igDialogType, setIgDialogType] = useState<'my_instagram' | 'competitors' | null>(null)
   const [showBlogAudit, setShowBlogAudit] = useState(false)
+  const [auditScore10, setAuditScore10] = useState<number | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [materials, setMaterials] = useState(initialMaterials)
   // Restore scroll position after a reloadKeepScroll() — so finishing a long
@@ -997,6 +998,20 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
     acc[m.material_type]!.push(m)
     return acc
   }, {})
+
+  // Cached blog-audit score → «X/10» badge on the connected account card.
+  // Refetches when the audit dialog closes (a fresh run may have updated it).
+  useEffect(() => {
+    if (!materials.some(m => m.material_type === 'my_instagram')) { setAuditScore10(null); return }
+    let alive = true
+    fetch(`/api/blog-audit?projectId=${projectId}`)
+      .then(r => r.json())
+      .then((d: { result?: { score10?: number } | null }) => {
+        if (alive) setAuditScore10(typeof d.result?.score10 === 'number' ? d.result.score10 : null)
+      })
+      .catch(() => { /* no cache — no badge */ })
+    return () => { alive = false }
+  }, [projectId, showBlogAudit, materials])
 
   // Called after upload — add new materials to state instantly (no page refresh)
   const handleUploaded = (newMaterials: Material[]) => {
@@ -1320,6 +1335,19 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                               return (
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="text-xs text-muted-foreground">Аккаунт подключён</span>
+                                  {auditScore10 !== null && (
+                                    <span
+                                      className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                                        auditScore10 <= 3 ? 'bg-red-500/15 text-red-600'
+                                          : auditScore10 <= 5.5 ? 'bg-orange-500/15 text-orange-600'
+                                          : auditScore10 <= 7.5 ? 'bg-amber-500/15 text-amber-600'
+                                          : 'bg-green-500/15 text-green-600'
+                                      }`}
+                                      title="Оценка блога к продажам по последней диагностике"
+                                    >
+                                      {auditScore10.toFixed(1)}/10
+                                    </span>
+                                  )}
                                   <Button
                                     size="sm"
                                     variant="outline"
@@ -1327,7 +1355,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                                     onClick={() => setShowBlogAudit(true)}
                                   >
                                     <Sparkles className="h-3 w-3 mr-1.5" />
-                                    Диагностика блога
+                                    {auditScore10 !== null ? 'Перепроверить блог' : 'Диагностика блога'}
                                   </Button>
                                 </div>
                               )

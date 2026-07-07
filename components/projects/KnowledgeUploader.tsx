@@ -339,7 +339,7 @@ export function KnowledgeUploader({ projectId, onUploadComplete, isSystemVault =
             >
               <span className="flex items-center gap-2 text-muted-foreground">
                 <FileText className="h-4 w-4" />
-                Добавить текст вручную (PDF, Google Docs)
+                Добавить текст вручную
               </span>
               {showTextBlock ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </button>
