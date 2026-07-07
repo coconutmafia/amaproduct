@@ -72,7 +72,7 @@ export default function AdminErrorsPage() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Серверные, фоновые и cron-ошибки за последнее время (клиентские — в Sentry). Свежие сверху.
+        Серверные, фоновые, cron и клиентские ошибки за последнее время. Свежие сверху. У клиентских в контексте — страница и браузер (UA).
       </p>
 
       {needsMigration && (

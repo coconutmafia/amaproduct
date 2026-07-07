@@ -84,3 +84,26 @@ export async function captureMessage(message: string, level: 'warning' | 'error'
     logToDb({ level, message, context }),
   ])
 }
+
+// Persist a CLIENT-side error (reported by instrumentation-client.ts via
+// POST /api/client-error) into the SAME log the assistant reads. Testers hit
+// bugs the developer never reproduces; storing them here (source='client', with
+// page URL + browser UA in context) makes user-facing errors queryable via
+// /api/admin/errors without needing the Sentry dashboard. Best-effort, never throws.
+export async function logClientError(row: {
+  message: string; stack?: string; kind?: string; url?: string; ua?: string; userId?: string
+}): Promise<void> {
+  try {
+    const { createAdminClient } = await import('@/lib/supabase/admin')
+    const admin = createAdminClient()
+    await admin.from('error_events').insert({
+      level:   'error',
+      source:  'client',
+      route:   row.url ? row.url.slice(0, 300) : null,
+      message: (row.message || 'Client error').slice(0, 2000),
+      stack:   row.stack ? row.stack.slice(0, 6000) : null,
+      context: { kind: row.kind, url: row.url, ua: row.ua },
+      user_id: row.userId ?? null,
+    })
+  } catch { /* logging must never break the app */ }
+}

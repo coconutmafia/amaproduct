@@ -27,6 +27,17 @@ function report(kind: string, message: string, stack?: string) {
       keepalive: true,
     }).catch(() => {})
   } catch { /* never break the app */ }
+
+  // ALSO persist to our own error log so the team + assistant read testers'
+  // errors via /admin/errors without the Sentry dashboard (source='client').
+  try {
+    fetch('/api/client-error', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, message: String(message).slice(0, 500), stack: (stack || '').slice(0, 3000), url: location.href, ua: navigator.userAgent }),
+      keepalive: true,
+    }).catch(() => {})
+  } catch { /* never break the app */ }
 }
 
 window.addEventListener('error', (e) => {
@@ -36,3 +47,14 @@ window.addEventListener('unhandledrejection', (e) => {
   const r = e.reason
   report(r?.name || 'UnhandledRejection', r?.message || String(r), r?.stack)
 })
+
+// Capability probe: some in-app browsers (old Android WebViews, in-app IG/TG
+// browsers) lack a working URL constructor. Next's client router does
+// `new URL(...)` on navigation, so this surfaces as «URL is not a constructor»
+// and breaks the app. Report it explicitly WITH the UA (via report → our log +
+// Sentry) so we can identify the exact browser and decide the fix.
+try {
+  new URL('https://a/b?c#d')
+} catch (err) {
+  report('UnsupportedBrowser', 'URL constructor отсутствует — вероятно устаревший in-app браузер', (err as Error)?.stack)
+}
