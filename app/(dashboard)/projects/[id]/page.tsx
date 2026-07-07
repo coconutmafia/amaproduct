@@ -26,6 +26,7 @@ import {
   Flame,
   Palette,
   UsersRound,
+  Gauge,
 } from 'lucide-react'
 import { ProjectInfoSection } from '@/components/projects/ProjectInfoSection'
 import { PLAN_CONFIG } from '@/lib/generations-config'
@@ -201,6 +202,7 @@ export default async function ProjectPage({ params }: Props) {
                 { href: `/projects/${id}/content-plan`, icon: Grid3X3, label: 'Контент-план', desc: 'Расписание по дням', color: 'text-[#D44E7E] bg-[#D44E7E]/10' },
                 { href: `/projects/${id}/strategy`, icon: Calendar, label: 'План прогрева', desc: 'Стратегия запуска', color: 'text-[#F5A84A] bg-[#F5A84A]/10' },
                 { href: `/projects/${id}/knowledge`, icon: BookOpen, label: 'Материалы', desc: 'База знаний, интервью, стиль', color: 'text-[#E86BA0] bg-[#E86BA0]/10' },
+                { href: `/projects/${id}/blog-audit`, icon: Gauge, label: 'Диагностика блога', desc: 'Проверь блог к продажам', color: 'text-[#3A8A48] bg-[#3A8A48]/10' },
                 { href: `/projects/${id}/trends`, icon: Flame, label: 'Тренды', desc: 'Тренды и залетевшие рилз → в план', color: 'text-[#F5A84A] bg-[#F5A84A]/10' },
                 { href: `/projects/${id}/visual`, icon: Palette, label: 'Создать визуал', desc: 'Сторис, картинка поста, карусель', color: 'text-[#D44E7E] bg-[#D44E7E]/10' },
                 { href: `/library?project=${id}`, icon: Bookmark, label: 'Готовое', desc: 'AI учится на твоём контенте', color: 'text-primary bg-primary/10' },
