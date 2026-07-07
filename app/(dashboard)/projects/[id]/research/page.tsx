@@ -9,6 +9,14 @@ import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import type { InterviewTable, Respondent } from '@/app/api/ai/research-analyze/route'
 
+// Максимальный размер аудиофайла (МБ). Должен совпадать с лимитом загрузки
+// Supabase (Free = 50 МБ жёстко; Pro — сколько выставишь в Project Settings →
+// Storage). Меняется через env NEXT_PUBLIC_MAX_AUDIO_MB (Vercel) без правки кода.
+// Пред-проверка на клиенте ловит превышение ДО заливки — сразу понятная ошибка,
+// без ожидания провала загрузки большого файла.
+const MAX_AUDIO_MB    = Number(process.env.NEXT_PUBLIC_MAX_AUDIO_MB) || 50
+const MAX_AUDIO_BYTES = MAX_AUDIO_MB * 1024 * 1024
+
 // Понятное сообщение об ошибке загрузки/расшифровки аудио — вместо сырого
 // «The object exceeded the maximum allowed size» и т.п. (тестер не понимает,
 // что не так). Показывается целиком, отдельной строкой под именем файла.
@@ -182,6 +190,12 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       try {
         const file = files[fi]
         let fileName = initNames[fi]
+
+        // Пред-проверка размера: не тратим время на заведомо провальную заливку
+        // большого файла — сразу понятная ошибка с конкретными цифрами.
+        if (file.size > MAX_AUDIO_BYTES) {
+          throw new Error(`Файл ${(file.size / 1024 / 1024).toFixed(0)} МБ больше лимита ${MAX_AUDIO_MB} МБ. Разбей интервью на части по 30–40 минут и загрузи по отдельности.`)
+        }
 
         const rawExt = fileName.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? ''
         const ext    = rawExt || 'mp3'
