@@ -1,5 +1,31 @@
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { CHECKLIST, diagnose } from '@/lib/blogAudit/checklist'
+import { IMAGE_URLS_HEADER } from '@/lib/instagram/scrapeAccount'
+
+type ImageBlock = { type: 'image'; source: { type: 'base64'; media_type: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; data: string } }
+
+// Pull the appended image URLs (avatar + post covers) out of a stored profile.
+function imageUrlsFromText(text: string): string[] {
+  const idx = text.indexOf(IMAGE_URLS_HEADER)
+  if (idx === -1) return []
+  return text.slice(idx).split('\n').map(l => l.trim()).filter(l => /^https?:\/\//.test(l)).slice(0, 4)
+}
+
+// Fetch one image → base64 block for Claude vision. Skips oversized/failed.
+async function fetchImageBlock(url: string): Promise<ImageBlock | null> {
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(8000),
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AMAproduct/1.0)' },
+    })
+    if (!res.ok) return null
+    const ct = (res.headers.get('content-type') || '').toLowerCase()
+    const media_type = ct.includes('png') ? 'image/png' : ct.includes('webp') ? 'image/webp' : ct.includes('gif') ? 'image/gif' : 'image/jpeg'
+    const buf = Buffer.from(await res.arrayBuffer())
+    if (buf.length === 0 || buf.length > 4_500_000) return null
+    return { type: 'image', source: { type: 'base64', media_type, data: buf.toString('base64') } }
+  } catch { return null }
+}
 
 // ── Результат диагностики ────────────────────────────────────────────────────
 export interface AuditItemResult {
@@ -34,18 +60,29 @@ const SYSTEM = `Ты — жёсткий, но честный маркетоло�
 что реально видно из текста. Не выдумывай того, чего в тексте нет. Оценки ставь строго и по делу:
 0 — нет совсем, 1 — есть частично/слабо, 2 — сделано хорошо. Отвечай ТОЛЬКО валидным JSON.`
 
-function buildPrompt(handle: string, profileText: string): string {
+// A block/item is visible to the model when it's text-assessable, or it's the
+// visual block and we attached profile images for it to look at.
+function itemVisible(blockKey: string, fromText: boolean, hasImages: boolean): boolean {
+  return fromText || (hasImages && blockKey === 'visual')
+}
+
+function buildPrompt(handle: string, profileText: string, hasImages: boolean): string {
   const blocks = CHECKLIST.map(b => {
     const items = b.items
       .map((it, i) => {
-        const tag = it.fromText ? '' : '  [НЕ ВИДНО ИЗ ТЕКСТА — верни score: null]'
+        const tag = itemVisible(b.key, it.fromText, hasImages) ? '' : '  [НЕ ВИДНО ИЗ ТЕКСТА — верни score: null]'
         return `    ${i}. ${it.label}${tag}`
       })
       .join('\n')
     return `"${b.key}" — ${b.title}:\n${items}`
   }).join('\n\n')
 
+  const imagesNote = hasImages
+    ? '\nК сообщению приложены изображения профиля (аватар и обложки последних постов). Блок "visual" (Визуальная упаковка) оцени ПО ЭТИМ ИЗОБРАЖЕНИЯМ: единство концепции, фирменные цвета, шрифты, узнаваемые элементы, соответствие ЦА.\n'
+    : ''
+
   return `Профиль: @${handle}
+${imagesNote}
 
 === ТЕКСТ ПРОФИЛЯ (шапка + последние посты) ===
 ${profileText.slice(0, 24000)}
@@ -113,11 +150,18 @@ function asString(v: unknown): string {
  * их честно помечаем неоцениваемыми (даже если модель что-то вернула).
  */
 export async function runBlogAudit(handle: string, profileText: string): Promise<AuditResult> {
+  // Load a few profile images (avatar + post covers) so the model can score the
+  // "visual" block. Older accounts scraped before image capture have no URLs →
+  // no images → visual stays "на консультации" (graceful).
+  const imageBlocks = (await Promise.all(imageUrlsFromText(profileText).map(fetchImageBlock))).filter((b): b is ImageBlock => b !== null)
+  const hasImages = imageBlocks.length > 0
+
+  const textBlock = { type: 'text' as const, text: buildPrompt(handle, profileText, hasImages) }
   const resp = await anthropic.messages.create({
     model:      MODEL,
     max_tokens: 4000,
     system:     SYSTEM,
-    messages:   [{ role: 'user', content: buildPrompt(handle, profileText) }],
+    messages:   [{ role: 'user', content: hasImages ? [...imageBlocks, textBlock] : [textBlock] }],
   })
   const raw = resp.content.map(b => (b.type === 'text' ? b.text : '')).join('\n')
 
@@ -141,8 +185,8 @@ export async function runBlogAudit(handle: string, profileText: string): Promise
     const items: AuditItemResult[] = block.items.map((item, i) => {
       const mi = modelItems[i] ?? {}
       const note = asString(mi.note)
-      if (!item.fromText) {
-        // Принципиально не оцениваем — скрейп этого не видит.
+      if (!itemVisible(block.key, item.fromText, hasImages)) {
+        // Не оцениваем — этого не видно (актуальные, визуал без картинок, назначение ссылки).
         return { label: item.label, assessable: false, score: null, note: note || 'Проверим вручную на консультации' }
       }
       const score = clampScore(mi.score)

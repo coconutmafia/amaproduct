@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { captureException } from '@/lib/sentry'
-import { scrapeInstagram, buildAccountText, ANALYSIS_SYSTEM, buildAnalysisPrompt } from '@/lib/instagram/scrapeAccount'
+import { scrapeInstagram, buildAccountText, extractImageUrls, IMAGE_URLS_HEADER, ANALYSIS_SYSTEM, buildAnalysisPrompt } from '@/lib/instagram/scrapeAccount'
 
 interface JobRow {
   id: string
@@ -63,9 +63,14 @@ export async function processInstagramScrapeJob(jobId: string): Promise<void> {
       console.error('[runInstagramScrapeJob] analysis failed:', err)
     }
 
-    const fullText = analysis
+    // Image URLs (avatar + post covers) — appended for the blog-audit visual
+    // check; only for the OWN account (competitors don't get a visual audit).
+    const imageUrls = accountType === 'my_instagram' ? extractImageUrls(profile) : []
+    const imagesBlock = imageUrls.length ? `\n\n${IMAGE_URLS_HEADER}\n${imageUrls.join('\n')}` : ''
+
+    const fullText = (analysis
       ? `${analysis}\n\n──────────\nСЫРЫЕ ДАННЫЕ (${new Date().toLocaleString('ru-RU')})\n\n${accountText}`
-      : `${accountText}\n\n(AI-анализ не удалось сгенерировать — попробуй позже на этом материале вручную)`
+      : `${accountText}\n\n(AI-анализ не удалось сгенерировать — попробуй позже на этом материале вручную)`) + imagesBlock
 
     const { error: insertErr } = await admin.from('project_materials').insert({
       project_id:        projectId,

@@ -53,6 +53,28 @@ export function buildAccountText(profile: Record<string, unknown>): string {
   return lines.join('\n').trim()
 }
 
+// Collect image URLs (avatar + recent post covers) from the Apify response, for
+// the blog-audit visual check (Claude vision). Tolerant of actor field shapes.
+export function extractImageUrls(profile: Record<string, unknown>, max = 6): string[] {
+  const get = <T>(k: string): T | undefined => profile[k] as T | undefined
+  const urls: string[] = []
+  const pic = get<string>('profilePicUrlHD') ?? get<string>('profilePicUrl')
+  if (typeof pic === 'string' && pic.startsWith('http')) urls.push(pic)
+  const posts = (get<Array<Record<string, unknown>>>('latestPosts')
+              ?? get<Array<Record<string, unknown>>>('posts')
+              ?? []) as Array<Record<string, unknown>>
+  for (const p of posts) {
+    const u = (p.displayUrl as string) ?? (p.imageUrl as string) ?? (p.thumbnailUrl as string) ?? ''
+    if (typeof u === 'string' && u.startsWith('http')) urls.push(u)
+    if (urls.length >= max) break
+  }
+  return [...new Set(urls)].slice(0, max)
+}
+
+// Marker block appended to a my_instagram material's raw_content so the audit can
+// recover the image URLs later. Kept parseable and out of the way of generation.
+export const IMAGE_URLS_HEADER = '=== ИЗОБРАЖЕНИЯ (URL, для визуального анализа) ==='
+
 export async function scrapeInstagram(username: string, token: string): Promise<Record<string, unknown>> {
   const url = `https://api.apify.com/v2/acts/${APIFY_ACTOR}/run-sync-get-dataset-items?token=${encodeURIComponent(token)}`
   const res = await fetch(url, {
