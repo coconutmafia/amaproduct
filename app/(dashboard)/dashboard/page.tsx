@@ -84,9 +84,9 @@ export default async function DashboardPage() {
               <Gauge className="h-6 w-6 text-white" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-bold text-base">Диагностика блога к продажам</p>
+              <p className="font-bold text-base">Экспресс-диагностика блога</p>
               <p className="text-sm text-white/90 leading-snug">
-                Проверь любой Instagram по чек-листу — балл, диагноз и что усилить. Проект не нужен.
+                Оцени, насколько хорошо продаёт твой Instagram — балл, диагноз и что усилить. Проект не нужен.
               </p>
             </div>
             <ArrowRight className="h-5 w-5 text-white/90 shrink-0 group-hover:translate-x-0.5 transition-transform" />

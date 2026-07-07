@@ -20,9 +20,9 @@ export default async function BlogAuditPage({ params }: { params: Promise<{ id: 
         <div>
           <h1 className="text-xl font-black flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
-            Диагностика блога к продажам
+            Экспресс-диагностика блога
           </h1>
-          <p className="text-sm text-muted-foreground">Балл, диагноз и что усилить — по чек-листу из 10 блоков</p>
+          <p className="text-sm text-muted-foreground">Оцени, насколько хорошо продаёт твой Instagram</p>
         </div>
       </div>
 
