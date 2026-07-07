@@ -356,8 +356,17 @@ export function ProjectWizard() {
       router.push(`/projects/${project.id}`)
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Неизвестная ошибка'
-      toast.error(`Ошибка: ${msg}`)
       console.error('Project creation error:', error)
+      // Tester feedback: for TECHNICAL errors (not something the user typed
+      // wrong) show a clear "it's us, not you" message so they don't think
+      // they filled something incorrectly. Session-expired IS user-actionable,
+      // so keep that specific; everything else here is a server/RLS/network
+      // failure → friendly generic message.
+      if (/сессия истекла/i.test(msg)) {
+        toast.error(msg)
+      } else {
+        toast.error('Упс, ошибка сервиса — это на нашей стороне, не в твоих данных. Скоро починим, попробуй ещё раз чуть позже.')
+      }
     } finally {
       setLoading(false)
     }
