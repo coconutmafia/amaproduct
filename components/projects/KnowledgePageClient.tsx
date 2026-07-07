@@ -11,6 +11,7 @@ import { ProgressIndicator } from '@/components/shared/ProgressIndicator'
 import { UnpackingInterview } from '@/components/projects/UnpackingInterview'
 import { ToneFromContentDialog } from '@/components/projects/ToneFromContentDialog'
 import { InstagramAccountDialog } from '@/components/projects/InstagramAccountDialog'
+import { BlogAuditDialog } from '@/components/projects/BlogAuditDialog'
 import { CompetitorAnalysis } from '@/components/projects/CompetitorAnalysis'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { toast } from 'sonner'
@@ -964,6 +965,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
   const [showInterview, setShowInterview] = useState(false)
   const [showToneFromContent, setShowToneFromContent] = useState(false)
   const [igDialogType, setIgDialogType] = useState<'my_instagram' | 'competitors' | null>(null)
+  const [showBlogAudit, setShowBlogAudit] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [materials, setMaterials] = useState(initialMaterials)
   // Restore scroll position after a reloadKeepScroll() — so finishing a long
@@ -1314,9 +1316,25 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                           const limit = type === 'my_instagram' ? 1 : 5
                           const used  = items.length
                           if (used >= limit) {
+                            if (type === 'my_instagram') {
+                              return (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs text-muted-foreground">Аккаунт подключён</span>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-xs h-8 px-3 border-primary/40 text-primary hover:bg-primary/10"
+                                    onClick={() => setShowBlogAudit(true)}
+                                  >
+                                    <Sparkles className="h-3 w-3 mr-1.5" />
+                                    Диагностика блога
+                                  </Button>
+                                </div>
+                              )
+                            }
                             return (
                               <span className="text-xs text-muted-foreground">
-                                {type === 'my_instagram' ? 'Аккаунт подключён' : `Достигнут лимит ${limit}/5 — удали один, чтобы добавить новый`}
+                                {`Достигнут лимит ${limit}/5 — удали один, чтобы добавить новый`}
                               </span>
                             )
                           }
@@ -1430,6 +1448,13 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
           onSuccess={() => reloadKeepScroll()}
         />
       )}
+
+      {/* Диагностика блога к продажам (по подключённому my_instagram) */}
+      <BlogAuditDialog
+        projectId={projectId}
+        open={showBlogAudit}
+        onClose={() => setShowBlogAudit(false)}
+      />
 
       <ImportMaterialsDialog
         projectId={projectId}

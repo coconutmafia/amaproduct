@@ -23,6 +23,7 @@ const LIMITS: Record<string, { limit: number; windowSeconds: number }> = {
   video:          { limit: 10,  windowSeconds: HOUR }, // ffmpeg overlay
   autofill:       { limit: 10,  windowSeconds: HOUR },
   'scrape-product': { limit: 20, windowSeconds: HOUR },
+  'blog-audit':   { limit: 20,  windowSeconds: HOUR }, // 1 Claude call, no Apify
 }
 
 export interface RateLimitResult {
