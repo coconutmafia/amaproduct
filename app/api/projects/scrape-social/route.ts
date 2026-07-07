@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { scrapeInstagramProfile } from '@/lib/scrape/instagramProfile'
+import { requireProjectAccess } from '@/lib/projects/access'
 
 // Apify Instagram scrape (used for the owner's own profile) can take ~60-80s on
 // cold start — same budget as autofill so the background enrichment doesn't 504.
@@ -187,6 +188,11 @@ export async function POST(request: Request) {
     }
 
     if (!projectId || !platform || !username) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
+
+    // Scraping (Apify/network) is expensive and runs BEFORE the RLS-gated write,
+    // so a viewer could burn cost then fail at save — check editor+ up front.
+    const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
     const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).single()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })

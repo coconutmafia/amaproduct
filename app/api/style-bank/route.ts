@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isRlsError, READ_ONLY_MESSAGE } from '@/lib/projects/access'
 
 // GET /api/style-bank?projectId=xxx&contentType=post
 // GET /api/style-bank?system=true  — list system examples (admin only)
@@ -136,7 +137,10 @@ export async function POST(request: Request) {
       .select()
       .single()
 
-    if (error) throw error
+    if (error) {
+      if (isRlsError(error)) return NextResponse.json({ error: READ_ONLY_MESSAGE }, { status: 403 })
+      throw error
+    }
 
     // Also mark the source content item as approved
     if (sourceContentItemId) {

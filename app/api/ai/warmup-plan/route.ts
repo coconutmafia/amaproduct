@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
+import { requireProjectAccess } from '@/lib/projects/access'
 
 export const maxDuration = 300
 
@@ -22,6 +23,12 @@ export async function POST(request: Request) {
       hookTexts?: Record<string, string>
       extraHooks?: string; competitors?: string
     } = await request.json()
+
+    // A warmup plan is an expensive Claude generation with no natural write to
+    // block a viewer — check editor+ explicitly (this route generates on the
+    // owner's dime).
+    const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
     // ── Load project ─────────────────────────────────────────────────────────
     const { data: project } = await supabase

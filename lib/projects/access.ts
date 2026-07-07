@@ -57,6 +57,11 @@ export async function requireProjectAccess(
 // security policy" text with something a client (non-technical) understands.
 export const READ_ONLY_MESSAGE = 'Доступно только редакторам — у тебя доступ на просмотр'
 
-export function isRlsError(error: { message?: string } | null | undefined): boolean {
-  return !!error?.message && /row-level security/i.test(error.message)
+export function isRlsError(error: { message?: string; code?: string } | null | undefined): boolean {
+  if (!error) return false
+  // Postgres 42501 = insufficient_privilege — the precise code PostgREST returns
+  // for an RLS denial. Prefer it; fall back to the message text (some client
+  // paths surface the string without the code).
+  if (error.code === '42501') return true
+  return !!error.message && /row-level security/i.test(error.message)
 }
