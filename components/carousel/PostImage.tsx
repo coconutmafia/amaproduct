@@ -7,6 +7,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { downscaleImage } from '@/lib/downscaleImage'
+import { friendlyError } from '@/lib/friendlyError'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 
 interface Brand {
@@ -66,7 +67,7 @@ export function PostImage({ text, projectId, brand }: { text: string; projectId?
       const d = await res.json().catch(() => ({} as { urls?: string[]; error?: string }))
       if (!res.ok) throw new Error(d.error || (res.status === 413 ? 'Фото слишком большое' : `Не удалось загрузить (${res.status})`))
       setPhotoUrl((d.urls || [])[0] || null); setImg(null)
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось загрузить') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось загрузить')) }
     finally { setUploading(false) }
   }
 
@@ -81,7 +82,7 @@ export function PostImage({ text, projectId, brand }: { text: string; projectId?
       if (!res.ok) throw new Error('Не удалось сделать картинку')
       const blob = await res.blob()
       setImg((old) => { if (old) URL.revokeObjectURL(old.url); return { blob, url: URL.createObjectURL(blob) } })
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Ошибка') }
+    } catch (e) { toast.error(friendlyError(e, 'Ошибка')) }
     finally { setBusy(false) }
   }
 
@@ -92,7 +93,7 @@ export function PostImage({ text, projectId, brand }: { text: string; projectId?
       const d = await res.json()
       if (!res.ok || !d.hook) throw new Error(d.error || 'Не удалось')
       setHeadline(d.hook); setImg(null)
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Ошибка') }
+    } catch (e) { toast.error(friendlyError(e, 'Ошибка')) }
     finally { setHooking(false) }
   }
 

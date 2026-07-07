@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { friendlyError } from '@/lib/friendlyError'
 import { Sparkles, Loader2, Copy, Check, User, FolderOpen, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { ChatComposer } from '@/components/ui/ChatComposer'
@@ -111,7 +112,7 @@ export default function CreatePage() {
       setMessages(prev => [...prev, { role: 'assistant', content: acc }]); setStreaming('')
     } catch (err) {
       if ((err as Error).name === 'AbortError') { if (acc.trim()) setMessages(prev => [...prev, { role: 'assistant', content: acc }]) }
-      else toast.error(err instanceof Error ? err.message : 'Ошибка')
+      else toast.error(friendlyError(err, 'Ошибка'))
       setStreaming('')
     } finally { setLoading(false); abortRef.current = null }
   // eslint-disable-next-line react-hooks/exhaustive-deps

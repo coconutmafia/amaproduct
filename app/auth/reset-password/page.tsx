@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Sparkles, Loader2, Eye, EyeOff, CheckCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
+import { authErrorMessage } from '@/lib/friendlyError'
 
 export default function ResetPasswordPage() {
   const router = useRouter()
@@ -37,7 +38,7 @@ export default function ResetPasswordPage() {
     const supabase = createClient()
     const { error } = await supabase.auth.updateUser({ password })
     if (error) {
-      toast.error(error.message)
+      toast.error(authErrorMessage(error))
     } else {
       setDone(true)
       setTimeout(() => router.push('/dashboard'), 2500)

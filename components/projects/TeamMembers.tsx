@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { friendlyError } from '@/lib/friendlyError'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -50,7 +51,7 @@ export function TeamMembers({ projectId, ownerEmail, seatLimit, initialMembers }
       setEmail('')
       toast.success(data.member.status === 'active' ? 'Добавлен(а) в проект' : 'Приглашение отправлено — активируется, когда человек зайдёт в аккаунт с этим email')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка')
+      toast.error(friendlyError(e, 'Ошибка'))
     } finally {
       setInviting(false)
     }
@@ -67,7 +68,7 @@ export function TeamMembers({ projectId, ownerEmail, seatLimit, initialMembers }
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error ?? 'Ошибка') }
       setMembers(prev => prev.map(m => (m.id === memberId ? { ...m, role: newRole } : m)))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка')
+      toast.error(friendlyError(e, 'Ошибка'))
     } finally {
       setBusyId(null)
     }
@@ -80,7 +81,7 @@ export function TeamMembers({ projectId, ownerEmail, seatLimit, initialMembers }
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error ?? 'Ошибка') }
       setMembers(prev => prev.filter(m => m.id !== memberId))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка')
+      toast.error(friendlyError(e, 'Ошибка'))
     } finally {
       setBusyId(null)
     }

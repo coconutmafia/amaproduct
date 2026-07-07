@@ -11,6 +11,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { ArrowLeft, Upload, Loader2, Sparkles, Download, Trash2, Wand2 } from 'lucide-react'
 import { downscaleImage } from '@/lib/downscaleImage'
+import { friendlyError } from '@/lib/friendlyError'
 import { analyzePhotoBands, pickPlacement, type PhotoBands } from '@/lib/photoBands'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
@@ -147,7 +148,7 @@ export default function StoriesPage() {
       if (Array.isArray(d.sets)) setSets(d.sets)
       toast.success('Серия сохранена в «Мои оформленные сторис»')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Не удалось сохранить серию')
+      toast.error(friendlyError(e, 'Не удалось сохранить серию'))
     } finally { setSavingSet(false) }
   }
 
@@ -184,7 +185,7 @@ export default function StoriesPage() {
       toast.success('Правка применена — пересохраняю серию')
       void saveSet(frames, blobs, savedSetId)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Не удалось применить правку')
+      toast.error(friendlyError(e, 'Не удалось применить правку'))
     } finally { setEditing(false) }
   }
 
@@ -209,7 +210,7 @@ export default function StoriesPage() {
       setSavedSetId(set.id)
       toast.success('Серия открыта — панель правок под кадрами (можно голосом)')
       window.scrollTo({ top: 0, behavior: 'smooth' })
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось открыть серию') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось открыть серию')) }
     finally { setSetBusyId(null) }
   }
 
@@ -236,7 +237,7 @@ export default function StoriesPage() {
       setSets((prev) => prev.filter((s) => s.id !== set.id))
       if (savedSetId === set.id) setSavedSetId(null)
       toast.success('Серия удалена')
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось удалить') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось удалить')) }
     finally { setSetBusyId(null) }
   }
 
@@ -259,7 +260,7 @@ export default function StoriesPage() {
         all.push(...(data.urls || []))
       }
       setPhotos((p) => [...p, ...all].slice(0, 8))
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось загрузить') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось загрузить')) }
     finally { setUploading(false) }
   }
 
@@ -328,7 +329,7 @@ export default function StoriesPage() {
       // Auto-save into the gallery (new set per build) — nothing gets lost
       setSavedSetId(null)
       void saveSet(frames, blobs, null)
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось собрать сторис') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось собрать сторис')) }
     finally { setBusy(false) }
   }
 

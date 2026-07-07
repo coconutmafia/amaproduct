@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Loader2, Plus, Trash2, Film, Eye, Heart, MessageCircle, Sparkles } from 'lucide-react'
 import { pollJob } from '@/lib/jobs/pollJob'
+import { friendlyError } from '@/lib/friendlyError'
 
 interface Reel {
   id: string
@@ -67,7 +68,7 @@ export function ViralReelsManager({ scope, projectId }: Props) {
       await pollJob(startBody.jobId)
       toast.dismiss(t); toast.success('Рилз разобран и добавлен')
       setUrl(''); setNichesInput(''); await load()
-    } catch (e) { toast.dismiss(t); toast.error(e instanceof Error ? e.message : 'Ошибка', { duration: 12000 }) }
+    } catch (e) { toast.dismiss(t); toast.error(friendlyError(e, 'Ошибка'), { duration: 12000 }) }
     finally { setAdding(false) }
   }
 
@@ -77,7 +78,7 @@ export function ViralReelsManager({ scope, projectId }: Props) {
       const res = await fetch(`/api/viral-reels?id=${id}`, { method: 'DELETE' })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
       setReels(prev => prev.filter(r => r.id !== id))
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Ошибка') }
+    } catch (e) { toast.error(friendlyError(e, 'Ошибка')) }
     finally { setBusyId(null) }
   }
 

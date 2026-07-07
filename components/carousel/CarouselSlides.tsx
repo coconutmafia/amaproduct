@@ -10,6 +10,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { downscaleImage } from '@/lib/downscaleImage'
+import { friendlyError } from '@/lib/friendlyError'
 
 type Dict = Record<string, unknown>
 
@@ -107,7 +108,7 @@ export function CarouselSlides({
       setSlidePhotos(next)
       const blob = await renderSlide(carousel, i, effBrand, next)
       setSlides((prev) => prev.map((s, j) => (j === i ? (URL.revokeObjectURL(s.url), { blob, url: URL.createObjectURL(blob) }) : s)))
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось')) }
     finally { setPhotoBusy(null) }
   }
 
@@ -120,7 +121,7 @@ export function CarouselSlides({
       setSlidePhotos(next)
       const blob = await renderSlide(carousel, i, effBrand, next)
       setSlides((prev) => prev.map((s, j) => (j === i ? (URL.revokeObjectURL(s.url), { blob, url: URL.createObjectURL(blob) }) : s)))
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось')) }
     finally { setPhotoBusy(null) }
   }
 
@@ -184,7 +185,7 @@ export function CarouselSlides({
       await generate(d.carousel)
       toast.success('Правка применена')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Не удалось применить правку')
+      toast.error(friendlyError(e, 'Не удалось применить правку'))
     } finally { setEditing(false) }
   }
 

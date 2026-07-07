@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Sparkles, Globe, Loader2, Gift, Mail, CheckCircle2, Bot, Zap, Target } from 'lucide-react'
 import { toast } from 'sonner'
 import { REFERRAL_REWARDS } from '@/lib/generations-config'
+import { authErrorMessage } from '@/lib/friendlyError'
 
 function RegisterForm() {
   const router = useRouter()
@@ -46,7 +47,7 @@ function RegisterForm() {
     })
 
     if (error) {
-      toast.error(error.message)
+      toast.error(authErrorMessage(error))
       setLoading(false)
       return
     }
@@ -77,7 +78,7 @@ function RegisterForm() {
       provider: 'google',
       options: { redirectTo: cb },
     })
-    if (error) toast.error(error.message)
+    if (error) toast.error(authErrorMessage(error))
   }
 
   // ── AFTER SUBMIT: "Check your email" screen ──────────────────────

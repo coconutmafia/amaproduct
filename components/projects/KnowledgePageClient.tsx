@@ -15,6 +15,7 @@ import { CompetitorAnalysis } from '@/components/projects/CompetitorAnalysis'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { toast } from 'sonner'
 import Link from 'next/link'
+import { friendlyError } from '@/lib/friendlyError'
 import { computeCompleteness } from '@/lib/completeness'
 import { audienceResearchToAoa, meaningsMapToAoa } from '@/lib/researchTables'
 import { downloadXlsx } from '@/lib/utils/xlsxTable'
@@ -448,7 +449,7 @@ function ImportMaterialsDialog({
       onSuccess(data.materials)
       onClose()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка импорта')
+      toast.error(friendlyError(e, 'Ошибка импорта'))
     } finally {
       setImporting(false)
     }
@@ -780,7 +781,7 @@ function BlogLinesDialog({ projectId, open, onClose, onSuccess, initialContent, 
       }
       onClose()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка сохранения')
+      toast.error(friendlyError(e, 'Ошибка сохранения'))
     } finally {
       setSaving(false)
     }
@@ -1134,7 +1135,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
       reloadKeepScroll()
     } catch (err) {
       toast.dismiss(loadingToast)
-      toast.error(err instanceof Error ? err.message : 'Ошибка генерации карты смыслов', { duration: 60000 })
+      toast.error(friendlyError(err, 'Ошибка генерации карты смыслов'), { duration: 60000 })
     } finally {
       setGeneratingMeanings(false)
     }

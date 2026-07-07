@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { friendlyError } from '@/lib/friendlyError'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -181,7 +182,7 @@ export function ProjectWizard() {
       if (data.content_goals && !contentGoals.trim()) setContentGoals(data.content_goals)
       toast.success(`Данные заполнены из ${data.platform ?? 'профиля'} — проверь и отредактируй`)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Не удалось получить данные профиля')
+      toast.error(friendlyError(err, 'Не удалось получить данные профиля'))
     } finally {
       setAutofillLoading(false)
     }
@@ -207,7 +208,7 @@ export function ProjectWizard() {
       if (data.description && !products[i].description.trim()) updateProduct(i, 'description', data.description)
       toast.success('Описание заполнено из страницы продажи')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Не удалось загрузить страницу')
+      toast.error(friendlyError(err, 'Не удалось загрузить страницу'))
     } finally {
       setProductFillLoading(prev => ({ ...prev, [i]: false }))
     }

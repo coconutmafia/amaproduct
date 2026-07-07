@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, use } from 'react'
 import { createClient as createSupabaseClient } from '@/lib/supabase/client'
+import { friendlyError } from '@/lib/friendlyError'
 import Link from 'next/link'
 import { ArrowLeft, Upload, Mic, Loader2, ChevronDown, ChevronUp, Sparkles, Download, CheckCircle2, Users, FileText, Save, Plus, X, Circle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -298,7 +299,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       const fl = e.dataTransfer.files
       if (fl && fl.length > 0) handleFiles(fl)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка при перетаскивании файлов')
+      toast.error(friendlyError(err, 'Ошибка при перетаскивании файлов'))
     }
   }, [handleFiles])
 
@@ -343,7 +344,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       setStep('table1')
       setExpandedRespondent(allRespondents[0]?.id ?? null)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка анализа')
+      toast.error(friendlyError(err, 'Ошибка анализа'))
       setAnalysisBatch(null)
       setStep('transcribed')
     }
@@ -363,7 +364,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       if (!res.ok || data.error) throw new Error(data.error ?? 'Save failed')
       setStep('saved')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ошибка сохранения')
+      toast.error(friendlyError(err, 'Ошибка сохранения'))
       setStep('table1')
     }
   }, [id, transcription, table1])

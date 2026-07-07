@@ -4,6 +4,7 @@
 // competitor Instagram data and lets the owner preview + download it as XLSX.
 import { useState } from 'react'
 import { downloadXlsx } from '@/lib/utils/xlsxTable'
+import { friendlyError } from '@/lib/friendlyError'
 import { toast } from 'sonner'
 import { Search, Loader2, Download } from 'lucide-react'
 
@@ -42,7 +43,7 @@ export function CompetitorAnalysis({ projectId }: { projectId: string }) {
       setRows((data.competitors || []) as Row[])
       setOpen(true)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Не удалось проанализировать')
+      toast.error(friendlyError(e, 'Не удалось проанализировать'))
     } finally {
       setBusy(false)
     }

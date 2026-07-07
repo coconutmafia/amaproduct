@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
+import { friendlyError } from '@/lib/friendlyError'
 import { GitBranch, Loader2, Download } from 'lucide-react'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 
@@ -39,7 +40,7 @@ export function SchemeStory({ projectId }: { projectId: string }) {
       const blob = await res.blob()
       setUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob) })
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка')
+      toast.error(friendlyError(e, 'Ошибка'))
     } finally {
       setBusy(false)
     }

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { friendlyError } from '@/lib/friendlyError'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -87,7 +88,7 @@ export function SettingsClient({ userId, currentAiName }: Props) {
       setPromoCode('')
       router.refresh()
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Не удалось применить код')
+      toast.error(friendlyError(e, 'Не удалось применить код'))
     } finally {
       setApplyingPromo(false)
     }
@@ -113,7 +114,7 @@ export function SettingsClient({ userId, currentAiName }: Props) {
       toast.success('Аккаунт удалён')
       router.push('/')
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка удаления')
+      toast.error(friendlyError(e, 'Ошибка удаления'))
       setDeleting(false)
     }
   }

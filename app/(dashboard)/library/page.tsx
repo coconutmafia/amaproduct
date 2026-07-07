@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { friendlyError } from '@/lib/friendlyError'
 import { Bookmark, Copy, Check, Trash2, Loader2, Plus, X, Pencil, Palette } from 'lucide-react'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { toast } from 'sonner'
@@ -93,7 +94,7 @@ export default function LibraryPage() {
       toast.success(addProject ? 'Добавлено в Готовое — AI этого проекта будет учиться на нём' : 'Добавлено в Готовое')
       setAddBody(''); setAdding(false)
       load()
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось')) }
     finally { setSavingAdd(false) }
   }
 

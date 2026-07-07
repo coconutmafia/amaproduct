@@ -3,6 +3,7 @@
 import { use, useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { friendlyError } from '@/lib/friendlyError'
 import { ArrowLeft, TrendingUp, Plus, Trash2, Loader2, Sparkles, Wand2, Check, Globe, Users, Film } from 'lucide-react'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { ViralReelsManager } from '@/components/projects/ViralReelsManager'
@@ -101,7 +102,7 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
       setTitle(''); setDescription(''); setExample(''); setFormatType('any')
       toast.success('Добавлено в «Мои тренды» — AI вплетёт его в контент-план')
       load(); highlightMine()
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось')) }
     finally { setSaving(false) }
   }
 
@@ -128,7 +129,7 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
       setCandidates(data.trends ?? [])
       setGrounded(data.grounded ?? {})
       if ((data.trends ?? []).length === 0) toast.message('Пока ничего не подобралось — попробуй ещё раз')
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось')) }
     finally { setSuggesting(false) }
   }
 
@@ -155,7 +156,7 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
       setCandidates(prev => prev.filter((_, i) => !picked.has(i)))
       setPicked(new Set())
       load(); highlightMine()
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось добавить') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось добавить')) }
     finally { setAdopting(false) }
   }
 

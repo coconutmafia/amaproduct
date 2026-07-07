@@ -11,6 +11,7 @@ import {
   Users, Gift, Copy, Share2, CheckCircle, Clock,
   Zap, ChevronRight, Sparkles, TrendingUp,
 } from 'lucide-react'
+import { friendlyError } from '@/lib/friendlyError'
 import { REFERRAL_REWARDS, PLAN_CONFIG } from '@/lib/generations-config'
 import type { SubscriptionPlan } from '@/lib/generations-config'
 
@@ -84,7 +85,7 @@ export default function ReferralPage() {
       setRefInput('')
       load()
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка применения кода')
+      toast.error(friendlyError(e, 'Ошибка применения кода'))
     } finally {
       setApplyingRef(false)
     }

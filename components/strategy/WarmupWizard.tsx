@@ -10,6 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
+import { friendlyError } from '@/lib/friendlyError'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import {
   ChevronLeft,
@@ -575,7 +576,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       setPlanSaved(true)
       onComplete?.(planId)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка создания плана')
+      toast.error(friendlyError(e, 'Ошибка создания плана'))
     } finally {
       setLoading(false)
     }

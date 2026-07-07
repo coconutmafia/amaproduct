@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Sparkles, Loader2, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { authErrorMessage } from '@/lib/friendlyError'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -25,7 +26,7 @@ export default function ForgotPasswordPage() {
       redirectTo: `${window.location.origin}/auth/reset-password`,
     })
     if (error) {
-      toast.error(error.message)
+      toast.error(authErrorMessage(error))
     } else {
       setSent(true)
     }

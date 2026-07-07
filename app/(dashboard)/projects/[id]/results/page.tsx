@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, use } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, ArrowLeftRight, Loader2, TrendingUp, Heart, Eye, Bookmark, Check } from 'lucide-react'
 import { toast } from 'sonner'
+import { friendlyError } from '@/lib/friendlyError'
 
 interface Item {
   id: string
@@ -60,7 +61,7 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
       if (!res.ok) throw new Error(data.error)
       setItems(prev => prev.map(x => (x.id === item.id && x.source === item.source) ? { ...x, reach: parseInt(e.reach) || 0, reactions: parseInt(e.reactions) || 0, saves: parseInt(e.saves) || 0 } : x))
       toast.success('Результаты сохранены — AI учтёт что зашло')
-    } catch (err) { toast.error(err instanceof Error ? err.message : 'Ошибка') }
+    } catch (err) { toast.error(friendlyError(err, 'Ошибка')) }
     finally { setSavingId(null) }
   }
 

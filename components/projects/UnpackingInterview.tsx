@@ -7,6 +7,7 @@ import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
+import { friendlyError } from '@/lib/friendlyError'
 import {
   ChevronRight, ChevronLeft, CheckCircle2,
   Loader2, Download, Sparkles, MessageSquare,
@@ -170,7 +171,7 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
       onSuccess()
       onClose()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка')
+      toast.error(friendlyError(e, 'Ошибка'))
     } finally {
       setIsSaving(false)
     }

@@ -8,6 +8,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import { friendlyError } from '@/lib/friendlyError'
 import { Clapperboard, Loader2, Download } from 'lucide-react'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
@@ -40,7 +41,7 @@ export function VideoStory({ projectId }: { projectId: string }) {
       if (error) throw new Error('Сеть оборвалась при загрузке видео — попробуй ещё раз')
       setVidPath(d.path); setVidName(f.name)
       toast.success('Видео загружено — впиши текст и жми «Наложить текст»')
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось загрузить видео') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось загрузить видео')) }
     finally { setVidUploading(false) }
   }
 
@@ -58,7 +59,7 @@ export function VideoStory({ projectId }: { projectId: string }) {
       setVidUrl(d.url)
       setVidPath(null) // source consumed server-side
       toast.success('Готово — видео с твоим текстом ниже')
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось обработать видео') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось обработать видео')) }
     finally { setVidBusy(false) }
   }
 

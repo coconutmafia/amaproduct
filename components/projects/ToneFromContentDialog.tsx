@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Sparkles, Loader2, Info, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
+import { friendlyError } from '@/lib/friendlyError'
 
 interface Props {
   projectId: string
@@ -72,7 +73,7 @@ export function ToneFromContentDialog({ projectId, open, onClose, onSuccess }: P
       onClose()
     } catch (err) {
       toast.dismiss(loadingToast)
-      toast.error(err instanceof Error ? err.message : 'Ошибка извлечения ToV', { duration: 30000 })
+      toast.error(friendlyError(err, 'Ошибка извлечения ToV'), { duration: 30000 })
     } finally {
       setSubmitting(false)
     }

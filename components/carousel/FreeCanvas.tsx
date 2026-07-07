@@ -12,6 +12,7 @@
 
 import { useRef, useState, useEffect } from 'react'
 import { toast } from 'sonner'
+import { friendlyError } from '@/lib/friendlyError'
 import {
   Upload, Loader2, Plus, Trash2, Copy, RotateCw,
   ArrowUpRight, Spline, Hash, Smile, Image as ImageIcon, Sparkles,
@@ -230,7 +231,7 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
     if (!f) return
     setUploadingPhoto(true)
     try { update({ photoUrl: await uploadOne(f) }) }
-    catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось загрузить фото') }
+    catch (e) { toast.error(friendlyError(e, 'Не удалось загрузить фото')) }
     finally { setUploadingPhoto(false) }
   }
 
@@ -242,7 +243,7 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
     try {
       const url = await uploadOne(f)
       update(which === 'top' ? { photoTop: url } : { photoBottom: url })
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось загрузить фото') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось загрузить фото')) }
     finally { setUploadingHalf(null) }
   }
 
@@ -265,7 +266,7 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
         xPct: 0.3, yPct: 0.38, widthPct: 0.42, size: 56, color: '#FFFFFF', plate: false, align: 'center', rotation: 0,
       }])
       setSelected(id)
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось загрузить картинку') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось загрузить картинку')) }
     finally { setUploadingSticker(false) }
   }
 
@@ -294,7 +295,7 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
         toast.success('Картинка добавлена — двигай и масштабируй')
       }
       setShowAi(false); setAiPrompt('')
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Ошибка') }
+    } catch (e) { toast.error(friendlyError(e, 'Ошибка')) }
     finally { setAiBusy(false) }
   }
 

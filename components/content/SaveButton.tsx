@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Bookmark, BookmarkCheck, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { friendlyError } from '@/lib/friendlyError'
 import { saveToLibrary } from '@/lib/saveContent'
 
 interface Props {
@@ -29,7 +30,7 @@ export function SaveButton({ body, title, contentType, projectId, className }: P
         : 'Сохранено в «Готовое»')
     } catch (e) {
       setState('idle')
-      toast.error(e instanceof Error ? e.message : 'Не удалось сохранить')
+      toast.error(friendlyError(e, 'Не удалось сохранить'))
     }
   }
 

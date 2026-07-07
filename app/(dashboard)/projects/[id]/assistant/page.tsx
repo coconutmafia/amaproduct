@@ -11,6 +11,7 @@ import { PostImage } from '@/components/carousel/PostImage'
 import { StoryDesignButton } from '@/components/carousel/StoryDesignButton'
 import { VoiceRuleButton, maybeSuggestRule } from '@/components/chat/VoiceRuleButton'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
+import { friendlyError } from '@/lib/friendlyError'
 import { useChatPin } from '@/lib/useChatPin'
 import { cleanMarkdown } from '@/lib/cleanText'
 import { isReelsScript } from '@/lib/contentKind'
@@ -62,7 +63,7 @@ function SaveToPlanButton({ projectId, ctx, text }: { projectId: string; ctx: Ge
       })
       if (!res.ok) { const j = await res.json().catch(() => ({})) as { error?: string }; throw new Error(j.error || 'Ошибка') }
       setState('saved'); toast.success('Сохранено в контент-план ✓')
-    } catch (e) { setState('idle'); toast.error(e instanceof Error ? e.message : 'Не удалось') }
+    } catch (e) { setState('idle'); toast.error(friendlyError(e, 'Не удалось')) }
   }
   return (
     <button onClick={save} disabled={state !== 'idle'}
@@ -139,7 +140,7 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
         // user stopped — keep whatever streamed
         if (acc.trim()) setMessages(prev => [...prev, { role: 'assistant', content: acc }])
       } else {
-        toast.error(err instanceof Error ? err.message : 'Ошибка ассистента')
+        toast.error(friendlyError(err, 'Ошибка ассистента'))
       }
       setStreaming('')
     } finally {

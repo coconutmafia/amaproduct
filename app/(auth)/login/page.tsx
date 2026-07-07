@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { authErrorMessage } from '@/lib/friendlyError'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,7 +25,7 @@ export default function LoginPage() {
     const supabase = createClient()
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
-      toast.error(error.message)
+      toast.error(authErrorMessage(error))
     } else {
       router.push('/dashboard')
       router.refresh()
@@ -39,7 +40,7 @@ export default function LoginPage() {
       provider: 'google',
       options: { redirectTo: `${window.location.origin}/auth/callback` },
     })
-    if (error) toast.error(error.message)
+    if (error) toast.error(authErrorMessage(error))
     setLoadingGoogle(false)
   }
 

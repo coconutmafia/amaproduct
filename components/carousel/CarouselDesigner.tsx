@@ -8,6 +8,7 @@
 
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
+import { friendlyError } from '@/lib/friendlyError'
 import { Loader2, Plus, Copy, Trash2, GalleryHorizontalEnd, Images } from 'lucide-react'
 import {
   FreeCanvas, blankSlide, slideHasBg, exportBrandFor, buildFreeSlide,
@@ -83,7 +84,7 @@ export function CarouselDesigner({ projectId }: { projectId: string }) {
       }
       setResults(blobs.map((blob) => ({ blob, url: URL.createObjectURL(blob) })))
       toast.success('Карусель собрана')
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Ошибка сборки') }
+    } catch (e) { toast.error(friendlyError(e, 'Ошибка сборки')) }
     finally { setBuilding(false) }
   }
 
@@ -95,7 +96,7 @@ export function CarouselDesigner({ projectId }: { projectId: string }) {
       const zip = new JSZip()
       results.forEach((r, i) => zip.file(`slide-${String(i + 1).padStart(2, '0')}.png`, r.blob))
       download(await zip.generateAsync({ type: 'blob' }), 'carousel.zip')
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось собрать ZIP') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось собрать ZIP')) }
     finally { setZipping(false) }
   }
 

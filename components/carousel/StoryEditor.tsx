@@ -7,6 +7,7 @@
 
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
+import { friendlyError } from '@/lib/friendlyError'
 import { Loader2, Download, Type } from 'lucide-react'
 import {
   FreeCanvas, blankSlide, slideHasBg, exportBrandFor, buildFreeSlide,
@@ -48,7 +49,7 @@ export function StoryEditor({ projectId }: { projectId: string }) {
       if (!res.ok) throw new Error('Не удалось собрать картинку — попробуй ещё раз')
       const blob = await res.blob()
       setResultUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob) })
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Ошибка') }
+    } catch (e) { toast.error(friendlyError(e, 'Ошибка')) }
     finally { setExporting(false) }
   }
 

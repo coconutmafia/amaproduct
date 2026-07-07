@@ -14,6 +14,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { Loader2, Upload, Sparkles, ArrowLeft, ImageIcon, CheckCircle2, X } from 'lucide-react'
 import { downscaleImage } from '@/lib/downscaleImage'
+import { friendlyError } from '@/lib/friendlyError'
 import { FONTS, FONT_KEYS } from '@/lib/fonts'
 
 type BgStyle = 'paper' | 'solid' | 'gradient'
@@ -178,7 +179,7 @@ export default function BrandPage() {
       if (forStory) setStorySamples(merged); else setSamples(merged)
       toast.success('Примеры загружены — распознаю твой стиль (~30-60 сек)')
       void analyze(forStory, merged)
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось загрузить') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось загрузить')) }
     finally { setBusy(false) }
   }
 
@@ -197,7 +198,7 @@ export default function BrandPage() {
       toast.success('Фото удалено')
     } catch (e) {
       setList(prev)
-      toast.error(e instanceof Error ? e.message : 'Не удалось удалить')
+      toast.error(friendlyError(e, 'Не удалось удалить'))
     }
   }
 
@@ -228,7 +229,7 @@ export default function BrandPage() {
         if (d.kit?.summary) setKitSummary(d.kit.summary)
         toast.success('Стиль распознан и сохранён — смотри превью')
       }
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось распознать') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось распознать')) }
     finally { setBusy(false) }
   }
 
@@ -242,7 +243,7 @@ export default function BrandPage() {
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Ошибка')
       toast.success('Стиль постов сохранён')
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось сохранить') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось сохранить')) }
     finally { setSaving(false) }
   }
 
@@ -258,7 +259,7 @@ export default function BrandPage() {
       if (!res.ok) throw new Error(d.error || 'Ошибка')
       setHasStoryStyle(true)
       toast.success('Стиль сториз сохранён')
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Не удалось сохранить') }
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось сохранить')) }
     finally { setStorySaving(false) }
   }
 

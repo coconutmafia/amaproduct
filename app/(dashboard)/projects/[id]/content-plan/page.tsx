@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { friendlyError } from '@/lib/friendlyError'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, Sparkles, AlertCircle, Zap, HelpCircle, ChevronDown, ChevronUp } from 'lucide-react'
@@ -343,7 +344,7 @@ export default function ContentPlanPage() {
       toast.success('План недели готов и сохранён! Кликай на тип контента чтобы сгенерировать')
     } catch (e) {
       toast.dismiss(loadingToast)
-      toast.error(e instanceof Error ? e.message : 'Ошибка')
+      toast.error(friendlyError(e, 'Ошибка'))
     }
   }, [id, days, persistPlan])
 
@@ -424,7 +425,7 @@ export default function ContentPlanPage() {
       await loadPlanData(1)
       setWeek(1)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка')
+      toast.error(friendlyError(e, 'Ошибка'))
     } finally {
       setGeneratingQuickPlan(false)
     }
