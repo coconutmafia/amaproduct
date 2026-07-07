@@ -9,6 +9,25 @@ import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import type { InterviewTable, Respondent } from '@/app/api/ai/research-analyze/route'
 
+// Понятное сообщение об ошибке загрузки/расшифровки аудио — вместо сырого
+// «The object exceeded the maximum allowed size» и т.п. (тестер не понимает,
+// что не так). Показывается целиком, отдельной строкой под именем файла.
+function friendlyUploadError(raw: string): string {
+  const m = raw || ''
+  if (/exceeded the maximum allowed size|maximum allowed size|payload too large|entity too large|\b413\b/i.test(m)) {
+    return 'Файл слишком большой — не поместился в лимит загрузки. Разбей интервью на части по 30–40 минут и загрузи по отдельности (или сожми запись в mp3 с меньшим битрейтом).'
+  }
+  if (/mime|not allowed|unsupported|invalid.*type/i.test(m)) {
+    return 'Формат файла не поддерживается. Загрузи запись в mp3, m4a или wav.'
+  }
+  if (/failed to fetch|networkerror|network error|timeout|timed out|aborted|econn/i.test(m)) {
+    return 'Не удалось загрузить — похоже, проблема со связью. Проверь интернет и попробуй ещё раз.'
+  }
+  if (/сессия истекла/i.test(m)) return m
+  // Русское осмысленное сообщение сервера показываем как есть, иначе — общий текст.
+  return friendlyError(m, 'Не удалось обработать файл. Попробуй ещё раз или загрузи в другом формате (mp3/m4a).')
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Step = 'upload' | 'transcribing' | 'transcribed' | 'analyzing1' | 'table1' | 'saving' | 'saved'
@@ -452,28 +471,35 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                   {fileQueue.length > 0 && (
                     <div className="space-y-1.5 w-full">
                       {fileQueue.map((f, i) => (
-                        <div key={i} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs transition-colors ${
+                        <div key={i} className={`px-3 py-2 rounded-lg border text-xs transition-colors text-left ${
                           f.status === 'done'        ? 'border-green-200  bg-green-50' :
                           f.status === 'error'       ? 'border-red-200    bg-red-50' :
                           f.status === 'uploading' ||
                           f.status === 'transcribing'? 'border-[#3A8A48]/25 bg-[#3A8A48]/5' :
                           'border-[#ECECEC] bg-white/60'
                         }`}>
-                          {f.status === 'uploading' || f.status === 'transcribing'
-                            ? <Loader2 className="h-3.5 w-3.5 animate-spin text-[#3A8A48] shrink-0" />
-                            : f.status === 'done'
-                            ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />
-                            : f.status === 'error'
-                            ? <X className="h-3.5 w-3.5 text-red-500 shrink-0" />
-                            : <Circle className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />}
-                          <span className="flex-1 truncate font-medium text-foreground">{f.name}</span>
-                          <span className={`shrink-0 text-[11px] ${f.status === 'error' ? 'text-red-600' : 'text-muted-foreground'}`}>
-                            {f.status === 'uploading'    ? 'Загружаю...' :
-                             f.status === 'transcribing' ? (f.totalChunks && f.totalChunks > 1 ? `Часть ${f.chunkIndex}/${f.totalChunks}` : 'Расшифровываю...') :
-                             f.status === 'done'         ? 'Готово ✓' :
-                             f.status === 'error'        ? (f.error?.slice(0, 30) ?? 'Ошибка') :
-                             'Ожидание...'}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            {f.status === 'uploading' || f.status === 'transcribing'
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin text-[#3A8A48] shrink-0" />
+                              : f.status === 'done'
+                              ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                              : f.status === 'error'
+                              ? <X className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                              : <Circle className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />}
+                            <span className="flex-1 truncate font-medium text-foreground">{f.name}</span>
+                            <span className={`shrink-0 text-[11px] ${f.status === 'error' ? 'text-red-600' : 'text-muted-foreground'}`}>
+                              {f.status === 'uploading'    ? 'Загружаю...' :
+                               f.status === 'transcribing' ? (f.totalChunks && f.totalChunks > 1 ? `Часть ${f.chunkIndex}/${f.totalChunks}` : 'Расшифровываю...') :
+                               f.status === 'done'         ? 'Готово ✓' :
+                               f.status === 'error'        ? 'Ошибка' :
+                               'Ожидание...'}
+                            </span>
+                          </div>
+                          {f.status === 'error' && f.error && (
+                            <p className="mt-1.5 text-[11px] text-red-600 leading-snug break-words">
+                              {friendlyUploadError(f.error)}
+                            </p>
+                          )}
                         </div>
                       ))}
                     </div>
