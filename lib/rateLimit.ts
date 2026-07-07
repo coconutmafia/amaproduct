@@ -24,6 +24,7 @@ const LIMITS: Record<string, { limit: number; windowSeconds: number }> = {
   autofill:       { limit: 10,  windowSeconds: HOUR },
   'scrape-product': { limit: 20, windowSeconds: HOUR },
   'blog-audit':   { limit: 20,  windowSeconds: HOUR }, // 1 Claude call, no Apify
+  'blog-audit-standalone': { limit: 10, windowSeconds: HOUR }, // Apify-скрейп + Claude
 }
 
 export interface RateLimitResult {

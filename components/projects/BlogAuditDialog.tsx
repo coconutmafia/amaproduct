@@ -62,6 +62,92 @@ function BlockCard({ block }: { block: AuditBlockResult }) {
   )
 }
 
+// Чистый рендер результата — переиспользуется проектным аудитом (по материалу)
+// и автономным (по введённому @хендлу на главной). onRerun опционален.
+export function BlogAuditScorecard({ result, onRerun, rerunning }: {
+  result: AuditResult; onRerun?: () => void; rerunning?: boolean
+}) {
+  const color = bandColor(result.score100)
+  return (
+    <div className="space-y-5">
+      {/* Хедлайн-балл */}
+      <div className="flex items-center gap-4 rounded-2xl border border-border bg-card/50 p-5">
+        <div className="text-center shrink-0">
+          <div className={`text-4xl font-black ${color.text}`}>{result.score10.toFixed(1)}</div>
+          <div className="text-xs text-muted-foreground">из 10</div>
+        </div>
+        <div className="space-y-1.5 flex-1">
+          <p className="font-bold text-sm text-foreground leading-snug">{result.diagnosis}</p>
+          <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+            <div className={`h-full rounded-full ${color.bg}`} style={{ width: `${result.score100}%` }} />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {result.score100}/100 по видимой части профиля (@{result.handle})
+          </p>
+        </div>
+      </div>
+
+      {result.summary && (
+        <p className="text-sm text-foreground/90 leading-relaxed bg-muted/40 rounded-xl p-4">{result.summary}</p>
+      )}
+
+      {result.topGaps.length > 0 && (
+        <div className="rounded-xl border border-amber-300/50 bg-amber-50/50 dark:bg-amber-950/20 p-4 space-y-2">
+          <h4 className="font-bold text-sm flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
+            <AlertCircle className="h-4 w-4" /> Что усилить в первую очередь
+          </h4>
+          <ul className="space-y-1.5">
+            {result.topGaps.map((g, i) => (
+              <li key={i} className="flex gap-2 text-xs text-foreground/90">
+                <ArrowRight className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
+                <span>{g}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        <h4 className="font-bold text-sm text-foreground flex items-center gap-1.5">
+          <CheckCircle2 className="h-4 w-4 text-primary" /> Разбор по блокам
+        </h4>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {result.blocks.map(b => <BlockCard key={b.key} block={b} />)}
+        </div>
+      </div>
+
+      {result.notAssessableCount > 0 && (
+        <p className="text-xs text-muted-foreground flex items-start gap-1.5">
+          <Lock className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          {result.notAssessableCount} пунктов (актуальные, визуал, куда ведёт ссылка) не видны из текста
+          профиля — их разберём вручную на консультации.
+        </p>
+      )}
+
+      <div className="rounded-2xl gradient-accent p-5 text-white text-center space-y-2">
+        <p className="font-bold text-base">Хочешь полную стратегию по блогу?</p>
+        <p className="text-sm text-white/90 leading-snug">
+          На бесплатной консультации маркетолог разберёт актуальные, визуал и воронку и покажет, как
+          привести блог в порядок, чтобы он продавал.
+        </p>
+        <a href={CONSULT_URL} target="_blank" rel="noopener noreferrer" className="inline-block pt-1">
+          <Button className="bg-white text-[#D44E7E] hover:bg-white/90 border-0 font-bold">
+            Записаться на бесплатную консультацию
+            <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
+        </a>
+      </div>
+
+      {onRerun && (
+        <Button variant="outline" onClick={onRerun} disabled={rerunning} className="w-full">
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Перепроверить
+        </Button>
+      )}
+    </div>
+  )
+}
+
 // Ядро диагностики (без обёртки) — используется и в диалоге (кнопка в
 // «Материалах»), и на отдельной странице /blog-audit (вход с дашборда проекта).
 export function BlogAuditPanel({ projectId }: { projectId: string }) {
@@ -101,8 +187,6 @@ export function BlogAuditPanel({ projectId }: { projectId: string }) {
     }
   }, [projectId])
 
-  const color = result ? bandColor(result.score100) : null
-
   if (fetching) {
     return (
       <div className="flex items-center justify-center py-16 text-muted-foreground">
@@ -138,85 +222,7 @@ export function BlogAuditPanel({ projectId }: { projectId: string }) {
       </div>
     )
   }
-  return (
-    <div className="space-y-5">
-      {/* Хедлайн-балл */}
-      <div className="flex items-center gap-4 rounded-2xl border border-border bg-card/50 p-5">
-        <div className="text-center shrink-0">
-          <div className={`text-4xl font-black ${color!.text}`}>{result.score10.toFixed(1)}</div>
-          <div className="text-xs text-muted-foreground">из 10</div>
-        </div>
-        <div className="space-y-1.5 flex-1">
-          <p className="font-bold text-sm text-foreground leading-snug">{result.diagnosis}</p>
-          <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-            <div className={`h-full rounded-full ${color!.bg}`} style={{ width: `${result.score100}%` }} />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {result.score100}/100 по видимой части профиля (@{result.handle})
-          </p>
-        </div>
-      </div>
-
-      {result.summary && (
-        <p className="text-sm text-foreground/90 leading-relaxed bg-muted/40 rounded-xl p-4">{result.summary}</p>
-      )}
-
-      {/* Что усилить в первую очередь */}
-      {result.topGaps.length > 0 && (
-        <div className="rounded-xl border border-amber-300/50 bg-amber-50/50 dark:bg-amber-950/20 p-4 space-y-2">
-          <h4 className="font-bold text-sm flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
-            <AlertCircle className="h-4 w-4" /> Что усилить в первую очередь
-          </h4>
-          <ul className="space-y-1.5">
-            {result.topGaps.map((g, i) => (
-              <li key={i} className="flex gap-2 text-xs text-foreground/90">
-                <ArrowRight className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
-                <span>{g}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Разбор по блокам */}
-      <div className="space-y-3">
-        <h4 className="font-bold text-sm text-foreground flex items-center gap-1.5">
-          <CheckCircle2 className="h-4 w-4 text-primary" /> Разбор по блокам
-        </h4>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {result.blocks.map(b => <BlockCard key={b.key} block={b} />)}
-        </div>
-      </div>
-
-      {result.notAssessableCount > 0 && (
-        <p className="text-xs text-muted-foreground flex items-start gap-1.5">
-          <Lock className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          {result.notAssessableCount} пунктов (актуальные, визуал, куда ведёт ссылка) не видны из текста
-          профиля — их разберём вручную на консультации.
-        </p>
-      )}
-
-      {/* CTA на консультацию */}
-      <div className="rounded-2xl gradient-accent p-5 text-white text-center space-y-2">
-        <p className="font-bold text-base">Хочешь полную стратегию по блогу?</p>
-        <p className="text-sm text-white/90 leading-snug">
-          На бесплатной консультации маркетолог разберёт актуальные, визуал и воронку и покажет, как
-          привести блог в порядок, чтобы он продавал.
-        </p>
-        <a href={CONSULT_URL} target="_blank" rel="noopener noreferrer" className="inline-block pt-1">
-          <Button className="bg-white text-[#D44E7E] hover:bg-white/90 border-0 font-bold">
-            Записаться на бесплатную консультацию
-            <ArrowRight className="h-4 w-4 ml-2" />
-          </Button>
-        </a>
-      </div>
-
-      <Button variant="outline" onClick={runAudit} disabled={loading} className="w-full">
-        <RefreshCw className="h-4 w-4 mr-2" />
-        Перепроверить
-      </Button>
-    </div>
-  )
+  return <BlogAuditScorecard result={result} onRerun={runAudit} rerunning={loading} />
 }
 
 export function BlogAuditDialog({ projectId, open, onClose }: Props) {

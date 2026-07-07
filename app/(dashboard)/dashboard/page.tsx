@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ProjectCard } from '@/components/projects/ProjectCard'
-import { Plus, FolderKanban, FileText, Sparkles, ArrowRight, Clock } from 'lucide-react'
+import { Plus, FolderKanban, FileText, Sparkles, ArrowRight, Clock, Gauge } from 'lucide-react'
 import { DashboardClient } from '@/components/dashboard/DashboardClient'
 
 function pluralize(n: number, one: string, few: string, many: string) {
@@ -75,6 +75,24 @@ export default async function DashboardPage() {
           </Link>
         </Button>
       </div>
+
+      {/* Диагностика блога — автономный вход (проект не нужен) */}
+      <Link href="/blog-audit" className="block group">
+        <Card className="border-0 gradient-accent text-white hover:opacity-95 transition-opacity cursor-pointer overflow-hidden">
+          <CardContent className="p-5 flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/20 shrink-0">
+              <Gauge className="h-6 w-6 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-base">Диагностика блога к продажам</p>
+              <p className="text-sm text-white/90 leading-snug">
+                Проверь любой Instagram по чек-листу — балл, диагноз и что усилить. Проект не нужен.
+              </p>
+            </div>
+            <ArrowRight className="h-5 w-5 text-white/90 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+          </CardContent>
+        </Card>
+      </Link>
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
