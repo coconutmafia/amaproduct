@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider } from '@/components/shared/ThemeProvider'
+import { InAppBrowserNotice } from '@/components/shared/InAppBrowserNotice'
 import { Toaster } from '@/components/ui/sonner'
 
 const inter = Inter({ subsets: ['latin', 'cyrillic'], variable: '--font-sans', display: 'swap', preload: false })
@@ -46,6 +47,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+          <InAppBrowserNotice />
           {children}
           <Toaster richColors position="top-right" />
         </ThemeProvider>
