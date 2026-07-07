@@ -68,6 +68,9 @@ export function BlogAuditScorecard({ result, onRerun, rerunning }: {
   result: AuditResult; onRerun?: () => void; rerunning?: boolean
 }) {
   const color = bandColor(result.score100)
+  // Блоки, где хоть один пункт не оценивался (для честной подписи внизу) — так
+  // список не врёт: если визуал оценён по картинкам, его тут уже НЕ будет.
+  const lockedBlocks = result.blocks.filter(b => b.items.some(it => !it.assessable)).map(b => b.title)
   return (
     <div className="space-y-5">
       {/* Хедлайн-балл */}
@@ -119,8 +122,9 @@ export function BlogAuditScorecard({ result, onRerun, rerunning }: {
       {result.notAssessableCount > 0 && (
         <p className="text-xs text-muted-foreground flex items-start gap-1.5">
           <Lock className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          {result.notAssessableCount} пунктов (актуальные, визуал, куда ведёт ссылка) не видны из текста
-          профиля — их разберём вручную на консультации.
+          {result.notAssessableCount} пунктов{lockedBlocks.length ? ` (${lockedBlocks.join(', ')})` : ''} не видны
+          с поверхности профиля{result.blocks.some(b => b.key === 'highlights' && b.assessableMax === 0)
+            ? ' (напр. содержимое актуальных Instagram не отдаёт)' : ''} — их разберём вручную на консультации.
         </p>
       )}
 
