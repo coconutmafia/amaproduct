@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { pollJob } from '@/lib/jobs/pollJob'
 import { friendlyError } from '@/lib/friendlyError'
 import type { AuditResult, AuditBlockResult } from '@/lib/blogAudit/runBlogAudit'
+import { MAX_SCORE } from '@/lib/blogAudit/checklist'
 
 // Куда ведёт CTA «бесплатная консультация с маркетологом». Настраивается через
 // env (можно сменить без деплоя кода); дефолт — телеграм Августы.
@@ -33,6 +34,31 @@ function ScoreDot({ score }: { score: number | null }) {
   if (score === null) return <Lock className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0 mt-0.5" />
   const color = score === 2 ? 'bg-green-500' : score === 1 ? 'bg-amber-500' : 'bg-red-400'
   return <span className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 mt-1.5 ${color}`} />
+}
+
+// Русское склонение слова «балл» по числу.
+function ballWord(n: number): string {
+  const a = Math.abs(n) % 100
+  const b = n % 10
+  if (a > 10 && a < 20) return 'баллов'
+  if (b === 1) return 'балл'
+  if (b > 1 && b < 5) return 'балла'
+  return 'баллов'
+}
+
+// Легенда одной из трёх зон разложения балла (зелёная/серая/жёлтая).
+function ZoneLegend({ dot, value, title, desc }: { dot: string; value: number; title: string; desc: string }) {
+  return (
+    <div className="flex items-start gap-2">
+      <span className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 mt-1 ${dot}`} />
+      <div className="min-w-0">
+        <p className="text-xs font-semibold text-foreground leading-tight">
+          <span className="tabular-nums">{value}</span> {ballWord(value)} · {title}
+        </p>
+        <p className="text-[11px] text-muted-foreground leading-tight">{desc}</p>
+      </div>
+    </div>
+  )
 }
 
 function BlockCard({ block }: { block: AuditBlockResult }) {
@@ -67,26 +93,38 @@ function BlockCard({ block }: { block: AuditBlockResult }) {
 export function BlogAuditScorecard({ result, onRerun, rerunning }: {
   result: AuditResult; onRerun?: () => void; rerunning?: boolean
 }) {
-  const color = bandColor(result.score100)
   // Блоки, где хоть один пункт не оценивался (для честной подписи внизу) — так
   // список не врёт: если визуал оценён по картинкам, его тут уже НЕ будет.
   const lockedBlocks = result.blocks.filter(b => b.items.some(it => !it.assessable)).map(b => b.title)
+  // Разложение 100 баллов чек-листа на 3 зоны (по фидбэку тестера — серая зона это
+  // «пока неизвестно», а НЕ «плохо», поэтому она не занижает балл, а показывается
+  // отдельно). green — набрано по видимой части; grey — пункты, которые честно
+  // нельзя оценить с поверхности профиля (кейсы/актуальные/визуал/воронка) → на
+  // консультации; yellow — оценимая зона роста. green + grey + yellow = 100.
+  const green = Math.max(0, result.scored)
+  const grey = Math.max(0, MAX_SCORE - result.assessableMax)
+  const yellow = Math.max(0, result.assessableMax - result.scored)
   return (
     <div className="space-y-5">
-      {/* Хедлайн-балл */}
-      <div className="flex items-center gap-4 rounded-2xl border border-border bg-card/50 p-5">
-        <div className="text-center shrink-0">
-          <div className={`text-4xl font-black ${color.text}`}>{result.score10.toFixed(1)}</div>
-          <div className="text-xs text-muted-foreground">из 10</div>
-        </div>
-        <div className="space-y-1.5 flex-1">
+      {/* Разложение балла на 3 зоны вместо одной пугающей оценки «X из 10». */}
+      <div className="rounded-2xl border border-border bg-card/50 p-5 space-y-4">
+        <div>
           <p className="font-bold text-sm text-foreground leading-snug">{result.diagnosis}</p>
-          <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-            <div className={`h-full rounded-full ${color.bg}`} style={{ width: `${result.score100}%` }} />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {result.score100}/100 по видимой части профиля (@{result.handle})
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Как складываются 100 баллов чек-листа по профилю @{result.handle}
           </p>
+        </div>
+        <div className="space-y-3">
+          <div className="flex h-4 w-full overflow-hidden rounded-full bg-muted">
+            {green > 0 && <div className="h-full bg-green-500" style={{ width: `${green}%` }} />}
+            {grey > 0 && <div className="h-full bg-slate-300 dark:bg-slate-600" style={{ width: `${grey}%` }} />}
+            {yellow > 0 && <div className="h-full bg-amber-400" style={{ width: `${yellow}%` }} />}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <ZoneLegend dot="bg-green-500" value={green} title="уже собрано" desc="хорошо на видимой части профиля" />
+            <ZoneLegend dot="bg-slate-300 dark:bg-slate-600" value={grey} title="на консультации" desc="нельзя оценить машинно — разберёт маркетолог" />
+            <ZoneLegend dot="bg-amber-400" value={yellow} title="зона роста" desc="что можно усилить в видимой части" />
+          </div>
         </div>
       </div>
 
