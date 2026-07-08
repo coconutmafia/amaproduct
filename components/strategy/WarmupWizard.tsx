@@ -29,6 +29,7 @@ import {
   Save,
   RotateCcw,
   Download,
+  Plus,
 } from 'lucide-react'
 import { downloadPlanXlsx } from '@/lib/planCsv'
 import type { Product, Funnel } from '@/types'
@@ -184,6 +185,8 @@ const STEPS = [
   { id: 8, title: 'Итог', icon: Sparkles },
 ]
 
+const PRODUCT_TYPES = ['курс', 'консультация', 'наставничество', 'интенсив', 'марафон', 'мастер-класс', 'подписка', 'услуга', 'другое']
+
 const HOOK_OPTIONS = [
   { id: 'transformation', label: 'Личная трансформация / история', desc: 'Рассказываешь свой путь, как ты пришёл(а) к этому результату' },
   { id: 'backstage', label: 'Закулисье работы', desc: 'Показываешь как создаётся продукт, рабочий процесс изнутри' },
@@ -257,7 +260,16 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   const [competitorNotes, setCompetitorNotes] = useState('')
   const [extraCompetitors, setExtraCompetitors] = useState('')
 
-  const selectedProduct = products.find((p) => p.id === selectedProductId)
+  // Products added inline from Step 1 (a project can have several; a warmup plan
+  // targets one). Server-fetched `products` stay authoritative; added ones append.
+  const [addedProducts, setAddedProducts] = useState<Product[]>([])
+  const allProducts = [...products, ...addedProducts]
+  const selectedProduct = allProducts.find((p) => p.id === selectedProductId)
+
+  // Inline «add product» form (Step 1).
+  const [showAddProduct, setShowAddProduct] = useState(false)
+  const [addingProduct, setAddingProduct] = useState(false)
+  const [newProduct, setNewProduct] = useState({ name: '', product_type: 'курс', price: '', currency: 'RUB' })
 
   // ── Draft: auto-save to localStorage ─────────────────────────────────────
   const DRAFT_KEY = `warmup_draft_${projectId}`
@@ -527,6 +539,40 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     }
   }
 
+  // ── Add a product inline (Step 1) ────────────────────────────────────────
+  async function addProduct() {
+    const name = newProduct.name.trim()
+    if (!name) { toast.error('Введите название продукта'); return }
+    setAddingProduct(true)
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create_product',
+          projectId,
+          data: {
+            name,
+            product_type: newProduct.product_type,
+            price: newProduct.price ? parseFloat(newProduct.price.replace(',', '.')) : null,
+            currency: newProduct.currency,
+          },
+        }),
+      })
+      const body = await res.json().catch(() => ({})) as { product?: Product; error?: string }
+      if (!res.ok || !body.product) throw new Error(body.error || 'Не удалось добавить продукт')
+      setAddedProducts((prev) => [...prev, body.product!])
+      setSelectedProductId(body.product.id)
+      setShowAddProduct(false)
+      setNewProduct({ name: '', product_type: 'курс', price: '', currency: 'RUB' })
+      toast.success('Продукт добавлен')
+    } catch (e) {
+      toast.error(friendlyError(e, 'Не удалось добавить продукт'))
+    } finally {
+      setAddingProduct(false)
+    }
+  }
+
   // ── Save plan ─────────────────────────────────────────────────────────────
   async function createPlan() {
     if (!aiPlanData) return
@@ -641,7 +687,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       {/* Step 1: Product */}
       {step === 1 && (
         <div className="space-y-3">
-          {products.map((product) => (
+          {allProducts.map((product) => (
             <button
               key={product.id}
               onClick={() => setSelectedProductId(product.id)}
@@ -672,10 +718,73 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
               </div>
             </button>
           ))}
-          {products.length === 0 && (
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              Нет продуктов. Добавьте продукт в настройках проекта.
+
+          {allProducts.length === 0 && !showAddProduct && (
+            <div className="text-center py-6 text-muted-foreground text-sm">
+              В проекте пока нет продуктов. Добавь продукт, для которого нужен прогрев.
             </div>
+          )}
+
+          {/* Inline add-product — a project can have several products; the warmup
+              targets one, so let the user add it here without leaving the wizard. */}
+          {showAddProduct ? (
+            <div className="rounded-xl border border-border bg-secondary/20 p-4 space-y-3">
+              <p className="text-sm font-medium text-foreground">Новый продукт</p>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Название</Label>
+                <Input
+                  value={newProduct.name}
+                  onChange={(e) => setNewProduct((p) => ({ ...p, name: e.target.value }))}
+                  placeholder="Напр. Курс «Запуск за 30 дней»"
+                  className="h-10 text-sm w-full max-w-full border border-border bg-background"
+                  autoFocus
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Тип</Label>
+                  <select
+                    value={newProduct.product_type}
+                    onChange={(e) => setNewProduct((p) => ({ ...p, product_type: e.target.value }))}
+                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                  >
+                    {PRODUCT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Цена, ₽ (необязательно)</Label>
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    value={newProduct.price}
+                    onChange={(e) => setNewProduct((p) => ({ ...p, price: e.target.value }))}
+                    placeholder="—"
+                    className="h-10 text-sm w-full max-w-full border border-border bg-background"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Button
+                  onClick={addProduct}
+                  disabled={addingProduct}
+                  className="gradient-accent text-white hover:opacity-90"
+                >
+                  {addingProduct
+                    ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Добавляю...</>
+                    : <><Check className="mr-2 h-4 w-4" /> Добавить</>}
+                </Button>
+                <Button variant="outline" onClick={() => setShowAddProduct(false)} disabled={addingProduct} className="border-border">
+                  Отмена
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAddProduct(true)}
+              className="w-full flex items-center justify-center gap-1.5 p-3 rounded-xl border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
+            >
+              <Plus className="h-4 w-4" /> Добавить продукт
+            </button>
           )}
         </div>
       )}

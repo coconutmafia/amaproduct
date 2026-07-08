@@ -20,6 +20,56 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true })
     }
 
+    // Add a single product to an existing project (from the warmup wizard, so the
+    // user doesn't have to leave to project settings). Mirrors ProjectWizard: also
+    // writes a `product_description` material, because buildRAGContext reads
+    // project_materials — the `products` table is never fed to the model, so
+    // without the material the product silently never influences content.
+    if (action === 'create_product') {
+      const d = (data || {}) as {
+        name?: string; product_type?: string; price?: number | string | null
+        currency?: string; description?: string; sales_page_url?: string
+      }
+      const name = (d.name || '').trim()
+      if (!projectId || !name) {
+        return NextResponse.json({ error: 'Нужно название продукта' }, { status: 400 })
+      }
+      const price = d.price === '' || d.price === null || d.price === undefined || !Number.isFinite(Number(d.price))
+        ? null : Number(d.price)
+      const currency = (d.currency || 'RUB').trim() || 'RUB'
+      const product_type = (d.product_type || '').trim() || null
+      const description = (d.description || '').trim() || null
+      const sales_page_url = (d.sales_page_url || '').trim() || null
+
+      const { data: product, error } = await supabase
+        .from('products')
+        .insert({ project_id: projectId, name, product_type, price, currency, description, sales_page_url })
+        .select()
+        .single()
+      if (error) {
+        console.error('create_product error:', error)
+        return NextResponse.json({ error: error.message || 'Не удалось добавить продукт' }, { status: 500 })
+      }
+
+      const raw_content = [
+        `Продукт: ${name}`,
+        product_type   ? `Тип: ${product_type}` : '',
+        price          ? `Цена: ${price} ${currency}` : '',
+        description    ? `Описание: ${description}` : '',
+        sales_page_url ? `Страница продаж: ${sales_page_url}` : '',
+      ].filter(Boolean).join('\n')
+      const { error: matError } = await supabase.from('project_materials').insert({
+        project_id: projectId,
+        material_type: 'product_description',
+        title: name,
+        raw_content,
+        processing_status: 'ready',
+      })
+      if (matError) console.error('create_product material error:', matError.message)
+
+      return NextResponse.json({ product })
+    }
+
     if (action === 'create_warmup_plan') {
       const { data: plan, error } = await supabase
         .from('warmup_plans')
