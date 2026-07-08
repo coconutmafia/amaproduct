@@ -263,7 +263,9 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   // Products added inline from Step 1 (a project can have several; a warmup plan
   // targets one). Server-fetched `products` stay authoritative; added ones append.
   const [addedProducts, setAddedProducts] = useState<Product[]>([])
-  const allProducts = [...products, ...addedProducts]
+  // Dedupe by id: after a plan is saved we call router.refresh(), which re-fetches
+  // `products` (now including any inline-added one), so drop added duplicates.
+  const allProducts = [...products, ...addedProducts.filter((ap) => !products.some((p) => p.id === ap.id))]
   const selectedProduct = allProducts.find((p) => p.id === selectedProductId)
 
   // Inline «add product» form (Step 1).
@@ -409,7 +411,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
     setDraftSavedAt(null); setDraftAutoRestored(false)
     setStep(1)
-    setAiPlanData(null); setPlanApproved(false)
+    setAiPlanData(null); setPlanApproved(false); setPlanSaved(false)
     setSelectedProductId(null)
     setWarmupType('launch')
     setStartDate(''); setEndDate(''); setSalesOpenDate(''); setProductStartDate('')
@@ -1347,6 +1349,13 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                   Перейти в контент-план →
                 </Link>
               </Button>
+              <Button variant="outline" onClick={startOver} className="w-full max-w-xs border-border">
+                <Plus className="mr-2 h-4 w-4" /> Создать ещё один план прогрева
+              </Button>
+              <p className="text-xs text-muted-foreground max-w-[320px] mx-auto leading-relaxed">
+                Планов прогрева может быть несколько — например под разные продукты или запуски.
+                Следи только, чтобы они не пересекались по датам.
+              </p>
             </div>
           )}
         </div>
