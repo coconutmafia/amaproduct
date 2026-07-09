@@ -92,6 +92,28 @@ export default function StoriesPage() {
   // Free-editor integration: a request to load a series frame for hand-editing.
   const [editReq, setEditReq] = useState<EditorLoadRequest | null>(null)
   const editTokenRef = useRef(0)
+  // Which frame is currently re-rendering after a text-position change.
+  const [reposIdx, setReposIdx] = useState<number | null>(null)
+
+  // Move a frame's text to a chosen band (верх/центр/низ) and re-render just it.
+  // The fast, deterministic fix for «текст лёг на лицо» — one tap, no drawing,
+  // no AI. posLocked pins the choice so photo-analysis won't override it.
+  async function setFramePosition(i: number, position: 'top' | 'center' | 'bottom') {
+    const cur = rendered[i]
+    if (!cur || cur.frame.manual || cur.frame.position === position) return
+    setReposIdx(i)
+    try {
+      const frame: Frame = { ...cur.frame, position, posLocked: true }
+      const blob = await renderFrame(frame, i)
+      const arr = [...rendered]
+      URL.revokeObjectURL(arr[i].url)
+      arr[i] = { blob, url: URL.createObjectURL(blob), frame }
+      setRendered(arr)
+      void saveSet(arr.map((r) => r.frame), arr.map((r) => r.blob), savedSetId)
+    } catch (e) {
+      toast.error(friendlyError(e, 'Не удалось переместить текст'))
+    } finally { setReposIdx(null) }
+  }
 
   // Open a rendered series frame in the free editor (photo + text as blocks).
   function editFrameManually(i: number) {
@@ -527,6 +549,20 @@ export default function StoriesPage() {
               <div key={i} className="flex flex-col gap-1">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={r.url} alt={`Сторис ${i + 1}`} className="w-full rounded-lg border border-border" />
+                {/* Text-on-face fix: one tap moves the text to a clean band. */}
+                {!r.frame.manual && (
+                  <div className="flex items-center justify-center gap-1" title="Куда поставить текст (если лёг на лицо)">
+                    <span className="text-[10px] text-muted-foreground mr-0.5">Текст:</span>
+                    {([['top', '↑'], ['center', '•'], ['bottom', '↓']] as const).map(([pos, glyph]) => (
+                      <button key={pos} type="button" onClick={() => setFramePosition(i, pos)} disabled={reposIdx === i}
+                        aria-label={pos === 'top' ? 'Текст вверх' : pos === 'center' ? 'Текст по центру' : 'Текст вниз'}
+                        className={`flex h-5 w-6 items-center justify-center rounded border text-[11px] leading-none disabled:opacity-40 ${
+                          r.frame.position === pos ? 'border-primary bg-primary/10 text-primary' : 'border-border text-[#888] hover:text-primary hover:border-primary/40'}`}>
+                        {reposIdx === i ? '…' : glyph}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <button type="button" onClick={() => download(r.blob, `story-${String(i + 1).padStart(2, '0')}.png`)}
                   className="text-[11px] font-medium text-muted-foreground hover:text-foreground">↓ Сторис {i + 1}</button>
                 <button type="button" onClick={() => editFrameManually(i)}
