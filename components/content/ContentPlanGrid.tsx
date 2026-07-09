@@ -8,9 +8,23 @@ import {
   Plus, X, Eye, RefreshCw, Check, Copy,
 } from 'lucide-react'
 import { SaveButton } from '@/components/content/SaveButton'
+import { StoryDesignButton } from '@/components/carousel/StoryDesignButton'
+import { PostImage } from '@/components/carousel/PostImage'
+import { CarouselSlides } from '@/components/carousel/CarouselSlides'
 import { contentItemToText } from '@/lib/contentToText'
 import { toast } from 'sonner'
 import type { ContentItem, ContentType, WarmupPhase } from '@/types'
+
+// The «go to the visual editor» button for a saved content unit, mirroring what
+// the generation chat offers — but reachable straight from the content plan
+// (tester couldn't get back into the chat after saving to plan). Named per type;
+// reels is a filming script with no visual editor, so it gets nothing.
+function PublishButton({ type, text, projectId }: { type: ContentType; text: string; projectId: string }) {
+  if (type === 'carousel') return <CarouselSlides sourceText={text} type="carousel" projectId={projectId} />
+  if (type === 'stories') return <StoryDesignButton text={text} projectId={projectId} />
+  if (type === 'post') return <PostImage text={text} projectId={projectId} />
+  return null
+}
 
 interface DayContent {
   day: number
@@ -259,6 +273,7 @@ export function ContentPlanGrid({
                                     </button>
                                     <SaveButton body={contentItemToText(existing)} title={existing.title} contentType={type} projectId={projectId}
                                       className="text-[11px] text-[#888] hover:text-primary" />
+                                    <PublishButton type={type} text={contentItemToText(existing)} projectId={projectId} />
                                   </div>
                                   {renderContent(existing, projectId)}
                                 </div>
