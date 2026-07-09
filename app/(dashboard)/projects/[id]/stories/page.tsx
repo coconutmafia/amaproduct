@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { ArrowLeft, Upload, Loader2, Sparkles, Download, Trash2, Wand2 } from 'lucide-react'
+import { ArrowLeft, Upload, Loader2, Sparkles, Download, Trash2, Wand2, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { downscaleImage } from '@/lib/downscaleImage'
 import { friendlyError } from '@/lib/friendlyError'
 import { analyzePhotoBands, pickPlacement, type PhotoBands } from '@/lib/photoBands'
@@ -264,6 +264,22 @@ export default function StoriesPage() {
     finally { setUploading(false) }
   }
 
+  // Reorder / remove uploaded photos — the order maps 1:1 onto the story frames
+  // (1st photo = 1st кадр), so the user needs to control which photo lands on
+  // which story number (tester request).
+  function movePhoto(from: number, to: number) {
+    setPhotos((prev) => {
+      if (to < 0 || to >= prev.length) return prev
+      const next = [...prev]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+  }
+  function removePhoto(i: number) {
+    setPhotos((prev) => prev.filter((_, idx) => idx !== i))
+  }
+
   // Photo-band analysis cache (per photo URL)
   const bandsCache = useRef(new Map<string, PhotoBands | null>())
   async function getBands(url: string): Promise<PhotoBands | null> {
@@ -355,11 +371,30 @@ export default function StoriesPage() {
 
       <section className="mt-5 rounded-2xl border border-border bg-card p-4">
         <p className="text-sm font-semibold text-foreground">1. Фото (по одному на кадр; если меньше — повторятся)</p>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">В каком порядке загрузишь — в таком и оформит: 1-е фото = 1-й кадр.</p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">Порядок фото = порядок кадров: 1-е фото → 1-й кадр. Меняй местами стрелками ← →, лишнее убирай ✕.</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {photos.map((u, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img key={i} src={u} alt="" className="h-24 w-[3.4rem] rounded-lg border border-border object-cover" />
+            <div key={u} className="flex flex-col items-center gap-1">
+              <div className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={u} alt={`Кадр ${i + 1}`} className="h-24 w-[3.4rem] rounded-lg border border-border object-cover" />
+                <span className="absolute left-0.5 top-0.5 rounded bg-black/60 px-1 text-[9px] font-bold leading-4 text-white">{i + 1}</span>
+                <button type="button" onClick={() => removePhoto(i)} aria-label="Убрать фото"
+                  className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-white text-[#888] shadow-sm hover:text-red-500 hover:border-red-200">
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </div>
+              <div className="flex items-center gap-0.5">
+                <button type="button" onClick={() => movePhoto(i, i - 1)} disabled={i === 0} aria-label="Левее"
+                  className="flex h-5 w-5 items-center justify-center rounded border border-border text-[#888] hover:text-primary disabled:opacity-30">
+                  <ChevronLeft className="h-3 w-3" />
+                </button>
+                <button type="button" onClick={() => movePhoto(i, i + 1)} disabled={i === photos.length - 1} aria-label="Правее"
+                  className="flex h-5 w-5 items-center justify-center rounded border border-border text-[#888] hover:text-primary disabled:opacity-30">
+                  <ChevronRight className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
           ))}
           <label className="flex h-24 w-[3.4rem] cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border text-muted-foreground hover:border-primary/40">
             {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
