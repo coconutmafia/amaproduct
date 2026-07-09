@@ -13,7 +13,7 @@ export const runtime = 'nodejs'
 
 const MAX_SETS = 12
 
-interface StoryFrameMeta { url: string; headline?: string; body?: string; cta?: string; position?: string; photo?: string }
+interface StoryFrameMeta { url: string; headline?: string; body?: string; cta?: string; position?: string; photo?: string; manual?: boolean }
 interface StorySet { id: string; created_at: string; script: string; frames: StoryFrameMeta[] }
 
 function pathFromUrl(url: string): string | null {
@@ -86,6 +86,8 @@ export async function POST(request: Request) {
         position: ['top', 'center', 'bottom'].includes(String(f.position)) ? String(f.position) : undefined,
         // Source photo — lets the gallery reopen the set for edits
         photo: typeof f.photo === 'string' && f.photo.includes('/project-brand/') ? f.photo : undefined,
+        // Hand-designed frame — reopen reuses its stored image, never re-renders.
+        manual: f.manual ? true : undefined,
       })),
     }
 

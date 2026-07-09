@@ -108,12 +108,15 @@ function PreviewText({ text, plate, color, brand }: { text: string; plate: boole
   )
 }
 
-export function FreeCanvas({ projectId, brand, value, onChange, format = 'story' }: {
+export function FreeCanvas({ projectId, brand, value, onChange, format = 'story', photos }: {
   projectId: string
   brand: Brand
   value: SlideValue
   onChange: (v: SlideValue) => void
   format?: 'story' | 'carousel'
+  // Already-uploaded photos (e.g. the story series' photos) to pick as the
+  // background without re-uploading. Optional — other usages pass nothing.
+  photos?: string[]
 }) {
   const { bgMode, photoUrl, photoTop, photoBottom, blocks } = value
 
@@ -371,11 +374,23 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
         ))}
       </div>
       {bgMode === 'photo' && (
-        <div className="mt-2">
+        <div className="mt-2 space-y-2">
           <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold hover:border-primary/40">
             {uploadingPhoto ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Загружаю…</> : <><Upload className="h-3.5 w-3.5" /> {photoUrl ? 'Сменить фото' : 'Загрузить фото'}</>}
             <input type="file" accept="image/*" className="hidden" disabled={uploadingPhoto} onChange={(e) => uploadPhoto(e.target.files)} />
           </label>
+          {photos && photos.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-muted-foreground">или из загруженных:</span>
+              {photos.map((u) => (
+                <button key={u} type="button" onClick={() => update({ photoUrl: u })}
+                  className={`h-12 w-8 shrink-0 overflow-hidden rounded border ${photoUrl === u ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/40'}`}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={u} alt="" className="h-full w-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
       {bgMode === 'split' && (

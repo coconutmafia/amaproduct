@@ -17,7 +17,8 @@ import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
 import { VideoStory } from '@/components/carousel/VideoStory'
 import { SchemeStory } from '@/components/carousel/SchemeStory'
-import { StoryEditor } from '@/components/carousel/StoryEditor'
+import { StoryEditor, type EditorLoadRequest } from '@/components/carousel/StoryEditor'
+import { type Block, type SlideValue } from '@/components/carousel/FreeCanvas'
 
 interface Brand { accentColor?: string; bg?: string; text?: string; bgStyle?: string; handle?: string; logoUrl?: string; font?: string; accentStyle?: 'gradient' | 'flat' }
 interface Frame {
@@ -31,8 +32,13 @@ interface Frame {
   // must not override an explicit instruction.
   posLocked?: boolean
   plateLocked?: boolean
+  // A frame designed by hand in the free editor: it stores its own finished
+  // image and must NOT be re-rendered from headline/body (that would wipe the
+  // manual design). manualUrl holds the ready image for save/reopen.
+  manual?: boolean
+  manualUrl?: string
 }
-interface SetFrame { url: string; headline?: string; body?: string; cta?: string; position?: string; photo?: string }
+interface SetFrame { url: string; headline?: string; body?: string; cta?: string; position?: string; photo?: string; manual?: boolean }
 interface StorySet { id: string; created_at: string; script: string; frames: SetFrame[] }
 
 function download(blob: Blob, name: string) {
@@ -40,6 +46,31 @@ function download(blob: Blob, name: string) {
   const a = document.createElement('a')
   a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 4000)
+}
+
+let _bid = 0
+const blockId = () => `sb${++_bid}`
+
+// Turn an AI story frame into editable free-editor blocks (photo background +
+// its headline/body/CTA as text blocks) so «редактировать вручную» opens the
+// frame with everything already placed (owner chose: carry AI text into blocks).
+function frameToSlide(frame: Frame): SlideValue {
+  const baseY = frame.position === 'top' ? 0.12 : frame.position === 'center' ? 0.40 : 0.60
+  const blocks: Block[] = []
+  let y = baseY
+  const add = (text: string | undefined, size: number) => {
+    if (!text || !text.trim()) return
+    blocks.push({
+      id: blockId(), type: 'text', text: text.trim(),
+      xPct: 0.08, yPct: Math.min(y, 0.9), widthPct: 0.84,
+      size, color: '#FFFFFF', plate: frame.plate ?? true, align: 'left', rotation: 0,
+    })
+    y += 0.11
+  }
+  add(frame.headline, 64)
+  add(frame.body, 40)
+  add(frame.cta, 46)
+  return { bgMode: 'photo', photoUrl: frame.photo ?? null, photoTop: null, photoBottom: null, blocks }
 }
 
 export default function StoriesPage() {
@@ -58,6 +89,35 @@ export default function StoriesPage() {
   const [setBusyId, setSetBusyId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
   const [editing, setEditing] = useState(false)
+  // Free-editor integration: a request to load a series frame for hand-editing.
+  const [editReq, setEditReq] = useState<EditorLoadRequest | null>(null)
+  const editTokenRef = useRef(0)
+
+  // Open a rendered series frame in the free editor (photo + text as blocks).
+  function editFrameManually(i: number) {
+    const frame = rendered[i]?.frame
+    if (!frame) return
+    editTokenRef.current += 1
+    setEditReq({ token: editTokenRef.current, slide: frameToSlide(frame), index: i })
+    toast.message('Кадр открыт в редакторе ниже — меняй и жми «Добавить в серию»')
+  }
+
+  // A free-editor export goes into the series: replace an existing slot or
+  // append a new frame. The frame is marked manual so it's never re-rendered.
+  async function addManualToSeries({ blob, index }: { blob: Blob; index: number }) {
+    const url = URL.createObjectURL(blob)
+    const frame: Frame = { headline: '', body: '', cta: '', manual: true }
+    const arr = [...rendered]
+    if (index >= 0 && index < arr.length) {
+      URL.revokeObjectURL(arr[index].url)
+      arr[index] = { url, blob, frame }
+    } else {
+      arr.push({ url, blob, frame })
+    }
+    setRendered(arr)
+    toast.success('Кадр добавлен в серию — сохраняю')
+    void saveSet(arr.map((r) => r.frame), arr.map((r) => r.blob), savedSetId)
+  }
 
   useEffect(() => {
     if (!projectId) return
@@ -139,7 +199,7 @@ export default function StoriesPage() {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           projectId, setId: existingSetId || undefined, script,
-          frames: frames.map((f, i) => ({ url: urls[i], headline: f.headline, body: f.body, cta: f.cta, position: f.position, photo: f.photo })),
+          frames: frames.map((f, i) => ({ url: urls[i], headline: f.headline, body: f.body, cta: f.cta, position: f.position, photo: f.photo, manual: f.manual || undefined })),
         }),
       })
       const d = await res.json().catch(() => ({} as { set?: StorySet; sets?: StorySet[]; error?: string }))
@@ -168,6 +228,8 @@ export default function StoriesPage() {
       const old = rendered.map((r) => r.frame)
       const frames = (d.stories as Frame[]).map((nf, i) => {
         const prev = old[i]
+        // Hand-made frames keep their design — the AI text edit doesn't touch them.
+        if (prev?.manual) return prev
         const posChanged = !!nf.position && !!prev && nf.position !== prev.position
         const plateGiven = typeof nf.plate === 'boolean'
         return {
@@ -178,7 +240,8 @@ export default function StoriesPage() {
           plateLocked: (prev?.plateLocked || (plateGiven && nf.plate !== prev?.plate)) || undefined,
         } as Frame
       })
-      const blobs = await Promise.all(frames.map((f: Frame, i: number) => renderFrame(f, i)))
+      // Manual frames reuse their existing image; only AI frames re-render.
+      const blobs = await Promise.all(frames.map((f: Frame, i: number) => f.manual ? Promise.resolve(rendered[i].blob) : renderFrame(f, i)))
       rendered.forEach((r) => URL.revokeObjectURL(r.url))
       setRendered(blobs.map((blob, i) => ({ blob, url: URL.createObjectURL(blob), frame: frames[i] })))
       setEditText('')
@@ -200,11 +263,21 @@ export default function StoriesPage() {
         position: (['top', 'center', 'bottom'].includes(String(sf.position)) ? sf.position : undefined) as Frame['position'],
         posLocked: sf.position ? true : undefined,
         photo: sf.photo,
+        manual: sf.manual || undefined,
       }))
       if (set.script) setScript(set.script)
       const uniquePhotos = [...new Set(frames.map((f) => f.photo).filter((p): p is string => !!p))]
       if (uniquePhotos.length) setPhotos(uniquePhotos.slice(0, 8))
-      const blobs = await Promise.all(frames.map((f, i) => renderFrame(f, i)))
+      // Manual frames are stored as finished images — fetch them back instead of
+      // re-rendering (re-rendering would wipe the hand-made design).
+      const blobs = await Promise.all(frames.map(async (f, i) => {
+        if (f.manual) {
+          const r = await fetch(set.frames[i].url)
+          if (!r.ok) throw new Error('Не удалось загрузить кадр')
+          return r.blob()
+        }
+        return renderFrame(f, i)
+      }))
       rendered.forEach((r) => URL.revokeObjectURL(r.url))
       setRendered(blobs.map((blob, i) => ({ blob, url: URL.createObjectURL(blob), frame: frames[i] })))
       setSavedSetId(set.id)
@@ -434,7 +507,8 @@ export default function StoriesPage() {
       <div className="mt-5 mb-2 flex items-center gap-3 text-[11px] uppercase tracking-wide text-muted-foreground">
         <div className="h-px flex-1 bg-border" /> или свободный редактор <div className="h-px flex-1 bg-border" />
       </div>
-      <StoryEditor projectId={projectId} />
+      <StoryEditor projectId={projectId} photos={photos} loadReq={editReq}
+        onAddToSeries={addManualToSeries} seriesLen={rendered.length} />
 
       {rendered.length > 0 && (
         <section className="mt-4 rounded-2xl border border-border bg-card p-4">
@@ -455,6 +529,8 @@ export default function StoriesPage() {
                 <img src={r.url} alt={`Сторис ${i + 1}`} className="w-full rounded-lg border border-border" />
                 <button type="button" onClick={() => download(r.blob, `story-${String(i + 1).padStart(2, '0')}.png`)}
                   className="text-[11px] font-medium text-muted-foreground hover:text-foreground">↓ Сторис {i + 1}</button>
+                <button type="button" onClick={() => editFrameManually(i)}
+                  className="text-[11px] font-medium text-primary/80 hover:text-primary">✎ Редактировать вручную</button>
               </div>
             ))}
           </div>
