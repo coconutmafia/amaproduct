@@ -19,10 +19,10 @@ import type { ContentItem, ContentType, WarmupPhase } from '@/types'
 // the generation chat offers — but reachable straight from the content plan
 // (tester couldn't get back into the chat after saving to plan). Named per type;
 // reels is a filming script with no visual editor, so it gets nothing.
-function PublishButton({ type, text, projectId }: { type: ContentType; text: string; projectId: string }) {
+function PublishButton({ type, text, projectId, storageKey }: { type: ContentType; text: string; projectId: string; storageKey?: string }) {
   if (type === 'carousel') return <CarouselSlides sourceText={text} type="carousel" projectId={projectId} />
   if (type === 'stories') return <StoryDesignButton text={text} projectId={projectId} />
-  if (type === 'post') return <PostImage text={text} projectId={projectId} />
+  if (type === 'post') return <PostImage text={text} projectId={projectId} storageKey={storageKey} />
   return null
 }
 
@@ -271,7 +271,7 @@ export function ContentPlanGrid({
                                       no need to expand or reopen the chat (tester). */}
                                   {hasEditor && (
                                     <div className="[&>button]:mt-0 [&>button]:w-full [&>button]:justify-center">
-                                      <PublishButton type={type} text={contentItemToText(existing)} projectId={projectId} />
+                                      <PublishButton type={type} text={contentItemToText(existing)} projectId={projectId} storageKey={existing.id} />
                                     </div>
                                   )}
                                 </div>

@@ -4,7 +4,7 @@
 // the headline laid over the user's OWN photo, or on the project's brand
 // background. Format: 4:5 (1080×1350, best IG reach) or 1:1. Single image → download.
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import { downscaleImage } from '@/lib/downscaleImage'
 import { friendlyError } from '@/lib/friendlyError'
@@ -28,10 +28,24 @@ function download(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 4000)
 }
 
-export function PostImage({ text, projectId, brand }: { text: string; projectId?: string; brand?: Brand }) {
+export function PostImage({ text, projectId, brand, storageKey }: { text: string; projectId?: string; brand?: Brand; storageKey?: string }) {
   const [open, setOpen] = useState(false)
   const [headline, setHeadline] = useState(() => firstLine(text))
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null)
+  // Remember the chosen photo PER publication so it survives a page reload
+  // (tester: «перезагрузила — фотка сбросилась»). Keyed by the caller's stable
+  // storageKey (content-item id); without it, behaviour is session-only as before.
+  const photoLsKey = storageKey ? `post_photo_${storageKey}` : null
+  const [photoUrl, setPhotoUrl] = useState<string | null>(() => {
+    if (typeof window === 'undefined' || !photoLsKey) return null
+    try { return localStorage.getItem(photoLsKey) || null } catch { return null }
+  })
+  useEffect(() => {
+    if (!photoLsKey) return
+    try {
+      if (photoUrl) localStorage.setItem(photoLsKey, photoUrl)
+      else localStorage.removeItem(photoLsKey)
+    } catch { /* ignore */ }
+  }, [photoUrl, photoLsKey])
   const [fmt, setFmt] = useState<'post45' | 'post' | 'postWide'>('post45')
   const [uploading, setUploading] = useState(false)
   const [busy, setBusy] = useState(false)
