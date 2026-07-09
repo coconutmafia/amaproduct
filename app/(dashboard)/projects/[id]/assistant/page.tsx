@@ -50,6 +50,19 @@ function buildOpener(type: string, day: number, brief: string): string {
   return `${openerHead(type, day, brief)}\n\nРасскажи детали — историю, кейс, цифры, имя клиента — или просто напиши «давай», и я напишу.`
 }
 
+// A message that PROPOSES several post/scenario variants to choose from —
+// labelled «Вариант N», «Идея N» or «Сценарий N» — is NOT a single finished
+// unit. On such messages we hide the target actions («В план», «Оформить
+// сторис», image/carousel), because one post = one scenario and dumping all
+// variants into it is wrong (tester report). The user picks one («вариант 2»),
+// and the resulting single-scenario answer gets the buttons. Note: «Сторис/кадр/
+// слайд N» are FRAMES of one scenario, not variants — they must not count.
+function looksLikeMultipleVariants(text: string): boolean {
+  const heads = text.match(/(?:^|\n)\s*(?:вариант|идея|сценарий)\s*[№#]?\s*\d+/gi) || []
+  const distinct = new Set(heads.map(h => h.toLowerCase().replace(/\s+/g, ' ').trim()))
+  return distinct.size >= 2
+}
+
 // Saves the generated message straight into the content plan (the day's unit).
 function SaveToPlanButton({ projectId, ctx, text }: { projectId: string; ctx: GenContext; text: string }) {
   const [state, setState] = useState<'idle' | 'saving' | 'saved'>('idle')
@@ -256,6 +269,8 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
         {messages.map((m, i) => {
           const isLastUser = i === lastUserIdx
           const text = m.role === 'assistant' ? cleanMarkdown(m.content) : m.content
+          // Several variants on offer → gate the single-target actions until one is picked.
+          const multiVariant = m.role === 'assistant' && !m.opener && looksLikeMultipleVariants(text)
           return (
           <div key={i} ref={isLastUser ? lastUserRef : undefined} className={`flex gap-2.5 ${m.role === 'user' ? 'flex-row-reverse' : ''} ${isLastUser ? 'scroll-mt-2' : ''}`}>
             <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${m.role === 'user' ? 'bg-secondary' : 'gradient-accent'}`}>
@@ -272,8 +287,8 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
                   </button>
                   <SaveButton body={text} projectId={id} className="text-[11px] text-muted-foreground hover:text-primary" />
                   <VoiceRuleButton projectId={id} />
-                  {genContext && <SaveToPlanButton projectId={id} ctx={genContext} text={text} />}
-                  {(genContext?.type === 'carousel' || /слайд\s*\d/i.test(text)) ? (
+                  {genContext && !multiVariant && <SaveToPlanButton projectId={id} ctx={genContext} text={text} />}
+                  {!multiVariant && ((genContext?.type === 'carousel' || /слайд\s*\d/i.test(text)) ? (
                     <CarouselSlides sourceText={text} type="carousel" projectId={id} />
                   ) : (genContext?.type === 'reels' || isReelsScript(text)) ? (
                     // A reels script is a filming script, not a post image or a
@@ -283,8 +298,13 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
                     <StoryDesignButton text={text} projectId={id} />
                   ) : (genContext?.type === 'post' || text.length > 150) ? (
                     <PostImage text={text} projectId={id} />
-                  ) : null}
+                  ) : null)}
                 </div>
+              )}
+              {multiVariant && (
+                <p className="text-[11px] text-muted-foreground mb-2 -mt-0.5 leading-snug">
+                  Это варианты на выбор. Напиши, какой берём («вариант 1»), и я распишу один сценарий — тогда появятся «В план» и «Оформить сторис».
+                </p>
               )}
               {text}
             </div>

@@ -200,7 +200,13 @@ export function ContentPlanGrid({
                     <div className="space-y-2.5">
                       {(() => {
                         const types = (day.plannedTypes?.length ? day.plannedTypes : ['post', 'stories', 'reels']) as ContentType[]
-                        const entries = types.filter(t => day.dayBriefs?.[t])
+                        // Show EVERY planned format — including one just added via
+                        // «Добавить формат», which has no per-type brief yet.
+                        // Previously we filtered to briefed types, so a freshly
+                        // added format silently rendered nothing (tester report).
+                        // Its card falls back to the day theme; generation still
+                        // works (openInChat uses dayBriefs[type] || day.theme).
+                        const entries = types
                         return entries.map(type => {
                           const c = COLORS[type]
                           if (!c) return null
@@ -222,7 +228,9 @@ export function ContentPlanGrid({
                                   </button>
                                 )}
                               </div>
-                              <p className="text-[13px] text-[#333] leading-snug">{brief}</p>
+                              {brief
+                                ? <p className="text-[13px] text-[#333] leading-snug">{brief}</p>
+                                : <p className="text-[13px] text-[#999] italic leading-snug">Новый формат — тема возьмётся из дня, AI распишет её под этот формат при генерации.</p>}
                               {existing ? (
                                 <div className="flex items-center gap-2">
                                   <button onClick={() => { setViewingKey(isViewing ? null : `${day.day}-${type}`); setAddingToDay(null) }}
