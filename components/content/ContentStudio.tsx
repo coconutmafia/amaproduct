@@ -14,6 +14,7 @@ import { friendlyError } from '@/lib/friendlyError'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { PhotoUploader } from '@/components/content/PhotoUploader'
 import { StoryEditor, type EditorLoadRequest } from '@/components/carousel/StoryEditor'
+import { StoriesPanel } from '@/components/content/StoriesPanel'
 import { type Block, type SlideValue } from '@/components/carousel/FreeCanvas'
 
 type Format = 'post' | 'carousel' | 'stories'
@@ -73,25 +74,8 @@ export function ContentStudio({ projectId, initialFormat = 'post', initialText =
       <div className="mt-5">
         {format === 'post' && <PostPanel projectId={projectId} brand={brand} initialText={initialText} />}
         {format === 'carousel' && <CarouselPanel projectId={projectId} brand={brand} initialText={initialText} />}
-        {format === 'stories' && (
-          <ComingSoon format="Сторис" href={`/projects/${projectId}/stories`}
-            note="Сторис пока на отдельной странице «Оформление сторис». Перенос в этот единый редактор — Фаза 3." />
-        )}
+        {format === 'stories' && <StoriesPanel projectId={projectId} initialText={initialText} />}
       </div>
-    </div>
-  )
-}
-
-function ComingSoon({ format, note, href }: { format: string; note: string; href?: string }) {
-  return (
-    <div className="rounded-2xl border border-dashed border-border bg-card/50 p-5 text-center space-y-3">
-      <p className="text-sm font-semibold text-foreground">{format} — переносим в единый редактор</p>
-      <p className="text-sm text-muted-foreground leading-relaxed">{note}</p>
-      {href && (
-        <Link href={href} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90">
-          Открыть текущий редактор {format.toLowerCase()} →
-        </Link>
-      )}
     </div>
   )
 }
