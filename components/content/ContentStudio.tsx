@@ -9,8 +9,10 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { ArrowLeft, Loader2, Download, Sparkles, Wand2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Download, Sparkles, Wand2, CalendarPlus, Check } from 'lucide-react'
 import { friendlyError } from '@/lib/friendlyError'
+import { takeStudioHandoff } from '@/lib/studioHandoff'
+import { SaveButton } from '@/components/content/SaveButton'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { PhotoUploader } from '@/components/content/PhotoUploader'
 import { StoryEditor, type EditorLoadRequest } from '@/components/carousel/StoryEditor'
@@ -44,6 +46,23 @@ export function ContentStudio({ projectId, initialFormat = 'post', initialText =
 }) {
   const [format, setFormat] = useState<Format>(initialFormat)
   const [brand, setBrand] = useState<Brand | undefined>()
+  // Text lives in the shell so «В план» / «В Готовое» can save it for any format.
+  const [text, setText] = useState(initialText)
+  // Set when we arrived from a specific content-plan day (путь A) → auto-bind.
+  const [day, setDay] = useState<number | null>(null)
+  const [phase, setPhase] = useState<string | undefined>()
+  const [dayLocked, setDayLocked] = useState(false)
+
+  // Handoff from the chat / content-plan («Оформить»): format + scenario + day.
+  useEffect(() => {
+    const h = takeStudioHandoff(projectId)
+    if (!h) return
+    setFormat(h.format)
+    setText(h.text)
+    setPhase(h.phase)
+    if (typeof h.day === 'number' && h.day > 0) { setDay(h.day); setDayLocked(true) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
 
   useEffect(() => {
     fetch(`/api/brand-kit?projectId=${projectId}`).then((r) => r.json()).then((d) => {
@@ -52,6 +71,8 @@ export function ContentStudio({ projectId, initialFormat = 'post', initialText =
       }
     }).catch(() => {})
   }, [projectId])
+
+  const persistKey = `${projectId}:${format}:${day ?? 'free'}`
 
   return (
     <div className="mx-auto max-w-2xl p-5 pb-24">
@@ -71,12 +92,77 @@ export function ContentStudio({ projectId, initialFormat = 'post', initialText =
         ))}
       </div>
 
+      {dayLocked && day && (
+        <p className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary">
+          <CalendarPlus className="h-3.5 w-3.5" /> Привязано ко дню {day} контент-плана
+        </p>
+      )}
+
       <div className="mt-5">
-        {format === 'post' && <PostPanel projectId={projectId} brand={brand} initialText={initialText} />}
-        {format === 'carousel' && <CarouselPanel projectId={projectId} brand={brand} initialText={initialText} />}
-        {format === 'stories' && <StoriesPanel projectId={projectId} initialText={initialText} />}
+        {format === 'post' && <PostPanel projectId={projectId} brand={brand} text={text} onTextChange={setText} persistKey={persistKey} />}
+        {format === 'carousel' && <CarouselPanel projectId={projectId} brand={brand} text={text} onTextChange={setText} persistKey={persistKey} />}
+        {format === 'stories' && <StoriesPanel projectId={projectId} text={text} onTextChange={setText} persistKey={persistKey} />}
       </div>
+
+      <PublicationBar projectId={projectId} format={format} text={text}
+        day={day} setDay={setDay} dayLocked={dayLocked} phase={phase} />
     </div>
+  )
+}
+
+// ── Сохранение публикации: «В Готовое» + «В план» (с выбором дня) ─────────────
+function PublicationBar({ projectId, format, text, day, setDay, dayLocked, phase }: {
+  projectId: string; format: Format; text: string
+  day: number | null; setDay: (d: number | null) => void; dayLocked: boolean; phase?: string
+}) {
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  async function saveToPlan() {
+    if (!text.trim()) { toast.error('Сначала напиши текст'); return }
+    if (!day || day < 1) { toast.error('Выбери день контент-плана'); return }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/content-items', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, contentType: format, dayNumber: day, phase: phase || 'awareness', bodyText: text }),
+      })
+      if (!res.ok) { const j = await res.json().catch(() => ({})) as { error?: string }; throw new Error(j.error || 'Ошибка') }
+      setSaved(true)
+      toast.success(`Публикация добавлена в контент-план, день ${day}`)
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось добавить в план')) }
+    finally { setSaving(false) }
+  }
+
+  if (!text.trim()) return null
+
+  return (
+    <section className="mt-4 rounded-2xl border border-border bg-card p-4 space-y-3">
+      <p className="text-sm font-semibold text-foreground">Сохранить публикацию</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <SaveButton body={text} projectId={projectId} contentType={format}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-xs font-semibold text-foreground hover:border-primary/40" />
+
+        {!dayLocked && (
+          <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            День
+            <input type="number" min={1} value={day ?? ''} onChange={(e) => setDay(e.target.value ? Number(e.target.value) : null)}
+              placeholder="№" className="h-9 w-20 rounded-lg border border-border bg-background px-2 text-xs text-foreground" />
+          </label>
+        )}
+
+        <button type="button" onClick={saveToPlan} disabled={saving}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40">
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : saved ? <Check className="h-3.5 w-3.5" /> : <CalendarPlus className="h-3.5 w-3.5" />}
+          {saving ? 'Сохраняю…' : saved ? 'В плане' : 'В план'}
+        </button>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        {dayLocked
+          ? 'День взят из контент-плана, откуда ты начал(а).'
+          : 'Укажи номер дня контент-плана — публикация появится в нём.'}
+      </p>
+    </section>
   )
 }
 
@@ -132,9 +218,9 @@ function carouselSlideToSlide(c: Dict, i: number, photo?: string): SlideValue {
   return { bgMode: 'photo', photoUrl: photo ?? null, photoTop: null, photoBottom: null, blocks }
 }
 
-function CarouselPanel({ projectId, brand, initialText }: { projectId: string; brand?: Brand; initialText: string }) {
+function CarouselPanel({ projectId, brand, text, onTextChange, persistKey }: { projectId: string; brand?: Brand; text: string; onTextChange: (v: string) => void; persistKey?: string }) {
   const [photos, setPhotos] = useState<string[]>([])
-  const [text, setText] = useState(initialText)
+  const setText = onTextChange
   const [fmt, setFmt] = useState<CarouselFmt>('carousel')
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
@@ -250,7 +336,7 @@ function CarouselPanel({ projectId, brand, initialText }: { projectId: string; b
     <div className="space-y-4">
       {/* 1. Загрузка фото — порядок = порядок слайдов */}
       <PhotoUploader projectId={projectId} photos={photos} kind="post" max={10}
-        onChange={(p) => setPhotos(p)} />
+        onChange={(p) => setPhotos(p)} persistKey={persistKey} />
 
       {/* 2. Текст / сценарий — текст, который ляжет на слайды */}
       <section className="rounded-2xl border border-border bg-card p-4 space-y-2">
@@ -322,10 +408,10 @@ function CarouselPanel({ projectId, brand, initialText }: { projectId: string; b
 }
 
 // ── Post format ───────────────────────────────────────────────────────────────
-function PostPanel({ projectId, brand, initialText }: { projectId: string; brand?: Brand; initialText: string }) {
+function PostPanel({ projectId, brand, text, onTextChange, persistKey }: { projectId: string; brand?: Brand; text: string; onTextChange: (v: string) => void; persistKey?: string }) {
   const [photos, setPhotos] = useState<string[]>([])
-  const [text, setText] = useState(initialText)
-  const [headline, setHeadline] = useState(() => firstLine(initialText))
+  const setText = onTextChange
+  const [headline, setHeadline] = useState(() => firstLine(text))
   const [fmt, setFmt] = useState<'post45' | 'post' | 'postWide'>('post45')
   const [hooking, setHooking] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -363,7 +449,7 @@ function PostPanel({ projectId, brand, initialText }: { projectId: string; brand
     <div className="space-y-4">
       {/* 1. Загрузка фото */}
       <PhotoUploader projectId={projectId} photos={photos} kind="post" max={1} showOrderHint={false}
-        onChange={(p) => { setPhotos(p); setImg(null) }} />
+        onChange={(p) => { setPhotos(p); setImg(null) }} persistKey={persistKey} />
 
       {/* 2. Текст / сценарий */}
       <section className="rounded-2xl border border-border bg-card p-4 space-y-2">

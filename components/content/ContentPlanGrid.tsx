@@ -5,25 +5,33 @@ import { useRouter } from 'next/navigation'
 import { StructuredContentView } from '@/components/content/StructuredContentView'
 import {
   Sparkles, ChevronLeft, ChevronRight, Download, Loader2,
-  Plus, X, Eye, RefreshCw, Check, Copy,
+  Plus, X, Eye, RefreshCw, Check, Copy, Wand2,
 } from 'lucide-react'
 import { SaveButton } from '@/components/content/SaveButton'
-import { StoryDesignButton } from '@/components/carousel/StoryDesignButton'
-import { PostImage } from '@/components/carousel/PostImage'
-import { CarouselSlides } from '@/components/carousel/CarouselSlides'
+import { setStudioHandoff, studioFormatFor } from '@/lib/studioHandoff'
 import { contentItemToText } from '@/lib/contentToText'
 import { toast } from 'sonner'
 import type { ContentItem, ContentType, WarmupPhase } from '@/types'
 
-// The «go to the visual editor» button for a saved content unit, mirroring what
-// the generation chat offers — but reachable straight from the content plan
-// (tester couldn't get back into the chat after saving to plan). Named per type;
-// reels is a filming script with no visual editor, so it gets nothing.
-function PublishButton({ type, text, projectId, storageKey }: { type: ContentType; text: string; projectId: string; storageKey?: string }) {
-  if (type === 'carousel') return <CarouselSlides sourceText={text} type="carousel" projectId={projectId} />
-  if (type === 'stories') return <StoryDesignButton text={text} projectId={projectId} />
-  if (type === 'post') return <PostImage text={text} projectId={projectId} storageKey={storageKey} />
-  return null
+// «Оформить» — opens the unified content studio (/create) for this saved unit,
+// carrying the text AND the content-plan day so the publication binds back to it
+// automatically (tester's «путь A»). Reels are a filming script → no studio.
+function PublishButton({ type, text, projectId, day, phase, router }: {
+  type: ContentType; text: string; projectId: string; day: number; phase?: string
+  router: ReturnType<typeof useRouter>
+}) {
+  const fmt = studioFormatFor(type)
+  if (!fmt) return null
+  return (
+    <button type="button"
+      onClick={() => {
+        setStudioHandoff(projectId, { format: fmt, text, day, phase })
+        router.push(`/projects/${projectId}/create?format=${fmt}`)
+      }}
+      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-white bg-primary active:opacity-90 transition-opacity">
+      <Wand2 className="h-3.5 w-3.5" /> Оформить
+    </button>
+  )
 }
 
 interface DayContent {
@@ -270,9 +278,8 @@ export function ContentPlanGrid({
                                   {/* Jump straight to the visual editor for this saved unit —
                                       no need to expand or reopen the chat (tester). */}
                                   {hasEditor && (
-                                    <div className="[&>button]:mt-0 [&>button]:w-full [&>button]:justify-center">
-                                      <PublishButton type={type} text={contentItemToText(existing)} projectId={projectId} storageKey={existing.id} />
-                                    </div>
+                                    <PublishButton type={type} text={contentItemToText(existing)} projectId={projectId}
+                                      day={day.day} phase={day.phase} router={router} />
                                   )}
                                 </div>
                               ) : (

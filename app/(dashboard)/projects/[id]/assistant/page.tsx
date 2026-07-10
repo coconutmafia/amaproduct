@@ -2,13 +2,12 @@
 
 import { useState, useRef, useEffect, useCallback, use } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Sparkles, Loader2, Copy, Check, User, CalendarPlus } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ArrowLeft, Sparkles, Loader2, Copy, Check, User, CalendarPlus, Wand2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ChatComposer } from '@/components/ui/ChatComposer'
 import { SaveButton } from '@/components/content/SaveButton'
-import { CarouselSlides } from '@/components/carousel/CarouselSlides'
-import { PostImage } from '@/components/carousel/PostImage'
-import { StoryDesignButton } from '@/components/carousel/StoryDesignButton'
+import { setStudioHandoff } from '@/lib/studioHandoff'
 import { VoiceRuleButton, maybeSuggestRule } from '@/components/chat/VoiceRuleButton'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
 import { friendlyError } from '@/lib/friendlyError'
@@ -77,6 +76,7 @@ function SaveToPlanButton({ projectId, ctx, text }: { projectId: string; ctx: Ge
 
 export default function AssistantPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
+  const router = useRouter()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -273,17 +273,28 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
                   <SaveButton body={text} projectId={id} className="text-[11px] text-muted-foreground hover:text-primary" />
                   <VoiceRuleButton projectId={id} />
                   {genContext && <SaveToPlanButton projectId={id} ctx={genContext} text={text} />}
-                  {(genContext?.type === 'carousel' || /слайд\s*\d/i.test(text)) ? (
-                    <CarouselSlides sourceText={text} type="carousel" projectId={id} />
-                  ) : (genContext?.type === 'reels' || isReelsScript(text)) ? (
-                    // A reels script is a filming script, not a post image or a
-                    // stories series — offer no «design» button (owner feedback).
-                    null
-                  ) : (genContext?.type === 'stories' || /(сторис|stories|кадр)\s*\d/i.test(text)) ? (
-                    <StoryDesignButton text={text} projectId={id} />
-                  ) : (genContext?.type === 'post' || text.length > 150) ? (
-                    <PostImage text={text} projectId={id} />
-                  ) : null}
+                  {/* Единая кнопка «Оформить» → унифицированный редактор (/create).
+                      Формат и день (если пришли из контент-плана) уезжают вместе с текстом. */}
+                  {(() => {
+                    const fmt: 'post' | 'carousel' | 'stories' | null =
+                      (genContext?.type === 'carousel' || /слайд\s*\d/i.test(text)) ? 'carousel'
+                      // A reels script is a filming script — no visual studio.
+                      : (genContext?.type === 'reels' || isReelsScript(text)) ? null
+                      : (genContext?.type === 'stories' || /(сторис|stories|кадр)\s*\d/i.test(text)) ? 'stories'
+                      : (genContext?.type === 'post' || text.length > 150) ? 'post'
+                      : null
+                    if (!fmt) return null
+                    return (
+                      <button type="button"
+                        onClick={() => {
+                          setStudioHandoff(id, { format: fmt, text, day: genContext?.day, phase: genContext?.phase })
+                          router.push(`/projects/${id}/create?format=${fmt}`)
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-primary-foreground hover:opacity-90">
+                        <Wand2 className="h-3 w-3" /> Оформить
+                      </button>
+                    )
+                  })()}
                 </div>
               )}
               {text}

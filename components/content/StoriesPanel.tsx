@@ -88,9 +88,19 @@ function Collapsible({ title, children }: { title: string; children: React.React
   )
 }
 
-export function StoriesPanel({ projectId, initialText = '' }: { projectId: string; initialText?: string }) {
+export function StoriesPanel({ projectId, initialText = '', text, onTextChange, persistKey }: {
+  projectId: string
+  initialText?: string
+  /** controlled text when embedded in the unified studio; uncontrolled on /stories */
+  text?: string
+  onTextChange?: (v: string) => void
+  persistKey?: string
+}) {
   const [photos, setPhotos] = useState<string[]>([])
-  const [script, setScript] = useState(initialText)
+  const [ownScript, setOwnScript] = useState(initialText)
+  const controlled = typeof text === 'string' && !!onTextChange
+  const script = controlled ? text! : ownScript
+  const setScript = (v: string) => (controlled ? onTextChange!(v) : setOwnScript(v))
   const [busy, setBusy] = useState(false)
   const [brand, setBrand] = useState<Brand | undefined>()
   const [rendered, setRendered] = useState<{ url: string; blob: Blob; frame: Frame }[]>([])
@@ -182,8 +192,8 @@ export function StoriesPanel({ projectId, initialText = '' }: { projectId: strin
       const handed = localStorage.getItem(key)
       if (handed) {
         localStorage.removeItem(key)
-        setScript((s) => s || handed)
-        toast.message('Сценарий из чата подставлен — жми «Собрать сторис»')
+        if (!script) setScript(handed)
+        toast.message('Сценарий из чата подставлен — жми «Создать контент»')
         return
       }
       // Draft restore — leaving the page must not lose the work (owner: «я
@@ -191,7 +201,7 @@ export function StoriesPanel({ projectId, initialText = '' }: { projectId: strin
       const draft = localStorage.getItem(`ama_stories_draft_${projectId}`)
       if (draft) {
         const d = JSON.parse(draft) as { script?: string; photos?: string[] }
-        if (d.script) setScript((s) => s || d.script || '')
+        if (d.script && !script) setScript(d.script)
         if (Array.isArray(d.photos) && d.photos.length) setPhotos((p) => (p.length ? p : d.photos!))
       }
     } catch { /* ignore */ }
@@ -442,7 +452,7 @@ export function StoriesPanel({ projectId, initialText = '' }: { projectId: strin
 
       {/* 1. Загрузка фото */}
       <PhotoUploader projectId={projectId} photos={photos} kind="story" max={8}
-        onChange={(p) => setPhotos(p)} />
+        onChange={(p) => setPhotos(p)} persistKey={persistKey} />
 
       {/* 2. Текст / сценарий */}
       <section className="rounded-2xl border border-border bg-card p-4 space-y-2">

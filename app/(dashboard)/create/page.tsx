@@ -1,15 +1,14 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { friendlyError } from '@/lib/friendlyError'
-import { Sparkles, Loader2, Copy, Check, User, FolderOpen, ChevronDown } from 'lucide-react'
+import { Sparkles, Loader2, Copy, Check, User, FolderOpen, ChevronDown, Wand2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ChatComposer } from '@/components/ui/ChatComposer'
 import { SaveButton } from '@/components/content/SaveButton'
-import { CarouselSlides } from '@/components/carousel/CarouselSlides'
-import { PostImage } from '@/components/carousel/PostImage'
-import { StoryDesignButton } from '@/components/carousel/StoryDesignButton'
+import { setStudioHandoff } from '@/lib/studioHandoff'
 import { VoiceRuleButton, maybeSuggestRule } from '@/components/chat/VoiceRuleButton'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
 import { useChatPin } from '@/lib/useChatPin'
@@ -27,6 +26,7 @@ const SUGGESTIONS = [
 ]
 
 export default function CreatePage() {
+  const router = useRouter()
   const supabase = createClient()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -202,16 +202,28 @@ export default function CreatePage() {
                   </button>
                   <SaveButton body={text} projectId={projectId} className="text-[11px] text-muted-foreground hover:text-primary" />
                   <VoiceRuleButton projectId={projectId} />
-                  {/слайд\s*\d/i.test(text) ? (
-                    <CarouselSlides sourceText={text} type="carousel" projectId={projectId || undefined} />
-                  ) : isReelsScript(text) ? (
-                    // A reels script is a filming script — no «design» button.
-                    null
-                  ) : /(сторис|stories|кадр)\s*\d/i.test(text) ? (
-                    projectId ? <StoryDesignButton text={text} projectId={projectId} /> : null
-                  ) : text.length > 150 ? (
-                    <PostImage text={text} projectId={projectId || undefined} />
-                  ) : null}
+                  {/* «Оформить» → унифицированный редактор. Дня тут нет (путь B),
+                      поэтому в редакторе появится выбор дня контент-плана. */}
+                  {(() => {
+                    const fmt: 'post' | 'carousel' | 'stories' | null =
+                      /слайд\s*\d/i.test(text) ? 'carousel'
+                      : isReelsScript(text) ? null // киносценарий рилз — визуального редактора нет
+                      : /(сторис|stories|кадр)\s*\d/i.test(text) ? 'stories'
+                      : text.length > 150 ? 'post'
+                      : null
+                    if (!fmt) return null
+                    return (
+                      <button type="button"
+                        onClick={() => {
+                          if (!projectId) { toast.error('Сначала выбери проект'); return }
+                          setStudioHandoff(projectId, { format: fmt, text })
+                          router.push(`/projects/${projectId}/create?format=${fmt}`)
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-primary-foreground hover:opacity-90">
+                        <Wand2 className="h-3 w-3" /> Оформить
+                      </button>
+                    )
+                  })()}
                 </div>
               )}
               {text}

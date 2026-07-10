@@ -4,13 +4,13 @@
 // Сторис). Universal title, ordering (← →), removal (✕), frame-number badges,
 // and the explainer caption BELOW the block (tester's spec, UNIFY_EDITOR.md).
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { Upload, Loader2, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { downscaleImage } from '@/lib/downscaleImage'
 import { friendlyError } from '@/lib/friendlyError'
 
-export function PhotoUploader({ projectId, photos, onChange, kind = 'post', max = 8, showOrderHint = true }: {
+export function PhotoUploader({ projectId, photos, onChange, kind = 'post', max = 8, showOrderHint = true, persistKey }: {
   projectId: string
   photos: string[]
   onChange: (next: string[]) => void
@@ -19,8 +19,33 @@ export function PhotoUploader({ projectId, photos, onChange, kind = 'post', max 
   max?: number
   /** single-photo formats (пост) don't need the series explainer */
   showOrderHint?: boolean
+  /** when set, the chosen photos survive a page reload for THIS publication */
+  persistKey?: string
 }) {
   const [uploading, setUploading] = useState(false)
+
+  // Restore/persist the chosen photos per publication (tester: «перезагрузила —
+  // фото сбросилось»). Storage URLs only, so this is cheap.
+  const lsKey = persistKey ? `ama_photos_${persistKey}` : null
+  const restored = useRef(false)
+  useEffect(() => {
+    if (!lsKey || restored.current) return
+    restored.current = true
+    if (photos.length > 0) return
+    try {
+      const raw = localStorage.getItem(lsKey)
+      const saved = raw ? (JSON.parse(raw) as string[]) : []
+      if (Array.isArray(saved) && saved.length) onChange(saved.slice(0, max))
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lsKey])
+  useEffect(() => {
+    if (!lsKey || !restored.current) return
+    try {
+      if (photos.length) localStorage.setItem(lsKey, JSON.stringify(photos))
+      else localStorage.removeItem(lsKey)
+    } catch { /* ignore */ }
+  }, [photos, lsKey])
 
   async function upload(files: FileList | null) {
     if (!files || files.length === 0) return
