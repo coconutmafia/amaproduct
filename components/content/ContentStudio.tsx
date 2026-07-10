@@ -6,13 +6,15 @@
 //   → 3. Формат + «Создать контент» → Оформленный контент
 // Phase 1: POST works end-to-end. Carousel/Stories are ported in Phases 2–3.
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { ArrowLeft, Loader2, Download, Sparkles } from 'lucide-react'
+import { ArrowLeft, Loader2, Download, Sparkles, Wand2 } from 'lucide-react'
 import { friendlyError } from '@/lib/friendlyError'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { PhotoUploader } from '@/components/content/PhotoUploader'
+import { StoryEditor, type EditorLoadRequest } from '@/components/carousel/StoryEditor'
+import { type Block, type SlideValue } from '@/components/carousel/FreeCanvas'
 
 type Format = 'post' | 'carousel' | 'stories'
 interface Brand { accentColor?: string; bg?: string; text?: string; bgStyle?: string; handle?: string; logoUrl?: string; font?: string; accentStyle?: 'gradient' | 'flat'; styleNotes?: string }
@@ -105,19 +107,73 @@ function slideCount(c: Dict): number {
   return (c.cover ? 1 : 0) + slides.length + (c.last_slide ? 1 : 0)
 }
 
+const str = (v: unknown): string => (typeof v === 'string' ? v : '')
+
+// Text of slide `i`: 0 = обложка, последний = финальный, остальные — из slides[].
+function slideTextAt(c: Dict, i: number): { headline: string; body: string } {
+  const slides = (Array.isArray(c.slides) ? c.slides : []) as Dict[]
+  const hasCover = !!c.cover
+  const n = slideCount(c)
+  if (hasCover && i === 0) {
+    const cov = c.cover as Dict
+    return { headline: str(cov.headline), body: str(cov.subheadline) }
+  }
+  if (c.last_slide && i === n - 1) {
+    const last = c.last_slide as Dict
+    return { headline: str(last.text), body: str(last.action) }
+  }
+  const sl = slides[i - (hasCover ? 1 : 0)] ?? {}
+  return { headline: str(sl.headline), body: str(sl.body) }
+}
+
+let _cbid = 0
+const cBlockId = () => `cb${++_cbid}`
+
+// Slide → free-editor value (photo bg + its text as editable blocks).
+function carouselSlideToSlide(c: Dict, i: number, photo?: string): SlideValue {
+  const { headline, body } = slideTextAt(c, i)
+  const blocks: Block[] = []
+  let y = 0.14
+  const add = (text: string, size: number) => {
+    if (!text.trim()) return
+    blocks.push({
+      id: cBlockId(), type: 'text', text: text.trim(),
+      xPct: 0.08, yPct: Math.min(y, 0.9), widthPct: 0.84,
+      size, color: '#FFFFFF', plate: true, align: 'left', rotation: 0,
+    })
+    y += 0.14
+  }
+  add(headline, 64)
+  add(body, 40)
+  return { bgMode: 'photo', photoUrl: photo ?? null, photoTop: null, photoBottom: null, blocks }
+}
+
 function CarouselPanel({ projectId, brand, initialText }: { projectId: string; brand?: Brand; initialText: string }) {
   const [photos, setPhotos] = useState<string[]>([])
   const [text, setText] = useState(initialText)
   const [fmt, setFmt] = useState<CarouselFmt>('carousel')
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
-  const [slides, setSlides] = useState<{ url: string; blob: Blob }[]>([])
+  const [carousel, setCarousel] = useState<Dict | null>(null)
+  // `manual` slides were designed by hand — AI re-renders must not overwrite them.
+  const [slides, setSlides] = useState<{ url: string; blob: Blob; manual?: boolean }[]>([])
   const [zipping, setZipping] = useState(false)
+  const [editText, setEditText] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [editReq, setEditReq] = useState<EditorLoadRequest | null>(null)
+  const tokenRef = useRef(0)
 
-  async function renderSlide(carousel: Dict, index: number, photoMap: Record<number, string>): Promise<Blob> {
+  // 1-е фото → 1-й слайд (обложка), 2-е → 2-й, … (порядок фото = порядок слайдов)
+  function photoMap(): Record<number, string> {
+    const m: Record<number, string> = {}
+    photos.forEach((u, i) => { m[i] = u })
+    return m
+  }
+
+  async function renderSlide(c: Dict, index: number): Promise<Blob> {
     const res = await fetch('/api/carousel/render', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ carousel, index, format: fmt, brand, photos: photoMap }),
+      body: JSON.stringify({ carousel: c, index, format: fmt, brand, photos: photoMap() }),
     })
     if (!res.ok) throw new Error(`слайд ${index + 1}: ${res.status}`)
     return res.blob()
@@ -136,18 +192,62 @@ function CarouselPanel({ projectId, brand, initialText }: { projectId: string; b
       })
       const d = await r.json()
       if (!r.ok || !d.carousel) throw new Error(d.error || 'Не удалось разложить на слайды')
-      const carousel = d.carousel as Dict
-
-      // 1-е фото → 1-й слайд (обложка), 2-е → 2-й, … (порядок фото = порядок слайдов)
-      const photoMap: Record<number, string> = {}
-      photos.forEach((u, i) => { photoMap[i] = u })
+      const c = d.carousel as Dict
+      setCarousel(c)
 
       setStatus('Рисую слайды…')
-      const n = slideCount(carousel)
-      const blobs = await Promise.all(Array.from({ length: n }, (_, i) => renderSlide(carousel, i, photoMap)))
+      const n = slideCount(c)
+      const blobs = await Promise.all(Array.from({ length: n }, (_, i) => renderSlide(c, i)))
       setSlides(blobs.map((blob) => ({ blob, url: URL.createObjectURL(blob) })))
     } catch (e) { toast.error(friendlyError(e, 'Не удалось создать карусель')) }
     finally { setBusy(false); setStatus('') }
+  }
+
+  // AI-правка текста слайдов. Вручную оформленные слайды не перерисовываем.
+  async function applyEdit() {
+    if (!carousel || !editText.trim() || editing) return
+    setEditing(true)
+    try {
+      const res = await fetch('/api/ai/edit-carousel', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ carousel, instruction: editText }),
+      })
+      const d = await res.json().catch(() => ({} as { carousel?: Dict; error?: string }))
+      if (!res.ok || !d.carousel) throw new Error(d.error || 'Не удалось применить правку')
+      const c = d.carousel as Dict
+      setCarousel(c)
+      const prev = slides
+      const n = slideCount(c)
+      const blobs = await Promise.all(Array.from({ length: n }, (_, i) =>
+        prev[i]?.manual ? Promise.resolve(prev[i].blob) : renderSlide(c, i)))
+      prev.forEach((s) => URL.revokeObjectURL(s.url))
+      setSlides(blobs.map((blob, i) => ({ blob, url: URL.createObjectURL(blob), manual: prev[i]?.manual })))
+      setEditText('')
+      toast.success('Правка применена')
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось применить правку')) }
+    finally { setEditing(false) }
+  }
+
+  // Открыть слайд в свободном редакторе (фото + его текст блоками).
+  function editSlideManually(i: number) {
+    if (!carousel) return
+    tokenRef.current += 1
+    setEditReq({ token: tokenRef.current, slide: carouselSlideToSlide(carousel, i, photos[i]), index: i })
+    toast.message('Слайд открыт в редакторе ниже — меняй и жми «Добавить в серию»')
+  }
+
+  // Экспорт из свободного редактора → в конкретный слайд серии (или новый).
+  function addManualToSeries({ blob, index }: { blob: Blob; index: number }) {
+    const url = URL.createObjectURL(blob)
+    const arr = [...slides]
+    if (index >= 0 && index < arr.length) {
+      URL.revokeObjectURL(arr[index].url)
+      arr[index] = { url, blob, manual: true }
+    } else {
+      arr.push({ url, blob, manual: true })
+    }
+    setSlides(arr)
+    toast.success('Слайд добавлен в серию')
   }
 
   async function downloadZip() {
@@ -190,6 +290,11 @@ function CarouselPanel({ projectId, brand, initialText }: { projectId: string; b
         </button>
       </section>
 
+      {/* 4. Свободный редактор — любой формат, можно унести туда слайд */}
+      <StoryEditor projectId={projectId} photos={photos} loadReq={editReq}
+        onAddToSeries={addManualToSeries} seriesLen={slides.length}
+        renderFormat={fmt} unitLabel="слайд" title="Свободный редактор слайда (двигай элементы)" />
+
       {/* Оформленный контент */}
       {slides.length > 0 && (
         <section className="rounded-2xl border border-border bg-card p-4 space-y-3">
@@ -209,8 +314,22 @@ function CarouselPanel({ projectId, brand, initialText }: { projectId: string; b
                   className="text-[11px] font-medium text-muted-foreground hover:text-foreground">
                   ↓ {i === 0 ? 'Обложка' : i === slides.length - 1 ? 'Финальный' : `Слайд ${i + 1}`}
                 </button>
+                <button type="button" onClick={() => editSlideManually(i)}
+                  className="text-[11px] font-medium text-primary/80 hover:text-primary">✎ Редактировать вручную</button>
               </div>
             ))}
+          </div>
+
+          {/* Правки голосом/текстом — как у сторис */}
+          <div className="rounded-xl border border-primary/25 bg-primary/5 p-3 space-y-2">
+            <p className="text-xs font-semibold text-foreground flex items-center gap-1.5"><Wand2 className="h-3.5 w-3.5 text-primary" /> Правки — голосом или текстом</p>
+            <VoiceTextarea value={editText} onChange={setEditText} rows={2}
+              placeholder="Например: «на 3-м слайде сделай текст короче», «в финальном поменяй призыв»" />
+            <button type="button" onClick={applyEdit} disabled={editing || !editText.trim()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40">
+              {editing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+              {editing ? 'Применяю правку…' : 'Применить правку'}
+            </button>
           </div>
         </section>
       )}

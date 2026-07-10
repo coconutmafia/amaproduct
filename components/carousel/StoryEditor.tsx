@@ -18,13 +18,23 @@ import {
 // (photo + its text as editable blocks). `token` changes to re-trigger a load.
 export interface EditorLoadRequest { token: number; slide: SlideValue; index: number }
 
-export function StoryEditor({ projectId, photos, loadReq, onAddToSeries, seriesLen = 0 }: {
+export function StoryEditor({
+  projectId, photos, loadReq, onAddToSeries, seriesLen = 0,
+  renderFormat = 'story', unitLabel = 'сторис', title = 'Редактор сторис (двигай элементы)',
+}: {
   projectId: string
   photos?: string[]
   loadReq?: EditorLoadRequest | null
   onAddToSeries?: (args: { blob: Blob; index: number }) => Promise<void> | void
   seriesLen?: number
+  /** engine FormatKey — 'story' | 'carousel' | 'post' | 'post45' | 'postWide' | 'carouselWide' */
+  renderFormat?: string
+  /** what one unit is called in the «Заменить …» selector */
+  unitLabel?: string
+  title?: string
 }) {
+  // 9:16 gets the tall canvas; every other aspect uses the carousel canvas.
+  const canvasFormat: 'story' | 'carousel' = renderFormat === 'story' ? 'story' : 'carousel'
   const [slide, setSlide] = useState<SlideValue>(blankSlide)
   const [brand, setBrand] = useState<Brand>({ accentColor: '#EC1E8C', bg: '#F5F0E8', text: '#1A1A1A' })
   const [exporting, setExporting] = useState(false)
@@ -71,7 +81,7 @@ export function StoryEditor({ projectId, photos, loadReq, onAddToSeries, seriesL
     try {
       const res = await fetch('/api/carousel/render', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slide: buildFreeSlide(slide), format: 'story', projectId, brand: exportBrandFor(slide, brand) }),
+        body: JSON.stringify({ slide: buildFreeSlide(slide), format: renderFormat, projectId, brand: exportBrandFor(slide, brand) }),
       })
       if (!res.ok) throw new Error('Не удалось собрать картинку — попробуй ещё раз')
       const blob = await res.blob()
@@ -97,13 +107,13 @@ export function StoryEditor({ projectId, photos, loadReq, onAddToSeries, seriesL
           <Type className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-foreground">Редактор сторис (двигай элементы)</p>
+          <p className="text-sm font-semibold text-foreground">{title}</p>
           <p className="text-xs text-muted-foreground">Добавляй текст, стрелки, иконки, номера и картинки. Перетаскивай пальцем, двумя пальцами — масштаб и поворот.</p>
         </div>
       </div>
 
       <div className="mt-3">
-        <FreeCanvas projectId={projectId} brand={brand} value={slide} onChange={setSlide} format="story" photos={photos} />
+        <FreeCanvas projectId={projectId} brand={brand} value={slide} onChange={setSlide} format={canvasFormat} photos={photos} />
       </div>
 
       <button type="button" onClick={exportImg} disabled={exporting || !hasBg || slide.blocks.length === 0}
@@ -115,17 +125,17 @@ export function StoryEditor({ projectId, photos, loadReq, onAddToSeries, seriesL
       {resultUrl && (
         <div className="mt-3 space-y-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={resultUrl} alt="Готовая сторис" className="mx-auto max-h-96 rounded-xl border border-border" />
+          <img src={resultUrl} alt="Готовый кадр" className="mx-auto max-h-96 rounded-xl border border-border" />
           <div className="flex flex-wrap items-center gap-2">
-            <a href={resultUrl} download="story.png" className="inline-flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-xs font-semibold text-foreground hover:border-primary/40">
+            <a href={resultUrl} download={`${renderFormat}.png`} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-xs font-semibold text-foreground hover:border-primary/40">
               <Download className="h-3.5 w-3.5" /> Скачать
             </a>
             {onAddToSeries && (
               <>
                 <select value={String(target)} onChange={(e) => setTarget(e.target.value === 'append' ? 'append' : Number(e.target.value))}
                   className="h-9 rounded-lg border border-border bg-background px-2 text-xs">
-                  {Array.from({ length: seriesLen }).map((_, i) => <option key={i} value={i}>Заменить сторис {i + 1}</option>)}
-                  <option value="append">Новый кадр в конце</option>
+                  {Array.from({ length: seriesLen }).map((_, i) => <option key={i} value={i}>Заменить {unitLabel} {i + 1}</option>)}
+                  <option value="append">Новый в конце</option>
                 </select>
                 <button type="button" onClick={addToSeries} disabled={addingToSeries}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40">
