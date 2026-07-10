@@ -80,7 +80,10 @@ export function ContentStudio({ projectId, initialFormat = 'post', initialText =
         <ArrowLeft className="h-4 w-4" /> К проекту
       </Link>
       <h1 className="text-xl font-bold text-foreground">Создать контент</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Выбери формат, загрузи фото, напиши текст — соберём в твоём стиле.</p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Выбери формат, загрузи фото, напиши текст — соберём в твоём стиле.
+        {!brand && <> <Link href={`/projects/${projectId}/brand`} className="text-primary underline">Сначала настрой стиль →</Link></>}
+      </p>
 
       {/* Format tabs — one consistent entry point for all formats */}
       <div className="mt-4 inline-flex rounded-xl border border-border bg-card p-1">
