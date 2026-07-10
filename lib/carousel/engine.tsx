@@ -19,6 +19,7 @@ export const FORMATS = {
   post: { w: 1080, h: 1080 }, // 1:1
   post45: { w: 1080, h: 1350 }, // 4:5 single post (best for IG feed reach)
   postWide: { w: 1080, h: 566 }, // 1.91:1 landscape (owner request)
+  carouselWide: { w: 1080, h: 608 }, // 16:9 landscape carousel (tester request)
   story: { w: 1080, h: 1920 }, // 9:16
 } as const
 export type FormatKey = keyof typeof FORMATS

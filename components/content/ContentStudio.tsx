@@ -70,10 +70,7 @@ export function ContentStudio({ projectId, initialFormat = 'post', initialText =
 
       <div className="mt-5">
         {format === 'post' && <PostPanel projectId={projectId} brand={brand} initialText={initialText} />}
-        {format === 'carousel' && (
-          <ComingSoon format="Карусель"
-            note="Карусель пока собирается в чате-ассистенте и в разделе «Создать визуал». Перенос в этот единый редактор — Фаза 2." />
-        )}
+        {format === 'carousel' && <CarouselPanel projectId={projectId} brand={brand} initialText={initialText} />}
         {format === 'stories' && (
           <ComingSoon format="Сторис" href={`/projects/${projectId}/stories`}
             note="Сторис пока на отдельной странице «Оформление сторис». Перенос в этот единый редактор — Фаза 3." />
@@ -92,6 +89,130 @@ function ComingSoon({ format, note, href }: { format: string; note: string; href
         <Link href={href} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90">
           Открыть текущий редактор {format.toLowerCase()} →
         </Link>
+      )}
+    </div>
+  )
+}
+
+// ── Carousel format ───────────────────────────────────────────────────────────
+// Built like the stories series (tester): photos in order → slides in order.
+// Cover = first slide, final = last slide. Formats 4:5 / 1:1 / 16:9.
+type Dict = Record<string, unknown>
+type CarouselFmt = 'carousel' | 'post' | 'carouselWide'
+
+function slideCount(c: Dict): number {
+  const slides = Array.isArray(c.slides) ? c.slides : []
+  return (c.cover ? 1 : 0) + slides.length + (c.last_slide ? 1 : 0)
+}
+
+function CarouselPanel({ projectId, brand, initialText }: { projectId: string; brand?: Brand; initialText: string }) {
+  const [photos, setPhotos] = useState<string[]>([])
+  const [text, setText] = useState(initialText)
+  const [fmt, setFmt] = useState<CarouselFmt>('carousel')
+  const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState('')
+  const [slides, setSlides] = useState<{ url: string; blob: Blob }[]>([])
+  const [zipping, setZipping] = useState(false)
+
+  async function renderSlide(carousel: Dict, index: number, photoMap: Record<number, string>): Promise<Blob> {
+    const res = await fetch('/api/carousel/render', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ carousel, index, format: fmt, brand, photos: photoMap }),
+    })
+    if (!res.ok) throw new Error(`слайд ${index + 1}: ${res.status}`)
+    return res.blob()
+  }
+
+  async function create() {
+    if (!text.trim()) { toast.error('Напиши текст — разложим его на слайды'); return }
+    setBusy(true)
+    slides.forEach((s) => URL.revokeObjectURL(s.url))
+    setSlides([])
+    try {
+      setStatus('Раскладываю на слайды…')
+      const r = await fetch('/api/carousel/structure', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text, type: 'carousel', styleNotes: brand?.styleNotes }),
+      })
+      const d = await r.json()
+      if (!r.ok || !d.carousel) throw new Error(d.error || 'Не удалось разложить на слайды')
+      const carousel = d.carousel as Dict
+
+      // 1-е фото → 1-й слайд (обложка), 2-е → 2-й, … (порядок фото = порядок слайдов)
+      const photoMap: Record<number, string> = {}
+      photos.forEach((u, i) => { photoMap[i] = u })
+
+      setStatus('Рисую слайды…')
+      const n = slideCount(carousel)
+      const blobs = await Promise.all(Array.from({ length: n }, (_, i) => renderSlide(carousel, i, photoMap)))
+      setSlides(blobs.map((blob) => ({ blob, url: URL.createObjectURL(blob) })))
+    } catch (e) { toast.error(friendlyError(e, 'Не удалось создать карусель')) }
+    finally { setBusy(false); setStatus('') }
+  }
+
+  async function downloadZip() {
+    if (slides.length === 0) return
+    setZipping(true)
+    try {
+      const { default: JSZip } = await import('jszip')
+      const zip = new JSZip()
+      slides.forEach((s, i) => zip.file(`slide-${String(i + 1).padStart(2, '0')}.png`, s.blob))
+      download(await zip.generateAsync({ type: 'blob' }), 'carousel.zip')
+    } catch { toast.error('Не удалось собрать ZIP') }
+    finally { setZipping(false) }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* 1. Загрузка фото — порядок = порядок слайдов */}
+      <PhotoUploader projectId={projectId} photos={photos} kind="post" max={10}
+        onChange={(p) => setPhotos(p)} />
+
+      {/* 2. Текст / сценарий — текст, который ляжет на слайды */}
+      <section className="rounded-2xl border border-border bg-card p-4 space-y-2">
+        <p className="text-sm font-semibold text-foreground">Текст / сценарий</p>
+        <VoiceTextarea value={text} onChange={setText} rows={5}
+          placeholder="Текст, который пойдёт на слайды. Первый слайд станет обложкой, последний — финальным." />
+      </section>
+
+      {/* 3. Формат + «Создать контент» */}
+      <section className="rounded-2xl border border-border bg-card p-4 space-y-3">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-muted-foreground">Формат:</span>
+          {([['carousel', '4:5 (вертикальная)'], ['post', '1:1 (квадрат)'], ['carouselWide', '16:9 (горизонтальная)']] as const).map(([v, label]) => (
+            <button key={v} type="button" onClick={() => setFmt(v)}
+              className={`rounded-lg px-3 py-1.5 font-medium ${fmt === v ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground hover:text-foreground'}`}>{label}</button>
+          ))}
+        </div>
+        <button type="button" onClick={create} disabled={busy}
+          className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40">
+          {busy ? <><Loader2 className="h-4 w-4 animate-spin" /> {status || 'Создаю…'}</> : <><Sparkles className="h-4 w-4" /> Создать контент</>}
+        </button>
+      </section>
+
+      {/* Оформленный контент */}
+      {slides.length > 0 && (
+        <section className="rounded-2xl border border-border bg-card p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-foreground">Оформленный контент · {slides.length}</p>
+            <button type="button" onClick={downloadZip} disabled={zipping}
+              className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40">
+              <Download className="h-3.5 w-3.5" /> {zipping ? 'Собираю…' : 'Скачать всё (ZIP)'}
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {slides.map((s, i) => (
+              <div key={i} className="flex flex-col gap-1">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={s.url} alt={`Слайд ${i + 1}`} className="w-full rounded-lg border border-border" />
+                <button type="button" onClick={() => download(s.blob, `slide-${String(i + 1).padStart(2, '0')}.png`)}
+                  className="text-[11px] font-medium text-muted-foreground hover:text-foreground">
+                  ↓ {i === 0 ? 'Обложка' : i === slides.length - 1 ? 'Финальный' : `Слайд ${i + 1}`}
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
     </div>
   )
