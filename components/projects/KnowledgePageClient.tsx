@@ -20,11 +20,12 @@ import { friendlyError } from '@/lib/friendlyError'
 import { computeCompleteness } from '@/lib/completeness'
 import { audienceResearchToAoa, meaningsMapToAoa } from '@/lib/researchTables'
 import { downloadXlsx } from '@/lib/utils/xlsxTable'
+import { downloadDocx, openMaterialInBrowser } from '@/lib/utils/docxText'
 import {
   CheckCircle2, Circle, Loader, AlertCircle, Upload, BookOpen,
   X, File, Loader2, Plus, FileText, ChevronDown, ChevronUp,
   Info, MessageSquare, Sparkles, Trash2, Copy, Check, Pencil, AudioLines,
-  Download,
+  Download, Eye,
 } from 'lucide-react'
 
 interface Material {
@@ -1038,6 +1039,24 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
   }
 
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [openingId, setOpeningId] = useState<string | null>(null)
+
+  // «Посмотреть» — open the material right in the browser, nothing downloaded.
+  const openMaterial = async (id: string, title: string) => {
+    setOpeningId(id)
+    try {
+      const res = await fetch(`/api/materials/${id}`)
+      if (!res.ok) throw new Error('Ошибка загрузки')
+      const data = await res.json() as { raw_content?: string }
+      const content = data.raw_content || ''
+      if (!content.trim()) { toast.error('В материале пока нет содержимого'); return }
+      openMaterialInBrowser(title, content)
+    } catch {
+      toast.error('Не удалось открыть материал')
+    } finally {
+      setOpeningId(null)
+    }
+  }
 
   const downloadMaterial = async (id: string, title: string, type?: string) => {
     setDownloadingId(id)
@@ -1059,29 +1078,10 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
         return
       }
 
-      // Text materials → styled HTML so it opens with a clean, readable font
-      // (not the monospace .txt viewer). Renders nicely on phone/desktop.
-      const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)}</title>
-<style>
-  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-       max-width:720px;margin:0 auto;padding:28px 20px;color:#1a1a1a;line-height:1.6;font-size:16px;background:#fff}
-  h1{font-size:22px;font-weight:700;margin:0 0 6px}
-  .meta{color:#888;font-size:13px;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid #eee}
-  .content{white-space:pre-wrap}
-</style></head><body>
-<h1>${esc(title)}</h1>
-<div class="meta">Материал проекта · AMA</div>
-<div class="content">${esc(content)}</div>
-</body></html>`
-      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-
-      const url = URL.createObjectURL(blob)
-      const a   = document.createElement('a')
-      a.href = url; a.download = `${safe}.html`; a.click()
-      URL.revokeObjectURL(url)
+      // Text materials → real .docx (Word/Pages/Docs). Previously we shipped a
+      // styled .html, which the browser just re-opened as a page instead of
+      // saving a usable document (tester). Viewing now lives behind «Посмотреть».
+      await downloadDocx(safe, title, content)
     } catch {
       toast.error('Не удалось скачать материал')
     } finally {
@@ -1254,10 +1254,21 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                                 </button>
                               )}
                               <button
+                                onClick={() => openMaterial(item.id, item.title)}
+                                disabled={openingId === item.id}
+                                className="p-0.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors shrink-0"
+                                title="Посмотреть"
+                              >
+                                {openingId === item.id
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : <Eye className="h-3 w-3" />
+                                }
+                              </button>
+                              <button
                                 onClick={() => downloadMaterial(item.id, item.title, type)}
                                 disabled={downloadingId === item.id}
                                 className="p-0.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors shrink-0"
-                                title="Скачать"
+                                title="Скачать (Word / Excel)"
                               >
                                 {downloadingId === item.id
                                   ? <Loader2 className="h-3 w-3 animate-spin" />
