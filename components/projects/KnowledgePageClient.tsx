@@ -49,12 +49,9 @@ interface Props {
   userName?: string
 }
 
+// `audience_survey` («Результаты опросов») убран по просьбе тестера (согласовано
+// с Августой). Прежние материалы этого типа перенесены в `audience_research`.
 const TYPE_META: Record<string, { label: string; hint: string; category: string }> = {
-  audience_survey: {
-    label: 'Результаты опросов',
-    hint: 'Загрузи результаты опросов, которые ты проводил(а) в Stories, постах или через Google Forms — они помогут лучше понять аудиторию.',
-    category: 'АУДИТОРИЯ',
-  },
   interview_transcript: {
     label: 'Транскрипты созвонов',
     hint: 'Если проводил(а) глубинные интервью с подписчиками (CustDev, кастдевы) — загрузи расшифровки. Текстовый формат.',
@@ -122,8 +119,14 @@ const TYPE_META: Record<string, { label: string; hint: string; category: string 
   },
 }
 
+// Retired types that no longer have their own block. Materials uploaded before
+// the block was removed are shown under a current type so they stay visible and
+// deletable (and keep feeding generation) instead of silently disappearing.
+const LEGACY_TYPE_ALIAS: Record<string, string> = { audience_survey: 'audience_research' }
+const normalizeType = (t: string): string => LEGACY_TYPE_ALIAS[t] ?? t
+
 const CATEGORIES = [
-  { key: 'АУДИТОРИЯ', title: 'АУДИТОРИЯ', types: ['audience_survey', 'interview_transcript', 'audience_research'] },
+  { key: 'АУДИТОРИЯ', title: 'АУДИТОРИЯ', types: ['interview_transcript', 'audience_research'] },
   { key: 'INSTAGRAM', title: 'INSTAGRAM', types: ['my_instagram', 'competitors'] },
   { key: 'СТРАТЕГИЯ', title: 'СТРАТЕГИЯ', types: ['unpacking_map', 'meanings_map', 'tone_of_voice'] },
   { key: 'СОЦИАЛЬНЫЕ ДОКАЗАТЕЛЬСТВА', title: 'СОЦИАЛЬНЫЕ ДОКАЗАТЕЛЬСТВА', types: ['cases_reviews'] },
@@ -458,7 +461,7 @@ function ImportMaterialsDialog({
 
   // Group global materials by type category
   const globalByCategory = globalMaterials.reduce<Record<string, GlobalMaterial[]>>((acc, m) => {
-    const cat = TYPE_META[m.material_type]?.category ?? 'ПРОЧЕЕ'
+    const cat = TYPE_META[normalizeType(m.material_type)]?.category ?? 'ПРОЧЕЕ'
     if (!acc[cat]) acc[cat] = []
     acc[cat]!.push(m)
     return acc
@@ -531,7 +534,7 @@ function ImportMaterialsDialog({
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium truncate">{m.title}</p>
-                                <p className="text-xs text-muted-foreground">{TYPE_META[m.material_type]?.label || m.material_type}</p>
+                                <p className="text-xs text-muted-foreground">{TYPE_META[normalizeType(m.material_type)]?.label || m.material_type}</p>
                               </div>
                               <span className="text-[10px] text-muted-foreground/60 shrink-0 hidden sm:block truncate max-w-[80px]">{m.project_name}</span>
                             </button>
@@ -581,7 +584,7 @@ function ImportMaterialsDialog({
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium truncate">{m.title}</p>
-                              <p className="text-xs text-muted-foreground">{TYPE_META[m.material_type]?.label || m.material_type}</p>
+                              <p className="text-xs text-muted-foreground">{TYPE_META[normalizeType(m.material_type)]?.label || m.material_type}</p>
                             </div>
                             {isEvergreen && <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded shrink-0">постоянный</span>}
                           </button>
@@ -994,8 +997,9 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
   const [generatingMeanings, setGeneratingMeanings] = useState(false)
 
   const materialsByType = materials.reduce<Record<string, Material[]>>((acc, m) => {
-    if (!acc[m.material_type]) acc[m.material_type] = []
-    acc[m.material_type]!.push(m)
+    const t = normalizeType(m.material_type)
+    if (!acc[t]) acc[t] = []
+    acc[t]!.push(m)
     return acc
   }, {})
 

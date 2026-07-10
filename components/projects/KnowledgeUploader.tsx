@@ -17,7 +17,7 @@ import {
 import type { MaterialType } from '@/types'
 
 const MATERIAL_TYPES: Array<{ value: MaterialType; label: string; category: string }> = [
-  { value: 'audience_survey',     label: 'Результаты опроса аудитории',  category: 'АУДИТОРИЯ' },
+  // «Результаты опроса аудитории» (audience_survey) убран — тестер + Августа.
   { value: 'interview_transcript',label: 'Транскрипт созвона',           category: 'АУДИТОРИЯ' },
   { value: 'audience_research',   label: 'Исследование аудитории',       category: 'АУДИТОРИЯ' },
   { value: 'unpacking_map',       label: 'Распаковка личности',          category: 'СТРАТЕГИЯ' },
