@@ -489,6 +489,10 @@ function PostPanel({ projectId, brand, text, onTextChange, persistKey }: { proje
         </button>
       </section>
 
+      {/* 4. Свободный редактор — в формате выбранного поста (4:5 / 1:1 / гориз.) */}
+      <StoryEditor projectId={projectId} photos={photos}
+        renderFormat={fmt} unitLabel="картинка" title="Свободный редактор (двигай элементы)" />
+
       {/* Оформленный контент */}
       {img && (
         <section className="rounded-2xl border border-border bg-card p-4 space-y-3">
