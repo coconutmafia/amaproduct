@@ -132,11 +132,21 @@ export function ProjectWizard() {
     return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current) }
   }, [step, name, niche, description, targetAudience, contentGoals, instagramUrl, vkUrl, telegramUrl, youtubeUrl, salesType, launchDate, launchBudget, launchCurrency, products, funnels, aiName])
 
+  // Once the project is created there is nothing unsaved — the «Leave site?»
+  // prompt must not fire on the navigation to the project (tester hit it every
+  // time). A ref (not state) so the guard is live immediately, without waiting
+  // for a re-render before router.push runs.
+  const projectSavedRef = useRef(false)
+
   // Warn before closing/refreshing the tab with a half-filled project.
   useEffect(() => {
     const meaningful = !!(name || niche || description || targetAudience || contentGoals || products.some(p => p.name))
     if (!meaningful) return
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    const handler = (e: BeforeUnloadEvent) => {
+      if (projectSavedRef.current) return // already saved → let the navigation through
+      e.preventDefault()
+      e.returnValue = ''
+    }
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
   }, [name, niche, description, targetAudience, contentGoals, products])
@@ -322,6 +332,9 @@ export function ProjectWizard() {
         if (funnelError) console.error('Funnels insert error:', funnelError.message)
       }
 
+      // Nothing is unsaved anymore → suppress the browser's «Leave site?» prompt
+      // before we navigate to the new project.
+      projectSavedRef.current = true
       try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
       toast.success('Проект создан! 🎉')
 
