@@ -9,7 +9,7 @@ import { toast } from 'sonner'
 import Link from 'next/link'
 import {
   Search, Loader2, RefreshCw, Zap, Crown, Shield,
-  RotateCcw, Plus, Minus, ChevronDown, ChevronUp, BookMarked,
+  RotateCcw, Plus, Minus, ChevronDown, ChevronUp, BookMarked, Download,
 } from 'lucide-react'
 
 interface UserProfile {
@@ -18,26 +18,49 @@ interface UserProfile {
   full_name: string | null
   role: string | null
   subscription_tier: string
+  subscription_status: string
+  trial_ends_at: string | null
+  current_period_end: string | null
+  payment_provider: string | null
   generations_used: number
   bonus_generations: number
   generations_reset_at: string | null
   created_at: string
+  last_sign_in_at: string | null
 }
 
+// Aligned with migration 016 (generation_limit) — the real, approved tiers.
 const PLAN_LIMITS: Record<string, number> = {
-  free: 5, starter: 80, pro: 250, agency: 800,
+  trial: 300, solo: 300, pro: 2000, producer: 8000,
 }
 
 const PLAN_LABELS: Record<string, string> = {
-  free: 'Free', starter: 'Starter', pro: 'Pro', agency: 'Agency',
+  trial: 'Пробный', solo: 'Соло', pro: 'Про', producer: 'Продюсер',
 }
 
 const PLAN_COLORS: Record<string, string> = {
-  free: 'bg-secondary text-muted-foreground border-border',
-  starter: 'bg-blue-500/10 text-blue-400 border-blue-400/20',
+  trial: 'bg-secondary text-muted-foreground border-border',
+  solo: 'bg-blue-500/10 text-blue-400 border-blue-400/20',
   pro: 'bg-purple-500/10 text-purple-400 border-purple-400/20',
-  agency: 'bg-amber-500/10 text-amber-400 border-amber-400/20',
+  producer: 'bg-amber-500/10 text-amber-400 border-amber-400/20',
 }
+
+// subscription_status (migration 016) → RU label + badge colour.
+const STATUS_LABELS: Record<string, string> = {
+  trialing: 'Пробный период', active: 'Активна', past_due: 'Просрочена',
+  view_only: 'Только просмотр', paused: 'Приостановлена', canceled: 'Отменена',
+}
+const STATUS_COLORS: Record<string, string> = {
+  trialing: 'bg-blue-500/10 text-blue-400 border-blue-400/20',
+  active: 'bg-green-500/10 text-green-500 border-green-400/20',
+  past_due: 'bg-red-500/10 text-red-400 border-red-400/20',
+  view_only: 'bg-secondary text-muted-foreground border-border',
+  paused: 'bg-amber-500/10 text-amber-500 border-amber-400/20',
+  canceled: 'bg-secondary text-muted-foreground border-border',
+}
+
+const fmtDate = (d: string | null): string =>
+  d ? new Date(d).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
 
 export default function AdminUsersPage() {
   const [users, setUsers]           = useState<UserProfile[]>([])
@@ -45,6 +68,8 @@ export default function AdminUsersPage() {
   const [search, setSearch]         = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [saving, setSaving]         = useState<string | null>(null)
+  const [total, setTotal]           = useState(0)
+  const [exporting, setExporting]   = useState(false)
 
   // Per-user edit state
   const [bonusAdd, setBonusAdd]     = useState<Record<string, string>>({})
@@ -57,6 +82,7 @@ export default function AdminUsersPage() {
     const data = await res.json()
     if (res.ok) {
       setUsers(data.users)
+      setTotal(data.total ?? data.users.length)
     } else if (res.status === 403) {
       toast.error('Доступ только для администратора')
     } else {
@@ -70,6 +96,48 @@ export default function AdminUsersPage() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     load(search)
+  }
+
+  // Export ALL users (not just the 100 shown) to a real .xlsx.
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const res = await fetch('/api/admin/users?all=1')
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Ошибка загрузки')
+      const rows = (data.users as UserProfile[]) || []
+      const header = [
+        'Email', 'Имя', 'Роль', 'Тариф', 'Статус подписки', 'Пробный до',
+        'Оплачено до', 'Провайдер', 'Использовано', 'Лимит', 'Бонус',
+        'Дата регистрации', 'Последний вход',
+      ]
+      const aoa: (string | number)[][] = [header]
+      for (const u of rows) {
+        const limit = u.role === 'admin' ? '∞' : (PLAN_LIMITS[u.subscription_tier] ?? 300)
+        aoa.push([
+          u.email,
+          u.full_name ?? '',
+          u.role === 'admin' ? 'Администратор' : 'Клиент',
+          PLAN_LABELS[u.subscription_tier] || u.subscription_tier,
+          STATUS_LABELS[u.subscription_status] || u.subscription_status,
+          fmtDate(u.trial_ends_at),
+          fmtDate(u.current_period_end),
+          u.payment_provider ?? '',
+          u.generations_used || 0,
+          limit,
+          u.bonus_generations || 0,
+          fmtDate(u.created_at),
+          fmtDate(u.last_sign_in_at),
+        ])
+      }
+      const { downloadXlsx } = await import('@/lib/utils/xlsxTable')
+      await downloadXlsx('Пользователи AMA', 'Пользователи', aoa)
+      toast.success(`Выгружено ${rows.length} пользователей`)
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Ошибка выгрузки')
+    } finally {
+      setExporting(false)
+    }
   }
 
   // Add bonus generations
@@ -180,6 +248,11 @@ export default function AdminUsersPage() {
               <BookMarked className="h-4 w-4 mr-2" /> Примеры стиля
             </Button>
           </Link>
+          <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}
+            className="border-green-500/30 text-green-600 hover:bg-green-500/10">
+            {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+            В Excel
+          </Button>
           <Button variant="outline" size="sm" onClick={() => load(search)}>
             <RefreshCw className="h-4 w-4 mr-2" /> Обновить
           </Button>
@@ -226,7 +299,8 @@ export default function AdminUsersPage() {
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium text-sm truncate">{user.email}</span>
+                      {user.full_name && <span className="font-semibold text-sm truncate">{user.full_name}</span>}
+                      <span className={`text-sm truncate ${user.full_name ? 'text-muted-foreground' : 'font-medium'}`}>{user.email}</span>
                       {user.role === 'admin' && (
                         <Badge className="text-[10px] px-1.5 py-0 bg-amber-500/10 text-amber-500 border border-amber-400/30">
                           <Crown className="h-2.5 w-2.5 mr-1" />Admin
@@ -234,9 +308,13 @@ export default function AdminUsersPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                      <Badge variant="outline" className={`text-[11px] px-1.5 py-0 ${PLAN_COLORS[user.subscription_tier] || PLAN_COLORS.free}`}>
+                      <Badge variant="outline" className={`text-[11px] px-1.5 py-0 ${PLAN_COLORS[user.subscription_tier] || PLAN_COLORS.trial}`}>
                         {PLAN_LABELS[user.subscription_tier] || user.subscription_tier}
                       </Badge>
+                      <Badge variant="outline" className={`text-[11px] px-1.5 py-0 ${STATUS_COLORS[user.subscription_status] || STATUS_COLORS.trialing}`}>
+                        {STATUS_LABELS[user.subscription_status] || user.subscription_status}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">рег. {fmtDate(user.created_at)}</span>
                       <span className="text-xs text-muted-foreground">
                         Использовано: <span className="text-foreground font-medium">{used}</span>
                         {user.role !== 'admin' && <span className="text-muted-foreground">/{limit}</span>}
@@ -261,6 +339,16 @@ export default function AdminUsersPage() {
                 {/* Expanded actions */}
                 {isExpanded && (
                   <CardContent className="pt-0 pb-4 px-4 border-t border-border space-y-4">
+
+                    {/* Subscription / account details */}
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-3 text-xs">
+                      <div className="text-muted-foreground">Статус: <span className="text-foreground font-medium">{STATUS_LABELS[user.subscription_status] || user.subscription_status}</span></div>
+                      <div className="text-muted-foreground">Регистрация: <span className="text-foreground font-medium">{fmtDate(user.created_at)}</span></div>
+                      <div className="text-muted-foreground">Пробный до: <span className="text-foreground font-medium">{fmtDate(user.trial_ends_at)}</span></div>
+                      <div className="text-muted-foreground">Оплачено до: <span className="text-foreground font-medium">{fmtDate(user.current_period_end)}</span></div>
+                      <div className="text-muted-foreground">Провайдер: <span className="text-foreground font-medium">{user.payment_provider || '—'}</span></div>
+                      <div className="text-muted-foreground">Последний вход: <span className="text-foreground font-medium">{fmtDate(user.last_sign_in_at)}</span></div>
+                    </div>
 
                     {/* Add bonus generations */}
                     <div className="space-y-2">
@@ -374,7 +462,8 @@ export default function AdminUsersPage() {
       )}
 
       <p className="text-xs text-muted-foreground text-center pb-4">
-        Показано {users.length} пользователей
+        Показано {users.length}{total > users.length ? ` из ${total}` : ''} пользователей
+        {total > users.length && ' · выгрузи в Excel, чтобы увидеть всех'}
       </p>
     </div>
   )

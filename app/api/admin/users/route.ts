@@ -20,6 +20,9 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url)
   const search = searchParams.get('search')?.trim().toLowerCase()
+  // ?all=1 — return everyone (no 100-row cap) so the admin can export the full
+  // list to Excel. Still bounded by the 1000-user listUsers page below.
+  const all = searchParams.get('all') === '1'
 
   try {
     // Fetch all auth users (bypasses RLS, sees everyone)
@@ -31,23 +34,28 @@ export async function GET(request: Request) {
     // Fetch all profiles with admin client
     const { data: profiles } = await ctx.db
       .from('profiles')
-      .select('id, role, subscription_tier, generations_used, bonus_generations, generations_reset_at, created_at')
+      .select('id, role, subscription_tier, subscription_status, trial_ends_at, current_period_end, payment_provider, generations_used, bonus_generations, generations_reset_at, created_at')
 
     const profileMap = new Map((profiles || []).map(p => [p.id, p]))
 
     // Merge auth users with profile data
     let users = authData.users.map(authUser => {
-      const profile = profileMap.get(authUser.id)
+      const profile = profileMap.get(authUser.id) as Record<string, unknown> | undefined
       return {
         id: authUser.id,
         email: authUser.email || '',
         full_name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || null,
-        role: profile?.role ?? 'client',
-        subscription_tier: profile?.subscription_tier ?? 'trial',
-        generations_used: profile?.generations_used ?? 0,
-        bonus_generations: profile?.bonus_generations ?? 0,
-        generations_reset_at: profile?.generations_reset_at ?? null,
-        created_at: profile?.created_at ?? authUser.created_at,
+        role: (profile?.role as string) ?? 'client',
+        subscription_tier: (profile?.subscription_tier as string) ?? 'trial',
+        subscription_status: (profile?.subscription_status as string) ?? 'trialing',
+        trial_ends_at: (profile?.trial_ends_at as string) ?? null,
+        current_period_end: (profile?.current_period_end as string) ?? null,
+        payment_provider: (profile?.payment_provider as string) ?? null,
+        generations_used: (profile?.generations_used as number) ?? 0,
+        bonus_generations: (profile?.bonus_generations as number) ?? 0,
+        generations_reset_at: (profile?.generations_reset_at as string) ?? null,
+        created_at: (profile?.created_at as string) ?? authUser.created_at,
+        last_sign_in_at: authUser.last_sign_in_at ?? null,
       }
     })
 
@@ -62,7 +70,7 @@ export async function GET(request: Request) {
     // Sort newest first
     users.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
-    return NextResponse.json({ users: users.slice(0, 100) })
+    return NextResponse.json({ users: all ? users : users.slice(0, 100), total: users.length })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
     console.error('Admin users GET error:', err)
