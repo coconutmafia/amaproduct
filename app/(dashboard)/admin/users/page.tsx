@@ -9,7 +9,7 @@ import { toast } from 'sonner'
 import Link from 'next/link'
 import {
   Search, Loader2, RefreshCw, Zap, Crown, Shield,
-  RotateCcw, Plus, Minus, ChevronDown, ChevronUp, BookMarked, Download,
+  RotateCcw, Plus, Minus, ChevronDown, ChevronUp, BookMarked, Download, Wallet,
 } from 'lucide-react'
 
 interface UserProfile {
@@ -243,6 +243,9 @@ export default function AdminUsersPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Link href="/admin/payments">
+            <Button variant="outline" size="sm"><Wallet className="h-4 w-4 mr-2" /> Оплаты</Button>
+          </Link>
           <Link href="/admin/style-examples">
             <Button variant="outline" size="sm" className="border-primary/30 text-primary hover:bg-primary/10">
               <BookMarked className="h-4 w-4 mr-2" /> Примеры стиля
