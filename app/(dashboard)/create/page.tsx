@@ -10,6 +10,7 @@ import { ChatComposer } from '@/components/ui/ChatComposer'
 import { SaveButton } from '@/components/content/SaveButton'
 import { setStudioHandoff } from '@/lib/studioHandoff'
 import { VoiceRuleButton, maybeSuggestRule } from '@/components/chat/VoiceRuleButton'
+import { AssistantMessageBody } from '@/components/chat/AssistantMessageBody'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
 import { useChatPin } from '@/lib/useChatPin'
 import { cleanMarkdown } from '@/lib/cleanText'
@@ -119,6 +120,9 @@ export default function CreatePage() {
   }, [messages, loading, projectId])
 
   const stop = () => abortRef.current?.abort()
+  // Persist manual edits / fragment regenerations back into the conversation.
+  const updateMessage = (idx: number, content: string) =>
+    setMessages(prev => prev.map((m, i) => (i === idx ? { ...m, content } : m)))
   const copyMsg = (text: string, idx: number) => {
     navigator.clipboard?.writeText(text).then(() => { setCopiedIdx(idx); setTimeout(() => setCopiedIdx(null), 1500) }).catch(() => toast.error('Не удалось'))
   }
@@ -226,7 +230,9 @@ export default function CreatePage() {
                   })()}
                 </div>
               )}
-              {text}
+              {m.role === 'assistant'
+                ? <AssistantMessageBody text={text} projectId={projectId} onChange={(nt) => updateMessage(i, nt)} />
+                : text}
             </div>
           </div>
         )})}

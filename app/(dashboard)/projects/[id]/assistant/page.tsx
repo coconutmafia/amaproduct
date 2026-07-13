@@ -9,6 +9,7 @@ import { ChatComposer } from '@/components/ui/ChatComposer'
 import { SaveButton } from '@/components/content/SaveButton'
 import { setStudioHandoff } from '@/lib/studioHandoff'
 import { VoiceRuleButton, maybeSuggestRule } from '@/components/chat/VoiceRuleButton'
+import { AssistantMessageBody } from '@/components/chat/AssistantMessageBody'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
 import { friendlyError } from '@/lib/friendlyError'
 import { useChatPin } from '@/lib/useChatPin'
@@ -202,6 +203,11 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
 
   const stop = () => { abortRef.current?.abort() }
 
+  // Persist a manual edit / fragment-regeneration back into the conversation so
+  // every downstream action (copy / В план / Оформить) uses the edited version.
+  const updateMessage = (idx: number, content: string) =>
+    setMessages(prev => prev.map((m, i) => (i === idx ? { ...m, content } : m)))
+
   const copyMsg = (text: string, idx: number) => {
     navigator.clipboard?.writeText(text).then(() => {
       setCopiedIdx(idx)
@@ -297,7 +303,9 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
                   })()}
                 </div>
               )}
-              {text}
+              {m.role === 'assistant' && !m.opener
+                ? <AssistantMessageBody text={text} projectId={id} onChange={(nt) => updateMessage(i, nt)} />
+                : text}
             </div>
           </div>
         )})}
