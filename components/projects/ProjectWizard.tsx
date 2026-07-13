@@ -508,25 +508,8 @@ export function ProjectWizard() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
-
-              {/* AI Name block */}
-              <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Bot className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-medium">Дай имя своему AI SMM-щику</span>
-                  <Badge variant="outline" className="text-xs text-primary border-primary/30">необязательно</Badge>
-                </div>
-                <Input
-                  placeholder="Например: Алёша, Вика, Макс..."
-                  value={aiName}
-                  onChange={e => setAiName(e.target.value)}
-                  className="bg-background"
-                  maxLength={30}
-                />
-                <p className={HINT}>
-                  Это имя будет отображаться вместо «AI SMM-щик» — делает работу теплее
-                </p>
-              </div>
+              {/* «Имя AI SMM-щика» — глобальная настройка, живёт в «Настройки»
+                  аккаунта (SettingsClient), НЕ в создании проекта (тестер). */}
 
               {/* Main fields */}
               <div className="space-y-1.5">
