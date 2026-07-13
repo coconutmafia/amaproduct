@@ -208,9 +208,10 @@ export default function AdminUsersPage() {
     }
   }
 
-  // Toggle admin role
+  // Toggle admin role. Off → 'client' (NOT 'user' — the profiles.role CHECK
+  // constraint only allows admin/producer/client, so 'user' would 400).
   const handleToggleAdmin = async (user: UserProfile) => {
-    const newRole = user.role === 'admin' ? 'user' : 'admin'
+    const newRole = user.role === 'admin' ? 'client' : 'admin'
     if (!confirm(newRole === 'admin'
       ? `Сделать ${user.email} администратором? Это даёт БЕЗЛИМИТНЫЙ доступ.`
       : `Убрать права администратора у ${user.email}?`
