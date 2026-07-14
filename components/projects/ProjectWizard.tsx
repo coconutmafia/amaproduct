@@ -75,17 +75,33 @@ export function ProjectWizard() {
   const [productFillLoading, setProductFillLoading] = useState<Record<number, boolean>>({})
 
   // ── Draft: never lose a half-filled new-project form on navigation ─────────
-  const DRAFT_KEY = 'ama_new_project_draft'
+  // The key is scoped to the logged-in USER. A fixed key leaked one account's
+  // draft into another account opened in the SAME browser (localStorage is
+  // per-browser, not per-user) — a brand-new account showed a previous user's
+  // «Анна Иванова — Нутрициолог» draft (tester report). Per-user key + purge of
+  // the legacy global key fixes it.
+  const LEGACY_DRAFT_KEY = 'ama_new_project_draft'
+  const [userId, setUserId] = useState<string | null>(null)
+  const draftKey = userId ? `ama_new_project_draft_${userId}` : null
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const draftLoadedRef = useRef(false)
   const [draftRestored, setDraftRestored] = useState(false)
 
-  // Auto-restore on mount so a partially-filled project isn't lost.
+  // Resolve the current user + purge the legacy per-browser draft key (it leaked
+  // drafts across accounts). Runs once on mount.
   useEffect(() => {
-    if (draftLoadedRef.current) return
+    try { localStorage.removeItem(LEGACY_DRAFT_KEY) } catch { /* ignore */ }
+    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Auto-restore on mount so a partially-filled project isn't lost — but only
+  // this user's own draft, once we know who they are.
+  useEffect(() => {
+    if (!draftKey || draftLoadedRef.current) return
     draftLoadedRef.current = true
     try {
-      const raw = localStorage.getItem(DRAFT_KEY)
+      const raw = localStorage.getItem(draftKey)
       if (!raw) return
       const d = JSON.parse(raw)
       const meaningful = d.name || d.niche || d.description || d.targetAudience || d.contentGoals ||
@@ -112,16 +128,17 @@ export function ProjectWizard() {
       toast.success('Восстановили твою заготовку проекта')
     } catch { /* ignore */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [draftKey])
 
   // Auto-save (debounced) — survives navigation and closing the tab.
   useEffect(() => {
+    if (!draftKey) return
     const meaningful = !!(name || niche || description || targetAudience || contentGoals || step > 1 || products.some(p => p.name))
     if (!meaningful) return
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current)
     draftTimerRef.current = setTimeout(() => {
       try {
-        localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        localStorage.setItem(draftKey, JSON.stringify({
           step, name, niche, description, targetAudience, contentGoals,
           instagramUrl, vkUrl, telegramUrl, youtubeUrl,
           salesType, launchDate, launchBudget, launchCurrency,
@@ -130,7 +147,7 @@ export function ProjectWizard() {
       } catch { /* ignore */ }
     }, 1500)
     return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current) }
-  }, [step, name, niche, description, targetAudience, contentGoals, instagramUrl, vkUrl, telegramUrl, youtubeUrl, salesType, launchDate, launchBudget, launchCurrency, products, funnels, aiName])
+  }, [draftKey, step, name, niche, description, targetAudience, contentGoals, instagramUrl, vkUrl, telegramUrl, youtubeUrl, salesType, launchDate, launchBudget, launchCurrency, products, funnels, aiName])
 
   // Once the project is created there is nothing unsaved — the «Leave site?»
   // prompt must not fire on the navigation to the project (tester hit it every
@@ -153,7 +170,7 @@ export function ProjectWizard() {
 
   // Drop the draft and reset the wizard to a blank state.
   function startOverProject() {
-    try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
+    try { if (draftKey) localStorage.removeItem(draftKey); localStorage.removeItem(LEGACY_DRAFT_KEY) } catch { /* ignore */ }
     setDraftRestored(false)
     setStep(1)
     setName(''); setNiche(''); setDescription(''); setTargetAudience(''); setContentGoals('')
@@ -335,7 +352,7 @@ export function ProjectWizard() {
       // Nothing is unsaved anymore → suppress the browser's «Leave site?» prompt
       // before we navigate to the new project.
       projectSavedRef.current = true
-      try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
+      try { if (draftKey) localStorage.removeItem(draftKey); localStorage.removeItem(LEGACY_DRAFT_KEY) } catch { /* ignore */ }
       toast.success('Проект создан! 🎉')
 
       // Auto-scrape all social profiles in background — fire and forget
