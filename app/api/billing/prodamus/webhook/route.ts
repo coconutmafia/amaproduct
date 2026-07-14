@@ -9,19 +9,39 @@ export const runtime = 'nodejs'
 // in the `Sign` header. We verify it, then sync the subscription onto the profile.
 // ⚠️ Needs a live test callback at activation to confirm the exact field names /
 // signature match (logged on mismatch to help tune).
+// Persist a webhook failure so it shows in /admin/errors (and is queryable) —
+// console.error alone lives only in Vercel logs. Best-effort: never throw.
+async function logWebhook(message: string, context: Record<string, unknown>) {
+  try {
+    await createAdminClient().from('error_events').insert({
+      level: 'error', source: 'webhook', route: '/api/billing/prodamus/webhook', message, context,
+    })
+  } catch { /* logging must never break the webhook */ }
+}
+
 export async function POST(request: Request) {
-  if (!prodamusConfigured()) return NextResponse.json({ error: 'billing_not_configured' }, { status: 503 })
+  if (!prodamusConfigured()) {
+    await logWebhook('prodamus webhook hit but billing_not_configured (PRODAMUS_SECRET_KEY missing)', {})
+    return NextResponse.json({ error: 'billing_not_configured' }, { status: 503 })
+  }
 
   const raw = await request.text()
-  const sign = request.headers.get('sign') || request.headers.get('Sign') || ''
   const data = parseFormNested(raw)
-  // Signature is delivered in the header; the body shouldn't carry it, but strip
-  // defensively in case a variant echoes it.
+  // Продамус may deliver the signature in the `Sign` header OR in the body as a
+  // `signature`/`sign` field — accept either. Capture the body value BEFORE we
+  // strip it (the signature is computed over the data without the sig field).
+  const bodySign = String((data as Record<string, unknown>).signature ?? (data as Record<string, unknown>).sign ?? '')
   delete (data as Record<string, unknown>).signature
   delete (data as Record<string, unknown>).sign
+  const sign = request.headers.get('sign') || request.headers.get('Sign') || bodySign
 
   if (!prodamusVerify(data, sign)) {
-    console.error('[prodamus/webhook] bad signature; keys=', Object.keys(data).join(','))
+    const keys = Object.keys(data).join(',')
+    console.error('[prodamus/webhook] bad signature; keys=', keys)
+    await logWebhook('prodamus webhook: подпись не сошлась (bad_signature)', {
+      receivedKeys: keys, signFrom: request.headers.get('sign') || request.headers.get('Sign') ? 'header' : (bodySign ? 'body' : 'none'),
+      order_id: data.order_id ?? null, payment_status: data.payment_status ?? null,
+    })
     return NextResponse.json({ error: 'bad_signature' }, { status: 400 })
   }
 
@@ -43,6 +63,27 @@ export async function POST(request: Request) {
       if (!userId && subId) {
         const { data: prof } = await admin.from('profiles').select('id').eq('provider_subscription_id', String(subId)).maybeSingle()
         userId = prof?.id
+      }
+      const paidSum = Number(data.sum ?? (data as Record<string, unknown>).amount ?? NaN)
+      // Record the charge in the payments ledger (shows in /admin/payments),
+      // regardless of whether we could resolve the user — best-effort, deduped
+      // by the unique (provider, external_id) index.
+      try {
+        await admin.from('payments').insert({
+          user_id: userId ?? null,
+          amount: Number.isFinite(paidSum) ? paidSum : 0,
+          currency: String(data.currency ?? 'RUB'),
+          status: 'succeeded',
+          provider: 'prodamus',
+          external_id: orderId || (subId ? String(subId) : null),
+          description: parsed?.plan ? `Prodamus · ${parsed.plan}` : 'Prodamus',
+        })
+      } catch { /* ledger insert is best-effort */ }
+
+      if (!userId) {
+        await logWebhook('prodamus webhook: платёж прошёл, но пользователь не найден (order_id/subscription не сопоставлены)', {
+          order_id: orderId, subscription: subId ?? null, sum: data.sum ?? null,
+        })
       }
       if (userId) {
         // Guard against order_id tampering → tier escalation. The plan is encoded
@@ -73,6 +114,9 @@ export async function POST(request: Request) {
     }
   } catch (e) {
     console.error('[prodamus/webhook] handler error', e instanceof Error ? e.message : e)
+    await logWebhook('prodamus webhook: ошибка обработчика после проверки подписи', {
+      order_id: orderId, error: e instanceof Error ? e.message : String(e),
+    })
     await admin.from('billing_events').delete().eq('id', eventId)
     return NextResponse.json({ error: 'handler_failed' }, { status: 500 })
   }
