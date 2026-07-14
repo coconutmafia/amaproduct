@@ -6,8 +6,18 @@ const DSN = 'https://d02780e0380bb068f31e9654616748ba@o4511687858847744.ingest.d
 const m = DSN.match(/^https:\/\/([0-9a-f]+)@([^/]+)\/(\d+)$/)
 let sent = 0
 
+// Browser-extension noise — NOT our code. Crypto-wallet extensions (MetaMask,
+// Phantom, …) inject a provider into every page and throw connection errors
+// ("Failed to connect to MetaMask") on sites that have nothing to do with web3.
+// Anything thrown from an extension URL is likewise never ours. Dropping these
+// keeps /admin/errors + Sentry high-signal (matters for reading real failures
+// like the Prodamus webhook). We have no web3/wallet feature, so these keywords
+// can't be a genuine app error.
+const EXTENSION_NOISE = /metamask|ethereum|web3|wallet|solana|phantom|coinbase|chrome-extension:\/\/|moz-extension:\/\/|safari-web-extension:\/\//i
+
 function report(kind: string, message: string, stack?: string) {
   if (!m || sent >= 5) return
+  if (EXTENSION_NOISE.test(message) || (stack && EXTENSION_NOISE.test(stack))) return
   sent++
   const eventId = (crypto.randomUUID?.() || String(Date.now())).replace(/-/g, '')
   const sentAt = new Date().toISOString()
