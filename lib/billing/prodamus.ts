@@ -5,7 +5,10 @@
 import crypto from 'node:crypto'
 import type { PaidPlan } from '@/lib/generations-config'
 
-const DEFAULT_FORM = 'https://sistema-avavasilik.payform.ru/'
+// Actual live payform (confirmed 14 июля). Only a fallback — the real value in
+// prod comes from env PRODAMUS_FORM_URL / PRODAMUS_LINK_*; keep this in sync so
+// the fallback isn't a stale form. (Was sistema-avavasilik.payform.ru.)
+const DEFAULT_FORM = 'https://avavasilik.payform.ru/'
 
 export function prodamusFormUrl(): string {
   return process.env.PRODAMUS_FORM_URL || DEFAULT_FORM
