@@ -18,6 +18,24 @@ async function applySubscription(admin: Admin, sub: Stripe.Subscription, userIdH
   const userId = (sub.metadata?.userId as string | undefined) || userIdHint
   const plan = planFromSubscription(sub)
   const cust = customerId(sub)
+
+  // Plan switch: if the user already had a DIFFERENT subscription, cancel it in
+  // Stripe so they aren't billed for both (best-effort — a failed cancel just
+  // leaves the old sub, logged, not fatal). Scoped-delete of the deleted event
+  // below prevents this cancellation from wiping the new active tier.
+  const prevQuery = userId
+    ? admin.from('profiles').select('provider_subscription_id').eq('id', userId).maybeSingle()
+    : cust ? admin.from('profiles').select('provider_subscription_id').eq('provider_customer_id', cust).maybeSingle()
+    : null
+  if (prevQuery) {
+    const { data: cur } = await prevQuery
+    const prevSub = cur?.provider_subscription_id as string | null | undefined
+    if (prevSub && prevSub !== sub.id) {
+      try { await getStripe().subscriptions.cancel(String(prevSub)) }
+      catch (e) { console.error('[billing/webhook] cancel old sub failed', e instanceof Error ? e.message : e) }
+    }
+  }
+
   const patch: Record<string, unknown> = {
     subscription_status: mapSubStatus(sub.status),
     current_period_end: subscriptionPeriodEnd(sub),
@@ -70,7 +88,14 @@ export async function POST(request: Request) {
       case 'customer.subscription.deleted': {
         const sub = event.data.object as Stripe.Subscription
         const cust = customerId(sub)
-        if (cust) await admin.from('profiles').update({ subscription_status: 'canceled' }).eq('provider_customer_id', cust)
+        // Only mark canceled if this is the user's CURRENT subscription. An old
+        // sub cleaned up during a plan switch must NOT cancel the new active one.
+        if (cust) {
+          await admin.from('profiles')
+            .update({ subscription_status: 'canceled' })
+            .eq('provider_customer_id', cust)
+            .eq('provider_subscription_id', sub.id)
+        }
         break
       }
       case 'invoice.payment_failed': {
