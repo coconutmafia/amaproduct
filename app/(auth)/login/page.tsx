@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -18,6 +18,22 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadingGoogle, setLoadingGoogle] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  // The auth callback bounces failed email-confirm / OAuth exchanges to
+  // /login?error=… (e.g. a link opened on a different device than it was
+  // requested on — PKCE can't complete). Surface it instead of a blank form.
+  useEffect(() => {
+    const err = new URLSearchParams(window.location.search).get('error')
+    if (!err) return
+    setNotice(
+      err === 'auth_error'
+        ? 'Не удалось подтвердить ссылку. Открой её в том же браузере, где регистрировался, или запроси новую. Если уже подтвердил — просто войди.'
+        : 'Что-то пошло не так со ссылкой. Попробуй войти или запроси новую ссылку.',
+    )
+    // Clean the query so a refresh doesn't keep showing the banner.
+    window.history.replaceState({}, '', '/login')
+  }, [])
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -63,6 +79,13 @@ export default function LoginPage() {
             <h2 className="text-2xl font-black uppercase text-[#1A1A1A]">Войти</h2>
             <p className="text-sm text-[#888888]">Введите email и пароль для входа</p>
           </div>
+
+          {notice && (
+            <div className="rounded-xl border border-[#F5A84A]/40 bg-[#F5A84A]/10 p-3 text-sm text-[#8a5a1a]">
+              {notice}{' '}
+              <Link href="/forgot-password" className="font-semibold underline">Запросить ссылку</Link>
+            </div>
+          )}
 
           <Button
             variant="outline"

@@ -22,6 +22,7 @@ function RegisterForm() {
   const [password, setPassword] = useState('')
   const [loading, setLoading]   = useState(false)
   const [sent, setSent]         = useState(false) // email confirmation sent state
+  const [resending, setResending] = useState(false)
 
   const refCode = searchParams.get('ref')?.toUpperCase() ?? ''
 
@@ -68,6 +69,20 @@ function RegisterForm() {
     setLoading(false)
   }
 
+  async function handleResend() {
+    if (resending) return
+    setResending(true)
+    const supabase = createClient()
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+    })
+    if (error) toast.error(authErrorMessage(error))
+    else toast.success('Письмо отправлено ещё раз — проверь почту (и папку «Спам»)')
+    setResending(false)
+  }
+
   async function handleGoogle() {
     const base = window.location.origin
     const cb = refCode
@@ -108,9 +123,19 @@ function RegisterForm() {
               <li>• Убедись что email написан правильно</li>
             </ul>
           </div>
-          <Button variant="outline" className="w-full rounded-full border-[#C5CBA5]" onClick={() => setSent(false)}>
-            Ввести другой email
-          </Button>
+          <div className="space-y-2">
+            <Button
+              className="w-full rounded-full bg-gradient-to-r from-[#F5A84A] to-[#D44E7E] text-white font-bold uppercase tracking-wide hover:opacity-90 border-0"
+              onClick={handleResend}
+              disabled={resending}
+            >
+              {resending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Выслать письмо ещё раз
+            </Button>
+            <Button variant="outline" className="w-full rounded-full border-[#C5CBA5]" onClick={() => setSent(false)}>
+              Ввести другой email
+            </Button>
+          </div>
         </div>
       </div>
     )

@@ -21,13 +21,18 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
   const [ready, setReady] = useState(false)
+  const [timedOut, setTimedOut] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') setReady(true)
     })
-    return () => subscription.unsubscribe()
+    // The PASSWORD_RECOVERY event never fires if the link is stale, already used,
+    // or opened in a different browser than it was requested from (PKCE). Without
+    // a fallback the page hangs on "Проверяем ссылку..." forever — show a way out.
+    const t = setTimeout(() => setReady((r) => { if (!r) setTimedOut(true); return r }), 6000)
+    return () => { subscription.unsubscribe(); clearTimeout(t) }
   }, [])
 
   async function handleReset(e: React.FormEvent) {
@@ -81,7 +86,21 @@ export default function ResetPasswordPage() {
               </div>
 
               {!ready ? (
-                <p className="text-sm text-[#888888] text-center py-4">Проверяем ссылку...</p>
+                timedOut ? (
+                  <div className="text-center space-y-3 py-4">
+                    <p className="text-sm text-[#888888]">
+                      Не получилось открыть ссылку для сброса пароля. Возможно, она устарела или открыта в другом браузере.
+                    </p>
+                    <Link
+                      href="/forgot-password"
+                      className="inline-block rounded-full bg-gradient-to-r from-[#F5A84A] to-[#D44E7E] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-white hover:opacity-90"
+                    >
+                      Запросить новую ссылку
+                    </Link>
+                  </div>
+                ) : (
+                  <p className="text-sm text-[#888888] text-center py-4">Проверяем ссылку...</p>
+                )
               ) : (
                 <form onSubmit={handleReset} className="space-y-4">
                   <div className="space-y-1.5">
