@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { prodamusConfigured, prodamusVerify, parseFormNested, parseOrderId, mapProdamusStatus } from '@/lib/billing/prodamus'
-import { PLAN_CONFIG, type SubscriptionTier } from '@/lib/generations-config'
+import { PLAN_CONFIG, PAID_PLANS, type SubscriptionTier } from '@/lib/generations-config'
 
 export const runtime = 'nodejs'
 
@@ -90,18 +90,21 @@ export async function POST(request: Request) {
         // in order_id (a URL query param the payer can edit before paying), but
         // the actual PRICE is fixed by the Продамус link/subscription. So a payer
         // could open the "solo" link, rewrite order_id to "producer" and get the
-        // top tier for the cheap price. Only reject a REAL underpayment.
+        // top tier for the cheap price.
         //
-        // ⚠️ The first payment is 0₽ (demo period / «стоимость первого платежа 0»):
-        // the activation webhook carries sum=0. That is NOT an underpayment — it's
-        // the legitimate trial start — so `paid > 0` gates the guard, otherwise the
-        // tier would never activate on subscribe. Real recurring charges (paid > 0)
-        // are still checked against the plan price.
+        // ⚠️ The trial's FIRST payment is tiny — 1₽ (Продамус forbids a 0₽ first
+        // payment) — and its activation webhook carries that small sum. That is NOT
+        // an underpayment, it's the legitimate trial start. A REAL underpayment is
+        // «paid a genuine plan-level amount but claimed a pricier tier». So only
+        // reject when the paid sum is at least the cheapest paid plan's price AND
+        // below the claimed tier; anything smaller (the 1₽ trial) passes and
+        // activates the tier. Recurring charges (real amounts) are still checked.
+        const minPaidPrice = Math.min(...PAID_PLANS.map((p) => PLAN_CONFIG[p].priceRub))
         let grantedPlan = parsed?.plan
         if (grantedPlan) {
           const expected = PLAN_CONFIG[grantedPlan as SubscriptionTier]?.priceRub
           const paid = Number(data.sum ?? (data as Record<string, unknown>).amount ?? NaN)
-          if (expected && Number.isFinite(paid) && paid > 0 && paid + 1 < expected) {
+          if (expected && Number.isFinite(paid) && paid >= minPaidPrice && paid + 1 < expected) {
             console.error(`[prodamus/webhook] amount mismatch: paid ${paid}₽ < ${grantedPlan} (${expected}₽) — refusing tier escalation; order_id=${orderId}`)
             grantedPlan = undefined // real underpayment → don't escalate tier
           }
