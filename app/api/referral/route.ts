@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { REFERRAL_REWARDS } from '@/lib/generations'
 
 // ──────────────────────────────────────────────────────
@@ -45,6 +46,12 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+    // Bonus grants go through the service-role client: EXECUTE on
+    // add_bonus_generations is revoked from anon/authenticated (migration 032) so
+    // a client can't self-grant unlimited bonuses by calling the RPC directly.
+    // All p_user_id values below are resolved server-side (auth user / referrer).
+    const admin = createAdminClient()
+
     // ── Register referral / apply promo at signup ────
     if (action === 'register') {
       const { referral_code } = await request.json()
@@ -75,7 +82,7 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: 'Вы уже использовали этот промо-код' }, { status: 409 })
 
         // Apply bonus
-        await supabase.rpc('add_bonus_generations', {
+        await admin.rpc('add_bonus_generations', {
           p_user_id: user.id, p_amount: promoCode.bonus_generations,
         })
         await supabase.from('promo_code_uses').insert({ promo_id: promoCode.id, user_id: user.id })
@@ -121,13 +128,13 @@ export async function POST(request: Request) {
       })
 
       // Give invitee +10 bonus generations
-      await supabase.rpc('add_bonus_generations', {
+      await admin.rpc('add_bonus_generations', {
         p_user_id: user.id,
         p_amount:  REFERRAL_REWARDS.invitee_signup,
       })
 
       // Give L1 referrer +10 bonus generations
-      await supabase.rpc('add_bonus_generations', {
+      await admin.rpc('add_bonus_generations', {
         p_user_id: referrerProfile.id,
         p_amount:  REFERRAL_REWARDS.referrer_l1_signup,
       })
@@ -149,14 +156,16 @@ export async function POST(request: Request) {
           status:             'registered',
           signup_bonus_given: true,
         })
-        await supabase.rpc('add_bonus_generations', {
+        await admin.rpc('add_bonus_generations', {
           p_user_id: l1row.referrer_id,
           p_amount:  REFERRAL_REWARDS.referrer_l2_signup,
         })
       }
 
-      // Store who referred this user
-      await supabase
+      // Store who referred this user (admin client — session UPDATE on profiles is
+      // column-restricted to onboarding_done/ai_assistant_name by migration 032, so
+      // referred_by is written server-side, not by the user's own client).
+      await admin
         .from('profiles')
         .update({ referred_by: referrerProfile.id })
         .eq('id', user.id)
@@ -195,7 +204,7 @@ export async function POST(request: Request) {
           ? REFERRAL_REWARDS.referrer_l1_payment
           : REFERRAL_REWARDS.referrer_l2_payment
 
-        await supabase.rpc('add_bonus_generations', {
+        await admin.rpc('add_bonus_generations', {
           p_user_id: ref.referrer_id,
           p_amount:  amount,
         })

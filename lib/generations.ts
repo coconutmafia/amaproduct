@@ -1,6 +1,7 @@
 // Server-only module — uses next/headers via createClient
 // For client-safe constants import from '@/lib/generations-config'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 export { PLAN_CONFIG, REFERRAL_REWARDS } from '@/lib/generations-config'
 export type { SubscriptionPlan } from '@/lib/generations-config'
 import { PLAN_CONFIG, PAID_PLANS } from '@/lib/generations-config'
@@ -27,7 +28,12 @@ export async function checkAndConsumeGeneration(userId: string): Promise<Generat
     return { allowed: true, remaining: 999999, monthlyUsed: 0, monthlyLimit: 999999, bonusRemaining: 0 }
   }
 
-  const { data: allowed, error } = await supabase
+  // Metering RPCs run through the service-role client: EXECUTE on
+  // consume_generation / add_bonus_generations is revoked from anon/authenticated
+  // (migration 032) so a client can't call them directly with a forged p_user_id
+  // (self-grant unlimited bonuses / burn another user's quota). The userId here
+  // already comes from an authenticated getUser() in the calling route.
+  const { data: allowed, error } = await createAdminClient()
     .rpc('consume_generation', { p_user_id: userId })
 
   if (error) {
@@ -129,8 +135,9 @@ export async function refundGeneration(userId: string): Promise<void> {
     if (profile?.role === 'admin') return
     // Atomic increment via RPC — avoids the lost-update race a read-modify-write
     // had under concurrent generations (the content plan fires several at once).
-    // Mirrors the atomic consume_generation; bonus is spent first → full refund.
-    await supabase.rpc('add_bonus_generations', { p_user_id: userId, p_amount: 1 })
+    // Runs through the service-role client (EXECUTE revoked from anon/authenticated
+    // in migration 032). Refund is credited as a bonus generation.
+    await createAdminClient().rpc('add_bonus_generations', { p_user_id: userId, p_amount: 1 })
   } catch (e) {
     console.error('refundGeneration failed:', e)
   }
