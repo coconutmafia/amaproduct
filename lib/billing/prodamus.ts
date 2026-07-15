@@ -79,6 +79,35 @@ export function prodamusVerify(data: Record<string, unknown>, sign: string, secr
   return a.length === b.length && crypto.timingSafeEqual(a, b)
 }
 
+// Deactivate a Продамус subscription via REST setActivity (POST {account}/rest/
+// setActivity/). Used when a user switches plans — the previous subscription must
+// be cancelled so they aren't billed for both. `active_manager=0` = deactivated by
+// the page owner (reversible; user-deactivation is permanent). Best-effort: returns
+// false on any failure — the caller logs it and continues (a failed cancel just
+// leaves the old sub active, which is the pre-existing state, not a regression).
+export async function prodamusDeactivateSubscription(subscriptionId: string, customerEmail?: string): Promise<{ ok: boolean; detail?: string }> {
+  if (!prodamusConfigured()) return { ok: false, detail: 'not_configured' }
+  try {
+    const base = prodamusFormUrl().replace(/\/?$/, '/')
+    const payload: Record<string, string> = {
+      subscription: String(subscriptionId),
+      active_manager: '0',
+      ...(customerEmail ? { customer_email: customerEmail } : {}),
+    }
+    const signature = prodamusSign(payload)
+    const body = new URLSearchParams({ ...payload, signature })
+    const res = await fetch(`${base}rest/setActivity/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    })
+    const text = await res.text().catch(() => '')
+    return { ok: res.ok, detail: `${res.status} ${text.slice(0, 120)}` }
+  } catch (e) {
+    return { ok: false, detail: e instanceof Error ? e.message : 'error' }
+  }
+}
+
 // ── Parse a php-style x-www-form-urlencoded body (products[0][name]=…) ─────────
 export function parseFormNested(body: string): Record<string, unknown> {
   const params = new URLSearchParams(body)

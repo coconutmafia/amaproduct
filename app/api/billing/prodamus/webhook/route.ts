@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { prodamusConfigured, prodamusVerify, parseFormNested, parseOrderId, mapProdamusStatus } from '@/lib/billing/prodamus'
+import { prodamusConfigured, prodamusVerify, parseFormNested, parseOrderId, mapProdamusStatus, prodamusDeactivateSubscription } from '@/lib/billing/prodamus'
 import { PLAN_CONFIG, PAID_PLANS } from '@/lib/generations-config'
 
 export const runtime = 'nodejs'
@@ -108,6 +108,21 @@ export async function POST(request: Request) {
           order_id: orderId, email: data.customer_email ?? null, subscription_id: subId, plan: grantedPlan ?? null,
         })
       } else {
+        // Plan switch: if the user already had a DIFFERENT subscription, cancel it
+        // in Продамус so they aren't billed for both. Best-effort — a failed cancel
+        // just leaves the old sub active (logged, not fatal).
+        if (subId) {
+          const { data: cur } = await admin.from('profiles').select('provider_subscription_id').eq('id', userId).maybeSingle()
+          const prevSub = cur?.provider_subscription_id
+          if (prevSub && String(prevSub) !== String(subId)) {
+            const r = await prodamusDeactivateSubscription(String(prevSub), data.customer_email ? String(data.customer_email) : undefined)
+            if (!r.ok) {
+              await logWebhook('prodamus: не удалось отменить старую подписку при смене тарифа', {
+                prev: String(prevSub), next: String(subId), detail: r.detail ?? null,
+              })
+            }
+          }
+        }
         // Access valid until the subscription's next payment date (60-day demo),
         // fallback to +31 days if it's missing/unparseable.
         let periodEnd = new Date(Date.now() + 31 * 24 * 3600 * 1000)
