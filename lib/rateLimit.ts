@@ -25,6 +25,18 @@ const LIMITS: Record<string, { limit: number; windowSeconds: number }> = {
   'scrape-product': { limit: 20, windowSeconds: HOUR },
   'blog-audit':   { limit: 20,  windowSeconds: HOUR }, // 1 Claude call, no Apify
   'blog-audit-standalone': { limit: 10, windowSeconds: HOUR }, // Apify-скрейп + Claude
+  // Wallet guards for expensive AI / Whisper routes (Claude / OpenAI = real $).
+  'analyze-competitors': { limit: 15, windowSeconds: HOUR }, // до 4× flagship
+  'suggest-trends': { limit: 20, windowSeconds: HOUR }, // web-search + flagship
+  'research-analyze': { limit: 15, windowSeconds: HOUR }, // N× flagship + embed
+  'warmup-plan': { limit: 20, windowSeconds: HOUR }, // flagship-стрим
+  'generate-week-brief': { limit: 30, windowSeconds: HOUR },
+  'suggest-angles': { limit: 30, windowSeconds: HOUR },
+  'carousel-structure': { limit: 40, windowSeconds: HOUR },
+  edit:           { limit: 60,  windowSeconds: HOUR }, // edit + edit-carousel + edit-stories
+  'post-hook':    { limit: 40,  windowSeconds: HOUR },
+  'brand-kit':    { limit: 20,  windowSeconds: HOUR }, // Claude-vision
+  'extract-tone': { limit: 30,  windowSeconds: HOUR }, // flagship-стрим
 }
 
 export interface RateLimitResult {

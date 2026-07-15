@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { rateLimit } from '@/lib/rateLimit'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { AI_TELLS_TO_AVOID, VISUAL_RULES } from '@/lib/ai/prompts/content-brain'
 
@@ -22,6 +23,9 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const rl = await rateLimit(user.id, 'edit')
+    if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
 
     const { carousel, instruction } = (await request.json()) as { carousel?: Dict; instruction?: string }
     if (!carousel || !carousel.cover) return NextResponse.json({ error: 'Нет карусели для правки' }, { status: 400 })

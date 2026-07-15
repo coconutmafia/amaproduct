@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { rateLimit } from '@/lib/rateLimit'
 import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { getSchemaForPhase, getEmotionalMechanics, getCTAEngine } from '@/lib/ai/prompts/content-brain'
@@ -19,6 +20,9 @@ export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const rl = await rateLimit(user.id, 'generate-week-brief')
+  if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
 
   const { projectId, days } = await request.json() as { projectId: string; days: BriefDay[] }
 

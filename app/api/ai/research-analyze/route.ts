@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { rateLimit } from '@/lib/rateLimit'
 import { upsertProjectMaterial } from '@/lib/supabase/upsertMaterial'
 import { embedMaterialChunks } from '@/lib/ai/embed'
 import { anthropic, MODEL } from '@/lib/ai/client'
@@ -248,6 +249,9 @@ export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const rl = await rateLimit(user.id, 'research-analyze')
+  if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
 
   const body = await request.json() as {
     projectId:     string

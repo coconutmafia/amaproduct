@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { rateLimit } from '@/lib/rateLimit'
 import { suggestTrends } from '@/lib/ai/suggestTrends'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { NextResponse } from 'next/server'
@@ -11,6 +12,9 @@ export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const rl = await rateLimit(user.id, 'suggest-trends')
+  if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
 
   const body = await request.json() as { projectId?: string; scope?: 'project' | 'system'; niche?: string; mode?: 'niche' | 'popular' }
   const scope = body.scope === 'system' ? 'system' : 'project'

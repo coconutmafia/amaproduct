@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { rateLimit } from '@/lib/rateLimit'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { requireProjectAccess } from '@/lib/projects/access'
@@ -28,6 +29,9 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const rl = await rateLimit(user.id, 'suggest-angles')
+    if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
 
     const { projectId, type = 'post', brief = '', phase = '' } = (await request.json()) as
       { projectId?: string; type?: string; brief?: string; phase?: string; day?: number }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { rateLimit } from '@/lib/rateLimit'
 import { anthropic, MODEL_SONNET } from '@/lib/ai/client'
 
 // Picks ONE short, scroll-stopping hook from a post so it can sit on the post
@@ -11,6 +12,9 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const rl = await rateLimit(user.id, 'post-hook')
+    if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
 
     const { text, styleNotes } = (await request.json()) as { text?: string; styleNotes?: string }
     if (!text || !text.trim()) return NextResponse.json({ error: 'Нет текста' }, { status: 400 })
