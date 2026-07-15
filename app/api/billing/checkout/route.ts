@@ -28,6 +28,16 @@ export async function POST(request: Request) {
     // Reuse the user's Stripe customer if we have one, else create + persist it.
     const { data: profile } = await admin.from('profiles').select('provider_customer_id').eq('id', user.id).single()
     let customerId = (profile?.provider_customer_id as string | null) || null
+    // A stored id may belong to another Stripe mode (test-mode id after the
+    // switch to live keys) — verify it exists under the current key, else start fresh.
+    if (customerId) {
+      try {
+        const c = await stripe.customers.retrieve(customerId)
+        if ((c as { deleted?: boolean }).deleted) customerId = null
+      } catch {
+        customerId = null
+      }
+    }
     if (!customerId) {
       const customer = await stripe.customers.create({ email: user.email || undefined, metadata: { userId: user.id } })
       customerId = customer.id

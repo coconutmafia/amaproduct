@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import { User, Key, Zap, Gift } from 'lucide-react'
 import { SettingsClient } from '@/components/settings/SettingsClient'
+import { ManageSubscriptionButton } from '@/components/settings/ManageSubscriptionButton'
 import { PLAN_CONFIG } from '@/lib/generations-config'
 
 export default async function SettingsPage() {
@@ -22,6 +23,9 @@ export default async function SettingsPage() {
   const generationsUsed   = (profile as Record<string, unknown>)?.generations_used   as number ?? 0
   const subscriptionTier  = (profile as Record<string, unknown>)?.subscription_tier  as string ?? 'trial'
   const aiAssistantName   = (profile as Record<string, unknown>)?.ai_assistant_name  as string | null ?? null
+  const paymentProvider   = (profile as Record<string, unknown>)?.payment_provider   as string | null ?? null
+  const providerCustomer  = (profile as Record<string, unknown>)?.provider_customer_id as string | null ?? null
+  const subscriptionStatus = (profile as Record<string, unknown>)?.subscription_status as string | null ?? null
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-6">
@@ -95,6 +99,19 @@ export default async function SettingsPage() {
                 Бонусных запросов на счету: <strong>+{bonusGenerations}</strong>
               </span>
             </div>
+          )}
+          {/* Self-service subscription management: Stripe → Billing Portal;
+              Продамус → link in their payment email (no API-hosted portal). */}
+          {paymentProvider === 'stripe' && providerCustomer && (
+            <div className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border bg-secondary/20">
+              <p className="text-xs text-muted-foreground">Сменить карту, посмотреть счета или отменить подписку</p>
+              <ManageSubscriptionButton />
+            </div>
+          )}
+          {paymentProvider === 'prodamus' && subscriptionStatus === 'active' && (
+            <p className="text-xs text-muted-foreground px-1">
+              Управление подпиской (смена карты, отмена) — по ссылке из письма Продамус, которое пришло после оплаты.
+            </p>
           )}
         </CardContent>
       </Card>

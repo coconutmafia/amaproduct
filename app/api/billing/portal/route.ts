@@ -22,8 +22,16 @@ export async function POST(request: Request) {
 
     const stripe = getStripe()
     const origin = request.headers.get('origin') || 'https://amaproduct.com'
-    const session = await stripe.billingPortal.sessions.create({ customer, return_url: `${origin}/settings` })
-    return NextResponse.json({ url: session.url })
+    try {
+      const session = await stripe.billingPortal.sessions.create({ customer, return_url: `${origin}/settings` })
+      return NextResponse.json({ url: session.url })
+    } catch (e) {
+      // Stored id from another Stripe mode (test → live switch): no such customer.
+      if ((e as { code?: string }).code === 'resource_missing') {
+        return NextResponse.json({ error: 'no_subscription' }, { status: 400 })
+      }
+      throw e
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'failed'
     console.error('[billing/portal]', msg)

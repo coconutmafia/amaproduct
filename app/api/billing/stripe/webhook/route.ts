@@ -7,6 +7,16 @@ export const runtime = 'nodejs'
 
 type Admin = ReturnType<typeof createAdminClient>
 
+// Persist a webhook failure so it shows in /admin/errors (and is queryable) —
+// console.error alone lives only in Vercel logs. Best-effort: never throw.
+async function logWebhook(message: string, context: Record<string, unknown>) {
+  try {
+    await createAdminClient().from('error_events').insert({
+      level: 'error', source: 'webhook', route: '/api/billing/stripe/webhook', message, context,
+    })
+  } catch { /* logging must never break the webhook */ }
+}
+
 function customerId(sub: Stripe.Subscription): string | null {
   return typeof sub.customer === 'string' ? sub.customer : sub.customer?.id ?? null
 }
@@ -50,6 +60,7 @@ async function applySubscription(admin: Admin, sub: Stripe.Subscription, userIdH
 
 export async function POST(request: Request) {
   if (!stripeConfigured() || !process.env.STRIPE_WEBHOOK_SECRET) {
+    await logWebhook('stripe webhook hit but billing_not_configured (STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET missing)', {})
     return NextResponse.json({ error: 'billing_not_configured' }, { status: 503 })
   }
 
@@ -62,6 +73,11 @@ export async function POST(request: Request) {
     event = stripe.webhooks.constructEvent(raw, sig, process.env.STRIPE_WEBHOOK_SECRET)
   } catch (e) {
     console.error('[billing/webhook] bad signature', e instanceof Error ? e.message : e)
+    // Live-switch tripwire: the most likely cause is STRIPE_WEBHOOK_SECRET not
+    // matching the endpoint's mode (test secret with a live endpoint or vice versa).
+    await logWebhook('stripe webhook: подпись не сошлась (bad_signature)', {
+      detail: e instanceof Error ? e.message : String(e), hasSignatureHeader: !!sig,
+    })
     return NextResponse.json({ error: 'bad_signature' }, { status: 400 })
   }
 
@@ -98,6 +114,32 @@ export async function POST(request: Request) {
         }
         break
       }
+      case 'invoice.payment_succeeded': {
+        const inv = event.data.object as Stripe.Invoice
+        // Ledger row for /admin/payments (deduped by the (provider, external_id)
+        // unique index — a re-delivered webhook won't double-insert). $0 invoices
+        // (trial start) are noise, skip them. Best-effort: an insert error must
+        // not fail the webhook.
+        const cust = inv.customer ? String(inv.customer) : null
+        if (cust && (inv.amount_paid ?? 0) > 0) {
+          const { data: prof } = await admin.from('profiles').select('id').eq('provider_customer_id', cust).maybeSingle()
+          await admin.from('payments').insert({
+            user_id: prof?.id ?? null,
+            amount: Math.round(inv.amount_paid) / 100, // cents → dollars
+            currency: (inv.currency || 'usd').toUpperCase(),
+            status: 'succeeded',
+            provider: 'stripe',
+            external_id: inv.id,
+            description: inv.lines?.data?.[0]?.description || 'Stripe',
+          })
+          if (!prof?.id) {
+            await logWebhook('stripe webhook: оплата прошла, но пользователь не найден по customer id', {
+              customer: cust, invoice: inv.id, amount: inv.amount_paid,
+            })
+          }
+        }
+        break
+      }
       case 'invoice.payment_failed': {
         const inv = event.data.object as Stripe.Invoice
         if (inv.customer) await admin.from('profiles').update({ subscription_status: 'past_due' }).eq('provider_customer_id', String(inv.customer))
@@ -106,6 +148,9 @@ export async function POST(request: Request) {
     }
   } catch (e) {
     console.error('[billing/webhook] handler error', e instanceof Error ? e.message : e)
+    await logWebhook('stripe webhook: ошибка обработчика после проверки подписи', {
+      eventId: event.id, eventType: event.type, error: e instanceof Error ? e.message : String(e),
+    })
     // Drop the idempotency row so Stripe's retry re-runs the handler.
     await admin.from('billing_events').delete().eq('id', event.id)
     return NextResponse.json({ error: 'handler_failed' }, { status: 500 })
