@@ -42,7 +42,13 @@ export async function POST(request: Request) {
       customer: customerId,
       client_reference_id: user.id,
       line_items: [{ price: priceId, quantity: 1 }],
-      subscription_data: { metadata: { userId: user.id, plan } },
+      // Match the Продамус model: 60-day trial on Соло only; Про/Продюсер charge
+      // immediately (no trial). During the trial Stripe sends the subscription as
+      // `trialing` and our webhook activates the tier just the same.
+      subscription_data: {
+        metadata: { userId: user.id, plan },
+        ...(plan === 'solo' ? { trial_period_days: 60 } : {}),
+      },
       allow_promotion_codes: true,
       success_url: `${origin}/pricing?status=success`,
       cancel_url: `${origin}/pricing?status=cancel`,
