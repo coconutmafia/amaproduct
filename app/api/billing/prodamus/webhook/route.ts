@@ -90,16 +90,20 @@ export async function POST(request: Request) {
         // in order_id (a URL query param the payer can edit before paying), but
         // the actual PRICE is fixed by the Продамус link/subscription. So a payer
         // could open the "solo" link, rewrite order_id to "producer" and get the
-        // top tier for the cheap price. Only grant the tier if the paid `sum`
-        // covers that plan's price. Fail-safe: if we can't read a sum, keep prior
-        // behaviour (Продамус is not live-verified yet — see ⚠️ above).
+        // top tier for the cheap price. Only reject a REAL underpayment.
+        //
+        // ⚠️ The first payment is 0₽ (demo period / «стоимость первого платежа 0»):
+        // the activation webhook carries sum=0. That is NOT an underpayment — it's
+        // the legitimate trial start — so `paid > 0` gates the guard, otherwise the
+        // tier would never activate on subscribe. Real recurring charges (paid > 0)
+        // are still checked against the plan price.
         let grantedPlan = parsed?.plan
         if (grantedPlan) {
           const expected = PLAN_CONFIG[grantedPlan as SubscriptionTier]?.priceRub
           const paid = Number(data.sum ?? (data as Record<string, unknown>).amount ?? NaN)
-          if (expected && Number.isFinite(paid) && paid + 1 < expected) {
+          if (expected && Number.isFinite(paid) && paid > 0 && paid + 1 < expected) {
             console.error(`[prodamus/webhook] amount mismatch: paid ${paid}₽ < ${grantedPlan} (${expected}₽) — refusing tier escalation; order_id=${orderId}`)
-            grantedPlan = undefined // underpaid → don't escalate tier
+            grantedPlan = undefined // real underpayment → don't escalate tier
           }
         }
         const patch: Record<string, unknown> = {
