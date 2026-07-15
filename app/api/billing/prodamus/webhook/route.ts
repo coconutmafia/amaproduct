@@ -54,6 +54,20 @@ export async function POST(request: Request) {
   const { error: dupErr } = await admin.from('billing_events').insert({ id: eventId, provider: 'prodamus', type: status })
   if (dupErr) return NextResponse.json({ received: true, duplicate: true })
 
+  // ⚠️ TEMP diagnostic — signature passed, log the payload SHAPE (key names +
+  // status-like fields, no PII values) so we can see exactly what Продамус sends
+  // and match the real status field. Remove once billing is confirmed working.
+  await logWebhook('prodamus webhook принят (диагностика структуры)', {
+    keys: Object.keys(data).join(','),
+    payment_status: data.payment_status ?? null,
+    status: (data as Record<string, unknown>).status ?? null,
+    payment_status_description: (data as Record<string, unknown>).payment_status_description ?? null,
+    order_id: data.order_id ?? null,
+    sum: data.sum ?? null,
+    subscription: data.subscription ?? (data as Record<string, unknown>).subscription_id ?? null,
+    commission: (data as Record<string, unknown>).commission ?? null,
+  })
+
   try {
     if (status.toLowerCase() === 'success') {
       const parsed = parseOrderId(orderId)
