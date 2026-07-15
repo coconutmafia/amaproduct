@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { prodamusConfigured, prodamusVerify, parseFormNested, parseOrderId, mapProdamusStatus, prodamusDeactivateSubscription } from '@/lib/billing/prodamus'
+import { prodamusConfigured, prodamusVerify, parseFormNested, parseOrderId, mapProdamusStatus } from '@/lib/billing/prodamus'
+import { cancelSubscriptionAnyProvider } from '@/lib/billing/cancel'
 import { PLAN_CONFIG, PAID_PLANS } from '@/lib/generations-config'
 
 export const runtime = 'nodejs'
@@ -108,17 +109,30 @@ export async function POST(request: Request) {
           order_id: orderId, email: data.customer_email ?? null, subscription_id: subId, plan: grantedPlan ?? null,
         })
       } else {
+        // Do NOT activate a paid status with an unresolved plan — that would leave
+        // status=active but subscription_tier=trial, which isEntitled treats as NOT
+        // entitled (money taken, user locked out). Bail loudly for manual grant.
+        if (!grantedPlan) {
+          await logWebhook('prodamus webhook: платёж прошёл, но ТАРИФ не распознан — тариф не выдан (ручная выдача)', {
+            order_id: orderId, email: data.customer_email ?? null, subscription_id: subId,
+            sub_cost: sub?.cost ?? null, sub_name: sub?.name ?? null,
+          })
+          return new NextResponse('success', { status: 200 })
+        }
+
         // Plan switch: if the user already had a DIFFERENT subscription, cancel it
-        // in Продамус so they aren't billed for both. Best-effort — a failed cancel
-        // just leaves the old sub active (logged, not fatal).
+        // so they aren't billed for both. The stored id may belong to EITHER
+        // provider (a region switch) — dispatch by id shape so we never feed a
+        // Stripe id to Продамус or vice-versa (which silently no-ops → double
+        // charge). Best-effort — a failed cancel just leaves the old sub (logged).
         if (subId) {
           const { data: cur } = await admin.from('profiles').select('provider_subscription_id').eq('id', userId).maybeSingle()
           const prevSub = cur?.provider_subscription_id
           if (prevSub && String(prevSub) !== String(subId)) {
-            const r = await prodamusDeactivateSubscription(String(prevSub), data.customer_email ? String(data.customer_email) : undefined)
+            const r = await cancelSubscriptionAnyProvider(String(prevSub), data.customer_email ? String(data.customer_email) : undefined)
             if (!r.ok) {
               await logWebhook('prodamus: не удалось отменить старую подписку при смене тарифа', {
-                prev: String(prevSub), next: String(subId), detail: r.detail ?? null,
+                prev: String(prevSub), next: String(subId), provider: r.provider, detail: r.detail ?? null,
               })
             }
           }

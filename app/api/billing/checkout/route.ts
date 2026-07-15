@@ -41,7 +41,12 @@ export async function POST(request: Request) {
     if (!customerId) {
       const customer = await stripe.customers.create({ email: user.email || undefined, metadata: { userId: user.id } })
       customerId = customer.id
-      await admin.from('profiles').update({ provider_customer_id: customerId, payment_provider: 'stripe' }).eq('id', user.id)
+      // Persist the customer id for reuse, but do NOT set payment_provider yet —
+      // that's the "which provider is actually active" signal and must only be
+      // written by the webhook AFTER a successful payment. Writing it here would
+      // overwrite a Продамус user's real provider the moment they open Stripe
+      // checkout (even if they abandon it), breaking cross-provider cancellation.
+      await admin.from('profiles').update({ provider_customer_id: customerId }).eq('id', user.id)
     }
 
     const priceId = await ensurePrice(plan as PaidPlan)
