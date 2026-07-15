@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { scrapeInstagramProfile } from '@/lib/scrape/instagramProfile'
 import { requireProjectAccess } from '@/lib/projects/access'
+import { rateLimit } from '@/lib/rateLimit'
+import { assertPublicUrl } from '@/lib/security/ssrf'
 
 // Apify Instagram scrape (used for the owner's own profile) can take ~60-80s on
 // cold start — same budget as autofill so the background enrichment doesn't 504.
@@ -64,6 +66,9 @@ async function scrapeYoutube(input: string, target = 50): Promise<{ description:
   // Ensure /videos path for better data
   const baseUrl = channelUrl.replace(/\/(videos|about|shorts|playlists)?$/, '')
 
+  // SSRF guard: when the caller passes a full URL it's used as the fetch host, so
+  // validate it's a public address before hitting it (blocks internal/metadata).
+  await assertPublicUrl(`${baseUrl}/videos`)
   const html = await fetch(`${baseUrl}/videos`, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
@@ -193,6 +198,10 @@ export async function POST(request: Request) {
     // so a viewer could burn cost then fail at save — check editor+ up front.
     const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
+
+    // Wallet safety net: Apify/YouTube/Telegram scrape spends real money.
+    const rl = await rateLimit(user.id, 'scrape')
+    if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
 
     const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).single()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })

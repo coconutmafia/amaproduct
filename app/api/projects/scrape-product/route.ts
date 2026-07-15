@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { rateLimit } from '@/lib/rateLimit'
+import { assertPublicUrl } from '@/lib/security/ssrf'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -26,11 +27,20 @@ export async function POST(request: Request) {
     const { url } = await request.json() as { url: string }
     if (!url?.trim()) return NextResponse.json({ error: 'URL не указан' }, { status: 400 })
 
+    // SSRF guard: the page is fetched server-side and its text is returned to the
+    // user, so an internal address would be readable. Reject private/metadata hosts.
+    let safeUrl: URL
+    try {
+      safeUrl = await assertPublicUrl(url)
+    } catch {
+      return NextResponse.json({ error: 'Недопустимый адрес страницы' }, { status: 400 })
+    }
+
     // Fetch the sales page
     let pageText = ''
     let pageTitle = ''
     try {
-      const res = await fetch(url.trim(), {
+      const res = await fetch(safeUrl.toString(), {
         headers: {
           'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
           'Accept-Language': 'ru,en;q=0.9',

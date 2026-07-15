@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireProjectAccess } from '@/lib/projects/access'
+import { assertPublicUrl } from '@/lib/security/ssrf'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { FONT_KEYS, FONTS } from '@/lib/fonts'
 import sharp from 'sharp'
@@ -35,7 +36,10 @@ export async function POST(request: Request) {
     const images: { type: 'image'; source: { type: 'base64'; media_type: 'image/jpeg'; data: string } }[] = []
     for (const u of urls) {
       try {
-        const r = await fetch(u)
+        // SSRF guard: sample URLs come from the client — only fetch public hosts
+        // (the project-brand storage bucket), never internal/metadata addresses.
+        const safe = await assertPublicUrl(String(u))
+        const r = await fetch(safe.toString())
         if (!r.ok) continue
         const buf = Buffer.from(await r.arrayBuffer())
         const jpg = await sharp(buf).resize(820, 820, { fit: 'inside' }).jpeg({ quality: 80 }).toBuffer()
