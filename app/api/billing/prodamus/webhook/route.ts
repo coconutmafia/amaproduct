@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { prodamusConfigured, prodamusVerify, parseFormNested, parseOrderId, mapProdamusStatus } from '@/lib/billing/prodamus'
-import { PLAN_CONFIG, PAID_PLANS, type SubscriptionTier } from '@/lib/generations-config'
+import { PLAN_CONFIG, PAID_PLANS } from '@/lib/generations-config'
 
 export const runtime = 'nodejs'
 
@@ -54,34 +54,43 @@ export async function POST(request: Request) {
   const { error: dupErr } = await admin.from('billing_events').insert({ id: eventId, provider: 'prodamus', type: status })
   if (dupErr) return NextResponse.json({ received: true, duplicate: true })
 
-  // ⚠️ TEMP diagnostic — signature passed, log the payload SHAPE (key names +
-  // status-like fields, no PII values) so we can see exactly what Продамус sends
-  // and match the real status field. Remove once billing is confirmed working.
-  await logWebhook('prodamus webhook принят (диагностика структуры)', {
-    keys: Object.keys(data).join(','),
-    payment_status: data.payment_status ?? null,
-    status: (data as Record<string, unknown>).status ?? null,
-    payment_status_description: (data as Record<string, unknown>).payment_status_description ?? null,
-    order_id: data.order_id ?? null,
-    sum: data.sum ?? null,
-    subscription: data.subscription ?? (data as Record<string, unknown>).subscription_id ?? null,
-    commission: (data as Record<string, unknown>).commission ?? null,
-  })
-
   try {
     if (status.toLowerCase() === 'success') {
+      // Продамус returns its OWN numeric order_id (NOT our userId.plan.ts — ready
+      // subscription links drop appended query params) plus a full `subscription`
+      // object and customer_email. So resolve:
+      //   • PLAN — from the subscription's real recurring cost (tamper-proof: set
+      //     by Продамус, not the payer), fallback to its RU name.
+      //   • USER — by the payer's email (survives), fallback to a stored
+      //     subscription id (recurring rebills) or our order_id if it ever survives.
       const parsed = parseOrderId(orderId)
-      const subId = data.subscription ?? (data as Record<string, unknown>).subscription_id
-      // Find the user: by encoded order_id (first payment) or by stored subscription id (rebill).
+      const sub = (data.subscription && typeof data.subscription === 'object')
+        ? (data.subscription as Record<string, unknown>) : null
+      const subId = sub?.id ?? (data as Record<string, unknown>).subscription_id ?? null
+
+      // Plan: subscription cost → RU name → our order_id.
+      let grantedPlan: string | undefined
+      const subCost = sub ? Math.round(Number(sub.cost)) : NaN
+      if (Number.isFinite(subCost)) grantedPlan = PAID_PLANS.find((p) => PLAN_CONFIG[p].priceRub === subCost)
+      if (!grantedPlan && sub?.name) {
+        const nameMap: Record<string, string> = { 'соло': 'solo', 'про': 'pro', 'продюсер': 'producer' }
+        grantedPlan = nameMap[String(sub.name).trim().toLowerCase()]
+      }
+      if (!grantedPlan) grantedPlan = parsed?.plan
+
+      // User: our order_id → payer email → stored subscription id.
       let userId = parsed?.userId
+      if (!userId && data.customer_email) {
+        const { data: prof } = await admin.from('profiles').select('id').ilike('email', String(data.customer_email)).maybeSingle()
+        userId = prof?.id
+      }
       if (!userId && subId) {
         const { data: prof } = await admin.from('profiles').select('id').eq('provider_subscription_id', String(subId)).maybeSingle()
         userId = prof?.id
       }
+
       const paidSum = Number(data.sum ?? (data as Record<string, unknown>).amount ?? NaN)
-      // Record the charge in the payments ledger (shows in /admin/payments),
-      // regardless of whether we could resolve the user — best-effort, deduped
-      // by the unique (provider, external_id) index.
+      // Ledger (shows in /admin/payments) — best-effort, deduped by external_id.
       try {
         await admin.from('payments').insert({
           user_id: userId ?? null,
@@ -90,43 +99,26 @@ export async function POST(request: Request) {
           status: 'succeeded',
           provider: 'prodamus',
           external_id: orderId || (subId ? String(subId) : null),
-          description: parsed?.plan ? `Prodamus · ${parsed.plan}` : 'Prodamus',
+          description: grantedPlan ? `Prodamus · ${grantedPlan}` : 'Prodamus',
         })
       } catch { /* ledger insert is best-effort */ }
 
       if (!userId) {
-        await logWebhook('prodamus webhook: платёж прошёл, но пользователь не найден (order_id/subscription не сопоставлены)', {
-          order_id: orderId, subscription: subId ?? null, sum: data.sum ?? null,
+        await logWebhook('prodamus webhook: платёж прошёл, но пользователь не найден (email/подписка не сопоставлены)', {
+          order_id: orderId, email: data.customer_email ?? null, subscription_id: subId, plan: grantedPlan ?? null,
         })
-      }
-      if (userId) {
-        // Guard against order_id tampering → tier escalation. The plan is encoded
-        // in order_id (a URL query param the payer can edit before paying), but
-        // the actual PRICE is fixed by the Продамус link/subscription. So a payer
-        // could open the "solo" link, rewrite order_id to "producer" and get the
-        // top tier for the cheap price.
-        //
-        // ⚠️ The trial's FIRST payment is tiny — 1₽ (Продамус forbids a 0₽ first
-        // payment) — and its activation webhook carries that small sum. That is NOT
-        // an underpayment, it's the legitimate trial start. A REAL underpayment is
-        // «paid a genuine plan-level amount but claimed a pricier tier». So only
-        // reject when the paid sum is at least the cheapest paid plan's price AND
-        // below the claimed tier; anything smaller (the 1₽ trial) passes and
-        // activates the tier. Recurring charges (real amounts) are still checked.
-        const minPaidPrice = Math.min(...PAID_PLANS.map((p) => PLAN_CONFIG[p].priceRub))
-        let grantedPlan = parsed?.plan
-        if (grantedPlan) {
-          const expected = PLAN_CONFIG[grantedPlan as SubscriptionTier]?.priceRub
-          const paid = Number(data.sum ?? (data as Record<string, unknown>).amount ?? NaN)
-          if (expected && Number.isFinite(paid) && paid >= minPaidPrice && paid + 1 < expected) {
-            console.error(`[prodamus/webhook] amount mismatch: paid ${paid}₽ < ${grantedPlan} (${expected}₽) — refusing tier escalation; order_id=${orderId}`)
-            grantedPlan = undefined // real underpayment → don't escalate tier
-          }
+      } else {
+        // Access valid until the subscription's next payment date (60-day demo),
+        // fallback to +31 days if it's missing/unparseable.
+        let periodEnd = new Date(Date.now() + 31 * 24 * 3600 * 1000)
+        if (sub?.date_next_payment) {
+          const d = new Date(String(sub.date_next_payment).replace(' ', 'T'))
+          if (!Number.isNaN(d.getTime())) periodEnd = d
         }
         const patch: Record<string, unknown> = {
           subscription_status: mapProdamusStatus(status),
           payment_provider: 'prodamus',
-          current_period_end: new Date(Date.now() + 31 * 24 * 3600 * 1000).toISOString(),
+          current_period_end: periodEnd.toISOString(),
           ...(grantedPlan ? { subscription_tier: grantedPlan } : {}),
           ...(subId ? { provider_subscription_id: String(subId) } : {}),
         }
