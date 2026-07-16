@@ -7,10 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import { Sparkles, Globe, Loader2, Gift, Mail, CheckCircle2, Bot, Zap, Target } from 'lucide-react'
 import { toast } from 'sonner'
-import { REFERRAL_REWARDS } from '@/lib/generations-config'
 import { authErrorMessage } from '@/lib/friendlyError'
 
 function RegisterForm() {
@@ -26,11 +24,10 @@ function RegisterForm() {
 
   const refCode = searchParams.get('ref')?.toUpperCase() ?? ''
 
-  useEffect(() => {
-    if (refCode) {
-      toast.info(`Реферальный код ${refCode} — вы получите +${REFERRAL_REWARDS.invitee_signup} запросов к AI`, { duration: 5000 })
-    }
-  }, [refCode])
+  // Реферальный бонус НЕ обещаем: начисление при регистрации фактически не работает
+  // (при подтверждении email сессии ещё нет → /api/referral отдаёт 401; Google-путь
+  // теряет ?ref в колбэке). Обещание убрано до того, как механизм доделаем —
+  // решение владельца 16 июля. Сам ref-код по-прежнему передаётся, ничего не сломано.
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
@@ -159,16 +156,13 @@ function RegisterForm() {
             <p className="text-[#888888] text-sm">Твой личный AI SMM-щик для запусков</p>
           </Link>
 
-          {/* Referral banner */}
+          {/* Пришёл по приглашению — говорим только факт, без обещания бонуса
+              (начисление не работает, см. комментарий выше). */}
           {refCode && (
             <div className="flex items-center gap-3 rounded-xl border border-amber-200 dark:border-amber-400/30 bg-amber-50 dark:bg-amber-400/10 p-3">
               <Gift className="h-5 w-5 text-amber-600 shrink-0" />
               <div className="text-sm">
-                <span className="font-medium text-amber-700 dark:text-amber-400">Тебя пригласили! </span>
-                <span className="text-amber-600 dark:text-amber-400/80">После регистрации — </span>
-                <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
-                  +{REFERRAL_REWARDS.invitee_signup} запросов к AI в подарок
-                </Badge>
+                <span className="font-medium text-amber-700 dark:text-amber-400">Тебя пригласили в AMAproduct</span>
               </div>
             </div>
           )}
@@ -177,7 +171,7 @@ function RegisterForm() {
           <div className="bg-white border border-[#C5CBA5] rounded-2xl shadow-sm p-8 space-y-5">
             <div className="space-y-1">
               <h2 className="text-2xl font-black uppercase text-[#1A1A1A]">Регистрация</h2>
-              <p className="text-sm text-[#888888]">Создай аккаунт — это бесплатно</p>
+              <p className="text-sm text-[#888888]">Создай аккаунт и выбери тариф</p>
             </div>
 
           {/* Google */}
@@ -276,8 +270,8 @@ function RegisterForm() {
           },
           {
             icon: CheckCircle2,
-            title: `${REFERRAL_REWARDS.invitee_signup} запросов к AI бесплатно`,
-            desc: 'Сразу после регистрации — попробуй без оплаты',
+            title: 'Визуал в твоём стиле',
+            desc: 'Слайды, карусели и сторис по фото — в фирменных цветах и шрифтах твоего блога',
           },
         ].map(({ icon: Icon, title, desc }) => (
           <div key={title} className="flex gap-3">
