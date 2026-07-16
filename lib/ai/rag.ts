@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import type { StyleExample } from '@/types'
 
 export interface RAGContext {
@@ -97,6 +98,16 @@ export async function buildRAGContext(
   contentType?: string
 ): Promise<RAGContext> {
   const supabase = await createClient()
+  // Системная методология — актив компании, общий для всех, а НЕ данные юзера.
+  // Читаем её service-role клиентом, потому что миграция 036 забирает у роли
+  // authenticated право читать knowledge_chunks напрямую (иначе любой оплативший
+  // выкачивал всю методологию одним запросом к PostgREST мимо приложения).
+  //
+  // ⚠️ ГРАНИЦА: через `sys` ходим ТОЛЬКО в knowledge_chunks / knowledge_vault.
+  // Всё пользовательское (project_chunks, project_materials, style_examples,
+  // saved_content) обязано читаться через `supabase` под RLS — иначе юзер получил
+  // бы доступ к чужим проектам. Не переноси сюда ничего с project_id.
+  const sys = createAdminClient()
 
   // ── Try embedding-based search first ─────────────────────────────────────
   const embedding = await tryCreateEmbedding(query)
@@ -112,7 +123,7 @@ export async function buildRAGContext(
     // gates + higher counts so the system methodology and project embeddings
     // actually reach generation.
     const [sysResult, projResult] = await Promise.all([
-      supabase.rpc('match_knowledge_chunks', {
+      sys.rpc('match_knowledge_chunks', {
         query_embedding: embedding,
         match_threshold: 0.35,
         match_count: 14,
@@ -129,7 +140,7 @@ export async function buildRAGContext(
   } else {
     // ── Fallback: direct queries without embeddings ───────────────────────
     // Load system knowledge vault chunks (all ready chunks, most recent first)
-    const { data: sysRaw } = await supabase
+    const { data: sysRaw } = await sys
       .from('knowledge_chunks')
       .select('chunk_text, metadata')
       .order('created_at', { ascending: false })
@@ -137,7 +148,7 @@ export async function buildRAGContext(
 
     // If no knowledge_chunks, try knowledge_vault itself
     if (!sysRaw || sysRaw.length === 0) {
-      const { data: vaultItems } = await supabase
+      const { data: vaultItems } = await sys
         .from('knowledge_vault')
         .select('raw_content, content_type, title')
         .eq('processing_status', 'ready')

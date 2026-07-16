@@ -60,7 +60,7 @@ export async function POST(request: Request) {
       const codeUpper = referral_code.toUpperCase().trim()
 
       // ── Check if it's an admin PROMO code first ──
-      const { data: promoCode } = await supabase
+      const { data: promoCode } = await admin
         .from('promo_codes')
         .select('id, bonus_generations, max_uses, uses_count, is_active, expires_at')
         .eq('code', codeUpper)
@@ -86,7 +86,7 @@ export async function POST(request: Request) {
           p_user_id: user.id, p_amount: promoCode.bonus_generations,
         })
         await supabase.from('promo_code_uses').insert({ promo_id: promoCode.id, user_id: user.id })
-        await supabase.from('promo_codes')
+        await admin.from('promo_codes')
           .update({ uses_count: promoCode.uses_count + 1 }).eq('id', promoCode.id)
 
         return NextResponse.json({

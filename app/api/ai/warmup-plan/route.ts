@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
 import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
@@ -51,15 +52,19 @@ export async function POST(request: Request) {
     console.log(`[warmup-plan] Starting for project="${project.name}" user=${user.id} duration=${duration}`)
 
     // ── Load system knowledge vault ──────────────────────────────────────────
+    // Методология читается service-role клиентом: миграция 036 закрыла прямое
+    // чтение knowledge_chunks для authenticated (защита актива от выкачивания).
+    // Здесь берём ТОЛЬКО общую методологию, ничего пользовательского.
+    const sys = createAdminClient()
     let systemKnowledgeText = ''
     try {
-      const { data: sysChunks } = await supabase
+      const { data: sysChunks } = await sys
         .from('knowledge_chunks').select('chunk_text')
         .order('created_at', { ascending: false }).limit(10)
       if (sysChunks && sysChunks.length > 0) {
         systemKnowledgeText = sysChunks.map(c => c.chunk_text as string).join('\n\n').slice(0, 3000)
       } else {
-        const { data: vaultItems } = await supabase
+        const { data: vaultItems } = await sys
           .from('knowledge_vault').select('raw_content, content_type, title')
           .eq('processing_status', 'ready').limit(5)
         if (vaultItems && vaultItems.length > 0) {
