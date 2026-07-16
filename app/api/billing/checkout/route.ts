@@ -2,9 +2,26 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe, stripeConfigured, ensurePrice } from '@/lib/billing/stripe'
-import { PAID_PLANS, type PaidPlan } from '@/lib/generations-config'
+import { PAID_PLANS, TRIAL_DAYS, type PaidPlan } from '@/lib/generations-config'
 
 export const runtime = 'nodejs'
+
+// Trial length for Соло on Stripe (Про/Продюсер never get one — they charge
+// immediately, matching the Продамус model).
+//
+// Override with env STRIPE_SOLO_TRIAL_DAYS. `0` disables the trial so a Соло
+// checkout charges right away — needed to test the live cards/webhook/ledger
+// chain with real money (with a trial Stripe bills $0, so nothing reaches
+// /admin/payments and the account's ability to actually take money is untested).
+// Unset the env var to restore the normal 60-day trial. Garbage/negative values
+// fall back to the default rather than silently charging a real user.
+// NOTE: Продамус trials are set on the product in its ЛК — this does not touch them.
+function soloTrialDays(): number {
+  const raw = process.env.STRIPE_SOLO_TRIAL_DAYS
+  if (raw === undefined || raw === '') return TRIAL_DAYS
+  const n = Number(raw)
+  return Number.isFinite(n) && n >= 0 ? n : TRIAL_DAYS
+}
 
 // Creates a Stripe Checkout Session (hosted page) for a paid plan and returns
 // its URL — the client just redirects there. Dormant until STRIPE_SECRET_KEY is
@@ -62,7 +79,7 @@ export async function POST(request: Request) {
       // `trialing` and our webhook activates the tier just the same.
       subscription_data: {
         metadata: { userId: user.id, plan },
-        ...(plan === 'solo' ? { trial_period_days: 60 } : {}),
+        ...(plan === 'solo' && soloTrialDays() > 0 ? { trial_period_days: soloTrialDays() } : {}),
       },
       allow_promotion_codes: true,
       success_url: `${origin}/pricing?status=success`,
