@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { after } from 'next/server'
 import { rateLimit } from '@/lib/rateLimit'
+import { requirePaidAccess } from '@/lib/billing/access'
 import { processViralReelJob } from '@/lib/jobs/runViralReelJob'
 import { requireProjectAccess } from '@/lib/projects/access'
 
@@ -55,6 +56,9 @@ export async function POST(request: Request) {
 
   const rl = await rateLimit(user.id, 'viral-reels')
   if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
+
+  const denied = await requirePaidAccess(user.id)
+  if (denied) return denied
 
   const body = await request.json().catch(() => ({})) as {
     url?: string; scope?: 'system' | 'project'; projectId?: string; niches?: string[]

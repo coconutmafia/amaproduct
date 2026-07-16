@@ -39,9 +39,17 @@ function extractMessage(error: unknown): string {
  *   Defaults to the generic "it's on our side" copy; pass a specific friendly
  *   Russian fallback (e.g. 'Не удалось сохранить серию') where one fits better.
  */
+// Domain errors raised by DB triggers. Their text is Latin, so the rules below
+// would hide them behind the generic «это на нашей стороне» — but these are NOT
+// our fault and the user CAN act on them, so translate them explicitly.
+const DOMAIN_MAP: Array<[RegExp, string]> = [
+  [/project_limit_reached/i, 'На твоём тарифе закончились проекты. Выбери тариф выше на странице «Тарифы» — и создавай больше.'],
+]
+
 export function friendlyError(error: unknown, fallback: string = SERVICE_ERROR_MESSAGE): string {
   const msg = extractMessage(error).trim()
   if (!msg) return fallback
+  for (const [re, text] of DOMAIN_MAP) if (re.test(msg)) return text
   if (TECHNICAL.test(msg)) return fallback
   // Russian text is our own user-facing copy (validation, limits, permissions,
   // session-expired) — show it as-is.

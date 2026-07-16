@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
+import { requirePaidAccess } from '@/lib/billing/access'
 import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt } from '@/lib/ai/prompts/system'
@@ -55,6 +56,9 @@ export async function POST(request: Request) {
 
   const rl = await rateLimit(user.id, 'edit')
   if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
+
+  const denied = await requirePaidAccess(user.id)
+  if (denied) return denied
 
   const body = await request.json()
   const { projectId, contextType, contextId, messages = [], instruction, draftPlanData, weekContext } = body

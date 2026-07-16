@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
+import { requirePaidAccess } from '@/lib/billing/access'
 import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { getSchemaForPhase, getEmotionalMechanics, getCTAEngine } from '@/lib/ai/prompts/content-brain'
@@ -23,6 +24,9 @@ export async function POST(request: Request) {
 
   const rl = await rateLimit(user.id, 'generate-week-brief')
   if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
+
+  const denied = await requirePaidAccess(user.id)
+  if (denied) return denied
 
   const { projectId, days } = await request.json() as { projectId: string; days: BriefDay[] }
 

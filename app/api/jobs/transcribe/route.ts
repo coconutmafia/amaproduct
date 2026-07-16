@@ -3,6 +3,7 @@ import { after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { rateLimit } from '@/lib/rateLimit'
+import { requirePaidAccess } from '@/lib/billing/access'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { processTranscribeJob } from '@/lib/jobs/runTranscribeJob'
 
@@ -23,6 +24,9 @@ export async function POST(request: Request) {
 
   const rl = await rateLimit(user.id, 'transcribe')
   if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
+
+  const denied = await requirePaidAccess(user.id)
+  if (denied) return denied
 
   let body: { projectId?: string; storagePath?: string; ext?: string; durationSec?: number }
   try { body = await request.json() as typeof body }

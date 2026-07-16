@@ -2,6 +2,7 @@ import { createClient }      from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse }       from 'next/server'
 import { rateLimit } from '@/lib/rateLimit'
+import { requirePaidAccess } from '@/lib/billing/access'
 import { transcribeWindow } from '@/lib/jobs/transcribeWindow'
 
 // ffmpeg needs the Node runtime + the binary (traced in next.config).
@@ -23,6 +24,9 @@ export async function POST(request: Request) {
 
   const rl = await rateLimit(user.id, 'transcribe')
   if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
+
+  const denied = await requirePaidAccess(user.id)
+  if (denied) return denied
 
   let body: { storagePath?: string; startSec?: number; durSec?: number; ext?: string; isLastChunk?: boolean }
   try { body = await request.json() as typeof body }

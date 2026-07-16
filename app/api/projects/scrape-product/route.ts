@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { rateLimit } from '@/lib/rateLimit'
+import { requirePaidAccess } from '@/lib/billing/access'
 import { assertPublicUrl } from '@/lib/security/ssrf'
 
 export const dynamic = 'force-dynamic'
@@ -22,6 +23,10 @@ export async function POST(request: Request) {
 
     const rl = await rateLimit(user.id, 'scrape-product')
     if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
+
+    const denied = await requirePaidAccess(user.id)
+    if (denied) return denied
+
     if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: 'AI не настроен (нет ANTHROPIC_API_KEY)' }, { status: 500 })
 
     const { url } = await request.json() as { url: string }

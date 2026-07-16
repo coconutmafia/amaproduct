@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
+import { requirePaidAccess } from '@/lib/billing/access'
 import { NextResponse } from 'next/server'
 
 export const dynamic     = 'force-dynamic'
@@ -19,6 +20,9 @@ export async function POST(request: Request) {
 
   const rl = await rateLimit(user.id, 'transcribe')
   if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
+
+  const denied = await requirePaidAccess(user.id)
+  if (denied) return denied
 
   let form: FormData
   try { form = await request.formData() } catch { return NextResponse.json({ error: 'Bad form data' }, { status: 400 }) }

@@ -30,6 +30,7 @@ export interface PlanInfo {
   unlimited: boolean   // true → render "безлимит (fair use)" instead of the number
   projects: number     // -1 = effectively unlimited (grown via add-ons)
   teamSeats: number    // extra project_members (editor/viewer) seats per project, beyond the owner
+  competitors: number  // Instagram competitor accounts analysable PER PROJECT (Apify = real $)
   badge: string | null
   paid: boolean
   features: string[]
@@ -44,6 +45,7 @@ export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
     unlimited: false,
     projects: 3,
     teamSeats: 0,
+    competitors: 5,
     badge: null,
     paid: false,
     features: [
@@ -60,6 +62,7 @@ export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
     unlimited: false,
     projects: 1,
     teamSeats: 0,
+    competitors: 5,
     badge: 'Оптимальный',
     paid: true,
     features: [
@@ -78,6 +81,7 @@ export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
     unlimited: true,
     projects: 3,
     teamSeats: 1,
+    competitors: 5,
     badge: null,
     paid: true,
     features: [
@@ -99,6 +103,7 @@ export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
     unlimited: true,
     projects: 10,
     teamSeats: 5,
+    competitors: 10,
     badge: null,
     paid: true,
     features: [

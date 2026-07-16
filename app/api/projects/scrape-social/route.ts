@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { scrapeInstagramProfile } from '@/lib/scrape/instagramProfile'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { rateLimit } from '@/lib/rateLimit'
+import { requirePaidAccess } from '@/lib/billing/access'
 import { assertPublicUrl } from '@/lib/security/ssrf'
 
 // Apify Instagram scrape (used for the owner's own profile) can take ~60-80s on
@@ -202,6 +203,9 @@ export async function POST(request: Request) {
     // Wallet safety net: Apify/YouTube/Telegram scrape spends real money.
     const rl = await rateLimit(user.id, 'scrape')
     if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
+
+    const denied = await requirePaidAccess(user.id)
+    if (denied) return denied
 
     const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).single()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })

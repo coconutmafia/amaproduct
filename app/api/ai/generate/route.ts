@@ -3,7 +3,8 @@ import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt, buildValidatorUserPrompt } from '@/lib/ai/prompts/system'
 import { getSchemaForPhase, getHookEngine, getEmotionalMechanics, getCTAEngine, getViralReelsFramework } from '@/lib/ai/prompts/content-brain'
-import { checkAndConsumeGeneration, refundGeneration } from '@/lib/generations'
+import { gateContentUnit, refundGeneration } from '@/lib/generations'
+import { requirePaidAccess } from '@/lib/billing/access'
 import { contentItemToText } from '@/lib/contentToText'
 import { NextResponse } from 'next/server'
 import type { WarmupPhase } from '@/types'
@@ -25,14 +26,20 @@ export async function POST(request: Request) {
   const rl = await rateLimit(user.id, 'generate')
   if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
 
-  const genCheck = await checkAndConsumeGeneration(user.id)
-  if (!genCheck.allowed) {
-    return NextResponse.json({
-      error: 'Лимит запросов исчерпан',
-      code: 'GENERATION_LIMIT',
-      remaining: 0,
-      hint: 'Пригласи друга (+10 бонусных запросов) или перейди на платный тариф',
-    }, { status: 429 })
+  const denied = await requirePaidAccess(user.id)
+  if (denied) return denied
+
+  // Через gateContentUnit, а не checkAndConsumeGeneration напрямую: последний не
+  // знает про BILLING_ENFORCED и отдавал жёсткий 429 даже когда гейт выключен
+  // (нарушая инвариант «до запуска никого не блокируем»), плюс не проверял
+  // entitlement. Код 402 — тот же, что ловят остальные клиенты.
+  const gate = await gateContentUnit(user.id)
+  if (gate.blocked) {
+    const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
+    return NextResponse.json(
+      { error: code, code, monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit },
+      { status: 402 },
+    )
   }
 
   const body = await request.json()

@@ -58,3 +58,13 @@ describe('authErrorMessage', () => {
     expect(authErrorMessage(new Error('Слишком много попыток'))).toBe('Слишком много попыток')
   })
 })
+
+// Ошибка триггера лимита проектов (миграция 035) приходит латиницей — по общему
+// правилу её спрятало бы за «это на нашей стороне», хотя это не сбой, а тариф.
+describe('project limit (DB trigger) → человеческий текст', () => {
+  it('переводит project_limit_reached вместо generic-фолбэка', () => {
+    const out = friendlyError(new Error('project_limit_reached: 1 of 1'))
+    expect(out).toMatch(/тариф/i)
+    expect(out).not.toMatch(/на нашей стороне/i)
+  })
+})

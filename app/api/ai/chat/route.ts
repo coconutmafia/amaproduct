@@ -5,6 +5,7 @@ import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt } from '@/lib/ai/prompts/system'
 import { AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
 import { gateContentUnit, refundGeneration } from '@/lib/generations'
+import { requirePaidAccess } from '@/lib/billing/access'
 import type { Message } from '@/types'
 import { rateLimit } from '@/lib/rateLimit'
 import { requireProjectAccess } from '@/lib/projects/access'
@@ -123,6 +124,12 @@ export async function POST(request: Request) {
 
     const rl = await rateLimit(user.id, 'chat')
     if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
+
+    // Access check must cover the WHOLE chat, not just the «Сгенерировать» button:
+    // the assistant writes finished posts on a plain «напиши пост про X» too, so
+    // gating only the metered branch let an un-entitled user take content for free.
+    const denied = await requirePaidAccess(user.id)
+    if (denied) return denied
 
     const { messages, projectId, genFormat }: {
       messages: Message[]

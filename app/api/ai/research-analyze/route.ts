@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
+import { requirePaidAccess } from '@/lib/billing/access'
 import { upsertProjectMaterial } from '@/lib/supabase/upsertMaterial'
 import { embedMaterialChunks } from '@/lib/ai/embed'
 import { anthropic, MODEL } from '@/lib/ai/client'
@@ -252,6 +253,9 @@ export async function POST(request: Request) {
 
   const rl = await rateLimit(user.id, 'research-analyze')
   if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
+
+  const denied = await requirePaidAccess(user.id)
+  if (denied) return denied
 
   const body = await request.json() as {
     projectId:     string

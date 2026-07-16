@@ -7,6 +7,7 @@ import { AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
 import { cleanMarkdown } from '@/lib/cleanText'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { rateLimit } from '@/lib/rateLimit'
+import { requirePaidAccess } from '@/lib/billing/access'
 
 export const maxDuration = 120
 
@@ -22,6 +23,9 @@ export async function POST(request: Request) {
 
     const rl = await rateLimit(user.id, 'chat')
     if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
+
+    const denied = await requirePaidAccess(user.id)
+    if (denied) return denied
 
     const { projectId, fullText, fragment, instruction } = (await request.json()) as {
       projectId?: string

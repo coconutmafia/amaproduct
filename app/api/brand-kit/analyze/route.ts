@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
+import { requirePaidAccess } from '@/lib/billing/access'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { assertPublicUrl } from '@/lib/security/ssrf'
@@ -24,6 +25,9 @@ export async function POST(request: Request) {
 
     const rl = await rateLimit(user.id, 'brand-kit')
     if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
+
+    const denied = await requirePaidAccess(user.id)
+    if (denied) return denied
 
     const { projectId, sampleUrls, target } = (await request.json()) as { projectId?: string; sampleUrls?: string[]; target?: string }
     if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })

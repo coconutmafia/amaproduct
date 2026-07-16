@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
+import { requirePaidAccess } from '@/lib/billing/access'
 import { suggestTrends } from '@/lib/ai/suggestTrends'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { NextResponse } from 'next/server'
@@ -15,6 +16,9 @@ export async function POST(request: Request) {
 
   const rl = await rateLimit(user.id, 'suggest-trends')
   if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
+
+  const denied = await requirePaidAccess(user.id)
+  if (denied) return denied
 
   const body = await request.json() as { projectId?: string; scope?: 'project' | 'system'; niche?: string; mode?: 'niche' | 'popular' }
   const scope = body.scope === 'system' ? 'system' : 'project'

@@ -3,6 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { after } from 'next/server'
 import { rateLimit } from '@/lib/rateLimit'
+import { requirePaidAccess } from '@/lib/billing/access'
+import { PLAN_CONFIG, type SubscriptionTier } from '@/lib/generations-config'
 import { parseUsername } from '@/lib/instagram/scrapeAccount'
 import { processInstagramScrapeJob } from '@/lib/jobs/runInstagramScrapeJob'
 import { requireProjectAccess } from '@/lib/projects/access'
@@ -33,6 +35,9 @@ export async function POST(request: Request) {
   const rl = await rateLimit(user.id, 'scrape')
   if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
 
+  const denied = await requirePaidAccess(user.id)
+  if (denied) return denied
+
   let body: { projectId?: string; instagramUrl?: string; accountType?: IgType }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad JSON' }, { status: 400 }) }
 
@@ -60,8 +65,21 @@ export async function POST(request: Request) {
     .select('id', { count: 'exact', head: true })
     .eq('project_id', projectId)
     .eq('material_type', accountType)
-  const used  = count ?? 0
-  const limit = QUOTA[accountType]
+  const used = count ?? 0
+  // Квота конкурентов — по тарифу ВЛАДЕЛЬЦА проекта (как места в команде): Продюсер
+  // оплачивает «до 10 на проект», остальные — 5. Раньше было жёстко 5 для всех, то
+  // есть Продюсер недополучал оплаченное. Считаем по владельцу, а не по вызывающему,
+  // чтобы приглашённый редактор не менял лимит проекта в любую сторону.
+  let limit: number = QUOTA[accountType]
+  if (accountType === 'competitors') {
+    const { data: proj } = await supabase.from('projects').select('owner_id').eq('id', projectId).single()
+    if (proj?.owner_id) {
+      const { data: owner } = await createAdminClient()
+        .from('profiles').select('subscription_tier').eq('id', proj.owner_id).single()
+      const tier = (owner?.subscription_tier as SubscriptionTier | undefined) ?? 'trial'
+      limit = PLAN_CONFIG[tier]?.competitors ?? QUOTA.competitors
+    }
+  }
   if (used >= limit) {
     return NextResponse.json({ error: `Лимит исчерпан: для ${accountType === 'my_instagram' ? 'своего аккаунта' : 'конкурентов'} максимум ${limit}. Удали один из существующих, чтобы добавить новый.` }, { status: 400 })
   }
