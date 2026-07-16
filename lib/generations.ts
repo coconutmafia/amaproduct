@@ -67,7 +67,13 @@ export async function checkAndConsumeGeneration(userId: string): Promise<Generat
 export const BILLING_ENFORCED = process.env.BILLING_ENFORCED === 'true'
 
 export interface GateResult extends GenerationCheckResult {
-  blocked: boolean // true ONLY when enforcement is live AND the quota is exhausted
+  blocked: boolean // true ONLY when enforcement is live AND access is denied
+  // WHY it was blocked — the two cases need different UI copy:
+  //   'not_entitled' — no paid plan / trial over → "подключи тариф"
+  //   'quota'        — paying, but this month's units are used up → "лимит исчерпан"
+  // Telling a brand-new unpaid user "ты создала все единицы контента" (with 0 used)
+  // reads as a lie, so callers must not collapse these into one message.
+  reason?: 'not_entitled' | 'quota'
 }
 
 // Entitlement — is the account allowed to generate at all, independent of the
@@ -118,10 +124,11 @@ export async function gateContentUnit(userId: string): Promise<GateResult> {
   // when BILLING_ENFORCED is live — pre-launch this is inert and metering runs.
   if (BILLING_ENFORCED && !(await isEntitled(userId))) {
     const stats = await getGenerationStats(userId)
-    return { ...stats, allowed: false, blocked: true }
+    return { ...stats, allowed: false, blocked: true, reason: 'not_entitled' }
   }
   const res = await checkAndConsumeGeneration(userId)
-  return { ...res, blocked: BILLING_ENFORCED && !res.allowed }
+  const blocked = BILLING_ENFORCED && !res.allowed
+  return { ...res, blocked, ...(blocked ? { reason: 'quota' as const } : {}) }
 }
 
 // Refund one generation — called when a consumed generation produced nothing

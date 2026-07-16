@@ -413,7 +413,12 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ projectId, script, count: photos.length || 5 }),
       })
-      if (planRes.status === 402) { showUpgrade('limit'); return }
+      if (planRes.status === 402) {
+        // Причина важна: неоплатившему нельзя показывать «лимит исчерпан» (у него 0 создано).
+        const d = await planRes.clone().json().catch(() => ({} as { code?: string }))
+        showUpgrade(d.code === 'payment_required' ? 'needs_plan' : 'limit')
+        return
+      }
       const planData = await planRes.json()
       if (!planRes.ok) throw new Error(planData.error || 'Ошибка раскладки')
       const planned = (planData.stories || []) as Frame[]

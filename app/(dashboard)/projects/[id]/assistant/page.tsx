@@ -119,7 +119,12 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
         body: JSON.stringify({ projectId: id, conversationType: 'assistant', messages: next, ...(genContext ? { genFormat: genContext.type } : {}) }),
         signal: controller.signal,
       })
-      if (res.status === 402) { showUpgrade('limit'); return }
+      if (res.status === 402) {
+        // Причина важна: неоплатившему нельзя показывать «лимит исчерпан» (у него 0 создано).
+        const d = await res.clone().json().catch(() => ({} as { code?: string }))
+        showUpgrade(d.code === 'payment_required' ? 'needs_plan' : 'limit')
+        return
+      }
       if (!res.ok) {
         const j = await res.json().catch(() => ({})) as { error?: string }
         throw new Error(j.error ?? 'Ошибка')

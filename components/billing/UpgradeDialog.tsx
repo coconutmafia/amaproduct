@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { CheckCircle2, Star, Zap, Building2 } from 'lucide-react'
 import { PLAN_CONFIG, PAID_PLANS, type PaidPlan } from '@/lib/generations-config'
 
-export type UpgradeReason = 'limit' | 'trial' | 'view_only' | 'paused'
+export type UpgradeReason = 'limit' | 'needs_plan' | 'trial' | 'view_only' | 'paused'
 
 const ICONS: Record<PaidPlan, React.ReactNode> = {
   solo:     <Star className="h-4 w-4" />,
@@ -15,11 +15,14 @@ const ICONS: Record<PaidPlan, React.ReactNode> = {
   producer: <Building2 className="h-4 w-4" />,
 }
 
+// 'limit' и 'needs_plan' — РАЗНЫЕ вещи, и путать их нельзя: неоплатившему юзеру,
+// который ничего не создал, «ты создала все единицы контента» читается как враньё.
 const REASON_COPY: Record<UpgradeReason, { title: string; desc: string }> = {
-  limit:     { title: 'Лимит на этот месяц исчерпан', desc: 'Ты создала все единицы контента в этом месяце. Подключи тариф — и продолжай без пауз.' },
-  trial:     { title: 'Пробный период заканчивается', desc: 'Выбери тариф, чтобы не потерять доступ к контенту и генерации.' },
-  view_only: { title: 'Пробный период закончился', desc: 'Контент виден, но генерация на паузе. Подключи тариф, чтобы продолжить создавать.' },
-  paused:    { title: 'Доступ на паузе', desc: 'Подключи тариф — все твои данные и контент на месте.' },
+  limit:      { title: 'Лимит на этот месяц исчерпан', desc: 'Ты создала все единицы контента в этом месяце. Подключи тариф — и продолжай без пауз.' },
+  needs_plan: { title: 'Выбери тариф, чтобы начать', desc: 'Генерация контента доступна по тарифу. Выбери подходящий — подключение занимает минуту.' },
+  trial:      { title: 'Пробный период заканчивается', desc: 'Выбери тариф, чтобы не потерять доступ к контенту и генерации.' },
+  view_only:  { title: 'Генерация на паузе', desc: 'Контент виден, но создавать новый можно по тарифу. Все твои данные на месте.' },
+  paused:     { title: 'Доступ на паузе', desc: 'Подключи тариф — все твои данные и контент на месте.' },
 }
 
 const SHOW_EVENT = 'ama:show-upgrade'

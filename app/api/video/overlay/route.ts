@@ -68,7 +68,11 @@ export async function POST(request: Request) {
 
     // Burning text onto a video is an expensive content unit (ffmpeg + render).
     const gate = await gateContentUnit(user.id)
-    if (gate.blocked) return NextResponse.json({ error: 'limit_reached', code: 'limit_reached', monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit }, { status: 402 })
+    if (gate.blocked) {
+      // Неоплатившему — «подключи тариф», а не «лимит исчерпан» (у него 0 создано).
+      const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
+      return NextResponse.json({ error: code, code, monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit }, { status: 402 })
+    }
     consumed = true
     // Any failure past this point produced no video — refund the consumed unit.
     const fail = async (msg: string, status: number) => { await refundGeneration(user.id); return NextResponse.json({ error: msg }, { status }) }

@@ -36,7 +36,11 @@ export async function POST(request: Request) {
 
     // A story series is a content unit (it lays out a full storyboard).
     const gate = await gateContentUnit(user.id)
-    if (gate.blocked) return NextResponse.json({ error: 'limit_reached', code: 'limit_reached', monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit }, { status: 402 })
+    if (gate.blocked) {
+      // Неоплатившему — «подключи тариф», а не «лимит исчерпан» (у него 0 создано).
+      const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
+      return NextResponse.json({ error: code, code, monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit }, { status: 402 })
+    }
     consumed = true
 
     const target = Math.max(3, Math.min(8, Number(count) || 5))

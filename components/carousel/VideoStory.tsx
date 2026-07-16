@@ -53,7 +53,12 @@ export function VideoStory({ projectId }: { projectId: string }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId, videoPath: vidPath, text: vidText, position: vidPos, plate: vidPlate }),
       })
-      if (res.status === 402) { showUpgrade('limit'); return }
+      if (res.status === 402) {
+        // Причина важна: неоплатившему нельзя показывать «лимит исчерпан» (у него 0 создано).
+        const d = await res.clone().json().catch(() => ({} as { code?: string }))
+        showUpgrade(d.code === 'payment_required' ? 'needs_plan' : 'limit')
+        return
+      }
       const d = await res.json().catch(() => ({} as { url?: string; error?: string }))
       if (!res.ok || !d.url) throw new Error(d.error || 'Не удалось обработать видео')
       setVidUrl(d.url)

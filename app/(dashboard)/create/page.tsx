@@ -101,7 +101,12 @@ export default function CreatePage() {
         body: JSON.stringify({ messages: next, projectId: projectId || undefined, conversationType: 'create' }),
         signal: controller.signal,
       })
-      if (res.status === 402) { showUpgrade('limit'); return }
+      if (res.status === 402) {
+        // Причина важна: неоплатившему нельзя показывать «лимит исчерпан» (у него 0 создано).
+        const d = await res.clone().json().catch(() => ({} as { code?: string }))
+        showUpgrade(d.code === 'payment_required' ? 'needs_plan' : 'limit')
+        return
+      }
       if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error ?? 'Ошибка') }
       if (!res.body) throw new Error('Нет ответа')
       const reader = res.body.getReader(); const decoder = new TextDecoder()

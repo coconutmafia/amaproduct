@@ -142,8 +142,11 @@ export async function POST(request: Request) {
       if (!genFormat) return null
       const gate = await gateContentUnit(user.id)
       if (gate.blocked) {
+        // Report WHY: an unpaid user must not be told «лимит исчерпан» (he has
+        // used 0) — he needs «подключи тариф».
+        const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
         return NextResponse.json(
-          { error: 'limit_reached', code: 'limit_reached', monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit },
+          { error: code, code, monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit },
           { status: 402 },
         )
       }
