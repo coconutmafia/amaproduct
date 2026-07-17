@@ -21,6 +21,8 @@ function RegisterForm() {
   const [loading, setLoading]   = useState(false)
   const [sent, setSent]         = useState(false) // email confirmation sent state
   const [resending, setResending] = useState(false)
+  const [code, setCode]         = useState('')   // код подтверждения из письма
+  const [confirming, setConfirming] = useState(false)
 
   const refCode = searchParams.get('ref')?.toUpperCase() ?? ''
 
@@ -64,6 +66,25 @@ function RegisterForm() {
 
     setSent(true) // show "check email" screen
     setLoading(false)
+  }
+
+  // Подтверждение почты КОДОМ из письма — надёжная замена ссылке (её ломают
+  // почтовики: Яндекс режет URL на первом «&»). verifyOtp сразу открывает сессию,
+  // поэтому после успеха ведём в кабинет — как если бы человек перешёл по ссылке.
+  async function handleCodeConfirm(e: React.FormEvent) {
+    e.preventDefault()
+    if (code.length < 6 || confirming) return
+    setConfirming(true)
+    const supabase = createClient()
+    const { error } = await supabase.auth.verifyOtp({ email, token: code, type: 'signup' })
+    if (error) {
+      toast.error(authErrorMessage(error))
+      setConfirming(false)
+      return
+    }
+    toast.success('Почта подтверждена!')
+    router.push('/dashboard')
+    router.refresh()
   }
 
   async function handleResend() {
@@ -112,6 +133,40 @@ function RegisterForm() {
               Перейди по ссылке в письме — и твой AI SMM-щик уже ждёт тебя
             </p>
           </div>
+
+          {/* Запасной путь — код из письма. Нужен потому, что ссылку ломают почтовики:
+              Яндекс обрезает её на первом «&», из-за чего Supabase получает token без
+              type и отвечает «Verify requires a verification type» (реальный случай
+              17 июля — человек не смог войти и завёл второй аккаунт). Код из 6 цифр
+              не зависит ни от почтовика, ни от устройства: письмо можно открыть на
+              телефоне, а код ввести здесь. */}
+          <form
+            onSubmit={handleCodeConfirm}
+            className="rounded-xl border border-[#C5CBA5] bg-white p-4 space-y-3 text-left"
+          >
+            <div>
+              <p className="font-semibold text-[#1A1A1A] text-sm">Кнопка в письме не сработала?</p>
+              <p className="text-xs text-[#888888] mt-0.5">Введи код из письма — это то же самое подтверждение.</p>
+            </div>
+            <div className="flex gap-2">
+              <Input
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="000000"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                className="border-[#C5CBA5] rounded-xl bg-white text-center text-lg tracking-[0.3em] font-semibold"
+              />
+              <Button
+                type="submit"
+                disabled={code.length < 6 || confirming}
+                className="rounded-xl bg-[#3A8A48] hover:bg-[#347a40] text-white font-semibold px-5 border-0"
+              >
+                {confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Войти'}
+              </Button>
+            </div>
+          </form>
+
           <div className="rounded-xl border border-[#C5CBA5] bg-white p-4 text-sm text-[#888888] text-left space-y-2">
             <p className="font-semibold text-[#1A1A1A]">Не пришло письмо?</p>
             <ul className="space-y-1 text-xs">
