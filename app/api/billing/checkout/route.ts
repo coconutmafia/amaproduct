@@ -2,25 +2,28 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe, stripeConfigured, ensurePrice } from '@/lib/billing/stripe'
-import { PAID_PLANS, TRIAL_DAYS, type PaidPlan } from '@/lib/generations-config'
+import { PAID_PLANS, type PaidPlan } from '@/lib/generations-config'
 
 export const runtime = 'nodejs'
 
-// Trial length for Соло on Stripe (Про/Продюсер never get one — they charge
-// immediately, matching the Продамус model).
+// Trial length for Соло on Stripe. DEFAULT = 0 — «плати сразу»: подписка списывает
+// деньги в момент оформления, без бесплатного периода.
 //
-// Override with env STRIPE_SOLO_TRIAL_DAYS. `0` disables the trial so a Соло
-// checkout charges right away — needed to test the live cards/webhook/ledger
-// chain with real money (with a trial Stripe bills $0, so nothing reaches
-// /admin/payments and the account's ability to actually take money is untested).
-// Unset the env var to restore the normal 60-day trial. Garbage/negative values
-// fall back to the default rather than silently charging a real user.
-// NOTE: Продамус trials are set on the product in its ЛК — this does not touch them.
+// Почему 0, а не 60: 16 июля модель сменилась на «плати сразу» (миграция 034 убрала
+// бесплатный триал внутри приложения). Пока здесь оставался дефолт TRIAL_DAYS=60,
+// Stripe-чекаут выдавал Соло с двухмесячным триалом → клиент «оформлял подписку», а
+// списывалось $0 (4 живых клиента прошли так, деньги ушли бы только в сентябре).
+// Дефолт обязан совпадать с моделью, иначе продукт раздаётся бесплатно.
+//
+// Триал избранным выдаётся ВРУЧНУЮ (profiles.trial_ends_at), а не через Stripe.
+// Env STRIPE_SOLO_TRIAL_DAYS оставлен как аварийный рычаг (напр. вернуть промо-период
+// без деплоя); мусор/отрицательное → безопасный 0, а не случайная раздача.
+// NOTE: демо-период Продамуса задаётся в его ЛК и этим кодом НЕ управляется.
 function soloTrialDays(): number {
   const raw = process.env.STRIPE_SOLO_TRIAL_DAYS
-  if (raw === undefined || raw === '') return TRIAL_DAYS
+  if (raw === undefined || raw === '') return 0
   const n = Number(raw)
-  return Number.isFinite(n) && n >= 0 ? n : TRIAL_DAYS
+  return Number.isFinite(n) && n >= 0 ? n : 0
 }
 
 // Creates a Stripe Checkout Session (hosted page) for a paid plan and returns
