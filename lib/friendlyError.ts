@@ -20,8 +20,15 @@ const CYRILLIC = /[а-яё]/i
 
 // Technical fragments that must never reach the user, even when some Cyrillic
 // happens to surround them (e.g. a server 500 that echoes a Postgres error).
+//
+// ⚠️ Кириллица в начале НЕ делает сообщение пользовательским — именно так
+// 17 июля клиенту уехало «Ошибка расшифровки: ffmpeg: Command failed:
+// /var/task/node_modules/ffmpeg-static/ffmpeg -y -i /tmp/…»: наш русский
+// префикс прошёл эвристику и протащил за собой командную строку и внутренние
+// пути сервера. Добавляя новый источник ошибок с русским префиксом, проверь,
+// что его технический хвост ловится здесь.
 const TECHNICAL =
-  /(row-level security|violates|duplicate key|null value|permission denied|\bJWT\b|PGRST|foreign key|Failed to fetch|fetch failed|NetworkError|ECONN|ETIMEDOUT|Unexpected token|is not defined|is not a function|Cannot read propert|undefined is not|relation ".*" does not|column .* does not|500 Internal|50[23] )/i
+  /(row-level security|violates|duplicate key|null value|permission denied|\bJWT\b|PGRST|foreign key|Failed to fetch|fetch failed|NetworkError|ECONN|ETIMEDOUT|Unexpected token|is not defined|is not a function|Cannot read propert|undefined is not|relation ".*" does not|column .* does not|500 Internal|50[23] |ffmpeg|Command failed|\/var\/task|\/tmp\/|node_modules|ENOENT|spawn |exit code)/i
 
 function extractMessage(error: unknown): string {
   if (error instanceof Error) return error.message

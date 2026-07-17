@@ -15,6 +15,16 @@ describe('friendlyError', () => {
     expect(friendlyError(new Error('Cannot read properties of undefined'))).toBe(SERVICE_ERROR_MESSAGE)
   })
 
+  // Регрессия 17 июля: русский префикс «Ошибка расшифровки:» проходил эвристику
+  // «есть кириллица → это наш текст» и протаскивал за собой всю командную строку
+  // ffmpeg вместе с /var/task/node_modules — клиент увидел это на экране.
+  it('hides a technical tail even behind a Russian prefix', () => {
+    const raw = 'Ошибка расшифровки: ffmpeg: Command failed: /var/task/node_modules/ffmpeg-static/ffmpeg -y -i /tmp/tr-1784278403273-in.png -t 600 -vn -ac 1 -ar 16000 -f mp3'
+    const out = friendlyError(raw, 'Не удалось обработать файл.')
+    expect(out).toBe('Не удалось обработать файл.')
+    expect(out).not.toMatch(/ffmpeg|\/var\/task|node_modules|\/tmp\//)
+  })
+
   it('shows Russian user-facing copy verbatim', () => {
     expect(friendlyError(new Error('Сессия истекла, войди заново'))).toBe('Сессия истекла, войди заново')
     expect(friendlyError(new Error('projectId и rule обязательны'))).toBe('projectId и rule обязательны')

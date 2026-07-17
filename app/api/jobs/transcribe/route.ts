@@ -6,6 +6,7 @@ import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { processTranscribeJob } from '@/lib/jobs/runTranscribeJob'
+import { isDefinitelyNotMedia, NOT_MEDIA_MESSAGE } from '@/lib/media/notMedia'
 
 // ffmpeg needs the Node runtime + the traced binary (see next.config).
 export const runtime = 'nodejs'
@@ -35,6 +36,15 @@ export async function POST(request: Request) {
   const { projectId, storagePath, ext, durationSec } = body
   if (!projectId || !storagePath) return NextResponse.json({ error: 'projectId и storagePath обязательны' }, { status: 400 })
   if (!storagePath.startsWith(`${user.id}/`)) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+
+  // Не заводим задачу на файл, из которого заведомо нечего расшифровывать
+  // (17 июля так уехала в ffmpeg фотография — см. lib/media/notMedia.ts).
+  // Клиент проверяет то же самое до заливки; здесь — потому что клиент можно
+  // обойти, а расшифровка тратит Whisper и время воркера. Расширение берём из
+  // storagePath: его формирует upload-url, тогда как ext приходит из тела.
+  if (isDefinitelyNotMedia({ ext: ext ?? storagePath.split('.').pop() })) {
+    return NextResponse.json({ error: NOT_MEDIA_MESSAGE }, { status: 400 })
+  }
 
   // Whisper cost + project_materials write happen via the admin client in the
   // background job — check editor+ explicitly here.

@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, use } from 'react'
 import { createClient as createSupabaseClient } from '@/lib/supabase/client'
 import { friendlyError } from '@/lib/friendlyError'
+import { isDefinitelyNotMedia, NOT_MEDIA_MESSAGE } from '@/lib/media/notMedia'
 import Link from 'next/link'
 import { ArrowLeft, Upload, Mic, Loader2, ChevronDown, ChevronUp, Sparkles, Download, CheckCircle2, Users, FileText, Save, Plus, X, Circle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -191,14 +192,26 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         const file = files[fi]
         let fileName = initNames[fi]
 
+        const rawExt = fileName.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? ''
+        const ext    = rawExt || 'mp3'
+
+        // Пред-проверка типа: у инпута нет accept (iOS Safari + iCloud, см. ниже),
+        // поэтому картинку/документ выбрать можно — и раньше она молча доезжала до
+        // ffmpeg, а человек получал в лицо его командную строку. Ловим здесь: до
+        // заливки, не тратя ни трафик человека, ни место в audio-temp.
+        // MIME может отсутствовать у файла-заглушки из iCloud — тогда решает
+        // расширение, а неизвестное расширение считается допустимым.
+        let fileMime = ''
+        try { fileMime = file.type } catch { /* iCloud stub — читаем только ext */ }
+        if (isDefinitelyNotMedia({ ext: rawExt, mime: fileMime })) {
+          throw new Error(NOT_MEDIA_MESSAGE)
+        }
+
         // Пред-проверка размера: не тратим время на заведомо провальную заливку
         // большого файла — сразу понятная ошибка с конкретными цифрами.
         if (file.size > MAX_AUDIO_BYTES) {
           throw new Error(`Файл ${(file.size / 1024 / 1024).toFixed(0)} МБ больше лимита ${MAX_AUDIO_MB} МБ. Разбей интервью на части по 30–40 минут и загрузи по отдельности.`)
         }
-
-        const rawExt = fileName.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? ''
-        const ext    = rawExt || 'mp3'
 
         // ── 1. Upload to Supabase Storage via signed URL ────────────────────
         updateFile(fi, { status: 'uploading' })
