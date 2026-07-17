@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { auditToText } from '@/lib/blogAudit/auditToText'
+import { auditToText, zoneBreakdown } from '@/lib/blogAudit/auditToText'
 import { CHECKLIST } from '@/lib/blogAudit/checklist'
 import type { AuditResult } from '@/lib/blogAudit/runBlogAudit'
 
@@ -41,9 +41,15 @@ describe('auditToText — выгрузка разбора в документ', 
 
   it('раскладывает 100 баллов на три зоны и они сходятся в 100', () => {
     // green=46, grey=100-74=26, yellow=74-46=28 → 46+26+28 = 100
-    expect(text).toContain('46 — уже сделано')
-    expect(text).toContain('26 — не проверить автоматически')
-    expect(text).toContain('28 — можно усилить')
+    expect(text).toContain('46 — собрано')
+    expect(text).toContain('26 — нужна оценка эксперта')
+    expect(text).toContain('28 — зона роста')
+  })
+
+  it('поясняет, что для ЭТОГО блога в каждой зоне (просьба Августы)', () => {
+    // audience: 7/10 = 70% → собрано; highlights: нечего оценивать → нужен эксперт
+    expect(text).toContain('у этого блога: ЦА и смыслы')
+    expect(text).toContain('у этого блога: Актуальные')
   })
 
   it('пункты идут как ВОПРОС → ОТВЕТ (главное требование владельца)', () => {
@@ -63,6 +69,20 @@ describe('auditToText — выгрузка разбора в документ', 
   it('включает вердикт и что усилить', () => {
     expect(text).toContain('Блог обаятельный')
     expect(text).toContain('1. Нет соцдоказательств')
+  })
+})
+
+describe('zoneBreakdown — какие блоки в какой зоне', () => {
+  it('блок с половиной баллов и выше → «собрано», иначе → «зона роста»', () => {
+    const z = zoneBreakdown(result)
+    expect(z.green).toContain('ЦА и смыслы')   // 7/10 = 70%
+    expect(z.yellow).not.toContain('ЦА и смыслы')
+  })
+
+  it('блок, который нечего оценивать машинно → «нужен эксперт», а не 0 баллов', () => {
+    const z = zoneBreakdown(result)
+    expect(z.grey).toEqual(['Актуальные'])
+    expect(z.yellow).not.toContain('Актуальные')
   })
 })
 

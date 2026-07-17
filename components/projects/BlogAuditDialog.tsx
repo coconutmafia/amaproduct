@@ -9,7 +9,7 @@ import { pollJob } from '@/lib/jobs/pollJob'
 import { friendlyError } from '@/lib/friendlyError'
 import type { AuditResult, AuditBlockResult } from '@/lib/blogAudit/runBlogAudit'
 import { MAX_SCORE } from '@/lib/blogAudit/checklist'
-import { auditToText } from '@/lib/blogAudit/auditToText'
+import { auditToText, zoneBreakdown } from '@/lib/blogAudit/auditToText'
 
 // Куда ведёт CTA «бесплатная консультация с маркетологом». Настраивается через
 // env (можно сменить без деплоя кода); дефолт — телеграм Августы.
@@ -105,6 +105,7 @@ export function BlogAuditScorecard({ result, onRerun, rerunning }: {
   const green = Math.max(0, result.scored)
   const grey = Math.max(0, MAX_SCORE - result.assessableMax)
   const yellow = Math.max(0, result.assessableMax - result.scored)
+  const zones = zoneBreakdown(result)
 
   const [downloading, setDownloading] = useState(false)
   const downloadReport = async () => {
@@ -145,10 +146,31 @@ export function BlogAuditScorecard({ result, onRerun, rerunning }: {
             {yellow > 0 && <div className="h-full bg-amber-400" style={{ width: `${yellow}%` }} />}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <ZoneLegend dot="bg-green-500" value={green} title="уже сделано" desc="есть в шапке и постах — это работает на продажу" />
-            <ZoneLegend dot="bg-slate-300 dark:bg-slate-600" value={grey} title="не проверить автоматически" desc="сторис, актуальные, воронка — их посмотрит маркетолог" />
-            <ZoneLegend dot="bg-amber-400" value={yellow} title="можно усилить" desc="в шапке и постах это есть, но недотянуто" />
+            {/* Формулировки согласованы с Ланой/Августой 17 июля. */}
+            <ZoneLegend dot="bg-green-500" value={green} title="собрано" desc="критерии диагностики выполнены" />
+            <ZoneLegend dot="bg-slate-300 dark:bg-slate-600" value={grey} title="нужна оценка эксперта" desc="автоматически проверить невозможно" />
+            <ZoneLegend dot="bg-amber-400" value={yellow} title="зона роста" desc="критерии не выполнены — это можно улучшить" />
           </div>
+        </div>
+
+        {/* «Надо пояснить снизу, что для ЭТОГО блога зелёное, что жёлтое, что серое.
+            Вкратце» (Августа, 17 июля) — иначе зоны остаются абстракцией. */}
+        <div className="border-t border-border pt-3 space-y-1.5">
+          <p className="text-[11px] font-semibold text-muted-foreground">Что это значит для @{result.handle}</p>
+          {([
+            ['bg-green-500', 'Собрано', zones.green],
+            ['bg-amber-400', 'Зона роста', zones.yellow],
+            ['bg-slate-300 dark:bg-slate-600', 'Нужен эксперт', zones.grey],
+          ] as const).map(([dot, title, list]) => (
+            list.length > 0 && (
+              <p key={title} className="flex gap-2 text-[11px] leading-snug">
+                <span className={`inline-block h-2 w-2 rounded-full shrink-0 mt-1 ${dot}`} />
+                <span className="text-muted-foreground">
+                  <span className="font-medium text-foreground">{title}:</span> {list.join(', ')}
+                </span>
+              </p>
+            )
+          ))}
         </div>
       </div>
 
