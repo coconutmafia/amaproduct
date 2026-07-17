@@ -1,0 +1,87 @@
+<!--
+  ШАБЛОН ПИСЬМА «Confirm sign up» для Supabase.
+  Куда вставлять: Supabase → Authentication → Emails → Templates → Confirm sign up →
+  вставить ЦЕЛИКОМ в поле «Message body» (заменив то, что там сейчас) → Save.
+
+  ПОЧЕМУ ПЕРЕПИСАН (17 июля): в прежнем письме под кнопкой лежала ТЕКСТОВАЯ ссылка
+  «Кнопка не работает? Скопируй ссылку: https://…/verify?token=…&type=…&redirect_to=…».
+  Яндекс.Почта автолинкует такой текст только ДО первого «&», из-за чего до Supabase
+  доезжает token без type и он отвечает 400 «Verify requires a verification type».
+  Человек не смог подтвердить почту, завёл второй аккаунт, оплатил с другой почты — и
+  тариф уехал не туда. Поэтому:
+    • текстовой ссылки здесь НЕТ (ломается сама и ломает людей);
+    • добавлен КОД {{ .Token }} — он не зависит ни от почтовика, ни от устройства:
+      письмо можно открыть на телефоне, а код ввести на компьютере (поле для кода уже
+      есть на экране «Проверь почту» после регистрации).
+
+  Переменные Supabase: {{ .ConfirmationURL }} — ссылка-кнопка, {{ .Token }} — код из 6 цифр.
+  Вёрстка намеренно простая (таблицы + инлайн-стили): Яндекс/Mail.ru режут современный CSS.
+-->
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f5f5;padding:24px 12px;">
+  <tr>
+    <td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;background:#ffffff;border-radius:16px;padding:32px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#1a1a1a;">
+
+        <tr>
+          <td align="center" style="padding-bottom:8px;">
+            <div style="font-size:22px;font-weight:bold;color:#1a1a1a;">Привет, это Ава 👋</div>
+          </td>
+        </tr>
+
+        <tr>
+          <td align="center" style="font-size:15px;line-height:1.6;color:#444;padding-bottom:20px;">
+            Я рада, что ты зарегистрировался 🎉<br>
+            Теперь у тебя есть свой карманный <b style="color:#d44e7e;">AI SMM-щик</b> — готовый работать на тебя 24/7.
+          </td>
+        </tr>
+
+        <tr>
+          <td align="center" style="font-size:15px;line-height:1.6;color:#444;padding-bottom:22px;">
+            Остался один шаг — подтверди почту, и приступим 🚀
+          </td>
+        </tr>
+
+        <!-- Кнопка. href целиком в атрибуте — его почтовики не режут (в отличие от ссылки текстом). -->
+        <tr>
+          <td align="center" style="padding-bottom:26px;">
+            <a href="{{ .ConfirmationURL }}"
+               style="display:inline-block;background:#d44e7e;color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;padding:14px 32px;border-radius:28px;">
+              ✅ Подтвердить почту
+            </a>
+          </td>
+        </tr>
+
+        <!-- Запасной путь: код. Работает, даже если почтовик сломал ссылку или письмо
+             открыто на другом устройстве. -->
+        <tr>
+          <td style="background:#faf9f7;border:1px solid #e6e4e0;border-radius:12px;padding:18px;">
+            <div style="font-size:14px;color:#444;padding-bottom:10px;text-align:center;">
+              Кнопка не открывается? Введи этот код на сайте:
+            </div>
+            <div align="center" style="font-size:30px;font-weight:bold;letter-spacing:6px;color:#1a1a1a;padding-bottom:8px;">
+              {{ .Token }}
+            </div>
+            <div style="font-size:12px;color:#888;text-align:center;line-height:1.5;">
+              Поле для кода — на странице, где ты остановился после регистрации.<br>
+              Код действует 1 час.
+            </div>
+          </td>
+        </tr>
+
+        <tr>
+          <td align="center" style="font-size:14px;color:#888;padding-top:26px;">
+            С любовью, <b style="color:#d44e7e;">Ава</b> 🤗
+          </td>
+        </tr>
+
+        <tr>
+          <td align="center" style="font-size:12px;color:#aaa;padding-top:14px;line-height:1.5;">
+            Если ты не регистрировался — просто проигнорируй это письмо.<br>
+            <a href="https://amaproduct.com" style="color:#d44e7e;text-decoration:none;">amaproduct.com</a>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
