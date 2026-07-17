@@ -707,7 +707,7 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                 <div className="text-right shrink-0">
                   {product.price && (
                     <p className="font-bold text-foreground">
-                      {product.price.toLocaleString()} {product.currency}
+                      {product.price.toLocaleString('ru-RU')} {product.currency}
                     </p>
                   )}
                   {selectedProductId === product.id && (

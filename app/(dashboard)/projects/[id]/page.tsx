@@ -330,7 +330,7 @@ export default async function ProjectPage({ params }: Props) {
                     <span className="text-foreground truncate min-w-0">{p.name}</span>
                     {p.price && (
                       <span className="text-muted-foreground text-xs ml-2 shrink-0">
-                        {p.price.toLocaleString()} {p.currency}
+                        {p.price.toLocaleString('ru-RU')} {p.currency}
                       </span>
                     )}
                   </div>
