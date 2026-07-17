@@ -77,9 +77,10 @@ export async function POST(request: Request) {
       customer: customerId,
       client_reference_id: user.id,
       line_items: [{ price: priceId, quantity: 1 }],
-      // Match the Продамус model: 60-day trial on Соло only; Про/Продюсер charge
-      // immediately (no trial). During the trial Stripe sends the subscription as
-      // `trialing` and our webhook activates the tier just the same.
+      // Модель «плати сразу»: списание при оформлении, у всех тарифов. Триал
+      // подставляется, только если его ЯВНО включили через STRIPE_SOLO_TRIAL_DAYS
+      // (аварийный рычаг для промо), иначе Stripe отдал бы подписку как `trialing`
+      // с нулевым инвойсом — юзер получил бы доступ, не заплатив.
       subscription_data: {
         metadata: { userId: user.id, plan },
         ...(plan === 'solo' && soloTrialDays() > 0 ? { trial_period_days: soloTrialDays() } : {}),
