@@ -295,13 +295,15 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
             <input
               id={`file-input-${materialType}`}
               type="file" multiple className="hidden"
-              accept=".pdf,.txt,.md,.csv,.docx,.doc,.xlsx,.xls,.pages,.numbers,.rtf,.odt"
+              accept=".pdf,.txt,.md,.csv,.docx,.doc,.xlsx,.xls,.pages,.numbers,.rtf,.odt,.jpg,.jpeg,.png,.webp,.gif"
               onChange={(e) => e.target.files && addFiles(e.target.files)}
             />
             <Upload className="h-7 w-7 text-muted-foreground" />
             <p className="text-sm text-center text-muted-foreground">
               Перетащи файлы или нажми для выбора<br />
-              <span className="text-xs">PDF, DOCX, TXT, CSV, XLSX и другие</span>
+              {/* Скриншоты просили явно: в «опросы аудитории» несут картинки из
+                  инстаграма. Раньше их не пускал accept, и было непонятно, можно ли. */}
+              <span className="text-xs">PDF, DOCX, TXT, CSV, XLSX, скриншоты (JPG, PNG) — текст с картинок распознаём сами</span>
             </p>
           </div>
 

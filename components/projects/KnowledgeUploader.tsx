@@ -238,7 +238,7 @@ export function KnowledgeUploader({ projectId, onUploadComplete, isSystemVault =
               type="file"
               multiple
               className="hidden"
-              accept=".txt,.md,.csv,.docx,.doc,.xlsx,.xls"
+              accept=".txt,.md,.csv,.docx,.doc,.xlsx,.xls,.jpg,.jpeg,.png,.webp,.gif"
               onChange={(e) => e.target.files && addFiles(e.target.files)}
             />
             <Upload className={`h-8 w-8 ${isDragging ? 'text-primary' : 'text-muted-foreground'}`} />
