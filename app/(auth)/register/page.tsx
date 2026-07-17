@@ -11,6 +11,12 @@ import { Sparkles, Globe, Loader2, Gift, Mail, CheckCircle2, Bot, Zap, Target } 
 import { toast } from 'sonner'
 import { authErrorMessage } from '@/lib/friendlyError'
 
+// Длину кода подтверждения задаёт Supabase (Auth → Email OTP length): у нас 8, дефолт 6.
+// Поэтому принимаем диапазон, а не фиксированные 6 — иначе на реальном 8-значном коде
+// кнопка осталась бы заблокированной (поймано живой проверкой 17 июля).
+const OTP_MIN = 6
+const OTP_MAX = 10
+
 function RegisterForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -73,7 +79,7 @@ function RegisterForm() {
   // поэтому после успеха ведём в кабинет — как если бы человек перешёл по ссылке.
   async function handleCodeConfirm(e: React.FormEvent) {
     e.preventDefault()
-    if (code.length < 6 || confirming) return
+    if (code.length < OTP_MIN || confirming) return
     setConfirming(true)
     const supabase = createClient()
     const { error } = await supabase.auth.verifyOtp({ email, token: code, type: 'signup' })
@@ -151,15 +157,15 @@ function RegisterForm() {
             <div className="flex gap-2">
               <Input
                 value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="000000"
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, OTP_MAX))}
+                placeholder="Код из письма"
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 className="border-[#C5CBA5] rounded-xl bg-white text-center text-lg tracking-[0.3em] font-semibold"
               />
               <Button
                 type="submit"
-                disabled={code.length < 6 || confirming}
+                disabled={code.length < OTP_MIN || confirming}
                 className="rounded-xl bg-[#3A8A48] hover:bg-[#347a40] text-white font-semibold px-5 border-0"
               >
                 {confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Войти'}
