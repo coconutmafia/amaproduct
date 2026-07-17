@@ -46,7 +46,9 @@ export function UpgradeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      {/* max-h/overflow — иначе на телефоне три тарифа не помещаются, модалка
+          обрезается и не листается: человек не может выбрать тариф вообще. */}
+      <DialogContent className="sm:max-w-2xl max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{copy.title}</DialogTitle>
           <DialogDescription>{copy.desc}</DialogDescription>
