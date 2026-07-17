@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { prodamusSign, prodamusVerify, parseFormNested, buildOrderId, parseOrderId, mapProdamusStatus } from '@/lib/billing/prodamus'
+import { isAmaSubscriptionPayment, prodamusSign, prodamusVerify, parseFormNested, buildOrderId, parseOrderId, mapProdamusStatus } from '@/lib/billing/prodamus'
 
 // Payment-webhook signature logic. A silent regression here = either rejecting
 // every real payment or accepting forged callbacks. Never touch without tests.
@@ -56,5 +56,38 @@ describe('order id + status mapping', () => {
     expect(mapProdamusStatus('success')).toBe('active')
     expect(mapProdamusStatus('failed')).toBe('past_due')
     expect(mapProdamusStatus('')).toBe('past_due')
+  })
+})
+
+// Регрессия 17 июля: кабинет Продамуса общий с продуктами Августы, и её продажи
+// прилетали в наш вебхук. Код записывал их в леджер как оплату тарифа —
+// 79 666 ₽ чужих денег в /admin/payments. Данные ниже — реальные из прода.
+describe('isAmaSubscriptionPayment', () => {
+  it('пропускает наши: подписка есть', () => {
+    expect(isAmaSubscriptionPayment({ subscription: { id: '2946756', cost: 4900, name: 'Соло' }, orderId: '46768088' })).toBe(true)
+  })
+
+  it('пропускает наши: рекуррентное списание — только subscription_id', () => {
+    expect(isAmaSubscriptionPayment({ subscriptionId: '2946756', orderId: '46779478' })).toBe(true)
+  })
+
+  it('пропускает наши: старый формат order_id (userId.plan.ts)', () => {
+    expect(isAmaSubscriptionPayment({ orderId: '053bed66-9c88-49a0-bfca-cb85fac07fa9.solo.1784278399533' })).toBe(true)
+  })
+
+  it('режет чужие: разовые покупки продуктов Августы', () => {
+    // 20 000 ₽ — arina-kozlova-01, аккаунта в AMA нет
+    expect(isAmaSubscriptionPayment({ orderId: '46792048' })).toBe(false)
+    // 16 666 ₽ — Korolyok51, аккаунта нет
+    expect(isAmaSubscriptionPayment({ orderId: '46788810' })).toBe(false)
+    // 43 000 ₽ — alisa_132: ДЕЙСТВУЮЩИЙ подписчик AMA купил продукт Августы.
+    // Совпадение email не должно делать платёж нашим.
+    expect(isAmaSubscriptionPayment({ orderId: '46787772' })).toBe(false)
+  })
+
+  it('пустые/мусорные значения не считаются подпиской', () => {
+    expect(isAmaSubscriptionPayment({})).toBe(false)
+    expect(isAmaSubscriptionPayment({ subscription: null, subscriptionId: null, orderId: '' })).toBe(false)
+    expect(isAmaSubscriptionPayment({ subscriptionId: '', orderId: '46792048' })).toBe(false)
   })
 })

@@ -140,6 +140,33 @@ export function parseOrderId(orderId: string): { userId: string; plan: string } 
   return p.length >= 2 ? { userId: p[0], plan: p[1] } : null
 }
 
+/**
+ * Относится ли вебхук Продамуса к оплате тарифа AMA.
+ *
+ * Кабинет Продамуса ОБЩИЙ: через него Августа продаёт и свои продукты
+ * (курсы/наставничество), и их вебхуки прилетают на наш же адрес. 17 июля так
+ * пришли три разовых платежа (20 000 / 16 666 / 43 000 ₽) — код принял их за
+ * оплату тарифа и записал в наш леджер как «succeeded».
+ *
+ * Признак «наше»: AMA продаётся ТОЛЬКО подпиской, поэтому у нашего платежа есть
+ * объект subscription (или хотя бы его id — у рекуррентных списаний), либо наш
+ * order_id вида `userId.plan.ts`. Разовая покупка без всего этого — не наша.
+ *
+ * ⚠️ По email сверять НЕЛЬЗЯ: клиент Августы может быть и клиентом AMA (так и
+ * вышло с покупкой на 43 000 ₽ — совпал email действующего подписчика).
+ */
+export function isAmaSubscriptionPayment(opts: {
+  subscription?: unknown
+  subscriptionId?: unknown
+  orderId?: string
+}): boolean {
+  const hasSub = Boolean(opts.subscription && typeof opts.subscription === 'object')
+  if (hasSub) return true
+  if (opts.subscriptionId !== null && opts.subscriptionId !== undefined && opts.subscriptionId !== '') return true
+  const parsed = parseOrderId(opts.orderId ?? '')
+  return Boolean(parsed?.userId && parsed?.plan)
+}
+
 // Продамус payment_status → our subscription_status.
 export function mapProdamusStatus(s: string): string {
   const v = (s || '').toLowerCase()

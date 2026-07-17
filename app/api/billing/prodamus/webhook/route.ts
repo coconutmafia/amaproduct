@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { prodamusConfigured, prodamusVerify, parseFormNested, parseOrderId, mapProdamusStatus } from '@/lib/billing/prodamus'
+import { prodamusConfigured, prodamusVerify, parseFormNested, parseOrderId, mapProdamusStatus, isAmaSubscriptionPayment } from '@/lib/billing/prodamus'
 import { cancelSubscriptionAnyProvider } from '@/lib/billing/cancel'
 import { PLAN_CONFIG, PAID_PLANS } from '@/lib/generations-config'
 
@@ -12,10 +12,10 @@ export const runtime = 'nodejs'
 // signature match (logged on mismatch to help tune).
 // Persist a webhook failure so it shows in /admin/errors (and is queryable) —
 // console.error alone lives only in Vercel logs. Best-effort: never throw.
-async function logWebhook(message: string, context: Record<string, unknown>) {
+async function logWebhook(message: string, context: Record<string, unknown>, level: 'error' | 'info' = 'error') {
   try {
     await createAdminClient().from('error_events').insert({
-      level: 'error', source: 'webhook', route: '/api/billing/prodamus/webhook', message, context,
+      level, source: 'webhook', route: '/api/billing/prodamus/webhook', message, context,
     })
   } catch { /* logging must never break the webhook */ }
 }
@@ -68,6 +68,20 @@ export async function POST(request: Request) {
       const sub = (data.subscription && typeof data.subscription === 'object')
         ? (data.subscription as Record<string, unknown>) : null
       const subId = sub?.id ?? (data as Record<string, unknown>).subscription_id ?? null
+
+      // ── ЧУЖОЙ ПЛАТЁЖ: не наш — не трогаем ──────────────────────────────────
+      // Кабинет Продамуса общий с продуктами Августы — почему и как отличаем
+      // см. isAmaSubscriptionPayment. Тариф такому платежу выдать всё равно
+      // нельзя (план резолвится по subscription.cost), так что до сегодня это
+      // было чистым мусором: 79 666 ₽ чужих денег в /admin/payments + шум.
+      // Уровень info, а не error: это штатная ситуация, а не поломка.
+      if (!isAmaSubscriptionPayment({ subscription: sub, subscriptionId: subId, orderId })) {
+        await logWebhook('prodamus webhook: чужой платёж (не подписка AMA) — пропущен', {
+          order_id: orderId, email: data.customer_email ?? null,
+          sum: data.sum ?? null, currency: data.currency ?? null,
+        }, 'info')
+        return new NextResponse('success', { status: 200 })
+      }
 
       // Plan: subscription cost → RU name → our order_id.
       let grantedPlan: string | undefined
