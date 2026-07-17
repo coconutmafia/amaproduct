@@ -2,28 +2,33 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe, stripeConfigured, ensurePrice } from '@/lib/billing/stripe'
-import { PAID_PLANS, type PaidPlan } from '@/lib/generations-config'
+import { PAID_PLANS, TRIAL_DAYS, type PaidPlan } from '@/lib/generations-config'
 
 export const runtime = 'nodejs'
 
-// Trial length for Соло on Stripe. DEFAULT = 0 — «плати сразу»: подписка списывает
-// деньги в момент оформления, без бесплатного периода.
+// Trial length for Соло on Stripe. DEFAULT = TRIAL_DAYS (60).
 //
-// Почему 0, а не 60: 16 июля модель сменилась на «плати сразу» (миграция 034 убрала
-// бесплатный триал внутри приложения). Пока здесь оставался дефолт TRIAL_DAYS=60,
-// Stripe-чекаут выдавал Соло с двухмесячным триалом → клиент «оформлял подписку», а
-// списывалось $0 (4 живых клиента прошли так, деньги ушли бы только в сентябре).
-// Дефолт обязан совпадать с моделью, иначе продукт раздаётся бесплатно.
+// ЭТО РАБОЧАЯ МОДЕЛЬ, А НЕ ТЕСТОВАЯ НАСТРОЙКА — не «чини» её, увидев нулевые инвойсы:
+// Августа продаёт своим клиентам доступ с ДВУМЯ МЕСЯЦАМИ бесплатно. Клиент обязан
+// ОФОРМИТЬ подписку (привязать карту) — и только тогда получает доступ; деньги
+// списываются через 60 дней. Поэтому `trialing` и $0 в первом инвойсе — норма.
+// В Продамусе то же самое делает демо-период на продукте (задаётся в его ЛК): 1₽ +
+// демо ≈ тот же смысл, потому что Продамус запрещает нулевой первый платёж.
+// Обе платёжки обязаны вести себя ОДИНАКОВО — это одни и те же клиенты.
 //
-// Триал избранным выдаётся ВРУЧНУЮ (profiles.trial_ends_at), а не через Stripe.
-// Env STRIPE_SOLO_TRIAL_DAYS оставлен как аварийный рычаг (напр. вернуть промо-период
-// без деплоя); мусор/отрицательное → безопасный 0, а не случайная раздача.
-// NOTE: демо-период Продамуса задаётся в его ЛК и этим кодом НЕ управляется.
+// Что НЕ даёт бесплатный доступ: регистрация без оформления подписки. Это закрывает
+// миграция 034 (trial_ends_at = now() у новых) + BILLING_ENFORCED — «плати сразу»
+// означает «оформи подписку сразу», а не «спиши деньги сразу».
+//
+// Env STRIPE_SOLO_TRIAL_DAYS временно ставили в 0, чтобы проверить живое списание
+// настоящей картой (с триалом Stripe берёт $0 и приём денег не проверяется). Это
+// разовый тест — после него переменную убирают, и дефолт возвращает 60.
+// Мусор/отрицательное → дефолт, чтобы случайно не списать с клиента полную цену.
 function soloTrialDays(): number {
   const raw = process.env.STRIPE_SOLO_TRIAL_DAYS
-  if (raw === undefined || raw === '') return 0
+  if (raw === undefined || raw === '') return TRIAL_DAYS
   const n = Number(raw)
-  return Number.isFinite(n) && n >= 0 ? n : 0
+  return Number.isFinite(n) && n >= 0 ? n : TRIAL_DAYS
 }
 
 // Creates a Stripe Checkout Session (hosted page) for a paid plan and returns
@@ -77,10 +82,9 @@ export async function POST(request: Request) {
       customer: customerId,
       client_reference_id: user.id,
       line_items: [{ price: priceId, quantity: 1 }],
-      // Модель «плати сразу»: списание при оформлении, у всех тарифов. Триал
-      // подставляется, только если его ЯВНО включили через STRIPE_SOLO_TRIAL_DAYS
-      // (аварийный рычаг для промо), иначе Stripe отдал бы подписку как `trialing`
-      // с нулевым инвойсом — юзер получил бы доступ, не заплатив.
+      // Соло — 60 дней бесплатно (клиенты Августы приходят именно на этих условиях),
+      // Про/Продюсер — списание сразу. Во время триала Stripe присылает подписку как
+      // `trialing`, и наш вебхук активирует тариф так же. Зеркало демо-периода Продамуса.
       subscription_data: {
         metadata: { userId: user.id, plan },
         ...(plan === 'solo' && soloTrialDays() > 0 ? { trial_period_days: soloTrialDays() } : {}),
