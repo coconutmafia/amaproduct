@@ -3,12 +3,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Loader2, Sparkles, CheckCircle2, AlertCircle, Lock, ArrowRight, RefreshCw } from 'lucide-react'
+import { Loader2, Sparkles, CheckCircle2, AlertCircle, Lock, ArrowRight, RefreshCw, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { pollJob } from '@/lib/jobs/pollJob'
 import { friendlyError } from '@/lib/friendlyError'
 import type { AuditResult, AuditBlockResult } from '@/lib/blogAudit/runBlogAudit'
 import { MAX_SCORE } from '@/lib/blogAudit/checklist'
+import { auditToText } from '@/lib/blogAudit/auditToText'
 
 // Куда ведёт CTA «бесплатная консультация с маркетологом». Настраивается через
 // env (можно сменить без деплоя кода); дефолт — телеграм Августы.
@@ -104,14 +105,37 @@ export function BlogAuditScorecard({ result, onRerun, rerunning }: {
   const green = Math.max(0, result.scored)
   const grey = Math.max(0, MAX_SCORE - result.assessableMax)
   const yellow = Math.max(0, result.assessableMax - result.scored)
+
+  const [downloading, setDownloading] = useState(false)
+  const downloadReport = async () => {
+    setDownloading(true)
+    try {
+      const date = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+      const { downloadDocx } = await import('@/lib/utils/docxText')
+      await downloadDocx(
+        `Диагностика блога @${result.handle}`,
+        `Экспресс-диагностика блога @${result.handle}`,
+        auditToText(result, date),
+      )
+    } catch (e) {
+      toast.error(friendlyError(e, 'Не удалось скачать разбор'))
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   return (
     <div className="space-y-5">
       {/* Разложение балла на 3 зоны вместо одной пугающей оценки «X из 10». */}
       <div className="rounded-2xl border border-border bg-card/50 p-5 space-y-4">
         <div>
           <p className="font-bold text-sm text-foreground leading-snug">{result.diagnosis}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Как складываются 100 баллов чек-листа по профилю @{result.handle}
+          {/* Владелец 17 июля: «зелёное поле ясно, а остальное — неясно объяснено, что это».
+              Поэтому прямо говорим, ЧТО мы смотрели (шапка + посты) и почему часть баллов
+              вообще нельзя посчитать — иначе «видимая часть профиля» читается как жаргон. */}
+          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+            Мы разобрали шапку и последние посты @{result.handle} по чек-листу на 100 баллов.
+            Сторис, актуальные и то, куда ведёт ссылка, автоматически увидеть нельзя — эти баллы вынесены отдельно.
           </p>
         </div>
         <div className="space-y-3">
@@ -121,9 +145,9 @@ export function BlogAuditScorecard({ result, onRerun, rerunning }: {
             {yellow > 0 && <div className="h-full bg-amber-400" style={{ width: `${yellow}%` }} />}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <ZoneLegend dot="bg-green-500" value={green} title="уже собрано" desc="хорошо на видимой части профиля" />
-            <ZoneLegend dot="bg-slate-300 dark:bg-slate-600" value={grey} title="на консультации" desc="нельзя оценить машинно — разберёт маркетолог" />
-            <ZoneLegend dot="bg-amber-400" value={yellow} title="зона роста" desc="что можно усилить в видимой части" />
+            <ZoneLegend dot="bg-green-500" value={green} title="уже сделано" desc="есть в шапке и постах — это работает на продажу" />
+            <ZoneLegend dot="bg-slate-300 dark:bg-slate-600" value={grey} title="не проверить автоматически" desc="сторис, актуальные, воронка — их посмотрит маркетолог" />
+            <ZoneLegend dot="bg-amber-400" value={yellow} title="можно усилить" desc="в шапке и постах это есть, но недотянуто" />
           </div>
         </div>
       </div>
@@ -180,12 +204,21 @@ export function BlogAuditScorecard({ result, onRerun, rerunning }: {
         </a>
       </div>
 
-      {onRerun && (
-        <Button variant="outline" onClick={onRerun} disabled={rerunning} className="w-full">
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Перепроверить
+      {/* Разбор длинный, и его пересылали скриншотами по кускам (фидбэк владельца
+          17 июля) — даём выгрузку одним документом: можно отправить маркетологу
+          или открыть с телефона. */}
+      <div className="flex flex-col sm:flex-row gap-2">
+        <Button variant="outline" onClick={downloadReport} disabled={downloading} className="flex-1">
+          {downloading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+          Скачать разбор
         </Button>
-      )}
+        {onRerun && (
+          <Button variant="outline" onClick={onRerun} disabled={rerunning} className="flex-1">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Перепроверить
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

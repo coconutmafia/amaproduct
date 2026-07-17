@@ -26,6 +26,7 @@ export default async function PricingPage() {
         </p>
       </div>
       <PricingClient
+        userEmail={session.user.email ?? ''}
         currentPlan={currentPlan}
         bonusGenerations={profile?.bonus_generations ?? 0}
         generationsUsed={profile?.generations_used ?? 0}

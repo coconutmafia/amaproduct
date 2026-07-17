@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { toast } from 'sonner'
-import { CheckCircle2, Zap, Star, Building2, Gift } from 'lucide-react'
+import { CheckCircle2, Zap, Star, Building2, Gift, AlertTriangle } from 'lucide-react'
 import type { SubscriptionTier, PaidPlan } from '@/lib/generations-config'
 import { PLAN_CONFIG, PAID_PLANS } from '@/lib/generations-config'
 
@@ -24,6 +24,7 @@ const PLAN_COLORS: Record<PaidPlan, string> = {
 }
 
 interface Props {
+  userEmail: string
   currentPlan: SubscriptionTier
   bonusGenerations: number
   generationsUsed: number
@@ -33,7 +34,7 @@ interface Props {
 }
 
 export function PricingClient({
-  currentPlan, bonusGenerations, generationsUsed, monthlyLimit, plans, resetAt,
+  userEmail, currentPlan, bonusGenerations, generationsUsed, monthlyLimit, plans, resetAt,
 }: Props) {
   const [upgrading, setUpgrading] = useState<PaidPlan | null>(null)
   const [region, setRegion] = useState<'ru' | 'intl'>('ru') // ru → Продамус (₽), intl → Stripe ($)
@@ -133,6 +134,20 @@ export function PricingClient({
           ))}
         </div>
       </div>
+
+      {/* Продамус открывает СВОЮ форму и выбрасывает переданный нами email, поэтому
+          плательщик вводит его руками. Указал другой — тариф уедет на другой аккаунт
+          (реальный случай 17 июля: оплатила с яндекс-почты, работала под gmail →
+          «оплатила, а доступа нет»). Предупреждаем ДО перехода на оплату. */}
+      {region === 'ru' && userEmail && (
+        <div className="mx-auto max-w-xl flex gap-2.5 rounded-xl border border-amber-200 dark:border-amber-400/30 bg-amber-50 dark:bg-amber-400/10 p-3">
+          <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+          <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-300">
+            На странице оплаты укажи <strong>этот же email</strong>: <strong className="whitespace-nowrap">{userEmail}</strong>
+            {' '}— по нему тариф привяжется к твоему аккаунту. С другой почтой доступ откроется не здесь.
+          </p>
+        </div>
+      )}
 
       {/* Plan cards — Solo is the hero */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
