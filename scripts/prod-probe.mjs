@@ -132,9 +132,132 @@ async function cascadeDelete() {
   }
 }
 
+// ── ПОЧИНКА: оплата ушла не на ту почту ──────────────────────────────────────
+// Продамус выбрасывает наши параметры из готовой ссылки, поэтому почту платель-
+// щик вводит РУКАМИ и может указать не ту, с которой регистрировался. Вебхук
+// ищет человека по почте плательщика, не находит — деньги списаны, тариф не
+// выдан. Случалось уже дважды (Аня; Дарья Барышева 19 июля), поэтому инструмент,
+// а не разовый запрос.
+//
+// ⚠️ ВЫДАЁМ ТАРИФ НА ПОЧТУ ПЛАТЕЛЬЩИКА, а не на ту, с которой регистрировались:
+// через 60 дней придёт рекуррент с той же почтой плательщика, и он должен
+// найти владельца. Запасной путь по provider_subscription_id НЕ спасёт — у
+// Продамуса это id ПРОДУКТА (напр. 2946756), он одинаковый у многих людей.
+//
+// Использование:
+//   node scripts/prod-probe.mjs link-payment --payer dasha-yurzhic@mail.ru \
+//     --plan solo --order 46842197 --sub 2946756 [--drop-account old@mail.ru] [--run]
+function arg(name) {
+  const i = process.argv.indexOf(`--${name}`)
+  return i > -1 ? process.argv[i + 1] : undefined
+}
+
+// Таблицы, по которым проверяем «аккаунт действительно пустой» перед удалением.
+const OWNERSHIP_CHECKS = [
+  ['projects', 'owner_id'], ['jobs', 'user_id'], ['project_members', 'user_id'],
+  ['saved_content', 'user_id'], ['warmup_jobs', 'user_id'], ['payments', 'user_id'],
+  ['promo_code_uses', 'user_id'], ['referrals', 'referrer_id'],
+]
+
+async function countRows(table, col, userId) {
+  const res = await fetch(`${U}/rest/v1/${table}?select=id&${col}=eq.${userId}`, {
+    headers: { ...H, Prefer: 'count=exact', Range: '0-0' },
+  })
+  const cr = res.headers.get('content-range') || ''
+  return Number(cr.split('/')[1] ?? NaN)
+}
+
+async function linkPayment() {
+  const payer = arg('payer')
+  const plan = arg('plan')
+  const order = arg('order')
+  const sub = arg('sub')
+  const drop = arg('drop-account')
+  if (!payer || !plan || !order) {
+    throw new Error('нужны --payer <email> --plan <solo|pro|producer> --order <orderId>')
+  }
+  if (drop && drop.toLowerCase() === payer.toLowerCase()) {
+    throw new Error('--drop-account совпадает с --payer: это удалило бы того, кому выдаём тариф')
+  }
+
+  log(`\n=== Починка: привязать оплату к почте плательщика ===`)
+
+  // 1. кому выдаём
+  const { body: profs } = await api(`/rest/v1/profiles?email=eq.${encodeURIComponent(payer)}&select=id,email,full_name,subscription_tier,subscription_status,current_period_end`)
+  if (!Array.isArray(profs) || profs.length !== 1) {
+    throw new Error(`по ${payer} найдено профилей: ${Array.isArray(profs) ? profs.length : '?'} (нужен ровно 1)`)
+  }
+  const target = profs[0]
+  log(`получатель: ${target.email} (${target.full_name || '—'}) — сейчас ${target.subscription_tier}/${target.subscription_status}`)
+
+  // 2. платёж в леджере → от его даты считаем 60 дней демо-периода
+  const { body: pays } = await api(`/rest/v1/payments?external_id=eq.${encodeURIComponent(order)}&select=id,created_at,amount,currency,user_id,description`)
+  if (!Array.isArray(pays) || pays.length !== 1) {
+    throw new Error(`по заказу ${order} найдено платежей: ${Array.isArray(pays) ? pays.length : '?'} (нужен ровно 1)`)
+  }
+  const pay = pays[0]
+  const periodEnd = new Date(new Date(pay.created_at).getTime() + 60 * 86400000).toISOString()
+  log(`платёж: ${pay.amount} ${pay.currency} от ${pay.created_at.slice(0, 19)} (user_id сейчас: ${pay.user_id ?? 'null'})`)
+  log(`доступ до: ${periodEnd.slice(0, 10)} (60 дней от оплаты — как у остальных)`)
+
+  // 3. кого удаляем (если просили) — только если пусто
+  let dropUser = null
+  if (drop) {
+    const { body: d } = await api(`/rest/v1/profiles?email=eq.${encodeURIComponent(drop)}&select=id,email,full_name`)
+    if (!Array.isArray(d) || d.length !== 1) throw new Error(`по ${drop} найдено профилей: ${Array.isArray(d) ? d.length : '?'}`)
+    dropUser = d[0]
+    log(`\nна удаление: ${dropUser.email} (${dropUser.full_name || '—'})`)
+    let dirty = []
+    for (const [t, c] of OWNERSHIP_CHECKS) {
+      const n = await countRows(t, c, dropUser.id)
+      if (Number.isFinite(n) && n > 0) dirty.push(`${t}.${c}=${n}`)
+    }
+    if (dirty.length) {
+      throw new Error(`ОТКАЗ: аккаунт ${drop} НЕ пустой (${dirty.join(', ')}) — удалять нельзя, разбирайся руками`)
+    }
+    log(`  проверка: пусто по всем таблицам ✅`)
+  }
+
+  if (!RUN) {
+    log(`\n[DRY-RUN] что будет сделано (добавь --run):`)
+    log(`  1) ${target.email}: tier=${plan}, status=active, provider=prodamus, до ${periodEnd.slice(0, 10)}${sub ? `, sub_id=${sub}` : ''}`)
+    log(`  2) платёж ${order}: user_id → ${target.id}`)
+    if (dropUser) log(`  3) удалить аккаунт ${dropUser.email}`)
+    return
+  }
+
+  // ── применяем ──
+  const patch = {
+    subscription_tier: plan,
+    subscription_status: 'active',
+    payment_provider: 'prodamus',
+    current_period_end: periodEnd,
+    ...(sub ? { provider_subscription_id: String(sub) } : {}),
+  }
+  const up = await api(`/rest/v1/profiles?id=eq.${target.id}`, {
+    method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(patch),
+  })
+  if (up.status >= 300) throw new Error(`не удалось выдать тариф: ${up.status} ${JSON.stringify(up.body).slice(0, 200)}`)
+  log(`\n✅ 1. тариф выдан: ${plan}/active до ${periodEnd.slice(0, 10)}`)
+
+  const lp = await api(`/rest/v1/payments?id=eq.${pay.id}`, {
+    method: 'PATCH', body: JSON.stringify({ user_id: target.id }),
+  })
+  log(lp.status < 300 ? `✅ 2. платёж ${order} привязан к аккаунту` : `⚠️ 2. платёж привязать не вышло: ${lp.status}`)
+
+  if (dropUser) {
+    const del = await api(`/auth/v1/admin/users/${dropUser.id}`, { method: 'DELETE' })
+    log(del.status < 300 ? `✅ 3. аккаунт ${dropUser.email} удалён` : `⚠️ 3. удалить не вышло: ${del.status} ${JSON.stringify(del.body).slice(0, 150)}`)
+  }
+
+  // контрольное чтение
+  const { body: after } = await api(`/rest/v1/profiles?id=eq.${target.id}&select=email,subscription_tier,subscription_status,payment_provider,current_period_end,provider_subscription_id`)
+  log(`\n── ИТОГ ──\n${JSON.stringify(after?.[0], null, 2)}`)
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
