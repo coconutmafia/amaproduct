@@ -71,8 +71,17 @@ export default async function DashboardLayout({
           status={(profile as Record<string, unknown>)?.subscription_status as string | undefined}
           trialEndsAt={(profile as Record<string, unknown>)?.trial_ends_at as string | undefined}
         />
-        {/* pb-24 on mobile = space for the BottomNav */}
-        <main className="flex-1 overflow-y-auto relative pb-24 lg:pb-0">
+        {/* Отступ снизу = место под фиксированную BottomNav.
+            ⚠️ Было жёстко pb-24 (96px), и этого НЕ хватало: сама BottomNav —
+            это ~60px содержимого ПЛЮС её собственный `max(12px,
+            env(safe-area-inset-bottom))`. На айфоне с «домашней полоской»
+            (34px) панель занимает ~94px, то есть запас был 2 пикселя, а в
+            in-app браузере (Telegram/Instagram) уходил в минус — последний
+            элемент страницы оказывался ПОД панелью и его нельзя было нажать.
+            Поймано на видео от клиента 19 июля: кнопка «Сохранить в материалы»
+            на разборе интервью была разрезана панелью пополам.
+            Теперь отступ учитывает safe-area так же, как сама панель. */}
+        <main className="flex-1 overflow-y-auto relative pb-[calc(6rem_+_env(safe-area-inset-bottom))] lg:pb-0">
           <AuthRefresh />
           <PageTransition>{children}</PageTransition>
         </main>
