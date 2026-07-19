@@ -255,9 +255,56 @@ async function linkPayment() {
   log(`\n── ИТОГ ──\n${JSON.stringify(after?.[0], null, 2)}`)
 }
 
+// ── ОЧИСТКА: убрать из леджера ЧУЖИЕ платежи ─────────────────────────────────
+// Кабинет Продамуса общий с продуктами Августы, и до фикса 69db462 её продажи
+// падали в наш `payments` как оплата тарифа (17 июля — 79 666 ₽). Код больше так
+// не делает, но уже записанные строки надо убрать руками, иначе /admin/payments
+// врёт про выручку.
+//
+// ЗАЩИТА: отказываемся удалять строку, похожую на НАШУ. Признак нашей — в
+// description распознан тариф («Prodamus · solo»), т.е. вебхук сопоставил план.
+// У чужих description = просто «Prodamus». Плюс перед удалением печатаем строки
+// целиком — чтобы в истории остался след, что именно снесли.
+async function cleanLedger() {
+  const orders = (arg('orders') || '').split(',').map((s) => s.trim()).filter(Boolean)
+  if (!orders.length) throw new Error('нужен --orders 46792048,46788810,...')
+
+  log(`\n=== Очистка леджера от чужих платежей ===`)
+  const doomed = []
+  for (const o of orders) {
+    const { body } = await api(`/rest/v1/payments?external_id=eq.${encodeURIComponent(o)}&select=*`)
+    if (!Array.isArray(body) || body.length !== 1) {
+      throw new Error(`заказ ${o}: найдено строк ${Array.isArray(body) ? body.length : '?'} (нужна ровно 1)`)
+    }
+    const row = body[0]
+    if (String(row.description || '').includes('·')) {
+      throw new Error(`ОТКАЗ: заказ ${o} выглядит НАШИМ (description="${row.description}") — тариф распознан, удалять нельзя`)
+    }
+    doomed.push(row)
+    log(`  ${o}: ${row.amount} ${row.currency}  "${row.description}"  user_id=${row.user_id ?? 'null'}  ${row.created_at.slice(0, 19)}`)
+  }
+  const total = doomed.reduce((s, r) => s + Number(r.amount || 0), 0)
+  log(`\nвсего к удалению: ${doomed.length} строк на ${total.toLocaleString('ru-RU')} ₽`)
+
+  if (!RUN) { log('\n[DRY-RUN] ничего не удалено, добавь --run'); return }
+
+  log(`\n── ПОЛНЫЕ СТРОКИ (след в истории перед удалением) ──`)
+  log(JSON.stringify(doomed, null, 2))
+
+  for (const row of doomed) {
+    const del = await api(`/rest/v1/payments?id=eq.${row.id}`, { method: 'DELETE' })
+    log(del.status < 300 ? `✅ удалён ${row.external_id}` : `⚠️ не вышло ${row.external_id}: ${del.status}`)
+  }
+
+  const { body: left } = await api(`/rest/v1/payments?select=external_id,amount,currency,description&order=created_at.desc`)
+  const foreign = (left || []).filter((r) => r.currency === 'rub' && ![1, 4900, 14900, 29900].includes(Number(r.amount)))
+  log(`\n── ИТОГ ──\nстрок в леджере: ${left?.length}\nчужих сумм осталось: ${foreign.length}`)
+  if (foreign.length) log(JSON.stringify(foreign, null, 2))
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
