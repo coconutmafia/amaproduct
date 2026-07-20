@@ -28,6 +28,12 @@ const NOT_MEDIA_EXT = new Set([
   'rtf', 'odt', 'pages', 'numbers', 'key', 'epub',
   // архивы и прочее
   'zip', 'rar', '7z', 'gz', 'tar', 'dmg', 'exe', 'apk', 'json', 'xml', 'html',
+  // ярлыки Google Drive — iOS отдаёт ИХ, когда файл в пикере не скачан локально
+  // (поймано 20 июля: клиент на Pro загрузил .gsheet — ярлык Google Таблицы, —
+  // он прошёл первый deny-list как «неизвестное расширение» и дошёл до ffmpeg)
+  'gdoc', 'gsheet', 'gslides', 'gdraw', 'gform', 'gtable', 'gsite', 'gnote',
+  // прочие ярлыки-ссылки — внутри нет медиаданных
+  'url', 'webloc', 'lnk',
 ])
 
 export const NOT_MEDIA_MESSAGE =

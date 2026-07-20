@@ -24,6 +24,13 @@ describe('isDefinitelyNotMedia', () => {
     }
   })
 
+  it('режет ярлыки Google Drive — регрессия 20 июля (.gsheet дошёл до ffmpeg)', () => {
+    // iOS отдаёт ярлык вместо файла, когда документ в пикере не скачан локально
+    for (const ext of ['gsheet', 'gdoc', 'gslides', 'url', 'webloc']) {
+      expect(isDefinitelyNotMedia({ ext })).toBe(true)
+    }
+  })
+
   it('MIME важнее расширения — файл из галереи телефона', () => {
     expect(isDefinitelyNotMedia({ ext: '', mime: 'image/png' })).toBe(true)
     expect(isDefinitelyNotMedia({ ext: 'png', mime: 'audio/mpeg' })).toBe(false)
