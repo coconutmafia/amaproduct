@@ -499,7 +499,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         <p className="text-xs text-muted-foreground">Загрузи видео — наложим твой текст в стиле бренда, получится готовая видео-сторис 9:16.</p>
         <VideoStory projectId={projectId} />
       </section>
-      <Collapsible title="Сторис-схема">
+      <Collapsible title="Сторис-схема — этапы со стрелками на тёмном фоне">
         <SchemeStory projectId={projectId} />
       </Collapsible>
 
