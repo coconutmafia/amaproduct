@@ -120,6 +120,12 @@ export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
 // The plans shown as choosable cards on the pricing/upgrade screen (trial excluded).
 export const PAID_PLANS: PaidPlan[] = ['solo', 'pro', 'producer']
 
+// Монтаж видео стоит нам кратно дороже текста (Whisper + минуты CPU на ffmpeg),
+// поэтому одно видео списывает несколько единиц контента. Решение Матвея
+// (21 июля): 5 юнитов — «пока не вводим отдельную плату за видео, пусть ест
+// больше лимита, на этом и маржа». Число легко поменять — оно только здесь.
+export const VIDEO_MONTAGE_UNITS = 5
+
 // Free trial length (kept in one place — also encoded in migration 016).
 export const TRIAL_DAYS = 60
 

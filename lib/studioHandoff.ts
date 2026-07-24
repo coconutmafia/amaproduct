@@ -7,7 +7,7 @@
 // bind the publication back to that day automatically (tester's «путь A»).
 
 export interface StudioHandoff {
-  format: 'post' | 'carousel' | 'stories'
+  format: 'post' | 'carousel' | 'stories' | 'reels'
   text: string
   /** set only when we came from a specific content-plan day (путь A) */
   day?: number
@@ -38,5 +38,6 @@ export function studioFormatFor(contentType: string): StudioHandoff['format'] | 
   if (contentType === 'post') return 'post'
   if (contentType === 'carousel') return 'carousel'
   if (contentType === 'stories') return 'stories'
+  if (contentType === 'reels') return 'reels' // сценарий рилза → вкладка монтажа
   return null
 }

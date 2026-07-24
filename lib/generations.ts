@@ -131,6 +131,50 @@ export async function gateContentUnit(userId: string): Promise<GateResult> {
   return { ...res, blocked, ...(blocked ? { reason: 'quota' as const } : {}) }
 }
 
+// Multi-unit gate for expensive content (video montage = VIDEO_MONTAGE_UNITS).
+// Checks the FULL price up front (no partial charge when remaining < count),
+// then consumes unit-by-unit through the same audited RPC. If a later consume
+// fails mid-way (race with another tab), the consumed part is refunded — the
+// caller either gets the whole price charged or nothing.
+export async function gateContentUnits(userId: string, count: number): Promise<GateResult> {
+  if (count <= 1) return gateContentUnit(userId)
+  if (BILLING_ENFORCED && !(await isEntitled(userId))) {
+    const stats = await getGenerationStats(userId)
+    return { ...stats, allowed: false, blocked: true, reason: 'not_entitled' }
+  }
+  const stats = await getGenerationStats(userId)
+  if (stats.remaining < count) {
+    const blocked = BILLING_ENFORCED
+    return { ...stats, allowed: false, blocked, ...(blocked ? { reason: 'quota' as const } : {}) }
+  }
+  let consumed = 0
+  for (; consumed < count; consumed++) {
+    const res = await checkAndConsumeGeneration(userId)
+    if (!res.allowed) break
+  }
+  if (consumed < count) {
+    if (consumed > 0) await refundGenerations(userId, consumed)
+    const after = await getGenerationStats(userId)
+    const blocked = BILLING_ENFORCED
+    return { ...after, allowed: false, blocked, ...(blocked ? { reason: 'quota' as const } : {}) }
+  }
+  const after = await getGenerationStats(userId)
+  return { ...after, allowed: true, blocked: false }
+}
+
+// Refund `count` units at once (video job failed after charging its price).
+export async function refundGenerations(userId: string, count: number): Promise<void> {
+  try {
+    const supabase = await createClient()
+    const { data: profile } = await supabase
+      .from('profiles').select('role').eq('id', userId).single()
+    if (profile?.role === 'admin') return
+    await createAdminClient().rpc('add_bonus_generations', { p_user_id: userId, p_amount: count })
+  } catch (e) {
+    console.error('refundGenerations failed:', e)
+  }
+}
+
 // Refund one generation — called when a consumed generation produced nothing
 // (project not found, AI error, etc.). Credited as a bonus generation, which
 // is consumed first, so it's effectively a full refund and never goes negative.

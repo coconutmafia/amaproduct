@@ -17,15 +17,17 @@ import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { PhotoUploader } from '@/components/content/PhotoUploader'
 import { StoryEditor, type EditorLoadRequest } from '@/components/carousel/StoryEditor'
 import { StoriesPanel } from '@/components/content/StoriesPanel'
+import { ReelsMontagePanel } from '@/components/content/ReelsMontagePanel'
 import { type Block, type SlideValue } from '@/components/carousel/FreeCanvas'
 
-type Format = 'post' | 'carousel' | 'stories'
+type Format = 'post' | 'carousel' | 'stories' | 'reels'
 interface Brand { accentColor?: string; bg?: string; text?: string; bgStyle?: string; handle?: string; logoUrl?: string; font?: string; accentStyle?: 'gradient' | 'flat'; styleNotes?: string }
 
 const FORMATS: { id: Format; label: string }[] = [
   { id: 'post', label: 'Пост' },
   { id: 'carousel', label: 'Карусель' },
   { id: 'stories', label: 'Сторис' },
+  { id: 'reels', label: 'Рилз' },
 ]
 
 function firstLine(text: string): string {
@@ -105,6 +107,7 @@ export function ContentStudio({ projectId, initialFormat = 'post', initialText =
         {format === 'post' && <PostPanel projectId={projectId} brand={brand} text={text} onTextChange={setText} persistKey={persistKey} />}
         {format === 'carousel' && <CarouselPanel projectId={projectId} brand={brand} text={text} onTextChange={setText} persistKey={persistKey} />}
         {format === 'stories' && <StoriesPanel projectId={projectId} text={text} onTextChange={setText} persistKey={persistKey} />}
+        {format === 'reels' && <ReelsMontagePanel projectId={projectId} text={text} onTextChange={setText} />}
       </div>
 
       <PublicationBar projectId={projectId} format={format} text={text}
