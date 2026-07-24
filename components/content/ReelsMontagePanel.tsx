@@ -14,7 +14,10 @@ import { friendlyError } from '@/lib/friendlyError'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { VIDEO_MONTAGE_UNITS } from '@/lib/generations-config'
 
-const MAX_VIDEO_MB = 60 // как в video/overlay: ~60-90 сек с телефона
+// ⚠️ Supabase на тарифе Free режет загрузку файла на 50 МБ (подтверждено скрином
+// панели 24 июля: org «pro-duct FREE»). Держим 48, чтобы упереться в НАШУ понятную
+// ошибку, а не в невнятную ошибку хранилища. Апгрейд до Pro → можно поднять.
+const MAX_VIDEO_MB = 48
 
 type Stage = 'idle' | 'uploading' | 'queued' | 'analyze' | 'transcribe' | 'render' | 'done' | 'error'
 
@@ -55,7 +58,7 @@ export function ReelsMontagePanel({ projectId, text, onTextChange }: {
 
   async function startMontage(file: File) {
     if (file.size > MAX_VIDEO_MB * 1024 * 1024) {
-      toast.error(`Видео больше ${MAX_VIDEO_MB} МБ — это примерно 60-90 секунд с телефона. Обрежь и попробуй снова.`)
+      toast.error(`Видео больше ${MAX_VIDEO_MB} МБ — это примерно 45-70 секунд с телефона. Обрежь и попробуй снова.`)
       return
     }
     setStage('uploading'); setResult(null); setStageDetail('')
