@@ -458,6 +458,13 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
       {/* 1. Загрузка фото */}
       <PhotoUploader projectId={projectId} photos={photos} kind="story" max={8}
         onChange={(p) => setPhotos(p)} persistKey={persistKey} />
+      {/* Подсказка про видео СРАЗУ у фото-загрузчика: Лана выбирала mp4 в этом
+          пикере (он только image/*), видела «недоступно» и решила, что видео
+          в сторис нет вообще — а блок был свёрнут внизу (24 июля). */}
+      <p className="-mt-2 text-[11px] text-muted-foreground">
+        Сюда — фото (JPG/PNG). Сторис из видео — в блоке{' '}
+        <a href="#video-story" className="text-primary underline">«Видео с текстом»</a> ниже.
+      </p>
 
       {/* 2. Текст / сценарий */}
       <section className="rounded-2xl border border-border bg-card p-4 space-y-2">
@@ -484,13 +491,16 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
       <StoryEditor projectId={projectId} photos={photos} loadReq={editReq}
         onAddToSeries={addManualToSeries} seriesLen={rendered.length} />
 
-      {/* 5. Сторис-схема и 6. Видео с текстом — сворачиваются, чтобы не занимать
-          место (тестер: юзкейс ещё не протестирован, вернёмся позже). */}
+      {/* 5. Видео с текстом — РАЗВЁРНУТ и с якорем: свёрнутым его не находили
+          (Лана 24 июля пыталась загрузить mp4 в фото-пикер и решила, что видео
+          не поддерживается). Сторис-схема остаётся свёрнутой. */}
+      <section id="video-story" className="rounded-2xl border border-border bg-card p-4 space-y-2">
+        <p className="text-sm font-semibold text-foreground">Видео с текстом (сторис)</p>
+        <p className="text-xs text-muted-foreground">Загрузи видео — наложим твой текст в стиле бренда, получится готовая видео-сторис 9:16.</p>
+        <VideoStory projectId={projectId} />
+      </section>
       <Collapsible title="Сторис-схема">
         <SchemeStory projectId={projectId} />
-      </Collapsible>
-      <Collapsible title="Видео с текстом (сторис)">
-        <VideoStory projectId={projectId} />
       </Collapsible>
 
       {rendered.length > 0 && (

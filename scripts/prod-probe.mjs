@@ -357,6 +357,16 @@ async function recoveryTokenHash() {
   if (!hashed) throw new Error(`generate_link не дал hashed_token: ${gen.status}`)
   log(`✅ 1. ссылка сгенерирована, token_hash получен (не печатаю)`)
 
+  // --emit-url: собрать ссылку страницы (как в кнопке письма) и записать в файл
+  // для браузерного теста. Токен одноразовый (QA-бот) и сгорит при открытии.
+  const emitPath = arg('emit-url')
+  if (emitPath) {
+    const { writeFileSync } = await import('node:fs')
+    writeFileSync(emitPath, `https://amaproduct.com/auth/reset-password?token_hash=${hashed}&type=recovery\n`)
+    log(`✅ 2. ссылка кнопки письма записана в ${emitPath} — открой в браузере, токен сгорит при проверке`)
+    return
+  }
+
   const ver = await api('/auth/v1/verify', {
     method: 'POST',
     body: JSON.stringify({ type: 'recovery', token_hash: hashed }),
