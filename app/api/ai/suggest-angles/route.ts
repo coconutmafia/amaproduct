@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
 import { anthropic, MODEL } from '@/lib/ai/client'
+import { AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { requireProjectAccess } from '@/lib/projects/access'
 
@@ -83,6 +84,10 @@ export async function POST(request: Request) {
 - why — почему зайдёт, 1 фраза со ссылкой на реальную боль/желание его аудитории из материалов${type === 'reels' ? '\n\nТакже верни reel_trend — актуальную механику/тренд рилза, адаптированную под эту тему.' : ''}
 
 ОПИРАЙСЯ на материалы блогера ниже (боли/желания аудитории, кейсы, голос). НЕ выдумывай факты, цифры и кейсы, которых там нет.
+
+${AI_TELLS_TO_AVOID}
+
+⚠️ Особенно для hook: это фраза, которую блогер скажет В КАДРЕ — проговори её вслух, никаких рубленых обрубков через точку.
 
 МАТЕРИАЛЫ БЛОГЕРА:
 ${ragBlock || '(материалов мало — опирайся на тему и проверенные форматы)'}

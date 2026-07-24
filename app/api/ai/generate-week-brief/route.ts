@@ -3,7 +3,7 @@ import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
 import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
-import { getSchemaForPhase, getEmotionalMechanics, getCTAEngine } from '@/lib/ai/prompts/content-brain'
+import { getSchemaForPhase, getEmotionalMechanics, getCTAEngine, AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { NextResponse } from 'next/server'
 
@@ -199,7 +199,11 @@ ${myInstagramSummary ? `АНАЛИЗ МОЕГО INSTAGRAM (опирайся на
 ${competitorsSummary ? `АНАЛИЗ INSTAGRAM КОНКУРЕНТОВ (что у них «заходит»; отстраивайся, не копируй):\n${competitorsSummary}\n` : ''}
 ${blogLinesInstruction}
 ${trendsBlock}
-${reelsBlock}`
+${reelsBlock}
+
+${AI_TELLS_TO_AVOID}
+
+⚠️ Правила выше действуют И НА ТЕМЫ ПЛАНА: тема дня — это связная человеческая фраза, а не телеграфные обрубки через точку. Тема, которую ты напишешь здесь, потом уходит сценаристу как задание — если тема рубленая, рубленым выйдет и сценарий.`
 
   const prompt = `─── ПСИХОЛОГИЯ КОНТЕНТА ПО ФАЗАМ ───────────────────────────
 ${phasePsychology}

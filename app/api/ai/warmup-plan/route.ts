@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
 import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
+import { AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
 import { requireProjectAccess } from '@/lib/projects/access'
 
 export const maxDuration = 300
@@ -250,6 +251,10 @@ ${reels.map(r => `• Что залетает: ${r.reel_type} — ${(r.analysis 
 
     const prompt = `Ты — AI-продюсер запусков, работающий по методологии конкретного эксперта-маркетолога.
 Создай ПЕРСОНАЛИЗИРОВАННЫЙ план прогрева — не шаблон, а конкретный план для этого блогера, его ниши и его продукта.
+
+${AI_TELLS_TO_AVOID}
+
+⚠️ Правила выше действуют на ВСЕ тексты плана: темы дней, описания, крючки. Формулируй связными человеческими фразами — эти строки потом уходят в генерацию сценариев как задание, и рубленый стиль заражает весь контент.
 
 ${systemKnowledgeText ? `═══════════════════════════════
 МЕТОДОЛОГИЯ ЭКСПЕРТА (Source of Truth — приоритет над всем)
