@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { friendlyError } from '@/lib/friendlyError'
-import { Sparkles, Loader2, Copy, Check, User, FolderOpen, ChevronDown, Wand2 } from 'lucide-react'
+import { Sparkles, Loader2, Copy, Check, User, FolderOpen, ChevronDown, Wand2, CalendarPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { ChatComposer } from '@/components/ui/ChatComposer'
 import { SaveButton } from '@/components/content/SaveButton'
@@ -25,6 +25,64 @@ const SUGGESTIONS = [
   'Придумай сторителлинг-пост из моей истории',
   'Помоги протестировать гипотезу: зайдёт ли тема …',
 ]
+
+// «В план» из быстрой генерации: здесь нет контекста дня (пришли не из
+// контент-плана), поэтому день спрашиваем на месте — клик раскрывает поле
+// «День №» + подтверждение. Дни плана номерные (день 1..N), не календарные —
+// потому числовое поле, а не дейтпикер. API тот же, что в студии и ассистенте.
+function QuickPlanButton({ projectId, text }: { projectId: string | null; text: string }) {
+  const [open, setOpen] = useState(false)
+  const [day, setDay] = useState<number | null>(null)
+  const [state, setState] = useState<'idle' | 'saving' | 'saved'>('idle')
+
+  const contentType =
+    /слайд\s*\d/i.test(text) ? 'carousel'
+    : isReelsScript(text) ? 'reels'
+    : /(сторис|stories|кадр)\s*\d/i.test(text) ? 'stories'
+    : 'post'
+
+  async function save() {
+    if (state !== 'idle') return
+    if (!projectId) { toast.error('Сначала выбери проект'); return }
+    if (!day || day < 1) { toast.error('Укажи номер дня контент-плана'); return }
+    setState('saving')
+    try {
+      const res = await fetch('/api/content-items', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, contentType, dayNumber: day, phase: 'awareness', bodyText: text }),
+      })
+      if (!res.ok) { const j = await res.json().catch(() => ({})) as { error?: string }; throw new Error(j.error || 'Ошибка') }
+      setState('saved')
+      toast.success(`Сохранено в контент-план, день ${day} ✓`)
+    } catch (e) { setState('idle'); toast.error(friendlyError(e, 'Не удалось сохранить в план')) }
+  }
+
+  if (state === 'saved') {
+    return <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><Check className="h-3 w-3" /> В плане (день {day})</span>
+  }
+  return (
+    <span className="flex items-center gap-1.5">
+      <button type="button"
+        onClick={() => { if (!projectId) { toast.error('Сначала выбери проект'); return } setOpen((v) => !v) }}
+        className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors">
+        <CalendarPlus className="h-3 w-3" /> В план
+      </button>
+      {open && (
+        <>
+          <input type="number" min={1} value={day ?? ''} autoFocus
+            onChange={(e) => setDay(e.target.value ? Number(e.target.value) : null)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void save() }}
+            placeholder="день №"
+            className="h-6 w-16 rounded-md border border-border bg-background px-1.5 text-[11px] text-foreground" />
+          <button type="button" onClick={save} disabled={state === 'saving'}
+            className="flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50">
+            {state === 'saving' ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Сохранить'}
+          </button>
+        </>
+      )}
+    </span>
+  )
+}
 
 export default function CreatePage() {
   const router = useRouter()
@@ -208,6 +266,7 @@ export default function CreatePage() {
                   </button>
                   <SaveButton body={text} projectId={projectId} className="text-[11px] text-muted-foreground hover:text-primary" />
                   <VoiceRuleButton projectId={projectId} />
+                  <QuickPlanButton projectId={projectId} text={text} />
                   {/* «Оформить» → унифицированный редактор. Дня тут нет (путь B),
                       поэтому в редакторе появится выбор дня контент-плана. */}
                   {(() => {
