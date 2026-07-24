@@ -275,8 +275,12 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
             <div className={`group max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
               m.role === 'user' ? 'bg-primary/10 text-foreground' : 'bg-secondary/50 text-foreground'
             }`}>
-              {m.role === 'assistant' && !m.opener && (
-                <div className="flex items-center gap-3 mb-2 pb-1.5 border-b border-black/[0.06] flex-wrap">
+              {(() => {
+                if (m.role !== 'assistant' || m.opener) return null
+                // Панель действий над И под текстом: после длинного сценария
+                // человек внизу и не видел «В готовое» (жалоба «а где сохранить?»).
+                const actionsRow = (edge: 'top' | 'bottom') => (
+                <div className={`flex items-center gap-3 flex-wrap ${edge === 'top' ? 'mb-2 pb-1.5 border-b' : 'mt-2 pt-1.5 border-t'} border-black/[0.06]`}>
                   <button onClick={() => copyMsg(text, i)}
                     className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors">
                     {copiedIdx === i ? <><Check className="h-3 w-3" /> Скопировано</> : <><Copy className="h-3 w-3" /> Копировать</>}
@@ -307,10 +311,16 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
                     )
                   })()}
                 </div>
-              )}
-              {m.role === 'assistant' && !m.opener
-                ? <AssistantMessageBody text={text} projectId={id} onChange={(nt) => updateMessage(i, nt)} />
-                : text}
+                )
+                return (
+                  <>
+                    {actionsRow('top')}
+                    <AssistantMessageBody text={text} projectId={id} onChange={(nt) => updateMessage(i, nt)} />
+                    {actionsRow('bottom')}
+                  </>
+                )
+              })()}
+              {(m.role !== 'assistant' || m.opener) && text}
             </div>
           </div>
         )})}

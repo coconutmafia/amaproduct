@@ -198,14 +198,11 @@ export default function CreatePage() {
         {messages.map((m, i) => {
           const isLastUser = i === lastUserIdx
           const text = m.role === 'assistant' ? cleanMarkdown(m.content) : m.content
-          return (
-          <div key={i} ref={isLastUser ? lastUserRef : undefined} className={`flex gap-2.5 ${m.role === 'user' ? 'flex-row-reverse' : ''} ${isLastUser ? 'scroll-mt-2' : ''}`}>
-            <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${m.role === 'user' ? 'bg-secondary' : 'gradient-accent'}`}>
-              {m.role === 'user' ? <User className="h-3.5 w-3.5 text-muted-foreground" /> : <Sparkles className="h-3.5 w-3.5 text-white" />}
-            </div>
-            <div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-primary/10' : 'bg-secondary/50'} text-foreground`}>
-              {m.role === 'assistant' && (
-                <div className="flex items-center gap-3 mb-2 pb-1.5 border-b border-black/[0.06] flex-wrap">
+          // Панель действий рендерится ДВАЖДЫ — над и под текстом: после
+          // длинного сценария человек оказывается внизу и не видел «В готовое»
+          // (жалоба тестеров 24 июля «а где сохранить?»).
+          const actionsRow = (edge: 'top' | 'bottom') => (
+                <div className={`flex items-center gap-3 flex-wrap ${edge === 'top' ? 'mb-2 pb-1.5 border-b' : 'mt-2 pt-1.5 border-t'} border-black/[0.06]`}>
                   <button onClick={() => copyMsg(text, i)} className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors">
                     {copiedIdx === i ? <><Check className="h-3 w-3" /> Скопировано</> : <><Copy className="h-3 w-3" /> Копировать</>}
                   </button>
@@ -234,10 +231,18 @@ export default function CreatePage() {
                     )
                   })()}
                 </div>
-              )}
+          )
+          return (
+          <div key={i} ref={isLastUser ? lastUserRef : undefined} className={`flex gap-2.5 ${m.role === 'user' ? 'flex-row-reverse' : ''} ${isLastUser ? 'scroll-mt-2' : ''}`}>
+            <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${m.role === 'user' ? 'bg-secondary' : 'gradient-accent'}`}>
+              {m.role === 'user' ? <User className="h-3.5 w-3.5 text-muted-foreground" /> : <Sparkles className="h-3.5 w-3.5 text-white" />}
+            </div>
+            <div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-primary/10' : 'bg-secondary/50'} text-foreground`}>
+              {m.role === 'assistant' && actionsRow('top')}
               {m.role === 'assistant'
                 ? <AssistantMessageBody text={text} projectId={projectId} onChange={(nt) => updateMessage(i, nt)} />
                 : text}
+              {m.role === 'assistant' && actionsRow('bottom')}
             </div>
           </div>
         )})}
