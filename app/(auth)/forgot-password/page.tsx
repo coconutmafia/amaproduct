@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -13,9 +14,28 @@ import { toast } from 'sonner'
 import { authErrorMessage } from '@/lib/friendlyError'
 
 export default function ForgotPasswordPage() {
+  const router = useRouter()
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
+  const [code, setCode] = useState('')
+  const [verifying, setVerifying] = useState(false)
+
+  // Сброс по коду: verifyOtp(type=recovery) открывает recovery-сессию из любого
+  // браузера → ведём на форму нового пароля (она увидит сессию и откроется).
+  async function handleCodeSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (verifying || code.length < 6) return
+    setVerifying(true)
+    const supabase = createClient()
+    const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'recovery' })
+    if (error) {
+      toast.error(authErrorMessage(error))
+      setVerifying(false)
+      return
+    }
+    router.push('/auth/reset-password')
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -28,6 +48,9 @@ export default function ForgotPasswordPage() {
     if (error) {
       toast.error(authErrorMessage(error))
     } else {
+      // Страница /auth/reset-password подставит почту в запасной путь «по коду»
+      // (если человек откроет письмо в этом же браузере)
+      try { localStorage.setItem('ama_reset_email', email.trim()) } catch { /* ignore */ }
       setSent(true)
     }
     setLoading(false)
@@ -89,10 +112,34 @@ export default function ForgotPasswordPage() {
               <div className="space-y-2">
                 <h2 className="text-xl font-black uppercase text-[#1A1A1A]">Письмо отправлено!</h2>
                 <p className="text-sm text-[#888888]">
-                  Проверь почту <strong className="text-[#1A1A1A]">{email}</strong> — там будет ссылка для сброса пароля.
+                  Проверь почту <strong className="text-[#1A1A1A]">{email}</strong> — там кнопка и код для сброса пароля.
                   Не забудь проверить папку «Спам».
                 </p>
               </div>
+              {/* Запасной путь «по коду» — ссылку из письма ломают почтовики и
+                  чужие браузеры (PKCE), код работает всегда. Как в регистрации. */}
+              <form onSubmit={handleCodeSubmit} className="space-y-3 text-left">
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium text-[#1A1A1A]">Код из письма</Label>
+                  <Input
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="8 цифр из письма"
+                    value={code}
+                    maxLength={10}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                    className="border-[#C5CBA5] rounded-xl bg-white h-11 tracking-[0.3em] text-center font-bold focus-visible:ring-[#F5A84A]/30"
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  disabled={verifying || code.length < 6}
+                  className="w-full rounded-full bg-gradient-to-r from-[#F5A84A] to-[#D44E7E] text-white font-bold uppercase tracking-wide hover:opacity-90 transition-opacity border-0"
+                >
+                  {verifying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Подтвердить код
+                </Button>
+              </form>
               <Button
                 variant="outline"
                 className="w-full rounded-full border-[#C5CBA5]"

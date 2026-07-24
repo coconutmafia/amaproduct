@@ -302,9 +302,48 @@ async function cleanLedger() {
   if (foreign.length) log(JSON.stringify(foreign, null, 2))
 }
 
+// ── ПРОБНИК: куда реально ведёт ссылка сброса пароля ─────────────────────────
+// Жалоба 23 июля: «по ссылке из письма кидает на главную». Гипотеза: адрес
+// /auth/reset-password не внесён в Auth → URL Configuration → Redirect URLs,
+// и GoTrue молча подменяет redirect_to на Site URL. Проверяем фактом:
+// генерируем recovery-ссылку для QA-бота (реального человека за ним нет),
+// проходим по ней БЕЗ выполнения JS и смотрим Location. Токены не печатаем.
+async function recoveryLink() {
+  const target = arg('redirect') || 'https://amaproduct.com/auth/reset-password'
+  log(`\n=== Пробник: recovery-ссылка (redirect_to=${target}) ===`)
+  if (!RUN) {
+    log('[DRY-RUN] план: admin generate_link type=recovery для ama-qa-bot@gmail.com')
+    log('  → пройти по action_link (redirect: manual) → показать, КУДА редиректит GoTrue')
+    log('  (ссылка одноразовая и сгорает при проверке; сессия достаётся QA-боту — безвредно)')
+    return
+  }
+  const gen = await api('/auth/v1/admin/generate_link', {
+    method: 'POST',
+    body: JSON.stringify({ type: 'recovery', email: 'ama-qa-bot@gmail.com', options: { redirect_to: target } }),
+  })
+  const actionLink = gen.body?.action_link ?? gen.body?.properties?.action_link
+  if (!actionLink) throw new Error(`generate_link не дал action_link: ${gen.status} ${JSON.stringify(gen.body).slice(0, 200)}`)
+  const u = new URL(actionLink)
+  log(`✅ ссылка сгенерирована: ${u.origin}${u.pathname}?…&redirect_to=${u.searchParams.get('redirect_to') ?? '(нет)'}`)
+
+  const res = await fetch(actionLink, { redirect: 'manual' })
+  const loc = res.headers.get('location') || '(нет Location)'
+  const locUrl = (() => { try { return new URL(loc) } catch { return null } })()
+  const shown = locUrl ? `${locUrl.origin}${locUrl.pathname}` : loc.slice(0, 80)
+  log(`\n── РЕЗУЛЬТАТ ──`)
+  log(`  verify ответил: ${res.status}`)
+  log(`  редирект на:    ${shown}${locUrl?.hash || locUrl?.search ? ' (+токены/параметры скрыты)' : ''}`)
+  if (locUrl && locUrl.pathname === new URL(target).pathname) {
+    log(`\n✅ redirect_to РАБОТАЕТ — ссылка ведёт на форму пароля.`)
+  } else {
+    log(`\n❌ ПОДМЕНА: GoTrue проигнорировал redirect_to и отправил на «${shown}».`)
+    log(`   Это значит, адреса нет в allowlist: Supabase → Auth → URL Configuration → Redirect URLs.`)
+  }
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
