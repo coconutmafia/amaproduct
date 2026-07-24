@@ -16,6 +16,7 @@ import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
 import { VideoStory } from '@/components/carousel/VideoStory'
 import { SchemeStory } from '@/components/carousel/SchemeStory'
+import { isVideoUrl, brandPathFromUrl } from '@/lib/videoUrl'
 import { StoryEditor, type EditorLoadRequest } from '@/components/carousel/StoryEditor'
 import { PhotoUploader } from '@/components/content/PhotoUploader'
 import { type Block, type SlideValue } from '@/components/carousel/FreeCanvas'
@@ -37,8 +38,11 @@ interface Frame {
   // manual design). manualUrl holds the ready image for save/reopen.
   manual?: boolean
   manualUrl?: string
+  // Видео-кадр серии: mp4 с уже нажжённым текстом. Ведёт себя как manual —
+  // не перерендеривается ни правками, ни переоткрытием (пересборка = build).
+  video?: string
 }
-interface SetFrame { url: string; headline?: string; body?: string; cta?: string; position?: string; photo?: string; manual?: boolean }
+interface SetFrame { url: string; headline?: string; body?: string; cta?: string; position?: string; photo?: string; manual?: boolean; video?: boolean }
 interface StorySet { id: string; created_at: string; script: string; frames: SetFrame[] }
 
 function download(blob: Blob, name: string) {
@@ -103,7 +107,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
   const setScript = (v: string) => (controlled ? onTextChange!(v) : setOwnScript(v))
   const [busy, setBusy] = useState(false)
   const [brand, setBrand] = useState<Brand | undefined>()
-  const [rendered, setRendered] = useState<{ url: string; blob: Blob; frame: Frame }[]>([])
+  const [rendered, setRendered] = useState<{ url: string; blob: Blob | null; frame: Frame }[]>([])
   const [zipping, setZipping] = useState(false)
   // Gallery of saved designed sets + chat/voice edits
   const [sets, setSets] = useState<StorySet[]>([])
@@ -123,7 +127,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
   // no AI. posLocked pins the choice so photo-analysis won't override it.
   async function setFramePosition(i: number, position: 'top' | 'center' | 'bottom') {
     const cur = rendered[i]
-    if (!cur || cur.frame.manual || cur.frame.position === position) return
+    if (!cur || cur.frame.manual || cur.frame.video || cur.frame.position === position) return
     setReposIdx(i)
     try {
       const frame: Frame = { ...cur.frame, position, posLocked: true }
@@ -142,6 +146,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
   function editFrameManually(i: number) {
     const frame = rendered[i]?.frame
     if (!frame) return
+    if (frame.video) { toast.message('Видео-кадр меняется пересборкой серии — текст возьмётся из сценария заново'); return }
     editTokenRef.current += 1
     setEditReq({ token: editTokenRef.current, slide: frameToSlide(frame), index: i })
     toast.message('Кадр открыт в редакторе ниже — меняй и жми «Добавить в серию»')
@@ -225,12 +230,16 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
 
   // Persist a rendered series into «Мои оформленные сторис» (storage + index).
   // Re-saving with the same setId replaces the set (used after chat edits).
-  async function saveSet(frames: Frame[], blobs: Blob[], existingSetId: string | null) {
+  async function saveSet(frames: Frame[], blobs: (Blob | null)[], existingSetId: string | null) {
     setSavingSet(true)
     try {
       const urls: string[] = []
       for (let i = 0; i < blobs.length; i++) {
-        const file = await downscaleImage(new File([blobs[i]], `story-${i + 1}.png`, { type: 'image/png' }), 1920, 0.87)
+        // Видео-кадр уже лежит в хранилище готовым mp4 — PNG у него нет.
+        const videoUrl = frames[i]?.video
+        const b = blobs[i]
+        if (videoUrl || !b) { urls.push(videoUrl || ''); continue }
+        const file = await downscaleImage(new File([b], `story-${i + 1}.png`, { type: 'image/png' }), 1920, 0.87)
         const fd = new FormData()
         fd.append('projectId', projectId)
         fd.append('kind', 'story-out')
@@ -244,7 +253,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           projectId, setId: existingSetId || undefined, script,
-          frames: frames.map((f, i) => ({ url: urls[i], headline: f.headline, body: f.body, cta: f.cta, position: f.position, photo: f.photo, manual: f.manual || undefined })),
+          frames: frames.map((f, i) => ({ url: urls[i], headline: f.headline, body: f.body, cta: f.cta, position: f.position, photo: f.photo, manual: f.manual || undefined, video: f.video ? true : undefined })).filter((f) => f.url),
         }),
       })
       const d = await res.json().catch(() => ({} as { set?: StorySet; sets?: StorySet[]; error?: string }))
@@ -275,6 +284,8 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         const prev = old[i]
         // Hand-made frames keep their design — the AI text edit doesn't touch them.
         if (prev?.manual) return prev
+        // Видео-кадр фиксирован: текст на нём уже нажжён, правка = пересборка.
+        if (prev?.video) return prev
         const posChanged = !!nf.position && !!prev && nf.position !== prev.position
         const plateGiven = typeof nf.plate === 'boolean'
         return {
@@ -286,9 +297,9 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         } as Frame
       })
       // Manual frames reuse their existing image; only AI frames re-render.
-      const blobs = await Promise.all(frames.map((f: Frame, i: number) => f.manual ? Promise.resolve(rendered[i].blob) : renderFrame(f, i)))
-      rendered.forEach((r) => URL.revokeObjectURL(r.url))
-      setRendered(blobs.map((blob, i) => ({ blob, url: URL.createObjectURL(blob), frame: frames[i] })))
+      const blobs = await Promise.all(frames.map((f: Frame, i: number) => (f.manual || f.video) ? Promise.resolve(rendered[i].blob) : renderFrame(f, i)))
+      rendered.forEach((r) => { if (r.blob) URL.revokeObjectURL(r.url) })
+      setRendered(blobs.map((blob, i) => ({ blob, url: blob ? URL.createObjectURL(blob) : (frames[i].video || rendered[i]?.url || ''), frame: frames[i] })))
       setEditText('')
       toast.success('Правка применена — пересохраняю серию')
       void saveSet(frames, blobs, savedSetId)
@@ -309,13 +320,15 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         posLocked: sf.position ? true : undefined,
         photo: sf.photo,
         manual: sf.manual || undefined,
+        video: sf.video ? sf.url : undefined,
       }))
       if (set.script) setScript(set.script)
-      const uniquePhotos = [...new Set(frames.map((f) => f.photo).filter((p): p is string => !!p))]
+      const uniquePhotos = [...new Set(frames.map((f) => f.photo).filter((p): p is string => !!p && !isVideoUrl(p)))]
       if (uniquePhotos.length) setPhotos(uniquePhotos.slice(0, 8))
       // Manual frames are stored as finished images — fetch them back instead of
       // re-rendering (re-rendering would wipe the hand-made design).
       const blobs = await Promise.all(frames.map(async (f, i) => {
+        if (f.video) return null
         if (f.manual) {
           const r = await fetch(set.frames[i].url)
           if (!r.ok) throw new Error('Не удалось загрузить кадр')
@@ -323,8 +336,8 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         }
         return renderFrame(f, i)
       }))
-      rendered.forEach((r) => URL.revokeObjectURL(r.url))
-      setRendered(blobs.map((blob, i) => ({ blob, url: URL.createObjectURL(blob), frame: frames[i] })))
+      rendered.forEach((r) => { if (r.blob) URL.revokeObjectURL(r.url) })
+      setRendered(blobs.map((blob, i) => ({ blob, url: blob ? URL.createObjectURL(blob) : (frames[i].video || set.frames[i].url), frame: frames[i] })))
       setSavedSetId(set.id)
       toast.success('Серия открыта — панель правок под кадрами (можно голосом)')
       window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -338,6 +351,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
       const { default: JSZip } = await import('jszip')
       const zip = new JSZip()
       for (let i = 0; i < set.frames.length; i++) {
+        if (set.frames[i].video || isVideoUrl(set.frames[i].url)) continue
         const r = await fetch(set.frames[i].url)
         if (!r.ok) throw new Error('Не удалось скачать кадр')
         zip.file(`story-${String(i + 1).padStart(2, '0')}.jpg`, await r.blob())
@@ -423,14 +437,42 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
       if (!planRes.ok) throw new Error(planData.error || 'Ошибка раскладки')
       const planned = (planData.stories || []) as Frame[]
       if (planned.length === 0) throw new Error('Пустая раскадровка')
-      // Pin each frame to its photo — edits and the saved set keep the pairing
-      const frames = planned.map((f, i) => ({ ...f, photo: photos.length ? photos[i % photos.length] : undefined }))
+      // Pin each frame to its material — edits and the saved set keep the pairing.
+      // Видео-материал делает кадр ВИДЕО-кадром: текст кадра жжётся на ролик
+      // существующим /api/video/overlay (то же, что «Видео с текстом», 1 юнит).
+      const frames: Frame[] = planned.map((f, i) => {
+        const mat = photos.length ? photos[i % photos.length] : undefined
+        return isVideoUrl(mat || '') ? { ...f, photo: undefined, video: mat } : { ...f, photo: mat }
+      })
 
-      const blobs = await Promise.all(frames.map((f, i) => renderFrame(f, i)))
-      setRendered(blobs.map((blob, i) => ({ blob, url: URL.createObjectURL(blob), frame: frames[i] })))
+      const results = await Promise.all(frames.map(async (f, i) => {
+        if (!f.video) {
+          const blob = await renderFrame(f, i)
+          return { blob: blob as Blob | null, url: URL.createObjectURL(blob), frame: f }
+        }
+        const videoPath = brandPathFromUrl(f.video)
+        if (!videoPath) throw new Error('Видео-материал не найден в хранилище — загрузи его заново')
+        const text = [f.headline, f.body].filter(Boolean).join('\n').slice(0, 380)
+        const res = await fetch('/api/video/overlay', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId, videoPath, text, position: f.position || 'bottom', plate: true, keepSource: true }),
+        })
+        if (res.status === 402) {
+          const d = await res.clone().json().catch(() => ({} as { code?: string }))
+          showUpgrade(d.code === 'payment_required' ? 'needs_plan' : 'limit')
+          throw new Error('Не хватает единиц контента на видео-кадр')
+        }
+        const d = await res.json().catch(() => ({} as { url?: string; error?: string }))
+        if (!res.ok || !d.url) throw new Error(d.error || 'Не удалось обработать видео-кадр')
+        const frame: Frame = { ...f, video: d.url }
+        return { blob: null, url: d.url, frame }
+      }))
+      const frames2 = results.map((r) => r.frame)
+      const blobs = results.map((r) => r.blob)
+      setRendered(results)
       // Auto-save into the gallery (new set per build) — nothing gets lost
       setSavedSetId(null)
-      void saveSet(frames, blobs, null)
+      void saveSet(frames2, blobs, null)
     } catch (e) { toast.error(friendlyError(e, 'Не удалось собрать сторис')) }
     finally { setBusy(false) }
   }
@@ -441,7 +483,8 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
     try {
       const { default: JSZip } = await import('jszip')
       const zip = new JSZip()
-      rendered.forEach((r, i) => zip.file(`story-${String(i + 1).padStart(2, '0')}.png`, r.blob))
+      rendered.forEach((r, i) => { if (r.blob) zip.file(`story-${String(i + 1).padStart(2, '0')}.png`, r.blob) })
+      if (rendered.some((r) => r.frame.video)) toast.message('Видео-кадры в ZIP не кладутся — скачай их кнопкой под кадром')
       download(await zip.generateAsync({ type: 'blob' }), 'stories.zip')
     } catch { toast.error('Не удалось собрать ZIP') }
     finally { setZipping(false) }
@@ -455,15 +498,14 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         </p>
       )}
 
-      {/* 1. Загрузка фото */}
-      <PhotoUploader projectId={projectId} photos={photos} kind="story" max={8}
+      {/* 1. Загрузка материалов — фото И видео одним блоком (просьба Ланы:
+          «чтобы видео не жило изолированно, а было частью общего сценария»).
+          Видео-материал становится видео-кадром серии на своей позиции. */}
+      <PhotoUploader projectId={projectId} photos={photos} kind="story" max={8} allowVideo
+        title="Загрузка материалов (фото и видео)"
         onChange={(p) => setPhotos(p)} persistKey={persistKey} />
-      {/* Подсказка про видео СРАЗУ у фото-загрузчика: Лана выбирала mp4 в этом
-          пикере (он только image/*), видела «недоступно» и решила, что видео
-          в сторис нет вообще — а блок был свёрнут внизу (24 июля). */}
       <p className="-mt-2 text-[11px] text-muted-foreground">
-        Сюда — фото (JPG/PNG). Сторис из видео — в блоке{' '}
-        <a href="#video-story" className="text-primary underline">«Видео с текстом»</a> ниже.
+        Видео тоже может быть кадром серии: текст из сценария ляжет прямо на ролик (такой кадр = 1 доп. единица контента).
       </p>
 
       {/* 2. Текст / сценарий */}
@@ -488,17 +530,15 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
       </section>
 
       {/* 4. Свободный редактор */}
-      <StoryEditor projectId={projectId} photos={photos} loadReq={editReq}
+      <StoryEditor projectId={projectId} photos={photos.filter((u) => !isVideoUrl(u))} loadReq={editReq}
         onAddToSeries={addManualToSeries} seriesLen={rendered.length} />
 
-      {/* 5. Видео с текстом — РАЗВЁРНУТ и с якорем: свёрнутым его не находили
-          (Лана 24 июля пыталась загрузить mp4 в фото-пикер и решила, что видео
-          не поддерживается). Сторис-схема остаётся свёрнутой. */}
-      <section id="video-story" className="rounded-2xl border border-border bg-card p-4 space-y-2">
-        <p className="text-sm font-semibold text-foreground">Видео с текстом (сторис)</p>
-        <p className="text-xs text-muted-foreground">Загрузи видео — наложим твой текст в стиле бренда, получится готовая видео-сторис 9:16.</p>
+      {/* 5. Одиночное видео с текстом — теперь ЗАПАСНОЙ путь (видео грузится
+          в общий блок материалов и попадает в серию). Оставлен для кейса
+          «одно видео без сценария и серии», свёрнут с говорящим заголовком. */}
+      <Collapsible title="Одиночное видео с текстом — без серии и сценария">
         <VideoStory projectId={projectId} />
-      </section>
+      </Collapsible>
       <Collapsible title="Сторис-схема — этапы со стрелками на тёмном фоне">
         <SchemeStory projectId={projectId} />
       </Collapsible>
@@ -518,8 +558,12 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {rendered.map((r, i) => (
               <div key={i} className="flex flex-col gap-1">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={r.url} alt={`Сторис ${i + 1}`} className="w-full rounded-lg border border-border" />
+                {r.frame.video ? (
+                  <video src={r.url} controls playsInline className="w-full rounded-lg border border-border" />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={r.url} alt={`Сторис ${i + 1}`} className="w-full rounded-lg border border-border" />
+                )}
                 {/* Text-on-face fix: one tap moves the text to a clean band. */}
                 {!r.frame.manual && (
                   <div className="flex items-center justify-center gap-1" title="Куда поставить текст (если лёг на лицо)">
@@ -534,10 +578,17 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
                     ))}
                   </div>
                 )}
-                <button type="button" onClick={() => download(r.blob, `story-${String(i + 1).padStart(2, '0')}.png`)}
-                  className="text-[11px] font-medium text-muted-foreground hover:text-foreground">↓ Сторис {i + 1}</button>
-                <button type="button" onClick={() => editFrameManually(i)}
-                  className="text-[11px] font-medium text-primary/80 hover:text-primary">✎ Редактировать вручную</button>
+                {r.frame.video ? (
+                  <a href={r.url} download={`story-${String(i + 1).padStart(2, '0')}.mp4`} target="_blank" rel="noreferrer"
+                    className="text-[11px] font-medium text-muted-foreground hover:text-foreground">↓ Сторис {i + 1} (mp4)</a>
+                ) : (
+                  <button type="button" onClick={() => { if (r.blob) download(r.blob, `story-${String(i + 1).padStart(2, '0')}.png`) }}
+                    className="text-[11px] font-medium text-muted-foreground hover:text-foreground">↓ Сторис {i + 1}</button>
+                )}
+                {!r.frame.video && (
+                  <button type="button" onClick={() => editFrameManually(i)}
+                    className="text-[11px] font-medium text-primary/80 hover:text-primary">✎ Редактировать вручную</button>
+                )}
               </div>
             ))}
           </div>
@@ -586,9 +637,14 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
                 </div>
                 <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
                   {set.frames.map((f, i) => (
-                    <a key={i} href={f.url} target="_blank" rel="noreferrer" className="shrink-0">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={f.url} alt={`кадр ${i + 1}`} className="h-28 w-16 rounded-md border border-border object-cover" />
+                    <a key={i} href={f.url} target="_blank" rel="noreferrer" className="shrink-0 relative">
+                      {(f.video || isVideoUrl(f.url)) ? (
+                        <video src={f.url} muted playsInline preload="metadata" className="h-28 w-16 rounded-md border border-border object-cover" />
+                      ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={f.url} alt={`кадр ${i + 1}`} className="h-28 w-16 rounded-md border border-border object-cover" />
+                      )}
+                      {(f.video || isVideoUrl(f.url)) && <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1 text-[8px] font-bold text-white">видео</span>}
                     </a>
                   ))}
                 </div>

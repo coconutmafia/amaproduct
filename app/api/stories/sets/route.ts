@@ -13,7 +13,7 @@ export const runtime = 'nodejs'
 
 const MAX_SETS = 12
 
-interface StoryFrameMeta { url: string; headline?: string; body?: string; cta?: string; position?: string; photo?: string; manual?: boolean }
+interface StoryFrameMeta { url: string; headline?: string; body?: string; cta?: string; position?: string; photo?: string; manual?: boolean; video?: boolean }
 interface StorySet { id: string; created_at: string; script: string; frames: StoryFrameMeta[] }
 
 function pathFromUrl(url: string): string | null {
@@ -88,6 +88,9 @@ export async function POST(request: Request) {
         photo: typeof f.photo === 'string' && f.photo.includes('/project-brand/') ? f.photo : undefined,
         // Hand-designed frame — reopen reuses its stored image, never re-renders.
         manual: f.manual ? true : undefined,
+        // Видео-кадр серии: url = готовый mp4; галерея показывает <video>,
+        // правки/пересборка его не перерендеривают (как manual).
+        video: f.video ? true : undefined,
       })),
     }
 

@@ -49,8 +49,12 @@ export async function POST(request: Request) {
     const rl = await rateLimit(user.id, 'video')
     if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
 
-    const { projectId, videoPath, text, position, plate } = (await request.json()) as {
+    const { projectId, videoPath, text, position, plate, keepSource } = (await request.json()) as {
       projectId?: string; videoPath?: string; text?: string; position?: string; plate?: boolean
+      // true = НЕ удалять исходник после обработки. Нужен серийным сторис:
+      // видео-материал в серии переиспользуется при пересборках, а одиночный
+      // режим («Видео с текстом») по-прежнему подчищает за собой.
+      keepSource?: boolean
     }
     if (!projectId || !videoPath || !text?.trim()) return NextResponse.json({ error: 'projectId, videoPath и text обязательны' }, { status: 400 })
     if (!videoPath.startsWith(`${projectId}/videos/`)) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
@@ -133,7 +137,7 @@ export async function POST(request: Request) {
     const outStorage = `${projectId}/videos-out/${Date.now()}.mp4`
     const { error: upErr } = await admin.storage.from('project-brand').upload(outStorage, outBuf, { contentType: 'video/mp4', upsert: true })
     if (upErr) return await fail(upErr.message, 500)
-    await admin.storage.from('project-brand').remove([videoPath]).catch(() => {})
+    if (!keepSource) await admin.storage.from('project-brand').remove([videoPath]).catch(() => {})
 
     const url = admin.storage.from('project-brand').getPublicUrl(outStorage).data.publicUrl
     return NextResponse.json({ url })

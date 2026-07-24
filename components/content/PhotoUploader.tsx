@@ -9,8 +9,10 @@ import { toast } from 'sonner'
 import { Upload, Loader2, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { downscaleImage } from '@/lib/downscaleImage'
 import { friendlyError } from '@/lib/friendlyError'
+import { isVideoUrl } from '@/lib/videoUrl'
+import { createClient } from '@/lib/supabase/client'
 
-export function PhotoUploader({ projectId, photos, onChange, kind = 'post', max = 8, showOrderHint = true, persistKey }: {
+export function PhotoUploader({ projectId, photos, onChange, kind = 'post', max = 8, showOrderHint = true, persistKey, allowVideo = false, title }: {
   projectId: string
   photos: string[]
   onChange: (next: string[]) => void
@@ -21,6 +23,12 @@ export function PhotoUploader({ projectId, photos, onChange, kind = 'post', max 
   showOrderHint?: boolean
   /** when set, the chosen photos survive a page reload for THIS publication */
   persistKey?: string
+  /** сторис: в этот же блок можно грузить ВИДЕО — оно станет кадром серии
+      (просьба Ланы 24 июля: «не отдельным блоком, а вместе с фото»). Пост и
+      карусель это не включают — их конвейеры видео не понимают. */
+  allowVideo?: boolean
+  /** заголовок блока (сторис: «Загрузка материалов») */
+  title?: string
 }) {
   const [uploading, setUploading] = useState(false)
 
@@ -47,12 +55,33 @@ export function PhotoUploader({ projectId, photos, onChange, kind = 'post', max 
     } catch { /* ignore */ }
   }, [photos, lsKey])
 
+  // Видео: тем же путём, что «Видео с текстом» (сторонняя загрузка мимо Vercel
+  // с его ~4.5 МБ лимитом тела). 48 МБ = потолок Supabase Free с запасом.
+  async function uploadVideoFile(f: File): Promise<string> {
+    if (f.size > 48 * 1024 * 1024) throw new Error('Видео до 48 МБ (примерно до минуты) — обрежь или сожми')
+    const ext = (f.name.split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp4'
+    const res = await fetch('/api/video/upload-url', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId, ext }),
+    })
+    const d = await res.json().catch(() => ({} as { path?: string; token?: string; error?: string }))
+    if (!res.ok || !d.path || !d.token) throw new Error(d.error || 'Не удалось подготовить загрузку видео')
+    const supabase = createClient()
+    const { error } = await supabase.storage.from('project-brand').uploadToSignedUrl(d.path, d.token, f)
+    if (error) throw new Error('Сеть оборвалась при загрузке видео — попробуй ещё раз')
+    return supabase.storage.from('project-brand').getPublicUrl(d.path).data.publicUrl
+  }
+
   async function upload(files: FileList | null) {
     if (!files || files.length === 0) return
     setUploading(true)
     try {
       const added: string[] = []
       for (const f of Array.from(files).slice(0, max - photos.length)) {
+        if (allowVideo && f.type.startsWith('video/')) {
+          added.push(await uploadVideoFile(f))
+          continue
+        }
         const small = await downscaleImage(f, 2000)
         const fd = new FormData()
         fd.append('projectId', projectId)
@@ -81,14 +110,19 @@ export function PhotoUploader({ projectId, photos, onChange, kind = 'post', max 
 
   return (
     <section className="rounded-2xl border border-border bg-card p-4">
-      <p className="text-sm font-semibold text-foreground">Загрузка фото</p>
+      <p className="text-sm font-semibold text-foreground">{title || 'Загрузка фото'}</p>
 
       <div className="mt-3 flex flex-wrap gap-2">
         {photos.map((u, i) => (
           <div key={u} className="flex flex-col items-center gap-1">
             <div className="relative">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={u} alt={`Фото ${i + 1}`} className="h-24 w-[3.4rem] rounded-lg border border-border object-cover" />
+              {isVideoUrl(u) ? (
+                <video src={u} muted playsInline preload="metadata" className="h-24 w-[3.4rem] rounded-lg border border-border object-cover" />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={u} alt={`Фото ${i + 1}`} className="h-24 w-[3.4rem] rounded-lg border border-border object-cover" />
+              )}
+              {isVideoUrl(u) && <span className="absolute bottom-0.5 left-0.5 rounded bg-black/70 px-1 text-[8px] font-bold leading-4 text-white">видео</span>}
               {max > 1 && <span className="absolute left-0.5 top-0.5 rounded bg-black/60 px-1 text-[9px] font-bold leading-4 text-white">{i + 1}</span>}
               <button type="button" onClick={() => remove(i)} aria-label="Убрать фото"
                 className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-white text-[#888] shadow-sm hover:border-red-200 hover:text-red-500">
@@ -112,8 +146,8 @@ export function PhotoUploader({ projectId, photos, onChange, kind = 'post', max 
         {photos.length < max && (
           <label className="flex h-24 w-[3.4rem] cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border text-muted-foreground hover:border-primary/40">
             {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            <span className="text-[9px]">фото</span>
-            <input type="file" accept="image/*" multiple={max > 1} className="hidden" onChange={(e) => upload(e.target.files)} />
+            <span className="text-[9px]">{allowVideo ? 'фото/видео' : 'фото'}</span>
+            <input type="file" accept={allowVideo ? 'image/*,video/*' : 'image/*'} multiple={max > 1} className="hidden" onChange={(e) => upload(e.target.files)} />
           </label>
         )}
       </div>
