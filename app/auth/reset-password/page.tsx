@@ -39,6 +39,18 @@ export default function ResetPasswordPage() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') setReady(true)
     })
+    // Основной путь с 24 июля: кнопка в письме ведёт СЮДА с ?token_hash=...
+    // (без редиректа через GoTrue — allowlist и PKCE не участвуют, работает из
+    // любого браузера). Обмениваем token_hash на recovery-сессию сами.
+    const params = new URLSearchParams(window.location.search)
+    const tokenHash = params.get('token_hash')
+    if (tokenHash && params.get('type') === 'recovery') {
+      supabase.auth.verifyOtp({ type: 'recovery', token_hash: tokenHash }).then(({ error }) => {
+        if (!error) { setReady(true); return }
+        // токен просрочен/использован — покажем запасной путь «почта + код»
+        setTimedOut(true)
+      })
+    }
     // Если человек уже залогинен recovery-сессией (пришёл по рабочей ссылке в
     // том же браузере) — событие могло отгреметь до подписки; проверим сессию.
     supabase.auth.getSession().then(({ data }) => { if (data.session) setReady(true) })

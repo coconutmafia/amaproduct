@@ -341,9 +341,35 @@ async function recoveryLink() {
   }
 }
 
+// ── ПРОБНИК: путь token_hash (кнопка письма с 24 июля) ──────────────────────
+// Письмо сброса ведёт прямо на /auth/reset-password?token_hash=... — страница
+// меняет его на recovery-сессию через verifyOtp. Проверяем серверную часть
+// в точности как это сделает браузер: POST /auth/v1/verify {type, token_hash}.
+// Allowlist и PKCE в этом пути не участвуют — потому он и выбран основным.
+async function recoveryTokenHash() {
+  log(`\n=== Пробник: token_hash-путь сброса пароля ===`)
+  if (!RUN) { log('[DRY-RUN] план: generate_link → verify по token_hash → ждём сессию. Добавь --run'); return }
+  const gen = await api('/auth/v1/admin/generate_link', {
+    method: 'POST',
+    body: JSON.stringify({ type: 'recovery', email: 'ama-qa-bot@gmail.com' }),
+  })
+  const hashed = gen.body?.hashed_token ?? gen.body?.properties?.hashed_token
+  if (!hashed) throw new Error(`generate_link не дал hashed_token: ${gen.status}`)
+  log(`✅ 1. ссылка сгенерирована, token_hash получен (не печатаю)`)
+
+  const ver = await api('/auth/v1/verify', {
+    method: 'POST',
+    body: JSON.stringify({ type: 'recovery', token_hash: hashed }),
+  })
+  const ok = ver.status < 300 && Boolean(ver.body?.access_token)
+  log(ok
+    ? `✅ 2. verify по token_hash → recovery-сессия ПОЛУЧЕНА (${ver.status}). Кнопка письма будет работать из любого браузера.`
+    : `❌ 2. verify не дал сессию: ${ver.status} ${JSON.stringify(ver.body).slice(0, 200)}`)
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
