@@ -284,22 +284,69 @@ export async function POST(request: Request) {
   if (step === 'table1') {
     if (!transcription) return NextResponse.json({ error: 'transcription required' }, { status: 400 })
 
-    const response = await anthropic.messages.create({
-      model:      MODEL,
-      max_tokens: 8000,
-      system:     TABLE1_SYSTEM,
-      messages:   [{ role: 'user', content: buildTable1Prompt(transcription) }],
+    // Поймано 25 июля (три интервью разом): свободный JSON при max_tokens 8000
+    // обрезался на середине → парс падал «AI не смог структурировать данные».
+    // Теперь: форс-тул (валидный JSON гарантирует API, не regex) + стрим с
+    // потолком 32k (одно часовое интервью ≈ 2-4k токенов таблицы, три — до 12k;
+    // 32k — запас на пятёрку) + при переполнении честная подсказка.
+    const tableTool = {
+      name: 'interview_table',
+      description: 'Структурированная таблица аудиторного исследования',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          respondents: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id:      { type: 'string' },
+                name:    { type: 'string' },
+                segment: { type: 'string' },
+                answers: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      question:       { type: 'string' },
+                      block:          { type: 'string', description: 'point_a | point_b | barriers | criteria | other' },
+                      full_answer:    { type: 'string' },
+                      key_quotes:     { type: 'array', items: { type: 'string' } },
+                      emotional_tone: { type: 'string' },
+                    },
+                    required: ['question', 'block', 'full_answer'],
+                  },
+                },
+              },
+              required: ['id', 'name', 'answers'],
+            },
+          },
+        },
+        required: ['respondents'],
+      },
+    }
+    const stream = anthropic.messages.stream({
+      model:       MODEL,
+      max_tokens:  32000,
+      system:      TABLE1_SYSTEM,
+      tools:       [tableTool],
+      tool_choice: { type: 'tool' as const, name: 'interview_table' },
+      messages:    [{ role: 'user', content: buildTable1Prompt(transcription) }],
     })
-
-    const raw = response.content.map(b => (b.type === 'text' ? b.text : '')).join('\n')
-
-    let data: InterviewTable
-    try {
-      const jsonMatch = raw.match(/\{[\s\S]*\}/)
-      if (!jsonMatch) throw new Error('No JSON found')
-      data = JSON.parse(jsonMatch[0]) as InterviewTable
-    } catch {
+    const finalMsg = await stream.finalMessage()
+    const toolBlock = finalMsg.content.find((b) => b.type === 'tool_use')
+    if (finalMsg.stop_reason === 'max_tokens') {
+      return NextResponse.json({
+        error: 'Интервью слишком длинные для одной таблицы. Загрузи и обработай их по одному — таблицы можно объединить в материалах проекта.',
+      }, { status: 400 })
+    }
+    if (!toolBlock || toolBlock.type !== 'tool_use') {
+      console.error('[research-analyze table1] no tool_use. stop_reason=%s', finalMsg.stop_reason)
       return NextResponse.json({ error: 'AI не смог структурировать данные. Попробуй ещё раз.' }, { status: 500 })
+    }
+    const data = toolBlock.input as unknown as InterviewTable
+    if (!Array.isArray(data?.respondents) || data.respondents.length === 0) {
+      return NextResponse.json({ error: 'AI не нашёл в расшифровке участников интервью. Проверь, что это запись интервью.' }, { status: 400 })
     }
 
     return NextResponse.json({ table1: data })
@@ -309,21 +356,48 @@ export async function POST(request: Request) {
   if (step === 'table2') {
     if (!table1) return NextResponse.json({ error: 'table1 required' }, { status: 400 })
 
-    const response = await anthropic.messages.create({
-      model:      MODEL,
-      max_tokens: 8000,
-      system:     TABLE2_SYSTEM,
-      messages:   [{ role: 'user', content: buildTable2Prompt(table1) }],
+    // Та же защита, что в table1: форс-тул + стрим (см. комментарий выше).
+    const meaningsTool = {
+      name: 'meanings_map',
+      description: 'Карта смыслов аудитории',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          categories: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                type:           { type: 'string', description: 'pain | need | trigger | objection' },
+                category:       { type: 'string' },
+                customer_words: { type: 'array', items: { type: 'string' } },
+                deep_trigger:   { type: 'string' },
+                objection:      { type: 'string' },
+                content_idea:   { type: 'string' },
+              },
+              required: ['type', 'category'],
+            },
+          },
+        },
+        required: ['categories'],
+      },
+    }
+    const t2stream = anthropic.messages.stream({
+      model:       MODEL,
+      max_tokens:  32000,
+      system:      TABLE2_SYSTEM,
+      tools:       [meaningsTool],
+      tool_choice: { type: 'tool' as const, name: 'meanings_map' },
+      messages:    [{ role: 'user', content: buildTable2Prompt(table1) }],
     })
-
-    const raw = response.content.map(b => (b.type === 'text' ? b.text : '')).join('\n')
-
-    let data: MeaningsMap
-    try {
-      const jsonMatch = raw.match(/\{[\s\S]*\}/)
-      if (!jsonMatch) throw new Error('No JSON found')
-      data = JSON.parse(jsonMatch[0]) as MeaningsMap
-    } catch {
+    const t2final = await t2stream.finalMessage()
+    const t2block = t2final.content.find((b) => b.type === 'tool_use')
+    if (!t2block || t2block.type !== 'tool_use') {
+      console.error('[research-analyze table2] no tool_use. stop_reason=%s', t2final.stop_reason)
+      return NextResponse.json({ error: 'AI не смог создать карту смыслов. Попробуй ещё раз.' }, { status: 500 })
+    }
+    const data = t2block.input as unknown as MeaningsMap
+    if (!Array.isArray(data?.categories)) {
       return NextResponse.json({ error: 'AI не смог создать карту смыслов. Попробуй ещё раз.' }, { status: 500 })
     }
 
