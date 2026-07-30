@@ -9,7 +9,7 @@ import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { toast } from 'sonner'
 import type { SavedContentRow } from '@/lib/saveContent'
 import { isReelsScript } from '@/lib/contentKind'
-import { fmtDateRu } from '@/lib/dates'
+import { fmtDateLocalRu } from '@/lib/dates'
 
 // Group order + Russian labels for the content-type sections.
 const TYPE_ORDER = ['post', 'carousel', 'reels', 'stories', 'email', 'live', 'other'] as const
@@ -232,7 +232,7 @@ export default function LibraryPage() {
                   </button>
                   <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                     {it.project_id && projects[it.project_id] && <span className="truncate">{projects[it.project_id]}</span>}
-                    <span className="ml-auto shrink-0">{fmtDateRu(it.created_at)}</span>
+                    <span className="ml-auto shrink-0">{fmtDateLocalRu(it.created_at)}</span>
                   </div>
                 </div>
               ))}

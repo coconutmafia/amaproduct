@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import Link from 'next/link'
-import { fmtDateRu } from '@/lib/dates'
+import { fmtDateLocalRu } from '@/lib/dates'
 import {
   Search, Loader2, RefreshCw, Zap, Crown, Shield,
   RotateCcw, Plus, Minus, ChevronDown, ChevronUp, BookMarked, Download, Wallet,
@@ -61,7 +61,7 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 const fmtDate = (d: string | null): string =>
-  d ? fmtDateRu(d, { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
+  d ? fmtDateLocalRu(d, { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
 
 export default function AdminUsersPage() {
   const [users, setUsers]           = useState<UserProfile[]>([])

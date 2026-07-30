@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ProgressIndicator } from '@/components/shared/ProgressIndicator'
 import type { Project } from '@/types'
-import { fmtDateRu } from '@/lib/dates'
+import { LocalDate } from '@/components/ui/LocalDate'
 import { useCallback, useRef } from 'react'
 
 interface ProjectCardProps {
@@ -73,7 +73,7 @@ export function ProjectCard({ project, index = 0 }: ProjectCardProps) {
             <CardContent className="space-y-3">
               <ProgressIndicator score={project.completeness_score} showLabel={false} animated />
               <p className="text-xs text-muted-foreground">
-                Обновлён {fmtDateRu(project.updated_at)}
+                Обновлён <LocalDate ts={project.updated_at} />
               </p>
             </CardContent>
           </Card>

@@ -10,7 +10,7 @@ import { friendlyError } from '@/lib/friendlyError'
 import type { AuditResult, AuditBlockResult } from '@/lib/blogAudit/runBlogAudit'
 import { MAX_SCORE } from '@/lib/blogAudit/checklist'
 import { auditToText, zoneBreakdown } from '@/lib/blogAudit/auditToText'
-import { fmtDateRu } from '@/lib/dates'
+import { fmtDateLocalRu } from '@/lib/dates'
 
 // Куда ведёт CTA «бесплатная консультация с маркетологом». Настраивается через
 // env (можно сменить без деплоя кода); дефолт — телеграм Августы.
@@ -112,7 +112,7 @@ export function BlogAuditScorecard({ result, onRerun, rerunning }: {
   const downloadReport = async () => {
     setDownloading(true)
     try {
-      const date = fmtDateRu(Date.now(), { day: 'numeric', month: 'long', year: 'numeric' })
+      const date = fmtDateLocalRu(Date.now(), { day: 'numeric', month: 'long', year: 'numeric' })
       const { downloadDocx } = await import('@/lib/utils/docxText')
       await downloadDocx(
         `Диагностика блога @${result.handle}`,

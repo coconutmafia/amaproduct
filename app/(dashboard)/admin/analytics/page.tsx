@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { BarChart3, Loader2, Users, Sparkles, DollarSign, Gift } from 'lucide-react'
-import { fmtDateRu } from '@/lib/dates'
+import { fmtDateLocalRu } from '@/lib/dates'
 
 interface Row {
   id: string
@@ -55,7 +55,7 @@ export default function AdminAnalyticsPage() {
     finally { setBusyId(null) }
   }
 
-  const fmtDate = (s: string | null) => s ? fmtDateRu(s) : '—'
+  const fmtDate = (s: string | null) => s ? fmtDateLocalRu(s) : '—'
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">

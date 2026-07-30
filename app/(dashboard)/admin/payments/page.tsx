@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import { Loader2, RefreshCw, Download, Users, Wallet } from 'lucide-react'
-import { fmtDateTimeRu } from '@/lib/dates'
+import { fmtDateTimeLocalRu } from '@/lib/dates'
 
 interface Payment {
   id: string
@@ -33,7 +33,7 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 const fmtDate = (d: string | null): string =>
-  d ? fmtDateTimeRu(d, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
+  d ? fmtDateTimeLocalRu(d, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
 const fmtMoney = (a: number, c: string): string =>
   `${new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(a)} ${c}`
 

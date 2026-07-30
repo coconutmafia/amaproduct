@@ -20,3 +20,20 @@ export function fmtDateRu(d: DateInput, opts: Intl.DateTimeFormatOptions = {}): 
 export function fmtDateTimeRu(d: DateInput, opts: Intl.DateTimeFormatOptions = {}): string {
   return new Date(d).toLocaleString('ru-RU', { timeZone: DISPLAY_TZ, ...opts })
 }
+
+// ── Локальная зона ЗРИТЕЛЯ ─────────────────────────────────────────────────
+// Безопасно ТОЛЬКО там, где строка гарантированно не попадает в SSR-HTML:
+// данные, пришедшие после маунта (useEffect-fetch), обработчики кликов,
+// состояние, заполняемое пользователем. Для данных, отрендеренных при SSR
+// (пропсы с серверной страницы), — компонент <LocalDate> (components/ui).
+// Вызов в SSR-рендере вернёт зону СЕРВЕРА (UTC на Vercel) и воскресит #418.
+
+/** Дата в зоне зрителя. См. предупреждение выше. */
+export function fmtDateLocalRu(d: DateInput, opts: Intl.DateTimeFormatOptions = {}): string {
+  return new Date(d).toLocaleDateString('ru-RU', opts)
+}
+
+/** Дата+время в зоне зрителя. См. предупреждение выше. */
+export function fmtDateTimeLocalRu(d: DateInput, opts: Intl.DateTimeFormatOptions = {}): string {
+  return new Date(d).toLocaleString('ru-RU', opts)
+}
