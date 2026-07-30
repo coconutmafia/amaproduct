@@ -14,6 +14,7 @@ import {
 import { friendlyError } from '@/lib/friendlyError'
 import { REFERRAL_REWARDS, PLAN_CONFIG } from '@/lib/generations-config'
 import type { SubscriptionPlan } from '@/lib/generations-config'
+import { fmtDateRu } from '@/lib/dates'
 
 interface ReferralStats {
   user_id: string
@@ -106,7 +107,7 @@ export default function ReferralPage() {
   const bonusRemaining = stats?.bonus_generations ?? 0
   const monthlyPct = Math.min(100, Math.round((monthlyUsed / monthlyLimit) * 100))
   const resetDate = stats?.generations_reset_at
-    ? new Date(stats.generations_reset_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+    ? fmtDateRu(stats.generations_reset_at, { day: 'numeric', month: 'long' })
     : '—'
 
   return (
@@ -284,7 +285,7 @@ export default function ReferralPage() {
                       {ref.level === 1 ? 'Ур. 1' : 'Ур. 2'}
                     </Badge>
                     <span className="text-muted-foreground">
-                      {new Date(ref.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+                      {fmtDateRu(ref.created_at, { day: 'numeric', month: 'short' })}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">

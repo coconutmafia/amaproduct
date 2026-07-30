@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
+import { fmtDateRu } from '@/lib/dates'
 import { upsertProjectMaterial } from '@/lib/supabase/upsertMaterial'
 import { embedMaterialChunks } from '@/lib/ai/embed'
 import { anthropic, MODEL } from '@/lib/ai/client'
@@ -424,7 +425,7 @@ export async function POST(request: Request) {
     if (!transcription) return NextResponse.json({ error: 'transcription required' }, { status: 400 })
     if (!table1) return NextResponse.json({ error: 'table1 required' }, { status: 400 })
 
-    const dateLabel = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+    const dateLabel = fmtDateRu(Date.now(), { day: 'numeric', month: 'long' })
 
     // Build human-readable table text
     const tableText = table1.respondents.map(r => {

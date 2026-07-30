@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { captureException } from '@/lib/sentry'
+import { fmtDateTimeRu } from '@/lib/dates'
 import { scrapeInstagram, buildAccountText, extractImageUrls, IMAGE_URLS_HEADER, ANALYSIS_SYSTEM, buildAnalysisPrompt } from '@/lib/instagram/scrapeAccount'
 
 interface JobRow {
@@ -69,7 +70,7 @@ export async function processInstagramScrapeJob(jobId: string): Promise<void> {
     const imagesBlock = imageUrls.length ? `\n\n${IMAGE_URLS_HEADER}\n${imageUrls.join('\n')}` : ''
 
     const fullText = (analysis
-      ? `${analysis}\n\n──────────\nСЫРЫЕ ДАННЫЕ (${new Date().toLocaleString('ru-RU')})\n\n${accountText}`
+      ? `${analysis}\n\n──────────\nСЫРЫЕ ДАННЫЕ (${fmtDateTimeRu(Date.now())})\n\n${accountText}`
       : `${accountText}\n\n(AI-анализ не удалось сгенерировать — попробуй позже на этом материале вручную)`) + imagesBlock
 
     const { error: insertErr } = await admin.from('project_materials').insert({

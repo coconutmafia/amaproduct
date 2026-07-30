@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { BookOpen, Trash2, Loader2, CheckCircle2, AlertCircle, Clock, RefreshCw } from 'lucide-react'
+import { fmtDateTimeRu } from '@/lib/dates'
 
 const CONTENT_TYPE_LABELS: Record<string, string> = {
   methodology:  'Методология запуска',
@@ -145,7 +146,7 @@ export function KnowledgeVaultList({ items: initialItems }: { items: Item[] }) {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{item.title}</p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(item.created_at).toLocaleDateString('ru-RU', {
+                        {fmtDateTimeRu(item.created_at, {
                           day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
                         })}
                       </p>

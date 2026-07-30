@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
+import { fmtDateRu } from '@/lib/dates'
 import {
   ChevronRight, ChevronLeft, MessageCircle, Globe,
   Plus, X, Check, Loader2, Package, GitBranch,
@@ -883,7 +884,7 @@ export function ProjectWizard() {
               <ul className="text-muted-foreground text-xs space-y-1">
                 <li>✓ Проект: <span className="text-foreground font-medium">{name}</span></li>
                 {niche && <li>✓ Ниша: {niche}</li>}
-                {launchDate && <li>✓ Дата запуска: {new Date(launchDate).toLocaleDateString('ru-RU')}</li>}
+                {launchDate && <li>✓ Дата запуска: {fmtDateRu(launchDate)}</li>}
                 <li>✓ Продуктов: {products.filter(p => p.name.trim()).length}</li>
                 <li>✓ Воронок: {funnels.filter(f => f.name.trim()).length}</li>
               </ul>

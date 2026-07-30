@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import type { ContentType, StyleExample } from '@/types'
+import { fmtDateRu } from '@/lib/dates'
 
 const CONTENT_TYPE_CONFIG: Record<string, { label: string; icon: React.ElementType; color: string }> = {
   post: { label: 'Пост', icon: FileText, color: 'text-blue-400' },
@@ -433,7 +434,7 @@ export default function AdminStyleExamplesPage() {
                   </div>
 
                   <p className="text-[10px] text-muted-foreground">
-                    Добавлен {new Date(example.created_at).toLocaleDateString('ru-RU')}
+                    Добавлен {fmtDateRu(example.created_at)}
                   </p>
                 </CardContent>
               </Card>

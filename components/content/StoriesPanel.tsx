@@ -17,6 +17,7 @@ import { showUpgrade } from '@/components/billing/UpgradeDialog'
 import { VideoStory } from '@/components/carousel/VideoStory'
 import { SchemeStory } from '@/components/carousel/SchemeStory'
 import { isVideoUrl, brandPathFromUrl } from '@/lib/videoUrl'
+import { fmtDateTimeRu } from '@/lib/dates'
 import { StoryEditor, type EditorLoadRequest } from '@/components/carousel/StoryEditor'
 import { PhotoUploader } from '@/components/content/PhotoUploader'
 import { type Block, type SlideValue } from '@/components/carousel/FreeCanvas'
@@ -617,7 +618,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
               <div key={set.id} className="rounded-xl border border-[#ECECEC] p-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-xs font-medium text-foreground">{new Date(set.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })} · {set.frames.length} кадров</p>
+                    <p className="text-xs font-medium text-foreground">{fmtDateTimeRu(set.created_at, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })} · {set.frames.length} кадров</p>
                     {set.script && <p className="mt-0.5 text-[11px] text-muted-foreground line-clamp-1">{set.script}</p>}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">

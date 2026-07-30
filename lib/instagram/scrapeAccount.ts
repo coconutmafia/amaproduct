@@ -2,6 +2,7 @@
 // competitor), used by the background job runner (lib/jobs/runInstagramScrapeJob.ts).
 // Extracted from app/api/instagram/scrape/route.ts when that route moved to the
 // jobs pattern (roadmap #8 style — client no longer holds an SSE connection open).
+import { fmtDateRu } from '@/lib/dates'
 
 // Apify actor — official, paid-per-call ($0.003-0.005 per profile + 25 posts)
 export const APIFY_ACTOR = 'apify~instagram-profile-scraper'
@@ -44,7 +45,7 @@ export function buildAccountText(profile: Record<string, unknown>): string {
     const cmts    = (p.commentsCount as number) ?? (p.comments as number) ?? 0
     const ts      = (p.timestamp as string) ?? (p.takenAt as string) ?? ''
     const type    = (p.type as string) ?? (p.productType as string) ?? ''
-    const date    = ts ? new Date(ts).toLocaleDateString('ru-RU') : ''
+    const date    = ts ? fmtDateRu(ts) : ''
     lines.push(`[${date}${type ? ` · ${type}` : ''}] ❤ ${likes} · 💬 ${cmts}`)
     if (caption) lines.push(caption.slice(0, 1500))
     lines.push('')

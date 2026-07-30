@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { Loader2, RefreshCw, Trash2, AlertTriangle, ChevronDown } from 'lucide-react'
+import { fmtDateTimeRu } from '@/lib/dates'
 
 interface ErrorEvent {
   id: string
@@ -93,7 +94,7 @@ export default function AdminErrorsPage() {
                 <span className={`text-[10px] px-1.5 py-0.5 rounded border ${LEVEL_COLOR[e.level] || LEVEL_COLOR.error}`}>{e.level}</span>
                 {e.source && <span className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">{e.source}</span>}
                 {e.route && <span className="text-[11px] font-mono text-muted-foreground truncate">{e.route}</span>}
-                <span className="text-[11px] text-muted-foreground ml-auto">{new Date(e.created_at).toLocaleString('ru-RU')}</span>
+                <span className="text-[11px] text-muted-foreground ml-auto">{fmtDateTimeRu(e.created_at)}</span>
               </div>
               <p className="mt-1.5 text-foreground break-words">{e.message}</p>
               {(e.stack || e.context) && (

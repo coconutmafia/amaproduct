@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { CheckCircle2, Zap, Star, Building2, Gift, AlertTriangle } from 'lucide-react'
 import type { SubscriptionTier, PaidPlan } from '@/lib/generations-config'
 import { PLAN_CONFIG, PAID_PLANS } from '@/lib/generations-config'
+import { fmtDateRu } from '@/lib/dates'
 
 const PLAN_ICONS: Record<PaidPlan, React.ReactNode> = {
   solo:     <Star className="h-5 w-5" />,
@@ -85,7 +86,7 @@ export function PricingClient({
   const unlimited = current.unlimited
   const monthlyPct = unlimited ? 0 : Math.min(100, Math.round((generationsUsed / Math.max(1, monthlyLimit)) * 100))
   const resetDate = resetAt
-    ? new Date(resetAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+    ? fmtDateRu(resetAt, { day: 'numeric', month: 'long' })
     : '—'
 
   return (
