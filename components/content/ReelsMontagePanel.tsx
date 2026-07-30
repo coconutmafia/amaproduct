@@ -13,11 +13,12 @@ import { createClient as createSupabaseClient } from '@/lib/supabase/client'
 import { friendlyError } from '@/lib/friendlyError'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { VIDEO_MONTAGE_UNITS } from '@/lib/generations-config'
+import { MAX_MONTAGE_MB } from '@/lib/uploadLimits'
 
-// ⚠️ Supabase на тарифе Free режет загрузку файла на 50 МБ (подтверждено скрином
-// панели 24 июля: org «pro-duct FREE»). Держим 48, чтобы упереться в НАШУ понятную
-// ошибку, а не в невнятную ошибку хранилища. Апгрейд до Pro → можно поднять.
-const MAX_VIDEO_MB = 48
+// Лимит env-управляемый (NEXT_PUBLIC_MAX_MONTAGE_MB) — см. lib/uploadLimits.ts:
+// там же порядок поднятия (сначала лимит в панели Supabase) и потолки по времени
+// Vercel-функции. Историю про 48 на Supabase Free см. в истории этого файла.
+const MAX_VIDEO_MB = MAX_MONTAGE_MB
 
 type Stage = 'idle' | 'uploading' | 'queued' | 'analyze' | 'transcribe' | 'render' | 'done' | 'error'
 

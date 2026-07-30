@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { friendlyError } from '@/lib/friendlyError'
 import { Clapperboard, Loader2, Download } from 'lucide-react'
+import { MAX_VIDEO_MB, MAX_VIDEO_BYTES } from '@/lib/uploadLimits'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
 
@@ -27,7 +28,7 @@ export function VideoStory({ projectId }: { projectId: string }) {
   async function uploadVideo(files: FileList | null) {
     const f = files?.[0]
     if (!f) return
-    if (f.size > 50 * 1024 * 1024) { toast.error('Видео до 50 МБ (примерно до минуты) — обрежь или сожми'); return }
+    if (f.size > MAX_VIDEO_BYTES) { toast.error(`Видео до ${MAX_VIDEO_MB} МБ — обрежь или сожми`); return }
     setVidUploading(true); setVidUrl(null)
     try {
       const ext = (f.name.split('.').pop() || 'mp4').toLowerCase()

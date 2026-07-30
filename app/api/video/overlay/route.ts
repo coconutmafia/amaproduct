@@ -6,6 +6,7 @@ import { ImageResponse } from 'next/og'
 import { execFile } from 'node:child_process'
 import { writeFile, readFile, unlink } from 'node:fs/promises'
 import { loadFonts, renderSlide, themeFromBrand, FORMATS, type SlideSpec } from '@/lib/carousel/engine'
+import { MAX_VIDEO_MB } from '@/lib/uploadLimits'
 import { gateContentUnit, refundGeneration } from '@/lib/generations'
 import { rateLimit } from '@/lib/rateLimit'
 
@@ -16,7 +17,9 @@ import { rateLimit } from '@/lib/rateLimit'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
-const MAX_INPUT = 60 * 1024 * 1024 // ~60 MB ≈ a 60-90s phone story clip
+// Клиентский лимит + запас 12 МБ (клиент проверяет f.size до аплоада, сервер —
+// фактический буфер после скачивания из Storage; запас покрывает расхождения).
+const MAX_INPUT = (MAX_VIDEO_MB + 12) * 1024 * 1024
 
 function runFfmpeg(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -100,7 +103,7 @@ export async function POST(request: Request) {
     const vidRes = await fetch(signed.signedUrl)
     if (!vidRes.ok) return await fail('Не удалось скачать видео', 500)
     const vidBuf = Buffer.from(await vidRes.arrayBuffer())
-    if (vidBuf.length > MAX_INPUT) return await fail('Видео слишком большое (макс ~60 МБ / ~60-90 сек)', 400)
+    if (vidBuf.length > MAX_INPUT) return await fail(`Видео слишком большое (макс ~${MAX_VIDEO_MB} МБ)`, 400)
     await writeFile(inPath, vidBuf)
 
     // 2. Render the transparent text overlay with our slide engine

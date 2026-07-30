@@ -10,6 +10,7 @@ import { Upload, Loader2, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { downscaleImage } from '@/lib/downscaleImage'
 import { friendlyError } from '@/lib/friendlyError'
 import { isVideoUrl } from '@/lib/videoUrl'
+import { MAX_VIDEO_MB, MAX_VIDEO_BYTES } from '@/lib/uploadLimits'
 import { createClient } from '@/lib/supabase/client'
 
 export function PhotoUploader({ projectId, photos, onChange, kind = 'post', max = 8, showOrderHint = true, persistKey, allowVideo = false, title }: {
@@ -58,7 +59,7 @@ export function PhotoUploader({ projectId, photos, onChange, kind = 'post', max 
   // Видео: тем же путём, что «Видео с текстом» (сторонняя загрузка мимо Vercel
   // с его ~4.5 МБ лимитом тела). 48 МБ = потолок Supabase Free с запасом.
   async function uploadVideoFile(f: File): Promise<string> {
-    if (f.size > 48 * 1024 * 1024) throw new Error('Видео до 48 МБ (примерно до минуты) — обрежь или сожми')
+    if (f.size > MAX_VIDEO_BYTES) throw new Error(`Видео до ${MAX_VIDEO_MB} МБ — обрежь или сожми`)
     const ext = (f.name.split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp4'
     const res = await fetch('/api/video/upload-url', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
