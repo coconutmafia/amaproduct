@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { MASTER_RESEARCH_TITLE } from '@/lib/researchMaster'
 import type { StyleExample } from '@/types'
 
 export interface RAGContext {
@@ -219,6 +220,9 @@ export async function buildRAGContext(
     .select('title, material_type, raw_content, processing_status')
     .eq('project_id', projectId)
     .in('material_type', [...ALWAYS_INCLUDE])
+    // Сводная таблица кастдевов — дубликат отдельных таблиц для людей,
+    // в контекст генерации не берём (иначе каждое интервью попадёт дважды).
+    .neq('title', MASTER_RESEARCH_TITLE)
 
   if (alwaysMats && alwaysMats.length > 0) {
     // De-dup key must NOT collapse two distinct long materials that share a

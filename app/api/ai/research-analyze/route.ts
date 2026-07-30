@@ -6,6 +6,7 @@ import { embedMaterialChunks } from '@/lib/ai/embed'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { NextResponse } from 'next/server'
+import { MASTER_RESEARCH_TITLE } from '@/lib/researchMaster'
 
 export const maxDuration = 300
 
@@ -458,6 +459,49 @@ export async function POST(request: Request) {
     if (trRow?.id) await embedMaterialChunks(trRow.id, projectId, transcription)
     if (tblRow?.id) await embedMaterialChunks(tblRow.id, projectId, tableText)
 
+    // ── Общая таблица кастдевов (просьба Августы 30 июля: «должна формироваться
+    // одна единая, иначе замучаемся искать по отдельным таблицам»). Каждое
+    // сохранение дописывает свой блок в мастер-материал; при первом запуске
+    // мастер собирается ретроактивно из ВСЕХ уже существующих таблиц проекта.
+    // Отдельные таблицы продолжаем сохранять как раньше (ничего не ломаем) —
+    // мастер живёт рядом и всегда полон.
+    const MASTER_TITLE = MASTER_RESEARCH_TITLE
+    try {
+      const block = `═══ Кастдев от ${dateLabel} ═══\n\n${tableText}`
+      const { data: master } = await supabase
+        .from('project_materials')
+        .select('id, raw_content')
+        .eq('project_id', projectId)
+        .eq('title', MASTER_TITLE)
+        .maybeSingle()
+      if (master?.id) {
+        await supabase.from('project_materials')
+          .update({ raw_content: `${master.raw_content || ''}\n\n${block}`, processing_status: 'ready' })
+          .eq('id', master.id)
+      } else {
+        const { data: olds } = await supabase
+          .from('project_materials')
+          .select('id, title, raw_content, created_at')
+          .eq('project_id', projectId)
+          .eq('material_type', 'audience_research')
+          .order('created_at', { ascending: true })
+        const prevBlocks = (olds ?? [])
+          .filter((o) => o.id !== tblRow?.id && o.title?.startsWith('Таблица исследования'))
+          .map((o) => `═══ ${String(o.title).replace('Таблица исследования · ', 'Кастдев от ')} ═══\n\n${o.raw_content ?? ''}`)
+        await supabase.from('project_materials').insert({
+          project_id:        projectId,
+          title:             MASTER_TITLE,
+          material_type:     'audience_research',
+          raw_content:       [...prevBlocks, block].join('\n\n'),
+          processing_status: 'ready',
+        })
+      }
+    } catch (e) {
+      // Мастер — производная от отдельных таблиц; его сбой не должен ронять
+      // сохранение кастдева (данные не теряются, соберётся при следующем).
+      console.error('[research-analyze] master table update failed:', e instanceof Error ? e.message : e)
+    }
+
     return NextResponse.json({ ok: true })
   }
 
@@ -477,6 +521,7 @@ export async function POST(request: Request) {
       .select('title, raw_content')
       .eq('project_id', projectId)
       .eq('material_type', 'audience_research')
+      .neq('title', MASTER_RESEARCH_TITLE) // мастер = дубликат отдельных таблиц
     materials = (research.data ?? []) as typeof materials
 
     if (materials.length === 0) {
@@ -661,6 +706,7 @@ export async function POST(request: Request) {
       .select('title, raw_content')
       .eq('project_id', projectId)
       .eq('material_type', 'audience_research')
+      .neq('title', MASTER_RESEARCH_TITLE) // мастер = дубликат отдельных таблиц
     mats = (research.data ?? []) as typeof mats
     if (mats.length === 0) {
       const transcripts = await supabase
