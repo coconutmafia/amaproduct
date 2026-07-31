@@ -488,6 +488,20 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         const mat = photos.length ? photos[i % photos.length] : undefined
         return isVideoUrl(mat || '') ? { ...f, photo: undefined, video: mat } : { ...f, photo: mat }
       })
+      // Видео ОБЯЗАНО попасть в серию. План может вернуть кадров меньше, чем
+      // материалов, и тогда хвост списка не мапится — видео, загруженное
+      // последним, молча выпадало (Лана, 31 июля: три сборки подряд «без
+      // видео»; удачная сборка накануне — план тогда вернул 8 кадров, а не 7).
+      // Невместившиеся видео занимают последние кадры плана: их текст ложится
+      // на ролик — ровно как задумано механикой видео-кадров (24 июля).
+      if (photos.length > planned.length) {
+        const missedVideos = photos.slice(planned.length).filter((p) => isVideoUrl(p))
+        missedVideos.slice(0, frames.length).forEach((vid, k) => {
+          const idx = frames.length - 1 - k
+          if (frames[idx].video) return
+          frames[idx] = { ...frames[idx], photo: undefined, video: vid }
+        })
+      }
 
       const results = await Promise.all(frames.map(async (f, i) => {
         if (!f.video) {
