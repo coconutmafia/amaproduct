@@ -94,6 +94,25 @@ export default function CreatePage() {
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
+  // Чат переживает обновление страницы (жалоба клиента 31 июля: «создавал,
+  // отвлёкся, страница обновилась — чистый лист»). Последние 60 сообщений в
+  // localStorage. Если пришли редактировать готовый текст (ama_edit_prefill) —
+  // старый диалог не восстанавливаем, это осознанный новый заход.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('ama_edit_prefill')) return
+      const raw = localStorage.getItem('ama_chat_create')
+      if (!raw) return
+      const saved = JSON.parse(raw) as ChatMessage[]
+      if (Array.isArray(saved) && saved.length) setMessages((prev) => (prev.length ? prev : saved))
+    } catch { /* битый черновик — начинаем с чистого */ }
+  }, [])
+  useEffect(() => {
+    try {
+      if (messages.length) localStorage.setItem('ama_chat_create', JSON.stringify(messages.slice(-60)))
+    } catch { /* квота — не мешаем чату */ }
+  }, [messages])
+
   // Project data toggle: use a project's full context (voice, niche, cases,
   // funnel, competitors, ToV) or none (methodology-only).
   const [projects, setProjects] = useState<ProjectLite[]>([])

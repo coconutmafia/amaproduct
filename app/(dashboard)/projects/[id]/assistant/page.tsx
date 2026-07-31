@@ -85,6 +85,26 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
+  // Чат переживает обновление страницы (жалоба клиента 31 июля: «отвлёкся,
+  // страница обновилась — чистый лист»). Последние 60 сообщений в localStorage;
+  // функциональный setMessages не даёт затереть opener-сид из контент-плана,
+  // если тот успел отработать первым.
+  const chatLsKey = `ama_chat_assistant_${id}`
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(chatLsKey)
+      if (!raw) return
+      const saved = JSON.parse(raw) as ChatMessage[]
+      if (Array.isArray(saved) && saved.length) setMessages((prev) => (prev.length ? prev : saved))
+    } catch { /* битый черновик — начинаем с чистого */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatLsKey])
+  useEffect(() => {
+    try {
+      if (messages.length) localStorage.setItem(chatLsKey, JSON.stringify(messages.slice(-60)))
+    } catch { /* квота — не мешаем чату */ }
+  }, [messages, chatLsKey])
+
   // Where the back arrow goes (content-plan when opened from there) + its label
   const [backHref, setBackHref] = useState(`/projects/${id}`)
   const [backLabel, setBackLabel] = useState<string | null>(null)
