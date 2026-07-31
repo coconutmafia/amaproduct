@@ -19,7 +19,7 @@ import Link from 'next/link'
 import { friendlyError } from '@/lib/friendlyError'
 import { computeCompleteness } from '@/lib/completeness'
 import { audienceResearchToAoa, meaningsMapToAoa } from '@/lib/researchTables'
-import { downloadXlsx } from '@/lib/utils/xlsxTable'
+import { downloadXlsxBook, type XlsxSheet } from '@/lib/utils/xlsxTable'
 import { downloadDocx, openMaterialInBrowser } from '@/lib/utils/docxText'
 import {
   CheckCircle2, Circle, Loader, AlertCircle, Upload, BookOpen,
@@ -1076,7 +1076,26 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
       if (type === 'audience_research') aoa = audienceResearchToAoa(content)
       else if (type === 'meanings_map') aoa = meaningsMapToAoa(content)
       if (aoa && aoa.length > 1) {
-        await downloadXlsx(safe, type === 'audience_research' ? 'Исследование' : 'Карта смыслов', aoa)
+        const sheets: XlsxSheet[] = [{ name: type === 'audience_research' ? 'Исследование' : 'Карта смыслов', aoa }]
+        // Августа (31 июля): расшифровки созвонов должны быть В ТОМ ЖЕ файле —
+        // добавляем лист на каждую готовую расшифровку проекта. Абзац = строка,
+        // одна широкая колонка с переносом. Сбой одного листа не валит файл.
+        const transcripts = materials.filter(m => m.material_type === 'interview_transcript' && m.processing_status === 'ready')
+        for (const t of transcripts) {
+          try {
+            const tr = await fetch(`/api/materials/${t.id}`)
+            if (!tr.ok) continue
+            const td = await tr.json() as { raw_content?: string }
+            const text = (td.raw_content || '').trim()
+            if (!text) continue
+            sheets.push({
+              name: t.title || 'Расшифровка',
+              aoa: [[`Расшифровка: ${t.title}`], ...text.split(/\n+/).map(l => l.trim()).filter(Boolean).map(l => [l])],
+              widths: [90],
+            })
+          } catch { /* лист пропускаем, книга всё равно скачается */ }
+        }
+        await downloadXlsxBook(safe, sheets)
         return
       }
 
