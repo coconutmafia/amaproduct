@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { audienceResearchToAoa } from '@/lib/researchTables'
+import { audienceResearchToAoa, audienceResearchToPivotAoa, meaningsMapToAoa } from '@/lib/researchTables'
 
 // Фикстуры сняты с РЕАЛЬНОГО прод-формата 31 июля (мастер «Общая таблица
 // кастдевов» + отдельная «Таблица исследования»). Регрессия, которую ловим:
@@ -82,5 +82,34 @@ describe('audienceResearchToAoa — вертикальная таблица', ()
 
   it('пустой/чужой текст — пустой результат, не мусорная строка', () => {
     expect(audienceResearchToAoa('просто текст без структуры')).toEqual([])
+  })
+})
+
+describe('audienceResearchToPivotAoa — сводка «как в уроке»', () => {
+  it('строка = участник, колонки = вопросы, ответы по местам', () => {
+    const aoa = audienceResearchToPivotAoa(MASTER)
+    expect(aoa[0]).toEqual(['Кастдев', 'Участник', 'Сегмент', 'Расскажи о себе', 'Где преподаёшь'])
+    expect(aoa.length).toBe(1 + 2) // 2 участника
+    const p1 = aoa[1]
+    expect(p1[1]).toBe('Участник 1')
+    expect(p1[3]).toContain('Город Волжский')
+    expect(p1[4]).toContain('В фитнес-студии')
+    const p2 = aoa[2]
+    expect(p2[1]).toBe('Игорь (Егор)')
+    expect(p2[4]).toBe('') // на второй вопрос не отвечал
+  })
+
+  it('одноимённые участники разных кастдевов не слипаются', () => {
+    const two = `═══ Кастдев от 1 июля ═══\n\nУчастник: Аня (сегмент А)\n\n  Вопрос: В1\n  Ответ: раз\n\n═══ Кастдев от 2 июля ═══\n\nУчастник: Аня (сегмент Б)\n\n  Вопрос: В1\n  Ответ: два\n`
+    const aoa = audienceResearchToPivotAoa(two)
+    expect(aoa.length).toBe(1 + 2)
+  })
+})
+
+describe('meaningsMapToAoa — шапка из урока «Карта смыслов»', () => {
+  it('4 столбца методологии', () => {
+    const aoa = meaningsMapToAoa('[PAIN] Устала:\nФормулировки: я устала\nИдея контента: пост про отдых')
+    expect(aoa[0]).toEqual(['Категория', 'Общая формулировка', 'Формулировки клиентов', 'Идеи контента'])
+    expect(aoa[1]).toEqual(['Боль', 'Устала', 'я устала', 'пост про отдых'])
   })
 })

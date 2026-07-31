@@ -18,7 +18,7 @@ import { toast } from 'sonner'
 import Link from 'next/link'
 import { friendlyError } from '@/lib/friendlyError'
 import { computeCompleteness } from '@/lib/completeness'
-import { audienceResearchToAoa, meaningsMapToAoa } from '@/lib/researchTables'
+import { audienceResearchToAoa, audienceResearchToPivotAoa, meaningsMapToAoa } from '@/lib/researchTables'
 import { downloadXlsxBook, type XlsxSheet } from '@/lib/utils/xlsxTable'
 import { downloadDocx, openMaterialInBrowser } from '@/lib/utils/docxText'
 import {
@@ -1076,7 +1076,14 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
       if (type === 'audience_research') aoa = audienceResearchToAoa(content)
       else if (type === 'meanings_map') aoa = meaningsMapToAoa(content)
       if (aoa && aoa.length > 1) {
-        const sheets: XlsxSheet[] = [{ name: type === 'audience_research' ? 'Исследование' : 'Карта смыслов', aoa }]
+        const sheets: XlsxSheet[] = [{ name: type === 'audience_research' ? 'Кастдевы — вертикально' : 'Карта смыслов', aoa }]
+        // Вердикт команды (31 июля): нужна сводка «как в уроке» — строка =
+        // участник, колонки = вопросы. Держим ОБА вида: сводка первым листом
+        // (это их рабочий формат из методологии), вертикальный — для фильтров.
+        if (type === 'audience_research') {
+          const pivot = audienceResearchToPivotAoa(content)
+          if (pivot.length > 1) sheets.unshift({ name: 'Кастдевы — как в уроке', aoa: pivot })
+        }
         // Августа (31 июля): расшифровки созвонов должны быть В ТОМ ЖЕ файле —
         // добавляем лист на каждую готовую расшифровку проекта. Абзац = строка,
         // одна широкая колонка с переносом. Сбой одного листа не валит файл.

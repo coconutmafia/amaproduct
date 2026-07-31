@@ -14,15 +14,17 @@
 //   Участник: ИМЯ (СЕГМЕНТ)            ← сегмент бывает со вложенными скобками
 //     Вопрос: … / Ответ: …(многострочный) / Цитаты: … / Тон: …
 // Разделители участников: «═══…═══», «---» или следующий «Участник:».
-export function audienceResearchToAoa(text: string): string[][] {
+interface ResearchQA { label: string; name: string; seg: string; q: string; a: string; quotes: string; tone: string }
+
+function parseResearch(text: string): ResearchQA[] {
   type QA = { q: string; field: 'a' | 'other' | null; a: string[]; quotes: string; tone: string }
-  const out: string[][] = []
+  const out: ResearchQA[] = []
   let label = ''
   let name = ''
   let seg = ''
   let cur: QA | null = null
   const flush = () => {
-    if (cur?.q) out.push([label, name, seg, cur.q, cur.a.join('\n').trim(), cur.quotes, cur.tone])
+    if (cur?.q) out.push({ label, name, seg, q: cur.q, a: cur.a.join('\n').trim(), quotes: cur.quotes, tone: cur.tone })
     cur = null
   }
   for (const raw of text.split('\n')) {
@@ -44,12 +46,42 @@ export function audienceResearchToAoa(text: string): string[][] {
     if (line && cur.field === 'a') cur.a.push(line) // многострочный ответ
   }
   flush()
+  return out
+}
+
+export function audienceResearchToAoa(text: string): string[][] {
+  const out = parseResearch(text)
   if (out.length === 0) return []
   // Колонку «Кастдев» показываем только у мастера (в отдельных таблицах пусто).
   const head = ['Участник', 'Сегмент', 'Вопрос', 'Ответ', 'Цитаты', 'Тон']
-  return out.some((r) => r[0])
-    ? [['Кастдев', ...head], ...out]
-    : [head, ...out.map((r) => r.slice(1))]
+  return out.some((r) => r.label)
+    ? [['Кастдев', ...head], ...out.map((r) => [r.label, r.name, r.seg, r.q, r.a, r.quotes, r.tone])]
+    : [head, ...out.map((r) => [r.name, r.seg, r.q, r.a, r.quotes, r.tone])]
+}
+
+// Сводка «как в уроке» (эталон «Касдевы Ава.xlsx» из урока кастдевов, вердикт
+// команды 31 июля): строка = участник, колонки = вопросы, ячейка = дословный
+// ответ. Уникальность участника — в паре с кастдевом (в мастере имена могут
+// повторяться между интервью).
+export function audienceResearchToPivotAoa(text: string): string[][] {
+  const out = parseResearch(text)
+  if (out.length === 0) return []
+  const questions: string[] = []
+  const seenQ = new Set<string>()
+  type P = { label: string; name: string; seg: string; answers: Map<string, string> }
+  const order: P[] = []
+  const byKey = new Map<string, P>()
+  for (const r of out) {
+    if (!seenQ.has(r.q)) { seenQ.add(r.q); questions.push(r.q) }
+    const key = `${r.label}::${r.name}::${r.seg}`
+    let p = byKey.get(key)
+    if (!p) { p = { label: r.label, name: r.name, seg: r.seg, answers: new Map() }; byKey.set(key, p); order.push(p) }
+    if (!p.answers.has(r.q)) p.answers.set(r.q, r.a)
+  }
+  const hasLabel = order.some((p) => p.label)
+  const head = [...(hasLabel ? ['Кастдев'] : []), 'Участник', 'Сегмент', ...questions]
+  const rows = order.map((p) => [...(hasLabel ? [p.label] : []), p.name, p.seg, ...questions.map((q) => p.answers.get(q) ?? '')])
+  return [head, ...rows]
 }
 
 // «Игорь (Егор) (Мужчина, 40 лет, живёт в Москве (Россия), …)» → имя может
@@ -100,7 +132,11 @@ export function meaningsMapToAoa(text: string): string[][] {
   if (parsed.length === 0) return []
   const rank = (t: string) => { const i = MEANING_ORDER.indexOf(t); return i < 0 ? 99 : i }
   parsed.sort((a, b) => rank(a.type) - rank(b.type))
-  const rows: string[][] = [['Тип', 'Категория', 'Формулировки участников', 'Идеи контента']]
+  // Шапка 1-в-1 из урока «Карта смыслов» (4 столбца методологии): Категория |
+  // Общая формулировка | Формулировки клиентов | Идеи контента. Наш «Тип»
+  // (Боль/Потребность/…) и есть «Категория» урока; наша «Категория» — её
+  // «Общая формулировка». Команда сверяет глазами с уроком — имена совпадают.
+  const rows: string[][] = [['Категория', 'Общая формулировка', 'Формулировки клиентов', 'Идеи контента']]
   for (const p of parsed) rows.push([MEANING_TYPE_RU[p.type] ?? p.type, p.cat, p.words, p.idea])
   return rows
 }
