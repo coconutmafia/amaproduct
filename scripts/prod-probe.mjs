@@ -377,9 +377,42 @@ async function recoveryTokenHash() {
     : `❌ 2. verify не дал сессию: ${ver.status} ${JSON.stringify(ver.body).slice(0, 200)}`)
 }
 
+// ── ПРОБНИК: лимит загрузки Storage (после Supabase Pro) ─────────────────────
+// Проверяет, что глобальный «Upload file size limit» в панели реально поднят:
+// заливает синтетический файл --mb N (дефолт 60 — больше старого потолка 50)
+// в private-бакет materials под PROBE_PREFIX и тут же удаляет. Free-потолок
+// или неподнятый лимит дадут ошибку — увидим её здесь, а не от клиента.
+//   node scripts/prod-probe.mjs storage-limit [--mb 60] [--run]
+async function storageLimit() {
+  const mb = Number(arg('mb') || 60)
+  const path = `${PROBE_PREFIX}limit-${Date.now()}.bin`
+  log(`\n=== Пробник: лимит Storage (${mb} МБ → materials/${path}) ===`)
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log(`  1) storage: залить ${mb} МБ в materials/${path}`)
+    log('  2) storage: удалить файл (чистим за собой всегда)')
+    return
+  }
+  const buf = new Uint8Array(mb * 1024 * 1024) // нули — содержимое не важно
+  const up = await fetch(`${U}/storage/v1/object/materials/${path}`, {
+    method: 'POST',
+    headers: { apikey: K, Authorization: `Bearer ${K}`, 'Content-Type': 'application/octet-stream' },
+    body: buf,
+  })
+  const upBody = await up.text()
+  log(up.ok
+    ? `✅ 1. загрузка ${mb} МБ прошла (${up.status}) — лимит панели поднят, файлы больше 50 МБ ходят`
+    : `❌ 1. загрузка отбита: ${up.status} ${upBody.slice(0, 200)} — проверь «Upload file size limit» в панели`)
+  const del = await fetch(`${U}/storage/v1/object/materials/${path}`, {
+    method: 'DELETE',
+    headers: { apikey: K, Authorization: `Bearer ${K}` },
+  })
+  log(del.ok ? '✅ 2. тестовый файл удалён' : `⚠️ 2. не удалился (${del.status}) — удали руками: materials/${path}`)
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
