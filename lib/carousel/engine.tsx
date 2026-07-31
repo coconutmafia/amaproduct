@@ -43,10 +43,12 @@ export interface CarouselTheme {
   fontFamily: string
   handle: string
   logoUrl?: string
+  swipeHint: boolean
   onPhotoText: string // text colour used over photos/scrims
 }
 
 export const DEFAULT_THEME: CarouselTheme = {
+  swipeHint: true,
   bg: '#F3EEE7',
   bgAlt: '#FBF8F3',
   bgStyle: 'paper',
@@ -73,6 +75,9 @@ export interface BrandInput {
   paperUrl?: string | null
   font?: string | null              // bundled font key (see FONTS); default Montserrat
   accentStyle?: 'gradient' | 'flat' | null // **word** fill style; default gradient
+  // Подпись «ЛИСТАЙ ДАЛЬШЕ →» на слайдах карусели. Дефолт true; false — убрать
+  // (клиент 31 июля: блог не на русском, зашитая русская подпись ломала карусель).
+  swipeHint?: boolean | null
 }
 
 function hexLum(hex?: string): number {
@@ -116,6 +121,7 @@ export function themeFromBrand(brand?: BrandInput): CarouselTheme {
     : { gradFrom: DEFAULT_THEME.gradFrom, gradMid: DEFAULT_THEME.gradMid, gradTo: DEFAULT_THEME.gradTo }
   return {
     ...DEFAULT_THEME,
+    swipeHint: brand?.swipeHint !== false,
     accent,
     ...grad,
     accentStyle: brand?.accentStyle === 'flat' ? 'flat' : 'gradient',
@@ -417,7 +423,7 @@ function Footer({ theme, size, index, total }: { theme: CarouselTheme; size: Siz
       </div>
       {multi ? (
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          {!isLast && (
+          {!isLast && theme.swipeHint && (
             <div style={{ display: 'flex', color: theme.accent, fontSize: 22, fontWeight: 800, letterSpacing: 3 }}>ЛИСТАЙ ДАЛЬШЕ →</div>
           )}
           <div style={{ display: 'flex', marginLeft: 18, color: theme.textMuted, fontSize: 22, fontWeight: 800 }}>

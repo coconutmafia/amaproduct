@@ -39,7 +39,7 @@ export interface Block {
   xPct: number; yPct: number; widthPct: number
   size: number; color: string; plate: boolean; align: 'left' | 'center'; rotation: number
 }
-export interface Brand { accentColor: string; bg: string; text: string; bgStyle?: string; font?: string; accentStyle?: 'gradient' | 'flat' }
+export interface Brand { accentColor: string; bg: string; text: string; bgStyle?: string; font?: string; accentStyle?: 'gradient' | 'flat'; swipeHint?: boolean }
 
 // One slide's data — the controlled value of FreeCanvas.
 export interface SlideValue {

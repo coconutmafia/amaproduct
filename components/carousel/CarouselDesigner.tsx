@@ -42,6 +42,7 @@ export function CarouselDesigner({ projectId }: { projectId: string }) {
         bgStyle: d.bgStyle || undefined,
         font: d.font || undefined,
         accentStyle: d.accentStyle === 'flat' ? 'flat' : 'gradient',
+        swipeHint: d.swipeHint,
       }))
     }).catch(() => {})
   }, [projectId])

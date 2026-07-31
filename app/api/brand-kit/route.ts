@@ -26,6 +26,8 @@ function shape(p: Record<string, unknown>) {
     font: (kit.font as string) || null,
     accentStyle: (kit.accentStyle as string) || null,
     styleNotes: (kit.styleNotes as string) || null,
+    // false = убрать «ЛИСТАЙ ДАЛЬШЕ →» со слайдов (блог не на русском и т.п.)
+    swipeHint: kit.swipeHint === false ? false : true,
     kit: (p.brand_kit as Record<string, unknown>) || null,
   }
 }
@@ -79,6 +81,7 @@ export async function POST(request: Request) {
     if ('font' in body) kitPatch.font = (FONT_KEYS as string[]).includes(String(body.font)) ? String(body.font) : null
     if ('accentStyle' in body) kitPatch.accentStyle = body.accentStyle === 'flat' ? 'flat' : body.accentStyle === 'gradient' ? 'gradient' : null
     if ('styleNotes' in body) kitPatch.styleNotes = String(body.styleNotes || '').trim().slice(0, 600) || null
+    if ('swipeHint' in body) kitPatch.swipeHint = body.swipeHint !== false
 
     let storyPatch: Record<string, unknown> | null = null
     if (body.story && typeof body.story === 'object') {

@@ -31,8 +31,9 @@ interface Brand {
   font: string
   accentStyle: AccentStyle
   styleNotes: string
+  swipeHint: boolean // подпись «ЛИСТАЙ ДАЛЬШЕ →» на слайдах карусели
 }
-const DEFAULTS: Brand = { accentColor: '#EC1E8C', bg: '#F3EEE7', text: '#262321', bgStyle: 'paper', handle: '', logoUrl: null, font: 'montserrat', accentStyle: 'gradient', styleNotes: '' }
+const DEFAULTS: Brand = { accentColor: '#EC1E8C', bg: '#F3EEE7', text: '#262321', bgStyle: 'paper', handle: '', logoUrl: null, font: 'montserrat', accentStyle: 'gradient', styleNotes: '', swipeHint: true }
 
 const DEMO = {
   cover: { headline: 'твой **заголовок** в твоём стиле', subheadline: 'так будут выглядеть твои карусели и посты' },
@@ -87,6 +88,7 @@ export default function BrandPage() {
           font: d.font || DEFAULTS.font,
           accentStyle: d.accentStyle === 'flat' ? 'flat' : 'gradient',
           styleNotes: d.styleNotes || '',
+          swipeHint: d.swipeHint !== false,
         }
         setBrand(main)
         if (d.kit?.summary) setKitSummary(d.kit.summary)
@@ -366,6 +368,14 @@ export default function BrandPage() {
                     <option value="gradient">Градиент</option>
                   </select>
                   <span className="font-normal text-muted-foreground">AI выбирает ближайший из трёх к твоим примерам.</span>
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-medium text-foreground">
+                  Подпись «ЛИСТАЙ ДАЛЬШЕ →» на слайдах
+                  <select value={brand.swipeHint ? 'on' : 'off'} onChange={(e) => set({ swipeHint: e.target.value === 'on' })} className="h-9 rounded-lg border border-border bg-background px-2 text-sm">
+                    <option value="on">Показывать</option>
+                    <option value="off">Убрать</option>
+                  </select>
+                  <span className="font-normal text-muted-foreground">Убери, если блог не на русском или подпись не нужна.</span>
                 </label>
                 <label className="flex flex-col gap-1 text-xs font-medium text-foreground">
                   Ник (на слайдах)
