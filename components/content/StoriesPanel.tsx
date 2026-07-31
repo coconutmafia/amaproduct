@@ -42,8 +42,17 @@ interface Frame {
   // Видео-кадр серии: mp4 с уже нажжённым текстом. Ведёт себя как manual —
   // не перерендеривается ни правками, ни переоткрытием (пересборка = build).
   video?: string
+  // Исходник видео-кадра (до нажжённого текста) — из него пересобирается
+  // ролик при смене позиции текста (запрос Ланы, 31 июля). У серий,
+  // сохранённых до этого поля, исходника нет — позицию не поменять.
+  source?: string
 }
-interface SetFrame { url: string; headline?: string; body?: string; cta?: string; position?: string; photo?: string; manual?: boolean; video?: boolean }
+interface SetFrame { url: string; headline?: string; body?: string; cta?: string; position?: string; photo?: string; manual?: boolean; video?: boolean; source?: string }
+
+// Текст, который жжётся на видео-кадр. ОДНА формула для сборки серии и для
+// пересборки позиции — разойдутся, и «переставленный» кадр получит другой текст.
+const frameOverlayText = (f: { headline?: string; body?: string }) =>
+  [f.headline, f.body].filter(Boolean).join('\n').slice(0, 380)
 interface StorySet { id: string; created_at: string; script: string; frames: SetFrame[] }
 
 function download(blob: Blob, name: string) {
@@ -128,7 +137,40 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
   // no AI. posLocked pins the choice so photo-analysis won't override it.
   async function setFramePosition(i: number, position: 'top' | 'center' | 'bottom') {
     const cur = rendered[i]
-    if (!cur || cur.frame.manual || cur.frame.video || cur.frame.position === position) return
+    if (!cur || cur.frame.manual || cur.frame.position === position) return
+    if (cur.frame.video) {
+      // Видео-кадр: позиция меняется пересборкой ролика из ИСХОДНИКА (тот же
+      // /api/video/overlay, что при сборке; списывается как видео-обработка).
+      // Раньше клик молча игнорировался — кнопки были, эффекта не было
+      // (жалоба Ланы, 31 июля). Для серий, сохранённых до поля source,
+      // исходника нет — честно объясняем.
+      const videoPath = cur.frame.source ? brandPathFromUrl(cur.frame.source) : null
+      if (!videoPath) { toast.message('У этой серии не сохранён исходник видео — пересобери серию, и позицию текста можно будет менять'); return }
+      setReposIdx(i)
+      toast.message('Пересобираю видео с новой позицией — обычно 1-3 минуты, не закрывай страницу')
+      try {
+        const res = await fetch('/api/video/overlay', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId, videoPath, text: frameOverlayText(cur.frame), position, plate: true, keepSource: true }),
+        })
+        if (res.status === 402) {
+          const d = await res.clone().json().catch(() => ({} as { code?: string }))
+          showUpgrade(d.code === 'payment_required' ? 'needs_plan' : 'limit')
+          return
+        }
+        const d = await res.json().catch(() => ({} as { url?: string; error?: string }))
+        if (!res.ok || !d.url) throw new Error(d.error || 'Не удалось пересобрать видео')
+        const frame: Frame = { ...cur.frame, position, posLocked: true, video: d.url }
+        const arr = [...rendered]
+        arr[i] = { blob: null, url: d.url, frame }
+        setRendered(arr)
+        void saveSet(arr.map((r) => r.frame), arr.map((r) => r.blob), savedSetId)
+        toast.success('Готово — текст переехал, видео пересобрано')
+      } catch (e) {
+        toast.error(friendlyError(e, 'Не удалось переместить текст'))
+      } finally { setReposIdx(null) }
+      return
+    }
     setReposIdx(i)
     try {
       const frame: Frame = { ...cur.frame, position, posLocked: true }
@@ -147,7 +189,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
   function editFrameManually(i: number) {
     const frame = rendered[i]?.frame
     if (!frame) return
-    if (frame.video) { toast.message('Видео-кадр меняется пересборкой серии — текст возьмётся из сценария заново'); return }
+    if (frame.video) { toast.message('У видео-кадра расположение текста меняется кнопками ↑ • ↓ под ним; свободный редактор для видео пока не поддерживается'); return }
     editTokenRef.current += 1
     setEditReq({ token: editTokenRef.current, slide: frameToSlide(frame), index: i })
     toast.message('Кадр открыт в редакторе ниже — меняй и жми «Добавить в серию»')
@@ -254,7 +296,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           projectId, setId: existingSetId || undefined, script,
-          frames: frames.map((f, i) => ({ url: urls[i], headline: f.headline, body: f.body, cta: f.cta, position: f.position, photo: f.photo, manual: f.manual || undefined, video: f.video ? true : undefined })).filter((f) => f.url),
+          frames: frames.map((f, i) => ({ url: urls[i], headline: f.headline, body: f.body, cta: f.cta, position: f.position, photo: f.photo, manual: f.manual || undefined, video: f.video ? true : undefined, source: f.source || undefined })).filter((f) => f.url),
         }),
       })
       const d = await res.json().catch(() => ({} as { set?: StorySet; sets?: StorySet[]; error?: string }))
@@ -322,6 +364,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         photo: sf.photo,
         manual: sf.manual || undefined,
         video: sf.video ? sf.url : undefined,
+        source: sf.source,
       }))
       if (set.script) setScript(set.script)
       const uniquePhotos = [...new Set(frames.map((f) => f.photo).filter((p): p is string => !!p && !isVideoUrl(p)))]
@@ -453,10 +496,9 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         }
         const videoPath = brandPathFromUrl(f.video)
         if (!videoPath) throw new Error('Видео-материал не найден в хранилище — загрузи его заново')
-        const text = [f.headline, f.body].filter(Boolean).join('\n').slice(0, 380)
         const res = await fetch('/api/video/overlay', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectId, videoPath, text, position: f.position || 'bottom', plate: true, keepSource: true }),
+          body: JSON.stringify({ projectId, videoPath, text: frameOverlayText(f), position: f.position || 'bottom', plate: true, keepSource: true }),
         })
         if (res.status === 402) {
           const d = await res.clone().json().catch(() => ({} as { code?: string }))
@@ -465,7 +507,9 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         }
         const d = await res.json().catch(() => ({} as { url?: string; error?: string }))
         if (!res.ok || !d.url) throw new Error(d.error || 'Не удалось обработать видео-кадр')
-        const frame: Frame = { ...f, video: d.url }
+        // source = исходник (f.video ДО overlay) — из него потом пересобирается
+        // позиция текста без пересборки всей серии.
+        const frame: Frame = { ...f, video: d.url, source: f.video }
         return { blob: null, url: d.url, frame }
       }))
       const frames2 = results.map((r) => r.frame)

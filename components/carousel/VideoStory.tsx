@@ -50,9 +50,12 @@ export function VideoStory({ projectId }: { projectId: string }) {
     if (!vidPath || !vidText.trim() || vidBusy) return
     setVidBusy(true); setVidUrl(null)
     try {
+      // keepSource — исходник живёт: можно поменять позицию/текст и наложить
+      // заново без повторной загрузки (жалоба Ланы: «после генерации только
+      // скачать»). Раньше сервер удалял исходник после первого прогона.
       const res = await fetch('/api/video/overlay', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, videoPath: vidPath, text: vidText, position: vidPos, plate: vidPlate }),
+        body: JSON.stringify({ projectId, videoPath: vidPath, text: vidText, position: vidPos, plate: vidPlate, keepSource: true }),
       })
       if (res.status === 402) {
         // Причина важна: неоплатившему нельзя показывать «лимит исчерпан» (у него 0 создано).
@@ -63,8 +66,7 @@ export function VideoStory({ projectId }: { projectId: string }) {
       const d = await res.json().catch(() => ({} as { url?: string; error?: string }))
       if (!res.ok || !d.url) throw new Error(d.error || 'Не удалось обработать видео')
       setVidUrl(d.url)
-      setVidPath(null) // source consumed server-side
-      toast.success('Готово — видео с твоим текстом ниже')
+      toast.success('Готово — видео с твоим текстом ниже. Не понравилось расположение — поменяй и наложи заново')
     } catch (e) { toast.error(friendlyError(e, 'Не удалось обработать видео')) }
     finally { setVidBusy(false) }
   }
@@ -110,7 +112,7 @@ export function VideoStory({ projectId }: { projectId: string }) {
           <button type="button" onClick={burnText} disabled={vidBusy || !vidText.trim()}
             className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40">
             {vidBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
-            {vidBusy ? 'Накладываю текст…' : 'Наложить текст'}
+            {vidBusy ? 'Накладываю текст…' : vidUrl ? 'Наложить заново' : 'Наложить текст'}
           </button>
           {vidBusy && <p className="mt-1 text-[11px] text-muted-foreground">Обычно 1-3 минуты: обрабатываю видео и вшиваю текст. Не закрывай страницу.</p>}
         </>
@@ -124,6 +126,7 @@ export function VideoStory({ projectId }: { projectId: string }) {
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90">
             <Download className="h-3.5 w-3.5" /> Скачать видео
           </a>
+          <p className="text-[11px] text-muted-foreground">Хочешь текст в другом месте или другой формулировкой? Поменяй выше и жми «Наложить заново» — видео перезагружать не нужно.</p>
         </div>
       )}
     </section>
