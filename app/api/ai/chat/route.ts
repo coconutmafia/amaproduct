@@ -32,12 +32,21 @@ function streamingChatResponse(
   onEmptyError?: () => void | Promise<void>,
 ) {
   const encoder = new TextEncoder()
+  // Кэш-брейкпоинт на последнем сообщении: следующий ход диалога и раунды
+  // авто-продолжения читают систему+историю из кэша за ~10% цены вместо полной
+  // (брейкпоинт на system покрывает только его, история шла по полной).
+  // На выход не влияет — модель видит те же токены байт-в-байт.
+  const cachedMessages = messages.map((m, i) =>
+    i === messages.length - 1
+      ? { role: m.role, content: [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' as const } }] }
+      : m
+  )
   const readable = new ReadableStream({
     async start(controller) {
       let acc = ''
       try {
         for (let round = 0; round < 4; round++) {
-          const convo = round === 0 ? messages : [...messages, { role: 'assistant' as const, content: acc }]
+          const convo = round === 0 ? cachedMessages : [...cachedMessages, { role: 'assistant' as const, content: acc }]
           const stream = anthropic.messages.stream({ model: MODEL, max_tokens: 8000, system: buildCachedSystem(system), messages: convo })
           for await (const chunk of stream) {
             if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
