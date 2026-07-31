@@ -3,35 +3,71 @@
 // (array-of-arrays) ready for XLSX export. Kept pure (no DOM) so they're unit-
 // testable against real stored content.
 
-// ── Audience research → PIVOT (one row per participant, questions as columns) ──
-// Stored format (per respondent, sections split by "\n---\n"):
-//   Участник: NAME (SEGMENT)
-//     Вопрос: …\n  Ответ: …\n  Цитаты: …\n  Тон: …  (repeated)
+// ── Audience research → ВЕРТИКАЛЬНАЯ таблица (строка = вопрос-ответ) ─────────
+// Исторически была сводка «участник = строка, вопросы = колонки»: при 33
+// вопросах она нечитаема, а на «Общей таблице кастдевов» ломалась совсем —
+// мастер разделяет интервью заголовками «═══ Кастдев от N июля ═══» (без
+// "\n---\n", которых ждал парсер), и ВСЕ интервью слипались в одну строку
+// первого участника (файл Матвея 31 июля: 2 строки × 99 колонок). Теперь
+// построчный разбор обоих форматов:
+//   [═══ Кастдев от N июля ═══]        ← только в мастере
+//   Участник: ИМЯ (СЕГМЕНТ)            ← сегмент бывает со вложенными скобками
+//     Вопрос: … / Ответ: …(многострочный) / Цитаты: … / Тон: …
+// Разделители участников: «═══…═══», «---» или следующий «Участник:».
 export function audienceResearchToAoa(text: string): string[][] {
-  type Resp = { name: string; segment: string; answers: Map<string, string> }
-  const resps: Resp[] = []
-  const questionOrder: string[] = []
-  const seenQ = new Set<string>()
-
-  for (const sec of text.split(/\n---\n/)) {
-    const header = sec.match(/Участник:\s*(.+?)(?:\s*\((.+?)\))?\s*$/m)
-    if (!header) continue
-    const name = header[1].trim()
-    const segment = (header[2] ?? '').trim()
-    const answers = new Map<string, string>()
-    const re = /\s*Вопрос:\s*(.+?)\s*\n\s*Ответ:\s*([\s\S]+?)\n\s*Цитаты:\s*(.+?)\n\s*Тон:\s*(.+?)(?=\n\s*\n|\n\s*Вопрос:|$)/g
-    let m: RegExpExecArray | null
-    while ((m = re.exec(sec)) !== null) {
-      const q = m[1].trim()
-      if (!seenQ.has(q)) { seenQ.add(q); questionOrder.push(q) }
-      answers.set(q, m[2].trim())
-    }
-    if (answers.size > 0) resps.push({ name, segment, answers })
+  type QA = { q: string; field: 'a' | 'other' | null; a: string[]; quotes: string; tone: string }
+  const out: string[][] = []
+  let label = ''
+  let name = ''
+  let seg = ''
+  let cur: QA | null = null
+  const flush = () => {
+    if (cur?.q) out.push([label, name, seg, cur.q, cur.a.join('\n').trim(), cur.quotes, cur.tone])
+    cur = null
   }
-  if (resps.length === 0) return []
-  const rows: string[][] = [['Участник', 'Сегмент', ...questionOrder]]
-  for (const r of resps) rows.push([r.name, r.segment, ...questionOrder.map((q) => r.answers.get(q) ?? '')])
-  return rows
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    const h = line.match(/^═+\s*(.*?)\s*═+$/)
+    if (h) { flush(); label = h[1]; continue }
+    if (/^-{3,}$/.test(line)) { flush(); continue }
+    const u = line.match(/^Участник:\s*(.+)$/)
+    if (u) { flush(); [name, seg] = splitNameSegment(u[1]); continue }
+    const q = line.match(/^Вопрос:\s*(.*)$/)
+    if (q) { flush(); cur = { q: q[1].trim(), field: null, a: [], quotes: '', tone: '' }; continue }
+    if (!cur) continue
+    const a = line.match(/^Ответ:\s*(.*)$/)
+    if (a) { cur.field = 'a'; cur.a.push(a[1]); continue }
+    const c = line.match(/^Цитаты:\s*(.*)$/)
+    if (c) { cur.field = 'other'; cur.quotes = c[1].trim(); continue }
+    const t = line.match(/^Тон:\s*(.*)$/)
+    if (t) { cur.field = 'other'; cur.tone = t[1].trim(); continue }
+    if (line && cur.field === 'a') cur.a.push(line) // многострочный ответ
+  }
+  flush()
+  if (out.length === 0) return []
+  // Колонку «Кастдев» показываем только у мастера (в отдельных таблицах пусто).
+  const head = ['Участник', 'Сегмент', 'Вопрос', 'Ответ', 'Цитаты', 'Тон']
+  return out.some((r) => r[0])
+    ? [['Кастдев', ...head], ...out]
+    : [head, ...out.map((r) => r.slice(1))]
+}
+
+// «Игорь (Егор) (Мужчина, 40 лет, живёт в Москве (Россия), …)» → имя может
+// содержать скобки, сегмент — вложенные. Сегмент = ПОСЛЕДНЯЯ сбалансированная
+// скобочная группа, закрывающаяся в конце строки; ищем её обратным проходом.
+function splitNameSegment(s: string): [string, string] {
+  const t = s.trim()
+  if (t.endsWith(')')) {
+    let depth = 0
+    for (let i = t.length - 1; i >= 0; i--) {
+      if (t[i] === ')') depth++
+      else if (t[i] === '(') {
+        depth--
+        if (depth === 0) return [t.slice(0, i).trim(), t.slice(i + 1, -1).trim()]
+      }
+    }
+  }
+  return [t, '']
 }
 
 // ── Meaning map → clean 4-column table ────────────────────────────────────────
