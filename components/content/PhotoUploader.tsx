@@ -75,10 +75,16 @@ export function PhotoUploader({ projectId, photos, onChange, kind = 'post', max 
 
   async function upload(files: FileList | null) {
     if (!files || files.length === 0) return
+    // Полный список раньше «съедал» загрузку МОЛЧА (slice до нуля файлов) —
+    // юзер грузил видео и не понимал, куда оно делось. Говорим прямо.
+    const room = max - photos.length
+    if (room <= 0) { toast.error(`Максимум ${max} материалов — убери лишнее крестиком и загрузи снова`); return }
+    const list = Array.from(files)
+    if (list.length > room) toast.message(`Поместится только ${room} из ${list.length}: максимум ${max} материалов`)
     setUploading(true)
     try {
       const added: string[] = []
-      for (const f of Array.from(files).slice(0, max - photos.length)) {
+      for (const f of list.slice(0, room)) {
         if (allowVideo && f.type.startsWith('video/')) {
           added.push(await uploadVideoFile(f))
           continue

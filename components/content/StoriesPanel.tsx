@@ -367,8 +367,13 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         source: sf.source,
       }))
       if (set.script) setScript(set.script)
-      const uniquePhotos = [...new Set(frames.map((f) => f.photo).filter((p): p is string => !!p && !isVideoUrl(p)))]
-      if (uniquePhotos.length) setPhotos(uniquePhotos.slice(0, 8))
+      // Материалы серии = фото И видео-исходники. Раньше видео здесь явно
+      // отфильтровывалось (!isVideoUrl) и setPhotos затирал блок материалов —
+      // а следом и localStorage-черновик — списком без видео. Это и было
+      // «видео постоянно исчезают из загруженных материалов» (Лана, 31 июля).
+      // У старых серий source не сохранён — их видео не восстановить.
+      const uniqueMats = [...new Set(frames.map((f) => f.photo || f.source).filter((p): p is string => !!p))]
+      if (uniqueMats.length) setPhotos(uniqueMats.slice(0, 8))
       // Manual frames are stored as finished images — fetch them back instead of
       // re-rendering (re-rendering would wipe the hand-made design).
       const blobs = await Promise.all(frames.map(async (f, i) => {
