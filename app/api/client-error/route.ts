@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic'
 // happen on public/pre-login pages); we still attach the user id when a session
 // exists. Payload sizes are capped; the client caps itself at 5 reports/page.
 export async function POST(request: Request) {
-  let body: { kind?: unknown; message?: unknown; stack?: unknown; url?: unknown; ua?: unknown }
+  let body: { kind?: unknown; message?: unknown; stack?: unknown; url?: unknown; ua?: unknown; lastFetch?: unknown }
   try { body = await request.json() } catch { return NextResponse.json({ ok: false }, { status: 400 }) }
 
   const message = typeof body.message === 'string' ? body.message : ''
@@ -32,6 +32,7 @@ export async function POST(request: Request) {
     kind:    str(body.kind, 100),
     url:     str(body.url, 500),
     ua:      str(body.ua, 400),
+    lastFetch: str(body.lastFetch, 300),
     userId,
   })
   return NextResponse.json({ ok: true })

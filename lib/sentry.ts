@@ -91,7 +91,7 @@ export async function captureMessage(message: string, level: 'warning' | 'error'
 // page URL + browser UA in context) makes user-facing errors queryable via
 // /api/admin/errors without needing the Sentry dashboard. Best-effort, never throws.
 export async function logClientError(row: {
-  message: string; stack?: string; kind?: string; url?: string; ua?: string; userId?: string
+  message: string; stack?: string; kind?: string; url?: string; ua?: string; userId?: string; lastFetch?: string
 }): Promise<void> {
   try {
     const { createAdminClient } = await import('@/lib/supabase/admin')
@@ -102,7 +102,10 @@ export async function logClientError(row: {
       route:   row.url ? row.url.slice(0, 300) : null,
       message: (row.message || 'Client error').slice(0, 2000),
       stack:   row.stack ? row.stack.slice(0, 6000) : null,
-      context: { kind: row.kind, url: row.url, ua: row.ua },
+      // lastFetch: URL последнего упавшего fetch (обёртка в instrumentation-
+      // client) — единственная атрибуция для «TypeError: Load failed» с
+      // айфонов, у которых никогда нет стека.
+      context: { kind: row.kind, url: row.url, ua: row.ua, ...(row.lastFetch ? { lastFetch: row.lastFetch } : {}) },
       user_id: row.userId ?? null,
     })
   } catch { /* logging must never break the app */ }

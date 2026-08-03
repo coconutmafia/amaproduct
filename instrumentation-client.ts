@@ -15,10 +15,39 @@ let sent = 0
 // can't be a genuine app error.
 const EXTENSION_NOISE = /metamask|ethereum|web3|wallet|solana|phantom|coinbase|chrome-extension:\/\/|moz-extension:\/\/|safari-web-extension:\/\//i
 
+// Атрибуция «TypeError: Load failed» (Safari, повторяется на /dashboard и
+// /knowledge с айфонов): у события НИКОГДА нет стека, и невозможно понять,
+// какой именно запрос упал. Оборачиваем fetch и запоминаем URL последнего
+// упавшего — отчёт понесёт его в контексте (lastFetch). Обёртка прозрачна:
+// те же аргументы, тот же promise, ошибка перебрасывается как есть.
+let lastFailedFetch: { url: string; at: number } | null = null
+try {
+  const origFetch = window.fetch.bind(window)
+  window.fetch = ((...args: Parameters<typeof fetch>) => {
+    let url = ''
+    try {
+      const a = args[0]
+      url = String(a instanceof Request ? a.url : a).slice(0, 300)
+    } catch { /* URL не читается — не мешаем запросу */ }
+    return origFetch(...args).catch((e: unknown) => {
+      // Свои же репортерские запросы уликой не считаем — иначе их отказ
+      // (например, при обрыве сети) перезаписал бы настоящий источник.
+      if (!/\/api\/client-error|sentry\.io/.test(url)) {
+        lastFailedFetch = { url, at: Date.now() }
+      }
+      throw e
+    })
+  }) as typeof fetch
+} catch { /* не смогли обернуть — репортер работает как раньше */ }
+
 function report(kind: string, message: string, stack?: string) {
   if (!m || sent >= 5) return
   if (EXTENSION_NOISE.test(message) || (stack && EXTENSION_NOISE.test(stack))) return
   sent++
+  // Свежий (≤10с) упавший fetch — почти наверняка источник «Load failed».
+  const lastFetch = lastFailedFetch && Date.now() - lastFailedFetch.at < 10_000
+    ? lastFailedFetch.url
+    : undefined
   const eventId = (crypto.randomUUID?.() || String(Date.now())).replace(/-/g, '')
   const sentAt = new Date().toISOString()
   const envelope =
@@ -27,7 +56,7 @@ function report(kind: string, message: string, stack?: string) {
     JSON.stringify({
       event_id: eventId, timestamp: sentAt, platform: 'javascript', level: 'error',
       exception: { values: [{ type: kind, value: String(message).slice(0, 500) }] },
-      extra: { stack: (stack || '').slice(0, 3000), url: location.href, ua: navigator.userAgent },
+      extra: { stack: (stack || '').slice(0, 3000), url: location.href, ua: navigator.userAgent, lastFetch },
     })
   try {
     fetch(`https://${m[2]}/api/${m[3]}/envelope/`, {
@@ -44,7 +73,7 @@ function report(kind: string, message: string, stack?: string) {
     fetch('/api/client-error', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind, message: String(message).slice(0, 500), stack: (stack || '').slice(0, 3000), url: location.href, ua: navigator.userAgent }),
+      body: JSON.stringify({ kind, message: String(message).slice(0, 500), stack: (stack || '').slice(0, 3000), url: location.href, ua: navigator.userAgent, lastFetch }),
       keepalive: true,
     }).catch(() => {})
   } catch { /* never break the app */ }
