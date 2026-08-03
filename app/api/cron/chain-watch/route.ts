@@ -88,6 +88,49 @@ async function handle(request: Request) {
       .lt('created_at', new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString())
   } catch { /* table may not exist until migration 028 is applied */ }
 
+  // ── 3b. Джобы и их временные файлы ─────────────────────────────────────────
+  // (a) Финальная сеть для застрявших джобов: GET /api/jobs/[id] лечит их,
+  //     пока клиент поллит, но если вкладку закрыли навсегда — джоб висел бы
+  //     в processing вечно и путал admin-разборы. Сутки без апдейта = мёртв.
+  try {
+    const dayAgo = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+    const { data: stuck } = await admin
+      .from('jobs')
+      .update({ status: 'error', error: 'Обработка прервалась на сервере — запусти ещё раз.' })
+      .in('status', ['queued', 'processing'])
+      .lt('updated_at', dayAgo)
+      .select('id, type')
+    for (const j of (stuck ?? [])) {
+      warnings.push(`⚠️ джоб ${j.type} ${j.id} висел >24ч в processing — закрыт как error (инвокация потерялась)`)
+    }
+  } catch { /* jobs может не быть до миграции 024 */ }
+  // (b) Файлы упавших расшифровок: при временной ошибке файл нарочно остаётся
+  //     в audio-temp, чтобы «Повторить» продолжил с места обрыва (см.
+  //     runTranscribeJob). Окно повтора — 48 часов, дальше подчищаем.
+  try {
+    const twoDaysAgo = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
+    const { data: oldErrored } = await admin
+      .from('jobs')
+      .select('id, payload')
+      .eq('type', 'transcribe')
+      .eq('status', 'error')
+      .lt('updated_at', twoDaysAgo)
+      .limit(100)
+    const paths = (oldErrored ?? [])
+      .map((j) => (j.payload as { storagePath?: string } | null)?.storagePath)
+      .filter((p): p is string => typeof p === 'string' && p.length > 0)
+    if (paths.length > 0) {
+      await admin.storage.from('audio-temp').remove(paths).catch(() => {})
+      // storagePath из payload убираем, чтобы не удалять повторно каждый день
+      for (const j of (oldErrored ?? [])) {
+        const p = (j.payload ?? {}) as Record<string, unknown>
+        if (p.storagePath) {
+          await admin.from('jobs').update({ payload: { ...p, storagePath: null } }).eq('id', j.id)
+        }
+      }
+    }
+  } catch { /* не критично — подчистим в следующий прогон */ }
+
   // ── 4. Trial lifecycle ──────────────────────────────────────────────────────
   // (a) State transition trialing→view_only when the trial expired. ONLY when
   //     enforcement is live — flipping it earlier would make the TrialBanner

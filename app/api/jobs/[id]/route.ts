@@ -1,5 +1,35 @@
 import { NextResponse } from 'next/server'
+import { after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { captureMessage, captureException } from '@/lib/sentry'
+import { processTranscribeJob } from '@/lib/jobs/runTranscribeJob'
+import { processInstagramScrapeJob } from '@/lib/jobs/runInstagramScrapeJob'
+import { processBlogAuditJob } from '@/lib/jobs/runBlogAuditJob'
+import { processStandaloneBlogAuditJob } from '@/lib/jobs/runStandaloneBlogAuditJob'
+import { processViralReelJob } from '@/lib/jobs/runViralReelJob'
+import { processMontageJob } from '@/lib/jobs/runMontageJob'
+
+// Джобы обрабатываются в after()-инвокациях с maxDuration=300s. Если инвокация
+// потерялась (деплой в момент передачи ноги, убитый воркер, несработавший
+// after()), джоб застревает в processing НАВСЕГДА — а клиент вечно поллит
+// «Часть 3/8» без ошибки. Порог 10 минут = 2× maxDuration: живой раннер
+// обновляет progress (и триггер бампает updated_at) минимум раз в пару минут,
+// а мёртвый гарантированно не воскреснет — перезапуск безопасен от гонок.
+const STALE_MS = 10 * 60 * 1000
+const MAX_RESTARTS = 2
+
+export const runtime = 'nodejs'
+export const maxDuration = 300
+
+const RUNNERS: Record<string, (jobId: string) => Promise<void>> = {
+  transcribe:            processTranscribeJob,        // резюмится с doneChunks
+  instagram_scrape:      processInstagramScrapeJob,   // one-shot, перезапуск с нуля
+  blog_audit:            processBlogAuditJob,
+  blog_audit_standalone: processStandaloneBlogAuditJob,
+  viral_reel:            processViralReelJob,
+  montage:               processMontageJob,
+}
 
 // GET /api/jobs/[id] — poll a background job's status/progress/result. RLS
 // (jobs_owner_select, migration 024) enforces ownership at the DB level; the
@@ -19,6 +49,57 @@ export async function GET(
     .eq('id', id)
     .single()
   if (error || !job) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  // ── Самолечение застрявшего джоба ──────────────────────────────────────────
+  const stalled =
+    (job.status === 'processing' || job.status === 'queued') &&
+    Date.now() - new Date(job.updated_at as string).getTime() > STALE_MS
+  if (stalled) {
+    const admin = createAdminClient()
+    const progress = (job.progress ?? {}) as Record<string, unknown>
+    const restarts = typeof progress.restarts === 'number' ? progress.restarts : 0
+    const runner = RUNNERS[job.type as string]
+
+    if (!runner || restarts >= MAX_RESTARTS) {
+      // Лечение не помогло (или тип неизвестен) — честная ошибка вместо
+      // вечного «обрабатывается». Сырой контекст — в Sentry/error_events.
+      const { data: marked } = await admin
+        .from('jobs')
+        .update({
+          status: 'error',
+          error: 'Обработка прервалась на сервере — это на нашей стороне. Запусти ещё раз; если повторится, напиши нам.',
+        })
+        .eq('id', id)
+        .eq('updated_at', job.updated_at as string) // только один из параллельных поллеров
+        .select('id')
+      if (marked && marked.length > 0) {
+        await captureException(new Error(`job stuck: ${job.type} — рестарты исчерпаны (${restarts})`), {
+          where: 'jobs/[id] self-heal', jobId: id, type: job.type as string,
+        })
+        job.status = 'error'
+        job.error = 'Обработка прервалась на сервере — это на нашей стороне. Запусти ещё раз; если повторится, напиши нам.'
+      }
+    } else {
+      // Оптимистическая блокировка по updated_at: из N параллельных поллеров
+      // перезапускает только тот, чей апдейт прошёл. Для transcribe перезапуск
+      // = продолжение с doneChunks; one-shot раннеры начинают заново (мёртвый
+      // предшественник гарантированно ничего не дописал — см. порог выше).
+      const { data: won } = await admin
+        .from('jobs')
+        .update({ progress: { ...progress, restarts: restarts + 1 } })
+        .eq('id', id)
+        .eq('updated_at', job.updated_at as string)
+        .select('id')
+      if (won && won.length > 0) {
+        await captureMessage(
+          `job self-heal: перезапуск ${job.type} после ${Math.round((Date.now() - new Date(job.updated_at as string).getTime()) / 60000)} мин простоя (рестарт ${restarts + 1}/${MAX_RESTARTS})`,
+          'warning',
+          { jobId: id, type: job.type as string },
+        )
+        after(() => runner(id))
+      }
+    }
+  }
 
   return NextResponse.json({ job })
 }

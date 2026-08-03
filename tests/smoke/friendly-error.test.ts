@@ -78,3 +78,35 @@ describe('project limit (DB trigger) → человеческий текст', (
     expect(out).not.toMatch(/на нашей стороне/i)
   })
 })
+
+// Регрессия 31 июля: «Ошибка расшифровки: 429 You have no credits remaining.
+// Add credits … platform.openai.com/settings/organization/billing» прошла
+// кириллическую эвристику по русскому префиксу — клиент увидел, что у сервиса
+// кончились деньги у провайдера, с прямой ссылкой на его биллинг.
+// Класс: денежные/провайдерские хвосты обязаны ловиться TECHNICAL.
+describe('провайдерские/денежные хвосты не доходят до клиента', () => {
+  it('прячет «no credits» и ссылку на биллинг OpenAI за русским префиксом', () => {
+    const raw = 'Ошибка расшифровки: 429 You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.'
+    const out = friendlyError(raw, 'Сервис перегружен.')
+    expect(out).toBe('Сервис перегружен.')
+    expect(out).not.toMatch(/credits|openai|billing/i)
+  })
+
+  it('прячет имена провайдеров и ошибки квоты', () => {
+    expect(friendlyError('Anthropic API error: credit balance is too low')).toBe(SERVICE_ERROR_MESSAGE)
+    expect(friendlyError('You exceeded your current quota, please check your plan')).toBe(SERVICE_ERROR_MESSAGE)
+    expect(friendlyError('insufficient_quota')).toBe(SERVICE_ERROR_MESSAGE)
+    expect(friendlyError('Ошибка: OpenAI request failed')).toBe(SERVICE_ERROR_MESSAGE)
+    expect(friendlyError('APIFY_TOKEN не настроен в окружении')).toBe(SERVICE_ERROR_MESSAGE)
+    expect(friendlyError('overloaded_error: Overloaded')).toBe(SERVICE_ERROR_MESSAGE)
+  })
+
+  it('прячет англоязычный таймаут скрейпа (реальный jobs.error 18 июля)', () => {
+    expect(friendlyError('The operation was aborted due to timeout')).toBe(SERVICE_ERROR_MESSAGE)
+  })
+
+  it('не трогает наши честные русские тексты без хвостов', () => {
+    const ours = 'Сервис расшифровки сейчас перегружен или временно недоступен — это на нашей стороне, файл в порядке. Нажми «Повторить» — продолжу с места обрыва, заново загружать файл не нужно.'
+    expect(friendlyError(ours)).toBe(ours)
+  })
+})

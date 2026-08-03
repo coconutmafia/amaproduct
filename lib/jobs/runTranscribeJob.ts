@@ -1,6 +1,7 @@
 import { after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { transcribeWindow } from '@/lib/jobs/transcribeWindow'
+import { sanitizeTranscribeError } from '@/lib/jobs/transcribeErrors'
 import { captureException } from '@/lib/sentry'
 import { embedMaterialChunks } from '@/lib/ai/embed'
 import { fmtDateRu } from '@/lib/dates'
@@ -18,8 +19,12 @@ interface JobRow {
   status: string
   payload: { storagePath: string; ext: string; durationSec?: number | null; saveTranscriptMaterial?: boolean }
   progress: { doneChunks?: number; totalChunks?: number | null }
-  result: { text?: string } | null
+  result: { text?: string; materialId?: string | null } | null
 }
+
+// Минимум текста, ради которого стоит сохранять ЧАСТИЧНУЮ расшифровку при
+// обрыве (≈ полминуты речи). Меньше — скорее шум/обрывок, чем ценность.
+const PARTIAL_SAVE_MIN_CHARS = 400
 
 function continueUrl(): string {
   const base = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL
@@ -82,9 +87,51 @@ export async function processTranscribeJob(jobId: string): Promise<void> {
     const startSec = ci * CHUNK_SEC
     const res = await transcribeWindow({ admin, storagePath, startSec, durSec: CHUNK_SEC, ext, apiKey })
     if (res.error) {
-      await admin.storage.from('audio-temp').remove([storagePath]).catch(() => {})
-      await admin.from('jobs').update({ status: 'error', error: res.error }).eq('id', jobId)
-      await captureException(new Error(res.error), { where: 'runTranscribeJob', jobId, storagePath })
+      // Обрыв на части ci из totalChunks. Уроки 31 июля:
+      //   1) уже расшифрованный текст — ЦЕННОСТЬ КЛИЕНТА, его нельзя выбрасывать
+      //      из-за падения следующего шага → сохраняем частичный материал;
+      //   2) при ВРЕМЕННОЙ причине (кредиты/перегруз/сеть) файл в хранилище
+      //      оставляем — «Повторить» продолжит с этого же места (retry-роут),
+      //      вместо «переливай 100 МБ с телефона заново»;
+      //   3) в jobs.error — только честный русский текст; сырец — в Sentry.
+      const sanitized = sanitizeTranscribeError(res.error)
+
+      let partialMaterialId: string | null = row.result?.materialId ?? null
+      if (row.payload.saveTranscriptMaterial && row.project_id && text.trim().length >= PARTIAL_SAVE_MIN_CHARS) {
+        try {
+          if (partialMaterialId) {
+            await admin.from('project_materials')
+              .update({ raw_content: text, processing_status: 'ready' })
+              .eq('id', partialMaterialId)
+          } else {
+            const { data: mat } = await admin.from('project_materials').insert({
+              project_id:        row.project_id,
+              title:             `Расшифровка интервью (неполная — оборвалась) · ${fmtDateRu(Date.now(), { day: 'numeric', month: 'long' })}`,
+              material_type:     'interview_transcript',
+              raw_content:       text,
+              processing_status: 'ready',
+            }).select('id').single()
+            partialMaterialId = (mat?.id as string) ?? null
+          }
+        } catch (e) {
+          await captureException(e, { where: 'runTranscribeJob partial-save', jobId })
+        }
+      }
+
+      if (!sanitized.retryable) {
+        await admin.storage.from('audio-temp').remove([storagePath]).catch(() => {})
+      }
+
+      const parts: string[] = [sanitized.userMessage]
+      if (partialMaterialId) parts.push('Расшифрованная часть уже сохранена в материалы проекта — она не потеряется.')
+      if (sanitized.retryable) parts.push('Нажми «Повторить» — продолжу с места обрыва, заново загружать файл не нужно.')
+
+      await admin.from('jobs').update({
+        status: 'error',
+        error: parts.join(' '),
+        result: { text, materialId: partialMaterialId, retryable: sanitized.retryable },
+      }).eq('id', jobId)
+      await captureException(new Error(res.error), { where: 'runTranscribeJob', jobId, storagePath, doneChunks: ci })
       return
     }
     if (res.ended) { ci = totalChunks; break } // reached the true end of an unknown-length file
@@ -107,14 +154,28 @@ export async function processTranscribeJob(jobId: string): Promise<void> {
   let materialId: string | null = null
   if (row.payload.saveTranscriptMaterial && row.project_id && text.trim()) {
     try {
-      const { data: mat } = await admin.from('project_materials').insert({
-        project_id:        row.project_id,
-        title:             `Расшифровка интервью · ${fmtDateRu(Date.now(), { day: 'numeric', month: 'long' })}`,
-        material_type:     'interview_transcript',
-        raw_content:       text,
-        processing_status: 'ready',
-      }).select('id').single()
-      materialId = (mat?.id as string) ?? null
+      // После «Повторить» частичный материал уже существует (сохранён в ветке
+      // ошибки) — обновляем его до полного текста, а не плодим дубль.
+      const priorId = row.result?.materialId ?? null
+      if (priorId) {
+        await admin.from('project_materials')
+          .update({
+            title:             `Расшифровка интервью · ${fmtDateRu(Date.now(), { day: 'numeric', month: 'long' })}`,
+            raw_content:       text,
+            processing_status: 'ready',
+          })
+          .eq('id', priorId)
+        materialId = priorId
+      } else {
+        const { data: mat } = await admin.from('project_materials').insert({
+          project_id:        row.project_id,
+          title:             `Расшифровка интервью · ${fmtDateRu(Date.now(), { day: 'numeric', month: 'long' })}`,
+          material_type:     'interview_transcript',
+          raw_content:       text,
+          processing_status: 'ready',
+        }).select('id').single()
+        materialId = (mat?.id as string) ?? null
+      }
       // Эмбеддинг не критичен для сохранности текста: упал (например, OpenAI
       // без кредитов — ровно утро 31 июля) — материал всё равно сохранён.
       if (materialId) {

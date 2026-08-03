@@ -5,7 +5,7 @@ import { createClient as createSupabaseClient } from '@/lib/supabase/client'
 import { friendlyError } from '@/lib/friendlyError'
 import { isDefinitelyNotMedia, NOT_MEDIA_MESSAGE } from '@/lib/media/notMedia'
 import Link from 'next/link'
-import { ArrowLeft, Upload, Mic, Loader2, ChevronDown, ChevronUp, Sparkles, Download, CheckCircle2, Users, FileText, Save, Plus, X, Circle } from 'lucide-react'
+import { ArrowLeft, Upload, Mic, Loader2, ChevronDown, ChevronUp, Sparkles, Download, CheckCircle2, Users, FileText, Save, Plus, X, Circle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import type { InterviewTable, Respondent } from '@/app/api/ai/research-analyze/route'
@@ -47,6 +47,8 @@ type FileStatus = {
   chunkIndex?: number
   totalChunks?: number
   error?:      string
+  jobId?:      string  // серверный джоб этого файла — нужен для «Повторить»
+  retryable?:  boolean // сервер сказал: причина временная, повтор продолжит с места обрыва
 }
 
 const BLOCK_LABELS: Record<string, string> = {
@@ -69,6 +71,15 @@ type ResearchDraft = {
   transcriptMaterialIds?: string[]
   table1?: InterviewTable | null
   activeJobs?: { jobId: string; name: string }[]
+  // Недоделанный анализ таблицы: готовые батчи переживают выгрузку вкладки
+  // и падение одного батча — продолжаем с nextBatch, а не с нуля (батч = деньги
+  // и минуты). fp привязывает прогресс к конкретной расшифровке.
+  analysisPartial?: {
+    respondents: Respondent[]
+    nextBatch: number
+    totalBatches: number
+    fp: string
+  } | null
 }
 function readDraft(key: string): ResearchDraft | null {
   try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as ResearchDraft : null } catch { return null }
@@ -110,6 +121,9 @@ function getAudioDuration(file: File): Promise<number> {
 // Safe across a locked/backgrounded phone: setTimeout is throttled while the
 // tab is backgrounded, not cancelled — polling simply resumes once it wakes,
 // and by then the server-side job may already be finished.
+// Ошибка джоба с довеском: можно ли продолжить с места обрыва («Повторить»).
+export type TranscribeJobError = Error & { retryable?: boolean }
+
 function pollTranscribeJob(
   jobId: string,
   onProgress: (doneChunks: number, totalChunks: number | null) => void,
@@ -121,7 +135,7 @@ function pollTranscribeJob(
       try {
         const res = await fetch(`/api/jobs/${jobId}`)
         const body = await res.json() as {
-          job?: { status: string; progress?: { doneChunks?: number; totalChunks?: number | null }; result?: { text?: string; materialId?: string | null }; error?: string }
+          job?: { status: string; progress?: { doneChunks?: number; totalChunks?: number | null }; result?: { text?: string; materialId?: string | null; retryable?: boolean }; error?: string }
           error?: string
         }
         if (!res.ok || !body.job) { reject(new Error(body.error ?? 'Не удалось получить статус расшифровки')); return }
@@ -129,7 +143,12 @@ function pollTranscribeJob(
         const { status, progress, result, error } = body.job
         onProgress(progress?.doneChunks ?? 0, progress?.totalChunks ?? null)
         if (status === 'done') { resolve({ text: result?.text ?? '', materialId: result?.materialId ?? null }); return }
-        if (status === 'error') { reject(new Error(error ?? 'Ошибка расшифровки')); return }
+        if (status === 'error') {
+          const e: TranscribeJobError = new Error(error ?? 'Ошибка расшифровки')
+          e.retryable = result?.retryable === true
+          reject(e)
+          return
+        }
         setTimeout(poll, 2500)
       } catch {
         // Transient network hiccup (e.g. tab just woke up) — keep polling
@@ -184,7 +203,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     priorIds: string[],
   ) => {
     setStep('transcribing')
-    setFileQueue(jobs.map(j => ({ name: j.name, status: 'transcribing' as const })))
+    setFileQueue(jobs.map(j => ({ name: j.name, status: 'transcribing' as const, jobId: j.jobId })))
     const allParts = [...priorParts]
     const ids = [...priorIds]
     const errors: string[] = []
@@ -197,8 +216,10 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         if (materialId) ids.push(materialId)
         setFileQueue(prev => prev.map((f, fi) => fi === i ? { ...f, status: 'done' as const } : f))
       } catch (e) {
-        errors.push(e instanceof Error ? e.message : 'Ошибка расшифровки')
-        setFileQueue(prev => prev.map((f, fi) => fi === i ? { ...f, status: 'error' as const } : f))
+        const msg = e instanceof Error ? e.message : 'Ошибка расшифровки'
+        errors.push(msg)
+        const retryable = (e as TranscribeJobError).retryable === true
+        setFileQueue(prev => prev.map((f, fi) => fi === i ? { ...f, status: 'error' as const, error: msg, retryable } : f))
       }
       patchDraft(draftKey, { transcriptionParts: allParts, transcriptMaterialIds: ids, activeJobs: jobs.slice(i + 1) })
     }
@@ -208,10 +229,10 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       setTranscriptMaterialIds(ids)
       setTranscription(allParts.map(p => p.text).join('\n\n'))
       setStep('transcribed')
-      if (errors.length) toast.error(`Часть файлов не расшифровалась: ${errors[0]}`)
+      if (errors.length) toast.error(`Часть файлов не расшифровалась: ${friendlyUploadError(errors[0])}`)
     } else {
       setStep('upload')
-      if (errors.length) toast.error(errors[0])
+      if (errors.length) toast.error(friendlyUploadError(errors[0]))
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftKey])
@@ -234,7 +255,11 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       toast.message('Восстановил незаконченное исследование — таблица на месте')
     } else if (d.transcription) {
       setStep('transcribed')
-      toast.message('Восстановил расшифровку — продолжай с того же места')
+      if (d.analysisPartial && d.analysisPartial.nextBatch < d.analysisPartial.totalBatches) {
+        toast.message(`Анализ прервался на части ${d.analysisPartial.nextBatch + 1} из ${d.analysisPartial.totalBatches} — нажми «Создать таблицу исследования», продолжу с того же места`)
+      } else {
+        toast.message('Восстановил расшифровку — продолжай с того же места')
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -257,7 +282,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     setProgress(null)
     setIcloudWait(null)
     setTranscriptMaterialIds([]) // новая партия файлов — прежние id не наши
-    patchDraft(draftKey, { transcription: '', transcriptionParts: [], transcriptMaterialIds: [], table1: null, activeJobs: [] })
+    patchDraft(draftKey, { transcription: '', transcriptionParts: [], transcriptMaterialIds: [], table1: null, activeJobs: [], analysisPartial: null })
 
     const supabase  = createSupabaseClient()
     const allParts: { name: string; text: string }[] = []
@@ -283,12 +308,18 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       return
     }
 
+    // ── ФАЗА 1: залить ВСЕ файлы и стартовать ВСЕ джобы, поллинг потом ────────
+    // Раньше файлы шли строго по одному (upload₁ → джоб₁ до конца → upload₂ …):
+    // умри вкладка на первом часовом интервью — остальные файлы даже не начаты
+    // и молча теряются. Теперь заливки короткие и идут подряд, а расшифровки
+    // крутятся на сервере ПАРАЛЛЕЛЬНО; после старта последнего джоба вкладка
+    // больше ничего не держит — все джобы в черновике, resumeJobs их догонит.
+    const started: { fi: number; jobId: string; name: string }[] = []
     for (let fi = 0; fi < files.length; fi++) {
       const uploadedPaths: string[] = []
-
       try {
         const file = files[fi]
-        let fileName = initNames[fi]
+        const fileName = initNames[fi]
 
         const rawExt = fileName.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? ''
         const ext    = rawExt || 'mp3'
@@ -334,13 +365,8 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         if (uploadError) throw new Error(`Ошибка загрузки: ${uploadError.message}`)
         uploadedPaths.push(storagePath)
 
-        // ── 2. Transcribe as a BACKGROUND JOB — server runs it to completion ────
-        // (roadmap #8). Previously the client itself looped chunk-by-chunk over
-        // HTTP, which meant a locked/backgrounded phone could stall or drop the
-        // whole transcription mid-way. Now one call starts a server-side job
-        // (self-continuing across invocations via next/server's `after()`), and
-        // the client just polls status — safe to lock the screen; the job keeps
-        // running either way, and polling simply resumes once the tab wakes.
+        // ── 2. Старт фонового джоба (roadmap #8): сервер сам доведёт до конца
+        // (само-продолжение через after()), клиент только поллит статус.
         const durationSec = await getAudioDuration(file)
 
         const startRes = await fetch('/api/jobs/transcribe', {
@@ -355,34 +381,50 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
           throw new Error(startBody.error ?? 'Не удалось запустить расшифровку')
         }
 
-        // Джоб — в черновик ДО поллинга: умри вкладка сейчас, при возврате
-        // страница его догонит (resumeJobs), а не начнёт с нуля.
+        // Джоб — в черновик СРАЗУ: умри вкладка сейчас, при возврате страница
+        // его догонит (resumeJobs), а не начнёт с нуля.
         patchDraft(draftKey, { activeJobs: [...(readDraft(draftKey)?.activeJobs ?? []), { jobId: startBody.jobId, name: fileName }] })
-
-        const { text: finalText, materialId } = await pollTranscribeJob(startBody.jobId, (doneChunks, totalChunks) => {
-          updateFile(fi, { status: 'transcribing', chunkIndex: doneChunks, totalChunks: totalChunks ?? doneChunks })
-        })
-
-        allParts.push({ name: fileName, text: finalText })
-        if (materialId) runIds.push(materialId)
-        patchDraft(draftKey, {
-          transcriptionParts: [...allParts],
-          transcriptMaterialIds: [...runIds],
-          activeJobs: (readDraft(draftKey)?.activeJobs ?? []).filter(j => j.jobId !== startBody.jobId),
-        })
-        updateFile(fi, { status: 'done' })
-
+        started.push({ fi, jobId: startBody.jobId, name: fileName })
+        updateFile(fi, { status: 'transcribing', jobId: startBody.jobId })
       } catch (err) {
-        // ── One file failed — mark it and continue with the rest ────────────
+        // Файл не дошёл до старта джоба — помечаем и продолжаем с остальными.
         const msg = err instanceof Error ? err.message : 'Неизвестная ошибка'
         fileErrors.push(msg)
         updateFile(fi, { status: 'error', error: msg })
-      } finally {
+        // Залитый, но не пригодившийся файл подчищаем; файлы СО стартовавшим
+        // джобом не трогаем — их жизненным циклом управляет сам джоб (и
+        // «Повторить» им нужен файл на месте).
         if (uploadedPaths.length > 0) {
           await supabase.storage.from('audio-temp').remove(uploadedPaths).catch(() => {})
         }
       }
     }
+
+    // ── ФАЗА 2: параллельный поллинг всех джобов, сборка в порядке файлов ────
+    const results = await Promise.all(started.map(s =>
+      pollTranscribeJob(s.jobId, (doneChunks, totalChunks) => {
+        updateFile(s.fi, { status: 'transcribing', chunkIndex: doneChunks, totalChunks: totalChunks ?? doneChunks })
+      })
+        .then(r => ({ s, ok: true as const, text: r.text, materialId: r.materialId }))
+        .catch((e: unknown) => ({
+          s,
+          ok: false as const,
+          error: e instanceof Error ? e.message : 'Ошибка расшифровки',
+          retryable: (e as TranscribeJobError).retryable === true,
+        }))
+    ))
+
+    for (const r of results) { // порядок results = порядок started = порядок файлов
+      if (r.ok) {
+        allParts.push({ name: r.s.name, text: r.text })
+        if (r.materialId) runIds.push(r.materialId)
+        updateFile(r.s.fi, { status: 'done' })
+      } else {
+        fileErrors.push(r.error)
+        updateFile(r.s.fi, { status: 'error', error: r.error, retryable: r.retryable })
+      }
+    }
+    patchDraft(draftKey, { transcriptionParts: allParts, transcriptMaterialIds: runIds, activeJobs: [] })
 
     setProgress(null)
 
@@ -391,10 +433,13 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       setTranscriptMaterialIds(runIds)
       setTranscription(allParts.map(p => p.text).join('\n\n'))
       setStep('transcribed')
+      if (fileErrors.length > 0) {
+        toast.error(`Часть файлов не расшифровалась: ${friendlyUploadError(fileErrors[0])}`)
+      }
     } else {
-      // Surface the ACTUAL reason (quota / ffmpeg / empty iCloud stub / storage)
-      // instead of a generic message — so the user (and we) see what to fix.
-      const reason = [...new Set(fileErrors)].join('; ').slice(0, 300)
+      // Показываем НАСТОЯЩУЮ причину (квота / формат / пустая заглушка iCloud),
+      // но через фильтр от технических хвостов — сырец и так уходит в Sentry.
+      const reason = [...new Set(fileErrors)].map(e => friendlyUploadError(e)).join('; ').slice(0, 300)
       toast.error(reason ? `Не удалось расшифровать: ${reason}` : 'Ни один файл не удалось расшифровать')
       setStep('upload')
     }
@@ -460,10 +505,59 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     }
   }, [handleFiles])
 
+  // ── Повтор упавшего файла: продолжить джоб с места обрыва ────────────────────
+  // Кнопка появляется у файла со статусом error, когда сервер сказал, что
+  // причина временная (retryable) — файл остался в хранилище, прогресс в джобе.
+  const retryFile = useCallback(async (fi: number) => {
+    const f = fileQueue[fi]
+    if (!f?.jobId) return
+    setFileQueue(prev => prev.map((s, i) => i === fi ? { ...s, status: 'transcribing', error: undefined } : s))
+    try {
+      const res = await fetch('/api/jobs/transcribe/retry', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ jobId: f.jobId }),
+      })
+      const body = await res.json().catch(() => ({})) as { error?: string }
+      if (!res.ok || body.error) throw new Error(body.error ?? 'Не удалось перезапустить расшифровку')
+
+      // Живой джоб — обратно в черновик: выгрузка вкладки во время повтора
+      // не страшна, resumeJobs догонит.
+      patchDraft(draftKey, { activeJobs: [...(readDraft(draftKey)?.activeJobs ?? []).filter(j => j.jobId !== f.jobId), { jobId: f.jobId, name: f.name }] })
+
+      const { text, materialId } = await pollTranscribeJob(f.jobId, (done, total) => {
+        setFileQueue(prev => prev.map((s, i) => i === fi ? { ...s, chunkIndex: done, totalChunks: total ?? done } : s))
+      })
+
+      setFileQueue(prev => prev.map((s, i) => i === fi ? { ...s, status: 'done' } : s))
+      // Дозаписываем часть в конец (позиция «как загружалось» уже потеряна —
+      // спасение важнее порядка). Черновик обновится автосейвом.
+      setTranscriptionParts(prev => {
+        const next = [...prev, { name: f.name, text }]
+        setTranscription(next.map(p => p.text).join('\n\n'))
+        return next
+      })
+      if (materialId) setTranscriptMaterialIds(prev => [...prev, materialId])
+      patchDraft(draftKey, { activeJobs: (readDraft(draftKey)?.activeJobs ?? []).filter(j => j.jobId !== f.jobId), analysisPartial: null })
+      setStep(s => (s === 'upload' || s === 'transcribing') ? 'transcribed' : s)
+      toast.success(`«${f.name}» дорасшифрован`)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Ошибка расшифровки'
+      const retryable = (e as TranscribeJobError).retryable === true
+      patchDraft(draftKey, { activeJobs: (readDraft(draftKey)?.activeJobs ?? []).filter(j => j.jobId !== f.jobId) })
+      setFileQueue(prev => prev.map((s, i) => i === fi ? { ...s, status: 'error', error: msg, retryable } : s))
+      toast.error(friendlyUploadError(msg))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileQueue, draftKey])
+
   // ── Analysis: batch by 3 files to stay within AI output token limit ──────────
   // With many files the combined transcription can produce 10-15 respondents,
   // which requires 15-20K output tokens — more than the model's 8K cap.
   // Processing 3 files at a time keeps output comfortably under the limit.
+  // Готовые батчи копятся в черновике (analysisPartial): упал батч 4 из 5 или
+  // телефон выгрузил вкладку — следующий запуск продолжит с места обрыва,
+  // а не пересчитает (и не переоплатит) всё заново.
   const analyzeTable1 = useCallback(async () => {
     setStep('analyzing1')
     setAnalysisBatch(null)
@@ -476,10 +570,30 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       const batches: typeof parts[] = []
       for (let i = 0; i < parts.length; i += BATCH) batches.push(parts.slice(i, i + BATCH))
 
+      // Отпечаток расшифровки: прогресс прошлого анализа валиден только для
+      // того же самого текста.
+      const fp = `${parts.length}:${parts.reduce((n, p) => n + p.text.length, 0)}`
+      const saved = readDraft(draftKey)?.analysisPartial
       const allRespondents: Respondent[] = []
-      setAnalysisBatch({ current: 0, total: batches.length })
+      let startBatch = 0
+      if (saved && saved.fp === fp && saved.nextBatch > 0 && Array.isArray(saved.respondents)) {
+        if (saved.nextBatch >= batches.length) {
+          // Все батчи уже посчитаны (вкладка умерла между последним батчем и
+          // показом таблицы) — собираем таблицу из черновика без единого вызова.
+          patchDraft(draftKey, { analysisPartial: null })
+          setTable1({ respondents: saved.respondents })
+          setAnalysisBatch(null)
+          setStep('table1')
+          setExpandedRespondent(saved.respondents[0]?.id ?? null)
+          return
+        }
+        allRespondents.push(...saved.respondents)
+        startBatch = saved.nextBatch
+        toast.message(`Продолжаю анализ с части ${startBatch + 1} из ${batches.length}`)
+      }
+      setAnalysisBatch({ current: startBatch, total: batches.length })
 
-      for (let bi = 0; bi < batches.length; bi++) {
+      for (let bi = startBatch; bi < batches.length; bi++) {
         setAnalysisBatch({ current: bi + 1, total: batches.length })
         const batchText = batches[bi]
           .map((p, i) => batches[bi].length > 1 ? `[Файл ${bi * BATCH + i + 1}: ${p.name}]\n${p.text}` : p.text)
@@ -493,19 +607,26 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         const data = await res.json() as { table1?: InterviewTable; error?: string }
         if (!res.ok || data.error) throw new Error(data.error ?? `Батч ${bi + 1}: ошибка анализа`)
         allRespondents.push(...(data.table1?.respondents ?? []))
+        patchDraft(draftKey, { analysisPartial: { respondents: allRespondents, nextBatch: bi + 1, totalBatches: batches.length, fp } })
       }
 
+      patchDraft(draftKey, { analysisPartial: null })
       const combined: InterviewTable = { respondents: allRespondents }
       setTable1(combined)
       setAnalysisBatch(null)
       setStep('table1')
       setExpandedRespondent(allRespondents[0]?.id ?? null)
     } catch (err) {
-      toast.error(friendlyError(err, 'Ошибка анализа'))
+      const partial = readDraft(draftKey)?.analysisPartial
+      const suffix = partial && partial.nextBatch > 0 && partial.nextBatch < partial.totalBatches
+        ? ` Готовые части (${partial.nextBatch} из ${partial.totalBatches}) сохранены — нажми ещё раз, продолжу с места обрыва.`
+        : ''
+      toast.error(friendlyError(err, 'Ошибка анализа') + suffix)
       setAnalysisBatch(null)
       setStep('transcribed')
     }
-  }, [id, transcription, transcriptionParts])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, transcription, transcriptionParts, draftKey])
 
   // ── Save to materials ───────────────────────────────────────────────────────
   const saveToMaterials = useCallback(async () => {
@@ -638,6 +759,15 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                               {friendlyUploadError(f.error)}
                             </p>
                           )}
+                          {f.status === 'error' && f.retryable && f.jobId && (
+                            <button
+                              type="button"
+                              onClick={() => retryFile(i)}
+                              className="mt-1.5 inline-flex items-center gap-1 px-2 py-1 rounded-md border border-red-200 bg-white text-[11px] font-medium text-red-700 hover:bg-red-50 transition-colors"
+                            >
+                              <RefreshCw className="h-3 w-3" /> Повторить — продолжу с места обрыва
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -656,7 +786,11 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                     )
                   })()}
 
-                  <p className="text-xs text-muted-foreground text-center">Расшифровка идёт на сервере — экран телефона можно заблокировать. Просто не закрывай эту вкладку</p>
+                  <p className="text-xs text-muted-foreground text-center">
+                    {fileQueue.some(f => f.status === 'pending' || f.status === 'uploading')
+                      ? 'Идёт отправка файлов — не закрывай вкладку, пока файлы не отправятся на сервер'
+                      : 'Расшифровка идёт на сервере — можно заблокировать экран и даже закрыть вкладку: вернёшься сюда, и всё догонится'}
+                  </p>
                 </div>
               </>
             ) : (
@@ -669,9 +803,9 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                   <p className="text-sm text-muted-foreground">или нажми чтобы выбрать файл(ы)</p>
                   <p className="text-xs text-muted-foreground/60 mt-1">MP3, MP4, M4A, WAV, OGG, WEBM</p>
                 </div>
-                {/* Limit hint */}
+                {/* Limit hint — цифра из env, как и сама проверка (не хардкод) */}
                 <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium">
-                  <span>⏱ До 100 МБ (≈ 100 минут MP3)</span>
+                  <span>⏱ До {MAX_AUDIO_MB} МБ (≈ {MAX_AUDIO_MB} минут MP3)</span>
                   <span className="text-amber-400">·</span>
                   <span>Большие файлы разбиваются автоматически</span>
                 </div>
@@ -707,6 +841,48 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
               </div>
             </details>
           )}
+        </div>
+      )}
+
+      {/* ── Упавшие файлы: остаются видимыми и ПОСЛЕ ухода с экрана очереди ──
+          Раньше при частичном успехе очередь исчезала вместе с ошибками — файл
+          с временной ошибкой (перегруз/кредиты) нельзя было повторить, только
+          перезаливать. Теперь ошибка живёт здесь до повтора или новой партии. */}
+      {(step === 'upload' || step === 'transcribed') && fileQueue.some(f => f.status === 'error' || f.status === 'transcribing') && (
+        <div className="space-y-1.5">
+          {fileQueue.map((f, i) => f.status === 'error' ? (
+            <div key={i} className="px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-xs text-left">
+              <div className="flex items-center gap-2">
+                <X className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                <span className="flex-1 truncate font-medium text-foreground">{f.name}</span>
+                <span className="shrink-0 text-[11px] text-red-600">Ошибка</span>
+              </div>
+              {f.error && (
+                <p className="mt-1.5 text-[11px] text-red-600 leading-snug break-words">
+                  {friendlyUploadError(f.error)}
+                </p>
+              )}
+              {f.retryable && f.jobId && (
+                <button
+                  type="button"
+                  onClick={() => retryFile(i)}
+                  className="mt-1.5 inline-flex items-center gap-1 px-2 py-1 rounded-md border border-red-200 bg-white text-[11px] font-medium text-red-700 hover:bg-red-50 transition-colors"
+                >
+                  <RefreshCw className="h-3 w-3" /> Повторить — продолжу с места обрыва
+                </button>
+              )}
+            </div>
+          ) : f.status === 'transcribing' ? (
+            <div key={i} className="px-3 py-2 rounded-lg border border-[#3A8A48]/25 bg-[#3A8A48]/5 text-xs text-left">
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-[#3A8A48] shrink-0" />
+                <span className="flex-1 truncate font-medium text-foreground">{f.name}</span>
+                <span className="shrink-0 text-[11px] text-muted-foreground">
+                  {f.totalChunks && f.totalChunks > 1 ? `Часть ${f.chunkIndex}/${f.totalChunks}` : 'Дорасшифровываю...'}
+                </span>
+              </div>
+            </div>
+          ) : null)}
         </div>
       )}
 
