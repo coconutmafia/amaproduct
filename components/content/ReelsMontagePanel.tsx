@@ -48,6 +48,14 @@ export function ReelsMontagePanel({ projectId, text, onTextChange }: {
   const fileRef = useRef<HTMLInputElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // Живой монтаж-джоб в localStorage: раньше jobId жил только в замыкании
+  // поллера — текст обещал «можно уйти со страницы, вернись и проверь», но
+  // возвращаться было НЕКУДА: 5 юнитов списаны, видео отрендерено в сторадж,
+  // а клиент его никогда не увидит. Теперь при открытии панель ДОГОНЯЕТ джоб
+  // (готово → показывает результат; упал → честная ошибка).
+  const draftKey = `ama_montage_${projectId}`
+  const restoredRef = useRef(false)
+
   // хук по умолчанию — первая строка сценария, пока пользователь его не правил
   useEffect(() => {
     if (!hookTouched) setHook(firstLine(text))
@@ -57,9 +65,52 @@ export function ReelsMontagePanel({ projectId, text, onTextChange }: {
 
   const busy = stage !== 'idle' && stage !== 'done' && stage !== 'error'
 
+  // Поллинг джоба; черновик чистится по done/error (результат уже показан).
+  const pollMontage = (jobId: string) => {
+    if (pollRef.current) clearInterval(pollRef.current)
+    pollRef.current = setInterval(async () => {
+      try {
+        const r = await fetch(`/api/jobs/${jobId}`)
+        const d = await r.json() as { job?: { status: string; progress?: { stage?: string }; result?: typeof result; error?: string } }
+        const job = d.job
+        if (!job) return
+        if (job.status === 'done' && job.result) {
+          if (pollRef.current) clearInterval(pollRef.current)
+          try { localStorage.removeItem(draftKey) } catch { /* ignore */ }
+          setResult(job.result); setStage('done')
+          toast.success('Рилс смонтирован!')
+        } else if (job.status === 'error') {
+          if (pollRef.current) clearInterval(pollRef.current)
+          try { localStorage.removeItem(draftKey) } catch { /* ignore */ }
+          setStage('error'); setStageDetail(job.error || '')
+          toast.error(friendlyError(job.error, 'Не удалось смонтировать видео.'))
+        } else {
+          const s = job.progress?.stage
+          if (s && STAGE_LABEL[s]) { setStage(s as Stage); setStageDetail(STAGE_LABEL[s]) }
+        }
+      } catch { /* сеть мигнула — следующий тик */ }
+    }, 2500)
+  }
+
+  // Догон после возврата на страницу/перезагрузки вкладки.
+  useEffect(() => {
+    if (restoredRef.current || !projectId) return
+    restoredRef.current = true
+    try {
+      const raw = localStorage.getItem(draftKey)
+      if (!raw) return
+      const d = JSON.parse(raw) as { jobId?: string }
+      if (!d.jobId) return
+      setStage('queued'); setStageDetail('Проверяю монтаж, который шёл на сервере…')
+      toast.message('Монтаж шёл на сервере, пока страница была закрыта — догоняю…')
+      pollMontage(d.jobId)
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
+
   async function startMontage(file: File) {
     if (file.size > MAX_VIDEO_MB * 1024 * 1024) {
-      toast.error(`Видео больше ${MAX_VIDEO_MB} МБ — это примерно 45-70 секунд с телефона. Обрежь и попробуй снова.`)
+      toast.error(`Видео больше ${MAX_VIDEO_MB} МБ. Для рилса нужно до ~90 секунд — обрежь и попробуй снова.`)
       return
     }
     setStage('uploading'); setResult(null); setStageDetail('')
@@ -90,29 +141,12 @@ export function ReelsMontagePanel({ projectId, text, onTextChange }: {
       }
       if (!startRes.ok || !startBody.jobId) throw new Error(startBody.error ?? 'Не удалось запустить монтаж')
 
+      // Джоб — в черновик СРАЗУ: теперь «можно уйти со страницы» — правда.
+      try { localStorage.setItem(draftKey, JSON.stringify({ jobId: startBody.jobId, ts: Date.now() })) } catch { /* ignore */ }
+
       // 3. поллинг
       setStage('queued')
-      const jobId = startBody.jobId
-      pollRef.current = setInterval(async () => {
-        try {
-          const r = await fetch(`/api/jobs/${jobId}`)
-          const d = await r.json() as { job?: { status: string; progress?: { stage?: string }; result?: typeof result; error?: string } }
-          const job = d.job
-          if (!job) return
-          if (job.status === 'done' && job.result) {
-            if (pollRef.current) clearInterval(pollRef.current)
-            setResult(job.result); setStage('done')
-            toast.success('Рилс смонтирован!')
-          } else if (job.status === 'error') {
-            if (pollRef.current) clearInterval(pollRef.current)
-            setStage('error'); setStageDetail(job.error || '')
-            toast.error(friendlyError(job.error, 'Не удалось смонтировать видео.'))
-          } else {
-            const s = job.progress?.stage
-            if (s && STAGE_LABEL[s]) { setStage(s as Stage); setStageDetail(STAGE_LABEL[s]) }
-          }
-        } catch { /* сеть мигнула — следующий тик */ }
-      }, 2500)
+      pollMontage(startBody.jobId)
     } catch (e) {
       setStage('error')
       toast.error(friendlyError(e, 'Не удалось загрузить видео. Попробуй ещё раз.'))

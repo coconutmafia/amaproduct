@@ -5,7 +5,7 @@
 // 9:16 over your photo in your brand style → preview + download (PNG / ZIP).
 // (Photo stories work today; video overlay is a later step — needs a video engine.)
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { Loader2, Sparkles, Download, Trash2, Wand2 } from 'lucide-react'
@@ -212,6 +212,10 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
     void saveSet(arr.map((r) => r.frame), arr.map((r) => r.blob), savedSetId)
   }
 
+  // brandFailed: сбой СЕТИ — не то же самое, что «стиль не настроен». Раньше
+  // молчаливый catch показывал «Сначала настрой стиль →» человеку с настроенным
+  // брендом и плохим интернетом (класс «TypeError: Load failed» с айфонов).
+  const [brandFailed, setBrandFailed] = useState(false)
   useEffect(() => {
     if (!projectId) return
     fetch(`/api/brand-kit?projectId=${projectId}`).then((r) => r.json()).then((d) => {
@@ -229,7 +233,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
           accentStyle: d.accentStyle === 'flat' ? 'flat' : 'gradient',
         })
       }
-    }).catch(() => {})
+    }).catch(() => setBrandFailed(true))
   }, [projectId])
 
   // Script handed over from the chat («Оформить сторис» on a stories answer)
@@ -263,13 +267,18 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
     } catch { /* ignore */ }
   }, [projectId, script, photos])
 
-  // Load the saved-sets gallery
-  useEffect(() => {
+  // Load the saved-sets gallery. Сбой сети ≠ «серий нет»: молчаливый catch
+  // прятал галерею целиком, и человек думал, что серии ПРОПАЛИ (впечатление
+  // «всё сбросилось»). Теперь сбой виден и есть «Показать ещё раз».
+  const [setsFailed, setSetsFailed] = useState(false)
+  const loadSets = useCallback(() => {
     if (!projectId) return
+    setSetsFailed(false)
     fetch(`/api/stories/sets?projectId=${projectId}`).then((r) => r.json()).then((d) => {
       if (d && Array.isArray(d.sets)) setSets(d.sets as StorySet[])
-    }).catch(() => {})
+    }).catch(() => setSetsFailed(true))
   }, [projectId])
+  useEffect(() => { loadSets() }, [loadSets])
 
   // Persist a rendered series into «Мои оформленные сторис» (storage + index).
   // Re-saving with the same setId replaces the set (used after chat edits).
@@ -508,7 +517,12 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         })
       }
 
-      const results = await Promise.all(frames.map(async (f, i) => {
+      // allSettled, не all: отказ ОДНОГО кадра (обычно видео-overlay — 402 или
+      // перегруз) раньше выбрасывал ВСЮ серию, включая успешные кадры и уже
+      // списанные юниты за готовые видео-кадры. Теперь: успешные остаются,
+      // упавшие называются честно (урок 31 июля: данные клиента не зависят
+      // от успеха соседнего шага).
+      const settled = await Promise.allSettled(frames.map(async (f, i) => {
         if (!f.video) {
           const blob = await renderFrame(f, i)
           return { blob: blob as Blob | null, url: URL.createObjectURL(blob), frame: f }
@@ -522,15 +536,25 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         if (res.status === 402) {
           const d = await res.clone().json().catch(() => ({} as { code?: string }))
           showUpgrade(d.code === 'payment_required' ? 'needs_plan' : 'limit')
-          throw new Error('Не хватает единиц контента на видео-кадр')
+          throw new Error('не хватило единиц контента на видео-кадр')
         }
         const d = await res.json().catch(() => ({} as { url?: string; error?: string }))
-        if (!res.ok || !d.url) throw new Error(d.error || 'Не удалось обработать видео-кадр')
+        if (!res.ok || !d.url) throw new Error(d.error || 'видео-кадр не обработался')
         // source = исходник (f.video ДО overlay) — из него потом пересобирается
         // позиция текста без пересборки всей серии.
         const frame: Frame = { ...f, video: d.url, source: f.video }
         return { blob: null, url: d.url, frame }
       }))
+      const results: { blob: Blob | null; url: string; frame: Frame }[] = []
+      const failures: string[] = []
+      settled.forEach((s, i) => {
+        if (s.status === 'fulfilled') results.push(s.value)
+        else failures.push(`кадр ${i + 1} — ${friendlyError(s.reason, 'не собрался')}`)
+      })
+      if (results.length === 0) throw new Error(failures[0] || 'Не удалось собрать ни один кадр')
+      if (failures.length > 0) {
+        toast.error(`Собралось ${results.length} из ${frames.length} кадров (${failures.join('; ')}). Готовые кадры сохранены — недостающие можно пересобрать заново.`, { duration: 12000 })
+      }
       const frames2 = results.map((r) => r.frame)
       const blobs = results.map((r) => r.blob)
       setRendered(results)
@@ -556,9 +580,14 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
 
   return (
     <div className="space-y-4">
-      {!brand && (
+      {!brand && !brandFailed && (
         <p className="text-sm text-muted-foreground">
           <Link href={`/projects/${projectId}/brand`} className="text-primary underline">Сначала настрой стиль →</Link>
+        </p>
+      )}
+      {brandFailed && (
+        <p className="text-sm text-amber-700 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+          Не удалось загрузить фирменный стиль (похоже, сеть мигнула) — обнови страницу, иначе кадры соберутся в стандартных цветах.
         </p>
       )}
 
@@ -673,6 +702,15 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
       )}
 
       {/* Gallery — saved designed series */}
+      {setsFailed && (
+        <section className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
+          <p className="text-sm text-amber-800">Сохранённые серии не загрузились (сеть мигнула) — они на месте, просто не показались.</p>
+          <button type="button" onClick={loadSets}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-500/10">
+            Показать ещё раз
+          </button>
+        </section>
+      )}
       {sets.length > 0 && (
         <section className="mt-4 rounded-2xl border border-border bg-card p-4">
           <p className="text-sm font-semibold text-foreground">Ранее оформленный контент · {sets.length}</p>

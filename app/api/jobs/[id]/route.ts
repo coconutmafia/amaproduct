@@ -9,6 +9,7 @@ import { processBlogAuditJob } from '@/lib/jobs/runBlogAuditJob'
 import { processStandaloneBlogAuditJob } from '@/lib/jobs/runStandaloneBlogAuditJob'
 import { processViralReelJob } from '@/lib/jobs/runViralReelJob'
 import { processMontageJob } from '@/lib/jobs/runMontageJob'
+import { stuckJobMessage, settleStuckJob } from '@/lib/jobs/failStuckJob'
 
 // Джобы обрабатываются в after()-инвокациях с maxDuration=300s. Если инвокация
 // потерялась (деплой в момент передачи ноги, убитый воркер, несработавший
@@ -63,21 +64,21 @@ export async function GET(
     if (!runner || restarts >= MAX_RESTARTS) {
       // Лечение не помогло (или тип неизвестен) — честная ошибка вместо
       // вечного «обрабатывается». Сырой контекст — в Sentry/error_events.
+      const message = stuckJobMessage(job.type as string)
       const { data: marked } = await admin
         .from('jobs')
-        .update({
-          status: 'error',
-          error: 'Обработка прервалась на сервере — это на нашей стороне. Запусти ещё раз; если повторится, напиши нам.',
-        })
+        .update({ status: 'error', error: message })
         .eq('id', id)
         .eq('updated_at', job.updated_at as string) // только один из параллельных поллеров
-        .select('id')
+        .select('id, type, user_id, payload')
       if (marked && marked.length > 0) {
+        // Тип-специфика: монтажу вернуть юниты и подчистить исходник и т.п.
+        await settleStuckJob(admin, marked[0] as { id: string; type: string; user_id?: string | null; payload?: Record<string, unknown> | null })
         await captureException(new Error(`job stuck: ${job.type} — рестарты исчерпаны (${restarts})`), {
           where: 'jobs/[id] self-heal', jobId: id, type: job.type as string,
         })
         job.status = 'error'
-        job.error = 'Обработка прервалась на сервере — это на нашей стороне. Запусти ещё раз; если повторится, напиши нам.'
+        job.error = message
       }
     } else {
       // Оптимистическая блокировка по updated_at: из N параллельных поллеров

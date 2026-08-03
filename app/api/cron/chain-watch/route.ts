@@ -4,6 +4,7 @@ import { ALWAYS_INCLUDE, BLOCKED_STATUS } from '@/lib/ai/rag'
 import { BILLING_ENFORCED } from '@/lib/generations'
 import { emailConfigured, sendEmail, trialEndingEmail, trialEndedEmail } from '@/lib/email'
 import { captureMessage } from '@/lib/sentry'
+import { settleStuckJob, stuckJobMessage } from '@/lib/jobs/failStuckJob'
 
 // Daily chain-integrity watchdog (Vercel Cron, see vercel.json).
 //
@@ -99,8 +100,13 @@ async function handle(request: Request) {
       .update({ status: 'error', error: 'Обработка прервалась на сервере — запусти ещё раз.' })
       .in('status', ['queued', 'processing'])
       .lt('updated_at', dayAgo)
-      .select('id, type')
+      .select('id, type, user_id, payload')
     for (const j of (stuck ?? [])) {
+      // Тип-специфика (montage — вернуть юниты, подчистить исходник и т.п.)
+      await settleStuckJob(admin, j as { id: string; type: string; user_id?: string | null; payload?: Record<string, unknown> | null })
+      if (j.type === 'montage' || j.type === 'transcribe') {
+        await admin.from('jobs').update({ error: stuckJobMessage(j.type as string) }).eq('id', j.id)
+      }
       warnings.push(`⚠️ джоб ${j.type} ${j.id} висел >24ч в processing — закрыт как error (инвокация потерялась)`)
     }
   } catch { /* jobs может не быть до миграции 024 */ }
