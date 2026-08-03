@@ -517,9 +517,167 @@ async function researchSmoke() {
   }
 }
 
+// ── ПРОБНИК: живой смоук карты смыслов (формат урока, форс-тул) ──────────────
+// Проверяет НОВЫЙ generate_meanings (3 августа): SSE-стрим → форс-тул →
+// материал в формате урока ([БОЛИ] Общая формулировка / — «формулировка» /
+// Идея контента: …). Сетап без AI-затрат (кастдев-таблица вставляется через
+// REST), сам вызов — один живой Claude (~$0.03).
+async function meaningsSmoke() {
+  const APP = 'https://amaproduct.com'
+  const QA = 'ama-qa-bot@gmail.com'
+  log('\n=== Пробник: живой смоук карты смыслов (формат урока) ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) QA-бот: magiclink → verify → сессия')
+    log('  2) временный проект ama-probe-meanings-* + синтетическая кастдев-таблица (REST)')
+    log(`  3) POST ${APP}/api/ai/research-analyze step=generate_meanings (SSE до конца)`)
+    log('  4) проверить материал: формат урока ([БОЛИ] … / — «…» / Идея контента), есть потребности')
+    log('  5) удалить материалы и проект')
+    return
+  }
+  const anon = (() => {
+    const txt = readFileSync(join(ROOT, '.env.local'), 'utf8')
+    const m = txt.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY в .env.local'); return }
+
+  const gl = await api('/auth/v1/admin/generate_link', {
+    method: 'POST',
+    body: JSON.stringify({ type: 'magiclink', email: QA }),
+  })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log('❌ generate_link не дал email_otp:', gl.status); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST',
+    headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA, token: otp }),
+  }).then(r => r.json())
+  if (!ver?.access_token) { log('❌ verify не дал сессию'); return }
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64')}`
+  log('✅ 1. сессия QA-бота получена')
+
+  const qaId = ver.user?.id
+  const projName = `${PROBE_PREFIX}meanings-${Date.now()}`
+  const prj = await api('/rest/v1/projects', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ owner_id: qaId, name: projName, niche: 'смоук', status: 'active' }),
+  })
+  const projectId = Array.isArray(prj.body) ? prj.body[0]?.id : prj.body?.id
+  if (!projectId) { log('❌ 2. проект не создался:', prj.status, JSON.stringify(prj.body).slice(0, 200)); return }
+
+  // Синтетическая кастдев-таблица: две участницы с пересекающейся болью —
+  // проверяем ГРУППИРОВКУ (одна общая формулировка, две строки формулировок).
+  const tableText = [
+    'Участник: Мария (Женщина, 34 года, преподаёт йогу)',
+    '',
+    '  Вопрос: Что тебя не устраивает сейчас?',
+    '  Ответ: Не хватает новых учениц, все приходят только по сарафану, соцсети не веду — руки не доходят.',
+    '  Цитаты: все по сарафану | соцсети не веду',
+    '  Тон: тревога',
+    '',
+    '  Вопрос: А как ты хочешь, чтобы было?',
+    '  Ответ: Хочу стабильный поток заявок из блога, чтобы не зависеть от сарафана.',
+    '  Цитаты: стабильный поток заявок',
+    '  Тон: желание',
+    '',
+    '---',
+    '',
+    'Участник: Ольга (Женщина, 41 год, нутрициолог)',
+    '',
+    '  Вопрос: Что тебя не устраивает?',
+    '  Ответ: Клиенты приходят случайно, через знакомых, блог не ведётся, продвигаться не умею.',
+    '  Цитаты: приходят случайно | продвигаться не умею',
+    '  Тон: бессилие',
+    '',
+    '  Вопрос: Что тебе важно при выборе наставника?',
+    '  Ответ: Чтобы всё было по шагам и понятно, я боюсь сложных схем и что не справлюсь.',
+    '  Цитаты: по шагам и понятно | боюсь что не справлюсь',
+    '  Тон: страх',
+  ].join('\n')
+  const mat = await api('/rest/v1/project_materials', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({
+      project_id: projectId,
+      title: 'Таблица исследования · смоук',
+      material_type: 'audience_research',
+      raw_content: tableText,
+      processing_status: 'ready',
+    }),
+  })
+  const matId = Array.isArray(mat.body) ? mat.body[0]?.id : mat.body?.id
+  if (!matId) { log('❌ 2b. кастдев-таблица не вставилась:', mat.status); return }
+  log(`✅ 2. проект ${projName} + кастдев-таблица`)
+
+  const cleanup = async () => {
+    await api(`/rest/v1/project_materials?project_id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    await api(`/rest/v1/projects?id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    log('🧹 уборка: материалы и проект удалены')
+  }
+
+  try {
+    const t0 = Date.now()
+    const res = await fetch(`${APP}/api/ai/research-analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ projectId, step: 'generate_meanings' }),
+    })
+    if (!res.ok || !res.body) {
+      log(`❌ 3. generate_meanings HTTP ${res.status}`)
+      log('   тело:', (await res.text().catch(() => '')).slice(0, 300))
+      return
+    }
+    // Дочитываем SSE до конца (done/error)
+    const reader = res.body.getReader()
+    const dec = new TextDecoder()
+    let buf = '', done = false, errMsg = ''
+    while (true) {
+      const { value, done: end } = await reader.read()
+      if (end) break
+      buf += dec.decode(value, { stream: true })
+      for (const ev of buf.split('\n\n')) {
+        const line = ev.split('\n').find(l => l.startsWith('data: '))
+        if (!line) continue
+        try {
+          const m = JSON.parse(line.slice(6))
+          if (m.type === 'done') done = true
+          if (m.type === 'error') errMsg = m.message || 'error'
+        } catch { /* ping */ }
+      }
+    }
+    if (errMsg) { log(`❌ 3. стрим вернул ошибку за ${((Date.now() - t0) / 1000).toFixed(1)}с: ${errMsg}`); return }
+    if (!done) { log('⚠️ 3. стрим кончился без done — проверяю материал (сервер мог доделать)') }
+    log(`✅ 3. generate_meanings отработал за ${((Date.now() - t0) / 1000).toFixed(1)}с`)
+
+    const check = await api(`/rest/v1/project_materials?select=raw_content,processing_status&project_id=eq.${projectId}&material_type=eq.meanings_map`)
+    const map = Array.isArray(check.body) ? check.body[0] : null
+    if (!map || map.processing_status !== 'ready') {
+      log('❌ 4. материал карты не ready:', JSON.stringify(check.body).slice(0, 200))
+      return
+    }
+    const txt = map.raw_content || ''
+    const hasLessonHeader = /\[(БОЛИ|ПОТРЕБНОСТИ И ХОТЕЛКИ|ТРИГГЕРЫ|ВОЗРАЖЕНИЯ|ПРЕИМУЩЕСТВА)\]/.test(txt)
+    const rowsCount = (txt.match(/^—\s*«/gm) || []).length
+    const ideas = (txt.match(/Идея контента:/g) || []).length
+    const hasNeeds = /\[ПОТРЕБНОСТИ И ХОТЕЛКИ\]/.test(txt)
+    log(`   формат урока: ${hasLessonHeader ? 'да' : 'НЕТ'}; формулировок-строк: ${rowsCount}; идей: ${ideas}; потребности: ${hasNeeds ? 'есть' : 'НЕТ'}`)
+    log('   превью:', txt.slice(0, 220).replace(/\n/g, ' | '))
+    if (hasLessonHeader && rowsCount >= 3 && ideas >= 3) {
+      log('\n🎉 КАРТА ПО УРОКУ ЖИВА: группировка, строки-формулировки и идеи на месте.')
+    } else {
+      log('\n⚠️ Карта собралась, но формат неполный — смотри превью выше.')
+    }
+  } finally {
+    await cleanup()
+  }
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
