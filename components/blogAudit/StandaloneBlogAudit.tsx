@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Loader2, Sparkles, AtSign } from 'lucide-react'
@@ -16,11 +16,50 @@ export function StandaloneBlogAudit() {
   const [handle, setHandle]   = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult]   = useState<AuditResult | null>(null)
+  // Метка «это прошлый разбор» при восстановлении после выгрузки вкладки.
+  const [restoredFrom, setRestoredFrom] = useState<string | null>(null)
+  const restoredRef = useRef(false)
+
+  // Разбор идёт ~1 минуту — телефон успевает выгрузить вкладку. Джоб
+  // доделывается на сервере; при открытии страницы догоняем его: живой —
+  // продолжаем поллинг, готовый — сразу показываем (раньше результат
+  // пропадал для клиента насовсем).
+  useEffect(() => {
+    if (restoredRef.current) return
+    restoredRef.current = true
+    ;(async () => {
+      try {
+        const res = await fetch('/api/blog-audit/standalone')
+        if (!res.ok) return
+        const d = await res.json() as { job?: { id: string; status: string; result?: AuditResult | null; username?: string | null; createdAt?: string } | null }
+        const job = d.job
+        if (!job) return
+        if (job.username) setHandle(job.username)
+        const freshEnough = job.createdAt && Date.now() - new Date(job.createdAt).getTime() < 24 * 3600 * 1000
+        if (job.status === 'done' && freshEnough && job.result && typeof job.result.score100 === 'number') {
+          setResult(job.result)
+          setRestoredFrom(job.username ? `@${job.username}` : 'прошлый разбор')
+        } else if (job.status === 'queued' || job.status === 'processing') {
+          setLoading(true)
+          toast.message('Разбор шёл на сервере, пока страница была закрыта — догоняю…')
+          try {
+            const audit = await pollJob<AuditResult>(job.id)
+            if (audit && typeof audit.score100 === 'number') setResult(audit)
+          } catch (e) {
+            toast.error(friendlyError(e, 'Не удалось сделать разбор'))
+          } finally {
+            setLoading(false)
+          }
+        }
+      } catch { /* нет прошлого разбора — обычный экран ввода */ }
+    })()
+  }, [])
 
   const run = useCallback(async (h: string) => {
     const clean = h.trim()
     if (!clean) { toast.error('Введи @аккаунт Instagram'); return }
     setLoading(true)
+    setRestoredFrom(null)
     try {
       const res = await fetch('/api/blog-audit/standalone', {
         method: 'POST',
@@ -54,8 +93,13 @@ export function StandaloneBlogAudit() {
   if (result) {
     return (
       <div className="space-y-4">
+        {restoredFrom && (
+          <p className="text-xs text-muted-foreground bg-secondary/40 border border-border rounded-lg px-3 py-2">
+            Это твой последний разбор ({restoredFrom}) — он доделался, пока страница была закрыта. Хочешь свежий — нажми «Проверить заново».
+          </p>
+        )}
         <BlogAuditScorecard result={result} onRerun={() => run(handle)} rerunning={loading} />
-        <Button variant="ghost" className="w-full text-muted-foreground" onClick={() => { setResult(null); setHandle('') }}>
+        <Button variant="ghost" className="w-full text-muted-foreground" onClick={() => { setResult(null); setHandle(''); setRestoredFrom(null) }}>
           Проверить другой аккаунт
         </Button>
       </div>

@@ -41,3 +41,33 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ jobId: job.id })
 }
+
+// GET — последний standalone-аудит этого пользователя (RLS jobs_owner_select
+// сам ограничивает выборку владельцем). Зачем: разбор идёт ~1 минуту, телефон
+// успевает выгрузить вкладку — джоб доделывается на сервере, но результат
+// раньше было НЕГДЕ увидеть (проектный диалог кэш читает, standalone — нет).
+// Возвращаем и живой джоб (клиент продолжит поллинг), и готовый (покажет).
+export async function GET() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { data: last } = await supabase
+    .from('jobs')
+    .select('id, status, result, payload, created_at')
+    .eq('type', 'blog_audit_standalone')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (!last) return NextResponse.json({ job: null })
+  return NextResponse.json({
+    job: {
+      id:        last.id,
+      status:    last.status,
+      result:    last.status === 'done' ? last.result : null,
+      username:  (last.payload as { username?: string } | null)?.username ?? null,
+      createdAt: last.created_at,
+    },
+  })
+}
