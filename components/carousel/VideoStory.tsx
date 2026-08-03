@@ -5,7 +5,7 @@
 // on «Создать визуал» AND inside «Оформление сторис» (owner looked for video where
 // she designs stories, not on a separate page).
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { friendlyError } from '@/lib/friendlyError'
@@ -13,6 +13,7 @@ import { Clapperboard, Loader2, Download } from 'lucide-react'
 import { MAX_VIDEO_MB, MAX_VIDEO_BYTES } from '@/lib/uploadLimits'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
+import { startOverlayJob, awaitOverlayJob, OverlayPaymentRequired } from '@/lib/videoOverlayJob'
 
 export function VideoStory({ projectId }: { projectId: string }) {
   const supabase = createClient()
@@ -24,6 +25,33 @@ export function VideoStory({ projectId }: { projectId: string }) {
   const [vidPlate, setVidPlate] = useState(true)
   const [vidBusy, setVidBusy] = useState(false)
   const [vidUrl, setVidUrl] = useState<string | null>(null)
+
+  // Живой overlay-джоб в localStorage: телефон свернул/выгрузил вкладку на
+  // 1-3-минутной обработке — при возврате догоняем и показываем результат
+  // (раньше юнит списан, ролик готов, а увидеть его было нельзя).
+  const draftKey = `ama_video_overlay_${projectId}`
+  const restoredRef = useRef(false)
+  useEffect(() => {
+    if (restoredRef.current || !projectId) return
+    restoredRef.current = true
+    try {
+      const raw = localStorage.getItem(draftKey)
+      if (!raw) return
+      const d = JSON.parse(raw) as { jobId?: string; videoPath?: string; name?: string }
+      if (!d.jobId) return
+      if (d.videoPath) { setVidPath(d.videoPath); setVidName(d.name || 'видео') }
+      setVidBusy(true)
+      toast.message('Обработка видео шла на сервере — догоняю…')
+      awaitOverlayJob(d.jobId)
+        .then((url) => { setVidUrl(url); toast.success('Готово — видео с текстом ниже') })
+        .catch((e) => toast.error(friendlyError(e, 'Не удалось обработать видео')))
+        .finally(() => {
+          setVidBusy(false)
+          try { localStorage.removeItem(draftKey) } catch { /* ignore */ }
+        })
+    } catch { /* битый черновик */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
 
   async function uploadVideo(files: FileList | null) {
     const f = files?.[0]
@@ -52,23 +80,23 @@ export function VideoStory({ projectId }: { projectId: string }) {
     try {
       // keepSource — исходник живёт: можно поменять позицию/текст и наложить
       // заново без повторной загрузки (жалоба Ланы: «после генерации только
-      // скачать»). Раньше сервер удалял исходник после первого прогона.
-      const res = await fetch('/api/video/overlay', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, videoPath: vidPath, text: vidText, position: vidPos, plate: vidPlate, keepSource: true }),
-      })
-      if (res.status === 402) {
+      // скачать»). Обработка — фоновым джобом: сворачивание вкладки не рвёт её.
+      const jobId = await startOverlayJob({ projectId, videoPath: vidPath, text: vidText, position: vidPos, plate: vidPlate, keepSource: true })
+      try { localStorage.setItem(draftKey, JSON.stringify({ jobId, videoPath: vidPath, name: vidName })) } catch { /* ignore */ }
+      const url = await awaitOverlayJob(jobId)
+      try { localStorage.removeItem(draftKey) } catch { /* ignore */ }
+      setVidUrl(url)
+      toast.success('Готово — видео с твоим текстом ниже. Не понравилось расположение — поменяй и наложи заново')
+    } catch (e) {
+      // Черновик НЕ чистим при сетевой ошибке: джоб мог доделаться — при
+      // следующем открытии страница его догонит и покажет результат.
+      if (e instanceof OverlayPaymentRequired) {
         // Причина важна: неоплатившему нельзя показывать «лимит исчерпан» (у него 0 создано).
-        const d = await res.clone().json().catch(() => ({} as { code?: string }))
-        showUpgrade(d.code === 'payment_required' ? 'needs_plan' : 'limit')
+        showUpgrade(e.code as 'needs_plan' | 'limit')
         return
       }
-      const d = await res.json().catch(() => ({} as { url?: string; error?: string }))
-      if (!res.ok || !d.url) throw new Error(d.error || 'Не удалось обработать видео')
-      setVidUrl(d.url)
-      toast.success('Готово — видео с твоим текстом ниже. Не понравилось расположение — поменяй и наложи заново')
-    } catch (e) { toast.error(friendlyError(e, 'Не удалось обработать видео')) }
-    finally { setVidBusy(false) }
+      toast.error(friendlyError(e, 'Не удалось обработать видео'))
+    } finally { setVidBusy(false) }
   }
 
   return (
@@ -114,7 +142,7 @@ export function VideoStory({ projectId }: { projectId: string }) {
             {vidBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
             {vidBusy ? 'Накладываю текст…' : vidUrl ? 'Наложить заново' : 'Наложить текст'}
           </button>
-          {vidBusy && <p className="mt-1 text-[11px] text-muted-foreground">Обычно 1-3 минуты: обрабатываю видео и вшиваю текст. Не закрывай страницу.</p>}
+          {vidBusy && <p className="mt-1 text-[11px] text-muted-foreground">Обычно 1-3 минуты: обработка идёт на сервере — можно свернуть страницу и вернуться, видео тебя дождётся.</p>}
         </>
       )}
 

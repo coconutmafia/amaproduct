@@ -9,6 +9,7 @@ import { processBlogAuditJob } from '@/lib/jobs/runBlogAuditJob'
 import { processStandaloneBlogAuditJob } from '@/lib/jobs/runStandaloneBlogAuditJob'
 import { processViralReelJob } from '@/lib/jobs/runViralReelJob'
 import { processMontageJob } from '@/lib/jobs/runMontageJob'
+import { processVideoOverlayJob } from '@/lib/jobs/runVideoOverlayJob'
 import { stuckJobMessage, settleStuckJob } from '@/lib/jobs/failStuckJob'
 
 // Джобы обрабатываются в after()-инвокациях с maxDuration=300s. Если инвокация
@@ -30,6 +31,7 @@ const RUNNERS: Record<string, (jobId: string) => Promise<void>> = {
   blog_audit_standalone: processStandaloneBlogAuditJob,
   viral_reel:            processViralReelJob,
   montage:               processMontageJob,
+  video_overlay:         processVideoOverlayJob,
 }
 
 // GET /api/jobs/[id] — poll a background job's status/progress/result. RLS

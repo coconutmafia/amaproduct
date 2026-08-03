@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { refundGenerations } from '@/lib/generations'
+import { refundGeneration, refundGenerations } from '@/lib/generations'
 import { VIDEO_MONTAGE_UNITS } from '@/lib/generations-config'
 
 // Финальное закрытие ЗАСТРЯВШЕГО джоба (инвокация потерялась, рестарты не
@@ -25,6 +25,9 @@ export function stuckJobMessage(type: string): string {
   if (type === 'montage') {
     return 'Монтаж прервался на сервере — это на нашей стороне. Единицы контента возвращены, запусти монтаж ещё раз.'
   }
+  if (type === 'video_overlay') {
+    return 'Обработка видео прервалась на сервере — это на нашей стороне. Единица контента возвращена, запусти ещё раз.'
+  }
   return 'Обработка прервалась на сервере — это на нашей стороне. Запусти ещё раз; если повторится, напиши нам.'
 }
 
@@ -34,6 +37,11 @@ export async function settleStuckJob(admin: SupabaseClient, job: StuckJobRow): P
     if (job.user_id) await refundGenerations(job.user_id, VIDEO_MONTAGE_UNITS).catch(() => {})
     const storagePath = (job.payload as { storagePath?: string } | null)?.storagePath
     if (storagePath) await admin.storage.from('audio-temp').remove([storagePath]).catch(() => {})
+  }
+  if (job.type === 'video_overlay' && job.user_id) {
+    // Юнит списан в роуте до джоба. Исходник НЕ трогаем: для серии это материал
+    // клиента (keepSource), в одиночном режиме нужен для «Наложить заново».
+    await refundGeneration(job.user_id).catch(() => {})
   }
   // transcribe: файл нарочно остаётся (окно «Повторить»); чистка — chain-watch 48ч.
 }

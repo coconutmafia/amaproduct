@@ -21,6 +21,7 @@ import { fmtDateTimeLocalRu } from '@/lib/dates'
 import { StoryEditor, type EditorLoadRequest } from '@/components/carousel/StoryEditor'
 import { PhotoUploader } from '@/components/content/PhotoUploader'
 import { type Block, type SlideValue } from '@/components/carousel/FreeCanvas'
+import { startOverlayJob, awaitOverlayJob, OverlayPaymentRequired } from '@/lib/videoOverlayJob'
 
 interface Brand { accentColor?: string; bg?: string; text?: string; bgStyle?: string; handle?: string; logoUrl?: string; font?: string; accentStyle?: 'gradient' | 'flat' }
 interface Frame {
@@ -64,6 +65,23 @@ function download(blob: Blob, name: string) {
 
 let _bid = 0
 const blockId = () => `sb${++_bid}`
+
+// Черновик СБОРКИ серии: план кадров + стартовавшие overlay-джобы. Телефон
+// выгрузил вкладку посреди сборки (видео-кадры = серверные джобы по 1-3 мин) —
+// при возврате серия ДОСОБИРАЕТСЯ: фото-кадры перерендериваются из плана
+// (рендер детерминирован), overlay-джобы догоняются поллингом. Чистится только
+// после состоявшегося сохранения серии.
+type BuildDraft = { frames: Frame[]; overlays: { idx: number; jobId: string }[]; ts: number }
+const buildDraftKey = (projectId: string) => `ama_stories_build_${projectId}`
+function readBuildDraft(projectId: string): BuildDraft | null {
+  try { const raw = localStorage.getItem(buildDraftKey(projectId)); return raw ? JSON.parse(raw) as BuildDraft : null } catch { return null }
+}
+function writeBuildDraft(projectId: string, d: BuildDraft) {
+  try { localStorage.setItem(buildDraftKey(projectId), JSON.stringify(d)) } catch { /* квота — не мешаем */ }
+}
+function clearBuildDraft(projectId: string) {
+  try { localStorage.removeItem(buildDraftKey(projectId)) } catch { /* ignore */ }
+}
 
 // Turn an AI story frame into editable free-editor blocks (photo background +
 // its headline/body/CTA as text blocks) so «редактировать вручную» opens the
@@ -147,26 +165,23 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
       const videoPath = cur.frame.source ? brandPathFromUrl(cur.frame.source) : null
       if (!videoPath) { toast.message('У этой серии не сохранён исходник видео — пересобери серию, и позицию текста можно будет менять'); return }
       setReposIdx(i)
-      toast.message('Пересобираю видео с новой позицией — обычно 1-3 минуты, не закрывай страницу')
+      toast.message('Пересобираю видео с новой позицией — обычно 1-3 минуты, можно свернуть страницу')
       try {
-        const res = await fetch('/api/video/overlay', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectId, videoPath, text: frameOverlayText(cur.frame), position, plate: true, keepSource: true }),
-        })
-        if (res.status === 402) {
-          const d = await res.clone().json().catch(() => ({} as { code?: string }))
-          showUpgrade(d.code === 'payment_required' ? 'needs_plan' : 'limit')
-          return
-        }
-        const d = await res.json().catch(() => ({} as { url?: string; error?: string }))
-        if (!res.ok || !d.url) throw new Error(d.error || 'Не удалось пересобрать видео')
-        const frame: Frame = { ...cur.frame, position, posLocked: true, video: d.url }
+        // Фоновый джоб вместо синхронного fetch: свёрнутая вкладка не рвёт
+        // пересборку, поллинг продолжится после пробуждения.
+        const jobId = await startOverlayJob({ projectId, videoPath, text: frameOverlayText(cur.frame), position, plate: true, keepSource: true })
+        const url = await awaitOverlayJob(jobId)
+        const frame: Frame = { ...cur.frame, position, posLocked: true, video: url }
         const arr = [...rendered]
-        arr[i] = { blob: null, url: d.url, frame }
+        arr[i] = { blob: null, url, frame }
         setRendered(arr)
         void saveSet(arr.map((r) => r.frame), arr.map((r) => r.blob), savedSetId)
         toast.success('Готово — текст переехал, видео пересобрано')
       } catch (e) {
+        if (e instanceof OverlayPaymentRequired) {
+          showUpgrade(e.code as 'needs_plan' | 'limit')
+          return
+        }
         toast.error(friendlyError(e, 'Не удалось переместить текст'))
       } finally { setReposIdx(null) }
       return
@@ -215,7 +230,10 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
   // brandFailed: сбой СЕТИ — не то же самое, что «стиль не настроен». Раньше
   // молчаливый catch показывал «Сначала настрой стиль →» человеку с настроенным
   // брендом и плохим интернетом (класс «TypeError: Load failed» с айфонов).
+  // brandSettled: восстановление сборки серии ждёт этот сигнал — рендер кадров
+  // зависит от бренда, и стартовать до его загрузки нельзя.
   const [brandFailed, setBrandFailed] = useState(false)
+  const [brandSettled, setBrandSettled] = useState(false)
   useEffect(() => {
     if (!projectId) return
     fetch(`/api/brand-kit?projectId=${projectId}`).then((r) => r.json()).then((d) => {
@@ -233,7 +251,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
           accentStyle: d.accentStyle === 'flat' ? 'flat' : 'gradient',
         })
       }
-    }).catch(() => setBrandFailed(true))
+    }).catch(() => setBrandFailed(true)).finally(() => setBrandSettled(true))
   }, [projectId])
 
   // Script handed over from the chat («Оформить сторис» on a stories answer)
@@ -282,7 +300,9 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
 
   // Persist a rendered series into «Мои оформленные сторис» (storage + index).
   // Re-saving with the same setId replaces the set (used after chat edits).
-  async function saveSet(frames: Frame[], blobs: (Blob | null)[], existingSetId: string | null) {
+  // Возвращает успех — сборка серии чистит свой черновик только после
+  // состоявшегося сохранения (иначе restore доcоберёт и пересохранит).
+  async function saveSet(frames: Frame[], blobs: (Blob | null)[], existingSetId: string | null): Promise<boolean> {
     setSavingSet(true)
     try {
       const urls: string[] = []
@@ -313,8 +333,10 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
       setSavedSetId(d.set.id)
       if (Array.isArray(d.sets)) setSets(d.sets)
       toast.success('Серия сохранена в «Мои оформленные сторис»')
+      return true
     } catch (e) {
       toast.error(friendlyError(e, 'Не удалось сохранить серию'))
+      return false
     } finally { setSavingSet(false) }
   }
 
@@ -517,53 +539,102 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         })
       }
 
-      // allSettled, не all: отказ ОДНОГО кадра (обычно видео-overlay — 402 или
-      // перегруз) раньше выбрасывал ВСЮ серию, включая успешные кадры и уже
-      // списанные юниты за готовые видео-кадры. Теперь: успешные остаются,
-      // упавшие называются честно (урок 31 июля: данные клиента не зависят
-      // от успеха соседнего шага).
-      const settled = await Promise.allSettled(frames.map(async (f, i) => {
-        if (!f.video) {
-          const blob = await renderFrame(f, i)
-          return { blob: blob as Blob | null, url: URL.createObjectURL(blob), frame: f }
-        }
+      // Фаза A: стартуем ВСЕ overlay-джобы (видео-кадры) до какого-либо
+      // ожидания — юнит списывается на старте, обработка идёт на сервере.
+      // После этой фазы план и джобы лежат в черновике: умри вкладка — при
+      // возврате серия дособерётся, ничего не списывая повторно.
+      const overlays: { idx: number; jobId: string }[] = []
+      const startFailures: string[] = []
+      for (let i = 0; i < frames.length; i++) {
+        const f = frames[i]
+        if (!f.video) continue
         const videoPath = brandPathFromUrl(f.video)
-        if (!videoPath) throw new Error('Видео-материал не найден в хранилище — загрузи его заново')
-        const res = await fetch('/api/video/overlay', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectId, videoPath, text: frameOverlayText(f), position: f.position || 'bottom', plate: true, keepSource: true }),
-        })
-        if (res.status === 402) {
-          const d = await res.clone().json().catch(() => ({} as { code?: string }))
-          showUpgrade(d.code === 'payment_required' ? 'needs_plan' : 'limit')
-          throw new Error('не хватило единиц контента на видео-кадр')
+        if (!videoPath) { startFailures.push(`кадр ${i + 1} — видео-материал не найден в хранилище, загрузи его заново`); continue }
+        try {
+          const jobId = await startOverlayJob({ projectId, videoPath, text: frameOverlayText(f), position: f.position || 'bottom', plate: true, keepSource: true })
+          overlays.push({ idx: i, jobId })
+        } catch (e) {
+          if (e instanceof OverlayPaymentRequired) {
+            showUpgrade(e.code as 'needs_plan' | 'limit')
+            startFailures.push(`кадр ${i + 1} — не хватило единиц контента`)
+          } else {
+            startFailures.push(`кадр ${i + 1} — ${friendlyError(e, 'видео-кадр не запустился')}`)
+          }
         }
-        const d = await res.json().catch(() => ({} as { url?: string; error?: string }))
-        if (!res.ok || !d.url) throw new Error(d.error || 'видео-кадр не обработался')
-        // source = исходник (f.video ДО overlay) — из него потом пересобирается
-        // позиция текста без пересборки всей серии.
-        const frame: Frame = { ...f, video: d.url, source: f.video }
-        return { blob: null, url: d.url, frame }
-      }))
-      const results: { blob: Blob | null; url: string; frame: Frame }[] = []
-      const failures: string[] = []
-      settled.forEach((s, i) => {
-        if (s.status === 'fulfilled') results.push(s.value)
-        else failures.push(`кадр ${i + 1} — ${friendlyError(s.reason, 'не собрался')}`)
-      })
-      if (results.length === 0) throw new Error(failures[0] || 'Не удалось собрать ни один кадр')
-      if (failures.length > 0) {
-        toast.error(`Собралось ${results.length} из ${frames.length} кадров (${failures.join('; ')}). Готовые кадры сохранены — недостающие можно пересобрать заново.`, { duration: 12000 })
       }
-      const frames2 = results.map((r) => r.frame)
-      const blobs = results.map((r) => r.blob)
-      setRendered(results)
-      // Auto-save into the gallery (new set per build) — nothing gets lost
-      setSavedSetId(null)
-      void saveSet(frames2, blobs, null)
+      writeBuildDraft(projectId, { frames, overlays, ts: Date.now() })
+
+      // Фаза B: рендер фото-кадров + догон overlay-джобов, сборка, сохранение.
+      await assembleSeries(frames, overlays, startFailures)
     } catch (e) { toast.error(friendlyError(e, 'Не удалось собрать сторис')) }
     finally { setBusy(false) }
   }
+
+  // Сборка серии из плана: фото-кадры рендерятся (детерминировано), видео-кадры
+  // ждут свои overlay-джобы. Используется и живой сборкой (build), и
+  // восстановлением после выгрузки вкладки. allSettled, не all: отказ ОДНОГО
+  // кадра не выбрасывает остальные (урок 31 июля).
+  async function assembleSeries(frames: Frame[], overlays: { idx: number; jobId: string }[], priorFailures: string[]) {
+    const settled = await Promise.allSettled(frames.map(async (f, i) => {
+      if (!f.video) {
+        const blob = await renderFrame(f, i)
+        return { blob: blob as Blob | null, url: URL.createObjectURL(blob), frame: f }
+      }
+      const ov = overlays.find((o) => o.idx === i)
+      if (!ov) throw new Error('__SKIP__') // старт не удался — причина уже в priorFailures
+      const url = await awaitOverlayJob(ov.jobId)
+      // source = исходник (f.video ДО overlay) — из него потом пересобирается
+      // позиция текста без пересборки всей серии.
+      const frame: Frame = { ...f, video: url, source: f.video }
+      return { blob: null, url, frame }
+    }))
+    const results: { blob: Blob | null; url: string; frame: Frame }[] = []
+    const failures: string[] = [...priorFailures]
+    settled.forEach((s, i) => {
+      if (s.status === 'fulfilled') results.push(s.value)
+      else if (!(s.reason instanceof Error && s.reason.message === '__SKIP__')) {
+        failures.push(`кадр ${i + 1} — ${friendlyError(s.reason, 'не собрался')}`)
+      }
+    })
+    if (results.length === 0) {
+      clearBuildDraft(projectId)
+      throw new Error(failures[0] || 'Не удалось собрать ни один кадр')
+    }
+    if (failures.length > 0) {
+      toast.error(`Собралось ${results.length} из ${frames.length} кадров (${failures.join('; ')}). Готовые кадры сохранены — недостающие можно пересобрать заново.`, { duration: 12000 })
+    }
+    const frames2 = results.map((r) => r.frame)
+    const blobs = results.map((r) => r.blob)
+    setRendered(results)
+    // Auto-save into the gallery (new set per build) — nothing gets lost.
+    // Черновик сборки чистим только после состоявшегося сохранения: если сейв
+    // упал, следующее открытие страницы дособерёт и пересохранит без доплат.
+    setSavedSetId(null)
+    void saveSet(frames2, blobs, null).then((ok) => { if (ok) clearBuildDraft(projectId) })
+  }
+
+  // Восстановление сборки после выгрузки вкладки: ждём, пока определится бренд
+  // (рендер кадров зависит от него), затем дособираем серию из черновика.
+  const buildRestoredRef = useRef(false)
+  useEffect(() => {
+    if (!brandSettled || buildRestoredRef.current || !projectId) return
+    buildRestoredRef.current = true
+    const d = readBuildDraft(projectId)
+    if (!d?.frames?.length) return
+    if (Date.now() - (d.ts || 0) > 24 * 3600 * 1000) { clearBuildDraft(projectId); return }
+    setBusy(true)
+    toast.message('Сборка серии шла, пока страница была закрыта — дособираю…')
+    ;(async () => {
+      try {
+        await assembleSeries(d.frames, d.overlays ?? [], [])
+      } catch (e) {
+        toast.error(friendlyError(e, 'Не удалось дособрать серию'))
+      } finally {
+        setBusy(false)
+      }
+    })()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandSettled, projectId])
 
   async function downloadZip() {
     if (rendered.length === 0) return
@@ -619,7 +690,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
           className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40">
           {busy ? <><Loader2 className="h-4 w-4 animate-spin" /> Создаю…</> : <><Sparkles className="h-4 w-4" /> Создать контент</>}
         </button>
-        {busy && <p className="text-[11px] text-muted-foreground">Обычно 1-2 минуты: раскладываю сценарий на кадры и оформляю каждый в твоём стиле. Не закрывай страницу.</p>}
+        {busy && <p className="text-[11px] text-muted-foreground">Обычно 1-3 минуты: раскладываю сценарий на кадры и оформляю каждый в твоём стиле. Видео-кадры обрабатываются на сервере — если вкладка закроется, вернись сюда: серия дособерётся.</p>}
       </section>
 
       {/* 4. Свободный редактор */}
