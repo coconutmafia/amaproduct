@@ -14,6 +14,12 @@ export type XlsxSheet = {
   aoa: (string | number)[][]
   /** Явные ширины колонок (символы); без них — по содержимому с потолком. */
   widths?: number[]
+  /**
+   * Колонки (0-based), где подряд идущие ОДИНАКОВЫЕ значения сливаются в одну
+   * ячейку — как в эталоне урока «Карта смыслов» (категория и общая
+   * формулировка объединены по группе строк).
+   */
+  mergeRepeats?: number[]
 }
 
 const MIN_W = 8
@@ -48,6 +54,25 @@ export async function buildXlsxWorkbook(sheets: XlsxSheet[]) {
       row.alignment = { vertical: 'top', wrapText: true }
       if (n === 1) row.font = { bold: true }
     })
+
+    // Слить подряд идущие одинаковые значения в указанных колонках (шапку не
+    // трогаем). Merge выполняется ПОСЛЕ добавления строк: exceljs оставит
+    // значение верхней ячейки диапазона.
+    for (const c0 of s.mergeRepeats ?? []) {
+      const col = c0 + 1
+      let runStart = 2 // первая строка данных (1 — шапка)
+      for (let r = 3; r <= s.aoa.length + 1; r++) {
+        const prev = s.aoa[r - 2]?.[c0]
+        const cur  = s.aoa[r - 1]?.[c0]
+        const same = r <= s.aoa.length && String(cur ?? '') === String(prev ?? '') && String(cur ?? '') !== ''
+        if (!same) {
+          if (r - 1 > runStart) {
+            try { ws.mergeCells(runStart, col, r - 1, col) } catch { /* пересечение — пропускаем */ }
+          }
+          runStart = r
+        }
+      }
+    }
   }
   return wb
 }

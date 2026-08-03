@@ -1086,7 +1086,9 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
       else if (type === 'meanings_map') aoa = meaningsMapToAoa(content)
       if (aoa && aoa.length > 1) {
         if (type === 'meanings_map') {
-          await downloadXlsxBook(safe, [{ name: 'Карта смыслов', aoa }])
+          // mergeRepeats: категория и общая формулировка слиты по группе строк —
+          // как в эталонном листе урока.
+          await downloadXlsxBook(safe, [{ name: 'Карта смыслов', aoa, mergeRepeats: [0, 1] }])
           return
         }
         // Кастдев-книга «как в уроке»: сводка первым листом, карта смыслов
@@ -1101,7 +1103,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
             if (mr.ok) {
               const md = await mr.json() as { raw_content?: string }
               const mapAoa = meaningsMapToAoa(md.raw_content || '')
-              if (mapAoa.length > 1) sheets.push({ name: 'Карта смыслов', aoa: mapAoa })
+              if (mapAoa.length > 1) sheets.push({ name: 'Карта смыслов', aoa: mapAoa, mergeRepeats: [0, 1] })
             }
           } catch { /* карта не скачалась — книга кастдевов всё равно уедет */ }
         }
