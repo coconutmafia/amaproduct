@@ -103,18 +103,32 @@ function splitNameSegment(s: string): [string, string] {
 }
 
 // ── Meaning map → clean 4-column table ────────────────────────────────────────
-// Тип | Категория | Формулировки участников | Идеи контента, grouped by type.
-// Stored block format: "[TYPE] Категория:\nФормулировки: …\nГлубинный триггер:
-// …\nВозражение: …\nИдея контента: …" (blocks split by blank lines).
+// Шапка 1-в-1 из урока «Карта смыслов»: Категория | Общая формулировка |
+// Формулировка клиента | Идеи контента.
+//
+// ДВА формата хранения:
+//   НОВЫЙ (с 3 августа, строго по уроку): "[БОЛИ] Общая формулировка\n
+//     — «формулировка клиента»\n  Идея контента: …" — строка таблицы на КАЖДУЮ
+//     формулировку клиента, у каждой своя идея (правило урока).
+//   СТАРЫЙ: "[PAIN] Категория:\nФормулировки: a, b\nИдея контента: …" —
+//     одна строка на категорию (формулировки слиты) — старые карты в базе.
 const MEANING_TYPE_RU: Record<string, string> = {
-  PAIN: 'Боль',
-  NEED: 'Потребность',
-  TRIGGER: 'Триггер',
-  OBJECTION: 'Возражение',
-  ADVANTAGE: 'Преимущества эксперта',
-  BENEFIT: 'Преимущества эксперта',
+  PAIN: 'Боли',
+  NEED: 'Потребности и хотелки',
+  TRIGGER: 'Триггеры',
+  OBJECTION: 'Возражения',
+  ADVANTAGE: 'Преимущества',
+  BENEFIT: 'Преимущества',
+  // Новый формат уже пишет русские категории в скобках — нормализуем регистр.
+  'БОЛИ': 'Боли',
+  'ПОТРЕБНОСТИ И ХОТЕЛКИ': 'Потребности и хотелки',
+  'ТРИГГЕРЫ': 'Триггеры',
+  'ВОЗРАЖЕНИЯ': 'Возражения',
+  'ПРЕИМУЩЕСТВА': 'Преимущества',
 }
-const MEANING_ORDER = ['PAIN', 'NEED', 'TRIGGER', 'OBJECTION', 'ADVANTAGE', 'BENEFIT']
+const MEANING_ORDER = ['PAIN', 'БОЛИ', 'NEED', 'ПОТРЕБНОСТИ И ХОТЕЛКИ', 'TRIGGER', 'ТРИГГЕРЫ', 'OBJECTION', 'ВОЗРАЖЕНИЯ', 'ADVANTAGE', 'BENEFIT', 'ПРЕИМУЩЕСТВА']
+
+const MEANINGS_HEAD = ['Категория', 'Общая формулировка', 'Формулировка клиента', 'Идеи контента']
 
 export function meaningsMapToAoa(text: string): string[][] {
   type Row = { type: string; cat: string; words: string; idea: string }
@@ -122,9 +136,20 @@ export function meaningsMapToAoa(text: string): string[][] {
   for (const block of text.split(/\n\s*\n+/)) {
     const header = block.match(/^\[(.+?)\]\s*(.+?):?\s*$/m)
     if (!header) continue
+    const type = header[1].trim().toUpperCase()
+    const cat  = header[2].trim()
+
+    // Новый формат: строки «— «…»» + «Идея контента: …» на каждую формулировку.
+    const entries = [...block.matchAll(/^—\s*«?(.+?)»?\s*$(?:\n\s+Идея контента:\s*(.+?)\s*$)?/gm)]
+    if (entries.length > 0) {
+      for (const e of entries) parsed.push({ type, cat, words: e[1].trim(), idea: (e[2] ?? '').trim() })
+      continue
+    }
+
+    // Старый формат: «Формулировки: …» одной строкой.
     parsed.push({
-      type: header[1].trim().toUpperCase(),
-      cat: header[2].trim(),
+      type,
+      cat,
       words: block.match(/Формулировки:\s*(.+)/)?.[1]?.trim() ?? '',
       idea: block.match(/Идея контента:\s*(.+)/)?.[1]?.trim() ?? '',
     })
@@ -132,11 +157,7 @@ export function meaningsMapToAoa(text: string): string[][] {
   if (parsed.length === 0) return []
   const rank = (t: string) => { const i = MEANING_ORDER.indexOf(t); return i < 0 ? 99 : i }
   parsed.sort((a, b) => rank(a.type) - rank(b.type))
-  // Шапка 1-в-1 из урока «Карта смыслов» (4 столбца методологии): Категория |
-  // Общая формулировка | Формулировки клиентов | Идеи контента. Наш «Тип»
-  // (Боль/Потребность/…) и есть «Категория» урока; наша «Категория» — её
-  // «Общая формулировка». Команда сверяет глазами с уроком — имена совпадают.
-  const rows: string[][] = [['Категория', 'Общая формулировка', 'Формулировки клиентов', 'Идеи контента']]
+  const rows: string[][] = [MEANINGS_HEAD]
   for (const p of parsed) rows.push([MEANING_TYPE_RU[p.type] ?? p.type, p.cat, p.words, p.idea])
   return rows
 }

@@ -33,6 +33,8 @@ interface Material {
   material_type: string
   title: string
   processing_status: string
+  // Страница отдаёт select('*') — used для бейджа «карта старее кастдевов».
+  created_at?: string
 }
 
 // Reload the page but keep the scroll position — long AI operations end
@@ -1072,36 +1074,38 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
 
       // Structured research materials → real XLSX (true columns; comma-CSV
       // showed as one column in RU Excel / iOS). Pivoted/restructured per spec.
+      //
+      // Состав книги = ЭТАЛОН из урока «Касдевы Ава.xlsx»: ровно два листа —
+      // «Касдевы» (строка = участник) и «Карта смыслов». Листы расшифровок,
+      // которые пришивались ко всем выгрузкам, убраны (войс Августы 3 августа:
+      // «расшифровки тоже выгружаются, зачем непонятно… не могу понять,
+      // сколько вкладок»; Матвей: делать точно как в уроках). Расшифровки
+      // скачиваются по отдельности со страницы материалов, как и были.
       let aoa: string[][] | null = null
       if (type === 'audience_research') aoa = audienceResearchToAoa(content)
       else if (type === 'meanings_map') aoa = meaningsMapToAoa(content)
       if (aoa && aoa.length > 1) {
-        const sheets: XlsxSheet[] = [{ name: type === 'audience_research' ? 'Кастдевы — вертикально' : 'Карта смыслов', aoa }]
-        // Вердикт команды (31 июля): нужна сводка «как в уроке» — строка =
-        // участник, колонки = вопросы. Держим ОБА вида: сводка первым листом
-        // (это их рабочий формат из методологии), вертикальный — для фильтров.
-        if (type === 'audience_research') {
-          const pivot = audienceResearchToPivotAoa(content)
-          if (pivot.length > 1) sheets.unshift({ name: 'Кастдевы — как в уроке', aoa: pivot })
+        if (type === 'meanings_map') {
+          await downloadXlsxBook(safe, [{ name: 'Карта смыслов', aoa }])
+          return
         }
-        // Августа (31 июля): расшифровки созвонов должны быть В ТОМ ЖЕ файле —
-        // добавляем лист на каждую готовую расшифровку проекта. Абзац = строка,
-        // одна широкая колонка с переносом. Сбой одного листа не валит файл.
-        const transcripts = materials.filter(m => m.material_type === 'interview_transcript' && m.processing_status === 'ready')
-        for (const t of transcripts) {
+        // Кастдев-книга «как в уроке»: сводка первым листом, карта смыслов
+        // проекта (если уже собрана) — вторым, вертикальный вид — служебным.
+        const sheets: XlsxSheet[] = []
+        const pivot = audienceResearchToPivotAoa(content)
+        if (pivot.length > 1) sheets.push({ name: 'Касдевы', aoa: pivot })
+        const mapMat = materials.find(m => m.material_type === 'meanings_map' && m.processing_status === 'ready')
+        if (mapMat) {
           try {
-            const tr = await fetch(`/api/materials/${t.id}`)
-            if (!tr.ok) continue
-            const td = await tr.json() as { raw_content?: string }
-            const text = (td.raw_content || '').trim()
-            if (!text) continue
-            sheets.push({
-              name: t.title || 'Расшифровка',
-              aoa: [[`Расшифровка: ${t.title}`], ...text.split(/\n+/).map(l => l.trim()).filter(Boolean).map(l => [l])],
-              widths: [90],
-            })
-          } catch { /* лист пропускаем, книга всё равно скачается */ }
+            const mr = await fetch(`/api/materials/${mapMat.id}`)
+            if (mr.ok) {
+              const md = await mr.json() as { raw_content?: string }
+              const mapAoa = meaningsMapToAoa(md.raw_content || '')
+              if (mapAoa.length > 1) sheets.push({ name: 'Карта смыслов', aoa: mapAoa })
+            }
+          } catch { /* карта не скачалась — книга кастдевов всё равно уедет */ }
         }
+        sheets.push({ name: 'Кастдевы — вертикально', aoa })
         await downloadXlsxBook(safe, sheets)
         return
       }
@@ -1345,18 +1349,38 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                             </Button>
                           </Link>
                         )}
-                        {type === 'meanings_map' && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={generatingMeanings}
-                            className="text-xs h-8 px-3 border-primary/40 text-primary hover:bg-primary/10"
-                            onClick={generateMeaningsMap}
-                          >
-                            {generatingMeanings ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1.5" />}
-                            {generatingMeanings ? 'Генерирую...' : 'Сгенерировать из исследования'}
-                          </Button>
-                        )}
+                        {type === 'meanings_map' && (() => {
+                          // Карта старее свежих кастдевов? Клиент судит полноту
+                          // карты, не зная, что она собрана до части интервью
+                          // (кейс Stas 3 августа: карта видела 4 кастдева из 6).
+                          const map = items.find(m => m.processing_status === 'ready')
+                          const mapTs = map?.created_at ? new Date(map.created_at).getTime() : 0
+                          const newer = mapTs
+                            ? materials.filter(m =>
+                                m.material_type === 'audience_research' &&
+                                m.created_at && new Date(m.created_at).getTime() > mapTs &&
+                                !m.title?.startsWith('Общая таблица')).length
+                            : 0
+                          return (
+                            <div className="flex flex-wrap items-center gap-2">
+                              {newer > 0 && !generatingMeanings && (
+                                <span className="text-xs font-medium text-amber-700 bg-amber-500/10 border border-amber-500/30 rounded-full px-2.5 py-1">
+                                  ⚠️ После сборки карты добавлено кастдевов: {newer} — обнови её
+                                </span>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={generatingMeanings}
+                                className="text-xs h-8 px-3 border-primary/40 text-primary hover:bg-primary/10"
+                                onClick={generateMeaningsMap}
+                              >
+                                {generatingMeanings ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1.5" />}
+                                {generatingMeanings ? 'Генерирую...' : map ? 'Обновить карту из исследования' : 'Сгенерировать из исследования'}
+                              </Button>
+                            </div>
+                          )
+                        })()}
                         {type === 'tone_of_voice' && (
                           <Button
                             size="sm"

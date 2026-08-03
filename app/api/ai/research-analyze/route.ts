@@ -197,33 +197,121 @@ JSON формат (строго):
 }`
 }
 
-// Normalize AI output — the model can return wrong types (customer_words
-// as a string, unknown type values, etc.). Coerce everything to the right
-// shape so downstream .join() / .toUpperCase() can't crash.
-function normalizeCategories(raw: unknown[]): MeaningsCategory[] {
-  const VALID = new Set(['pain', 'need', 'trigger', 'objection'])
-  return raw.map((r) => {
+// ── Карта смыслов «как в уроке» ──────────────────────────────────────────────
+// Плоская строка таблицы урока: Категория | Общая формулировка | Формулировка
+// клиента | Идея контента. Одна формулировка клиента = одна строка, у каждой
+// СВОЯ идея контента (в уроке ровно так: пример «я толстая» → три формулировки
+// → три идеи). Группировка = одинаковый general у нескольких строк.
+export interface MeaningsRow {
+  type: 'pain' | 'need' | 'trigger' | 'objection' | 'advantage'
+  general: string
+  client_words: string
+  content_idea: string
+}
+
+const MEANINGS_RU: Record<MeaningsRow['type'], string> = {
+  pain:      'БОЛИ',
+  need:      'ПОТРЕБНОСТИ И ХОТЕЛКИ',
+  trigger:   'ТРИГГЕРЫ',
+  objection: 'ВОЗРАЖЕНИЯ',
+  advantage: 'ПРЕИМУЩЕСТВА',
+}
+const MEANINGS_TYPE_ORDER: MeaningsRow['type'][] = ['pain', 'need', 'trigger', 'objection', 'advantage']
+
+const meaningsRowsTool = {
+  name: 'meanings_rows',
+  description: 'Строки таблицы «Карта смыслов» по методологии урока',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      rows: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            type:         { type: 'string', description: 'pain | need | trigger | objection | advantage' },
+            general:      { type: 'string', description: 'Общая формулировка (сгруппированная боль/потребность/триггер/возражение/преимущество)' },
+            client_words: { type: 'string', description: 'Дословная формулировка ОДНОГО клиента, его словами из интервью' },
+            content_idea: { type: 'string', description: 'Идея контента именно для ЭТОЙ формулировки' },
+          },
+          required: ['type', 'general', 'client_words', 'content_idea'],
+        },
+      },
+    },
+    required: ['rows'],
+  },
+}
+
+function buildMeaningsLessonPrompt(materials: { title: string; raw_content: string }[]): string {
+  const combined = materials
+    .map(m => {
+      const content = m.raw_content.length > PER_MATERIAL_CAP
+        ? m.raw_content.slice(0, PER_MATERIAL_CAP) + '\n…(текст обрезан)'
+        : m.raw_content
+      return `=== ${m.title} ===\n${content}`
+    })
+    .join('\n\n')
+
+  return `Заполни «Карту смыслов» по данным кастдевов. Верни строки таблицы через инструмент meanings_rows.
+
+МАТЕРИАЛЫ ИССЛЕДОВАНИЯ:
+${combined}
+
+КАК ЗАПОЛНЯТЬ (строго по уроку «Карта смыслов»):
+Таблица из 4 столбцов: Категория | Общая формулировка | Формулировка клиента | Идея контента.
+
+1. Категория (поле type):
+   - pain (боли): ответы на «что тебя не устраивает, от чего хочешь избавиться» — точка А
+   - need (потребности и хотелки): «с каким запросом пришёл», «а что ты хочешь, как хочешь, чтобы было» — точка Б. Этот вопрос звучит в КАЖДОМ интервью — потребности должны быть выписаны у каждого участника
+   - trigger (триггеры): что стало спусковым крючком искать решение или покупать (увидел результат, порекомендовали, событие в жизни)
+   - objection (возражения): почему ещё не купил / не действует; «что тебе важно при покупке»; «дорого»; страхи. Самая мощная часть карты — вытащи все возражения из всех интервью
+   - advantage (преимущества): что участникам нравится в эксперте и его продукте, за что ценят, почему выбрали бы именно его
+
+2. Общая формулировка (general) — ГРУППИРОВКА: если несколько участников говорят об одном, даже разными словами, это ОДНА общая формулировка. Пример из урока: общая боль «я толстая» объединяет «чувствую себя неуверенно в теле и имею лишние килограммы», «поправилась после родов и не могу похудеть», «то теряю, то набираю вес». НЕ дроби близкие боли на отдельные общие формулировки.
+
+3. Формулировка клиента (client_words) — ДОСЛОВНО, словами участника из интервью. Одна формулировка = одна строка (одна запись rows). Все формулировки всех участников по одной общей боли идут отдельными строками с тем же general.
+
+4. Идея контента (content_idea) — на КАЖДУЮ формулировку СВОЯ идея: как отработать её в контенте (кейс, экспертный разбор, личная история, метод, преимущество продукта). Формат (сторис/пост/рилз) не указывай — только идею.
+
+Пройди ВСЕ интервью, ничего не выдумывай: формулировки — только из текста материалов.`
+}
+
+// Модель может вернуть кривые типы/пустые поля — приводим к строгим строкам,
+// пустые формулировки выбрасываем, порядок категорий — как в уроке.
+function normalizeMeaningRows(raw: unknown[]): MeaningsRow[] {
+  const VALID = new Set<MeaningsRow['type']>(['pain', 'need', 'trigger', 'objection', 'advantage'])
+  const rows: MeaningsRow[] = []
+  for (const r of raw) {
     const c = (r ?? {}) as Record<string, unknown>
-    const cw = c.customer_words
-    let words: string[] = []
-    if (Array.isArray(cw)) {
-      words = cw.map(v => String(v ?? '').trim()).filter(s => s.length > 0)
-    } else if (typeof cw === 'string') {
-      // Split a string into phrases by line breaks, pipes, or sentence ends
-      words = cw.split(/\s*[\n|]+|(?<=[.!?])\s+(?=[А-ЯA-Z«"])/)
-                .map(s => s.trim())
-                .filter(s => s.length > 3)
-    }
-    const rawType = String(c.type ?? '').toLowerCase().trim()
-    return {
-      type:          (VALID.has(rawType) ? rawType : 'pain') as MeaningsCategory['type'],
-      category:      String(c.category ?? '').trim() || 'Без названия',
-      customer_words: words,
-      deep_trigger:  String(c.deep_trigger ?? '').trim(),
-      objection:     String(c.objection ?? '').trim(),
-      content_idea:  String(c.content_idea ?? '').trim(),
-    }
-  })
+    const rawType = String(c.type ?? '').toLowerCase().trim() as MeaningsRow['type']
+    const client = String(c.client_words ?? '').trim()
+    if (!client) continue
+    rows.push({
+      type:         VALID.has(rawType) ? rawType : 'pain',
+      general:      String(c.general ?? '').trim() || 'Без названия',
+      client_words: client,
+      content_idea: String(c.content_idea ?? '').trim(),
+    })
+  }
+  rows.sort((a, b) => MEANINGS_TYPE_ORDER.indexOf(a.type) - MEANINGS_TYPE_ORDER.indexOf(b.type))
+  return rows
+}
+
+// Текст материала: читаемый глазами и парсится обратно в 4 колонки
+// (lib/researchTables.ts meaningsMapToAoa). Группа = [КАТЕГОРИЯ] Общая
+// формулировка, внутри — строки «— «формулировка» / Идея контента: …».
+function meaningRowsToText(rows: MeaningsRow[]): string {
+  // Группируем по (тип, общая формулировка) в порядке первого появления —
+  // модель не обязана держать строки одной группы рядом.
+  const groups = new Map<string, { head: string; lines: string[] }>()
+  for (const r of rows) {
+    const key = `${r.type}::${r.general}`
+    let g = groups.get(key)
+    if (!g) { g = { head: `[${MEANINGS_RU[r.type]}] ${r.general}`, lines: [] }; groups.set(key, g) }
+    g.lines.push(`— «${r.client_words.replace(/[«»]/g, '')}»`)
+    if (r.content_idea) g.lines.push(`  Идея контента: ${r.content_idea}`)
+  }
+  return [...groups.values()].map(g => [g.head, ...g.lines].join('\n')).join('\n\n')
 }
 
 // Stage 2 of map-reduce: merge partial maps from each batch into one clean map.
@@ -553,6 +641,13 @@ export async function POST(request: Request) {
   // a 10s keepalive. The connection never goes silent → mobile Safari can't
   // kill it ("грузилось, потом слетела" = silent >60s request was dropped).
   // One AI pass over all materials, like dropping every file into one chat.
+  //
+  // Формат — СТРОГО по уроку «Карта смыслов» (войс Августы 3 августа: «боли не
+  // объединены, каждая боль отдельно… мы же прислали форму и урок»). Урок:
+  // 4 столбца (Категория | Общая формулировка | Формулировка клиента | Идея
+  // контента); категории: боли / потребности и хотелки / триггеры / возражения
+  // / преимущества; формулировка каждого клиента = ОТДЕЛЬНАЯ строка, и на
+  // каждую — СВОЯ идея контента. JSON — только форс-тулом (правило 25 июля).
   const MEANINGS_TITLE = 'Карта смыслов (исследование аудитории)'
 
   if (step === 'generate_meanings') {
@@ -580,30 +675,6 @@ export async function POST(request: Request) {
         { error: 'Нет данных исследования аудитории. Сначала добавь хотя бы одно интервью.' },
         { status: 400 }
       )
-    }
-
-    const parseMap = (txt: string): MeaningsCategory[] => {
-      if (!txt) return []
-      // Strip markdown fences, then try whole-string parse, then brace-match
-      const cleaned = txt.replace(/```json/gi, '').replace(/```/g, '').trim()
-      const tryParse = (s: string): MeaningsCategory[] => {
-        try {
-          const o = JSON.parse(s) as MeaningsMap
-          return Array.isArray(o.categories) ? o.categories : []
-        } catch { return [] }
-      }
-      let cats = tryParse(cleaned)
-      if (cats.length === 0) {
-        const m = cleaned.match(/\{[\s\S]*\}/)
-        if (m) cats = tryParse(m[0])
-      }
-      // Last resort: extract just the categories array if the outer JSON
-      // is truncated/malformed
-      if (cats.length === 0) {
-        const a = cleaned.match(/"categories"\s*:\s*(\[[\s\S]*\])/)
-        if (a) { try { cats = JSON.parse(a[1]) as MeaningsCategory[] } catch { /* give up */ } }
-      }
-      return cats
     }
 
     // Upsert a 'processing' placeholder IMMEDIATELY so the user can see
@@ -636,59 +707,43 @@ export async function POST(request: Request) {
           send({ type: 'status', message: 'Анализирую все интервью...' })
 
           const aiStream = anthropic.messages.stream({
-            model:      MODEL,
-            max_tokens: 16000,
-            system:     TABLE2_SYSTEM,
-            messages:   [{ role: 'user', content: buildMeaningsFromMaterialsPrompt(materials) }],
+            model:       MODEL,
+            max_tokens:  16000,
+            system:      TABLE2_SYSTEM,
+            tools:       [meaningsRowsTool],
+            tool_choice: { type: 'tool' as const, name: 'meanings_rows' },
+            messages:    [{ role: 'user', content: buildMeaningsLessonPrompt(materials) }],
           })
           for await (const chunk of aiStream) {
             if (chunk.type === 'content_block_delta') send({ type: 'progress' })
           }
           const finalMsg = await aiStream.finalMessage()
-          // Concatenate ALL text blocks — newer Claude models may emit a
-          // thinking/other block before the text answer, so content[0]
-          // isn't reliably the text.
-          const raw = finalMsg.content
-            .map(b => (b.type === 'text' ? b.text : ''))
-            .join('\n')
-          const cats = normalizeCategories(parseMap(raw))
+          const toolBlock = finalMsg.content.find((b) => b.type === 'tool_use')
+          const rawRows = toolBlock && toolBlock.type === 'tool_use'
+            ? (toolBlock.input as { rows?: unknown[] }).rows ?? []
+            : []
+          const rows = normalizeMeaningRows(rawRows)
 
-          if (cats.length === 0) {
-            const blockTypes = finalMsg.content.map(b => b.type).join(',') || 'НЕТ БЛОКОВ'
-            console.error('[generate_meanings] parse failed. stop_reason=%s blocks=%s raw[0..600]=%s',
-              finalMsg.stop_reason, blockTypes, raw.slice(0, 600))
-            // Persist the diagnostic as the meanings_map material with error
-            // status. The user sees it in the materials list and can open /
-            // download it — toasts disappear, this stays until we fix it.
-            const diagnostic = [
-              `❌ Не удалось разобрать ответ AI`,
-              ``,
-              `Причина остановки модели: ${finalMsg.stop_reason}`,
-              `Типы блоков в ответе: [${blockTypes}]`,
-              `Длина текстового ответа: ${raw.length} символов`,
-              ``,
-              `─── Полный ответ AI (первые 4000 символов) ───`,
-              raw.slice(0, 4000) || '(пусто)',
-            ].join('\n')
+          if (rows.length === 0) {
+            console.error('[generate_meanings] no rows. stop_reason=%s blocks=%s',
+              finalMsg.stop_reason, finalMsg.content.map(b => b.type).join(','))
             try {
               await upsertProjectMaterial(supabase, {
                 project_id:        projectId,
                 title:             MEANINGS_TITLE,
                 material_type:     'meanings_map',
-                raw_content:       diagnostic,
+                raw_content:       `❌ Карта не собралась (модель не вернула строк, stop_reason=${finalMsg.stop_reason}). Нажми «Обновить карту» ещё раз — если повторится, напиши нам.`,
                 processing_status: 'error',
               })
             } catch { /* swallow */ }
             send({
               type: 'error',
-              message: `Не удалось разобрать ответ AI. Открой «${MEANINGS_TITLE}» в материалах и скачай — там полный текст ответа AI для диагностики.`,
+              message: 'AI не смог собрать карту с первого захода. Нажми «Обновить карту» ещё раз.',
             })
             return
           }
 
-          const meaningsText = cats
-            .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${c.customer_words.join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
-            .join('\n\n')
+          const meaningsText = meaningRowsToText(rows)
 
           const { error: saveErr } = await upsertProjectMaterial(supabase, {
             project_id:        projectId,
