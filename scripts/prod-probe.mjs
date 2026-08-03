@@ -451,7 +451,7 @@ async function researchSmoke() {
   }).then(r => r.json())
   if (!ver?.access_token) { log('❌ verify не дал сессию'); return }
   const ref = new URL(U).hostname.split('.')[0]
-  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64')}`
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
   log('✅ 1. сессия QA-бота получена')
 
   // 2) временный проект от имени QA-бота
@@ -555,7 +555,7 @@ async function meaningsSmoke() {
   }).then(r => r.json())
   if (!ver?.access_token) { log('❌ verify не дал сессию'); return }
   const ref = new URL(U).hostname.split('.')[0]
-  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64')}`
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
   log('✅ 1. сессия QA-бота получена')
 
   const qaId = ver.user?.id
@@ -675,9 +675,127 @@ async function meaningsSmoke() {
   }
 }
 
+// ── ПРОБНИК-МИГРАЦИЯ: пересборка всех карт смыслов по слайд-канону ──────────
+// «Да, пересобери все» (Матвей, 3 августа): в проде лежат карты старого
+// формата (до правок по видеоурокам). Для каждого проекта с картой пробник
+// генерит сессию ВЛАДЕЛЬЦА (magiclink+otp, письмо НЕ отправляется) и зовёт
+// ровно тот же серверный generate_meanings, что и кнопка «Обновить карту» —
+// промпт/формат/RLS не дублируются. Дубли карт с одинаковым title чистятся
+// заранее (upsert падает на maybeSingle при >1 строке).
+// ⚠️ Исключение из правила «трогаем только ama-probe-*»: пишет в клиентские
+// проекты — на это есть явное «да» владельца продукта в чате 3 августа.
+async function rebuildMeanings() {
+  const APP = 'https://amaproduct.com'
+  log('\n=== Пробник-миграция: пересборка карт смыслов (слайд-канон) ===')
+
+  const { body: maps } = await api('/rest/v1/project_materials?select=id,project_id,title,created_at&material_type=eq.meanings_map&order=created_at.desc')
+  const byProject = new Map()
+  for (const m of (maps || [])) {
+    if (!byProject.has(m.project_id)) byProject.set(m.project_id, [])
+    byProject.get(m.project_id).push(m)
+  }
+  const { body: projects } = await api('/rest/v1/projects?select=id,name,owner_id&id=in.(' + [...byProject.keys()].join(',') + ')')
+  const names = Object.fromEntries((projects || []).map(p => [p.id, p.name]))
+  const owners = Object.fromEntries((projects || []).map(p => [p.id, p.owner_id]))
+
+  log(`Проектов с картами: ${byProject.size}, карт всего: ${(maps || []).length}`)
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    for (const [pid, list] of byProject) {
+      log(`  • ${names[pid] || pid}: карт ${list.length}${list.length > 1 ? ' (дубли будут подчищены, останется свежая)' : ''} → сессия владельца → generate_meanings → проверка формата`)
+    }
+    return
+  }
+
+  const anon = (() => {
+    const txt = readFileSync(join(ROOT, '.env.local'), 'utf8')
+    const m = txt.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY'); return }
+  const ref = new URL(U).hostname.split('.')[0]
+
+  let ok = 0, fail = 0
+  for (const [pid, list] of byProject) {
+    const name = names[pid] || pid
+    try {
+      // 0) дубли одной карты (одинаковый title) — оставить самую свежую
+      const byTitle = new Map()
+      for (const m of list) {
+        if (!byTitle.has(m.title)) byTitle.set(m.title, [])
+        byTitle.get(m.title).push(m)
+      }
+      for (const [, dupes] of byTitle) {
+        for (const extra of dupes.slice(1)) { // list отсортирован desc — первый свежий
+          await api(`/rest/v1/project_materials?id=eq.${extra.id}`, { method: 'DELETE' })
+          log(`  🧹 ${name}: удалён дубль карты ${extra.id} (${extra.created_at.slice(0, 10)})`)
+        }
+      }
+
+      // 1) сессия владельца (письмо не шлётся — otp приходит в ответе)
+      const { body: ownerData } = await api(`/auth/v1/admin/users/${owners[pid]}`)
+      const email = ownerData?.email
+      if (!email) throw new Error('не нашёл email владельца')
+      const gl = await api('/auth/v1/admin/generate_link', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'magiclink', email }),
+      })
+      const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+      if (!otp) throw new Error('generate_link не дал otp')
+      const ver = await fetch(`${U}/auth/v1/verify`, {
+        method: 'POST',
+        headers: { apikey: anon, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'magiclink', email, token: otp }),
+      }).then(r => r.json())
+      if (!ver?.access_token) throw new Error('verify не дал сессию')
+      const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+
+      // 2) тот же путь, что кнопка «Обновить карту»
+      const t0 = Date.now()
+      const res = await fetch(`${APP}/api/ai/research-analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', cookie },
+        body: JSON.stringify({ projectId: pid, step: 'generate_meanings' }),
+      })
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 120)}`)
+      const reader = res.body.getReader()
+      const dec = new TextDecoder()
+      let buf = '', done = false, errMsg = ''
+      while (true) {
+        const { value, done: end } = await reader.read()
+        if (end) break
+        buf += dec.decode(value, { stream: true })
+        for (const ev of buf.split('\n\n')) {
+          const line = ev.split('\n').find(l => l.startsWith('data: '))
+          if (!line) continue
+          try {
+            const m = JSON.parse(line.slice(6))
+            if (m.type === 'done') done = true
+            if (m.type === 'error') errMsg = m.message || 'error'
+          } catch { /* ping */ }
+        }
+      }
+      if (errMsg) throw new Error(errMsg)
+      if (!done) throw new Error('стрим кончился без done')
+
+      // 3) проверка формата
+      const { body: check } = await api(`/rest/v1/project_materials?select=raw_content,processing_status&project_id=eq.${pid}&material_type=eq.meanings_map&limit=1`)
+      const txt = check?.[0]?.raw_content || ''
+      const canon = /\[(БОЛИ|ХОТЕЛКИ, ПОТРЕБНОСТИ|ТРИГГЕРЫ|ВОЗРАЖЕНИЯ|ВАШИ ПРЕИМУЩЕСТВА)\]/.test(txt) && /^—\s*«/m.test(txt)
+      const rows = (txt.match(/^—\s*«/gm) || []).length
+      log(`  ${canon ? '✅' : '⚠️'} ${name}: ${((Date.now() - t0) / 1000).toFixed(0)}с, формулировок ${rows}, слайд-канон: ${canon ? 'да' : 'НЕТ'}`)
+      canon ? ok++ : fail++
+    } catch (e) {
+      fail++
+      log(`  ❌ ${name}: ${String(e.message || e).slice(0, 160)}`)
+    }
+  }
+  log(`\nИтог: пересобрано ${ok}, с проблемами ${fail}. Старые карты заменены только там, где сборка прошла.`)
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
