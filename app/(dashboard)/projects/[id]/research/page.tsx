@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef, use } from 'react'
+import { useState, useCallback, useEffect, useRef, use } from 'react'
 import { createClient as createSupabaseClient } from '@/lib/supabase/client'
 import { friendlyError } from '@/lib/friendlyError'
 import { isDefinitelyNotMedia, NOT_MEDIA_MESSAGE } from '@/lib/media/notMedia'
@@ -55,6 +55,26 @@ const BLOCK_LABELS: Record<string, string> = {
   barriers:  'Барьеры',
   criteria:  'Критерии',
   other:     'Прочее',
+}
+
+// ── Черновик исследования в localStorage ─────────────────────────────────────
+// «Не было ошибки, просто сбрасывает и снова начинать с начала» (клиент,
+// 31 июля): телефон выгружает вкладку во время долгой расшифровки/таблицы,
+// перезагрузка стирала ВСЁ состояние страницы — при живом серверном джобе.
+// Черновик хранит текст/таблицу/живые джобы; при открытии страница
+// восстанавливает шаг и ДОГОНЯЕТ недоделанные джобы поллингом.
+type ResearchDraft = {
+  transcription?: string
+  transcriptionParts?: { name: string; text: string }[]
+  transcriptMaterialIds?: string[]
+  table1?: InterviewTable | null
+  activeJobs?: { jobId: string; name: string }[]
+}
+function readDraft(key: string): ResearchDraft | null {
+  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as ResearchDraft : null } catch { return null }
+}
+function patchDraft(key: string, patch: Partial<ResearchDraft>) {
+  try { localStorage.setItem(key, JSON.stringify({ ...(readDraft(key) ?? {}), ...patch })) } catch { /* квота/приватный режим — не мешаем работе */ }
 }
 
 const BLOCK_COLORS: Record<string, string> = {
@@ -153,6 +173,78 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   const [icloudWait, setIcloudWait] = useState<{ name: string; attempt: number; max: number } | null>(null)
   // per-file status for multi-file processing
   const [fileQueue, setFileQueue] = useState<FileStatus[]>([])
+
+  // Черновик (см. ResearchDraft выше): восстановление после выгрузки вкладки.
+  const draftKey = `ama_research_${id}`
+  const restoredRef = useRef(false)
+
+  const resumeJobs = useCallback(async (
+    jobs: { jobId: string; name: string }[],
+    priorParts: { name: string; text: string }[],
+    priorIds: string[],
+  ) => {
+    setStep('transcribing')
+    setFileQueue(jobs.map(j => ({ name: j.name, status: 'transcribing' as const })))
+    const allParts = [...priorParts]
+    const ids = [...priorIds]
+    const errors: string[] = []
+    for (let i = 0; i < jobs.length; i++) {
+      try {
+        const { text, materialId } = await pollTranscribeJob(jobs[i].jobId, (done, total) => {
+          setFileQueue(prev => prev.map((f, fi) => fi === i ? { ...f, chunkIndex: done, totalChunks: total ?? done } : f))
+        })
+        allParts.push({ name: jobs[i].name, text })
+        if (materialId) ids.push(materialId)
+        setFileQueue(prev => prev.map((f, fi) => fi === i ? { ...f, status: 'done' as const } : f))
+      } catch (e) {
+        errors.push(e instanceof Error ? e.message : 'Ошибка расшифровки')
+        setFileQueue(prev => prev.map((f, fi) => fi === i ? { ...f, status: 'error' as const } : f))
+      }
+      patchDraft(draftKey, { transcriptionParts: allParts, transcriptMaterialIds: ids, activeJobs: jobs.slice(i + 1) })
+    }
+    patchDraft(draftKey, { activeJobs: [] })
+    if (allParts.length > 0) {
+      setTranscriptionParts(allParts)
+      setTranscriptMaterialIds(ids)
+      setTranscription(allParts.map(p => p.text).join('\n\n'))
+      setStep('transcribed')
+      if (errors.length) toast.error(`Часть файлов не расшифровалась: ${errors[0]}`)
+    } else {
+      setStep('upload')
+      if (errors.length) toast.error(errors[0])
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey])
+
+  // Восстановление при открытии страницы: незаконченный шаг + догон живых джобов.
+  useEffect(() => {
+    if (restoredRef.current) return
+    restoredRef.current = true
+    const d = readDraft(draftKey)
+    if (!d) return
+    if (d.transcriptionParts?.length) setTranscriptionParts(d.transcriptionParts)
+    if (d.transcriptMaterialIds?.length) setTranscriptMaterialIds(d.transcriptMaterialIds)
+    if (d.transcription) setTranscription(d.transcription)
+    if (d.table1) setTable1(d.table1)
+    if (d.activeJobs?.length) {
+      toast.message('Расшифровка шла на сервере, пока страница была закрыта — догоняю…')
+      void resumeJobs(d.activeJobs, d.transcriptionParts ?? [], d.transcriptMaterialIds ?? [])
+    } else if (d.table1) {
+      setStep('table1')
+      toast.message('Восстановил незаконченное исследование — таблица на месте')
+    } else if (d.transcription) {
+      setStep('transcribed')
+      toast.message('Восстановил расшифровку — продолжай с того же места')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Автосохранение черновика; после «Сохранено» черновик больше не нужен.
+  useEffect(() => {
+    if (step === 'saved') { try { localStorage.removeItem(draftKey) } catch { /* ignore */ } return }
+    if (!transcription && !table1 && transcriptionParts.length === 0) return
+    patchDraft(draftKey, { transcription, transcriptionParts, transcriptMaterialIds, table1 })
+  }, [step, transcription, transcriptionParts, transcriptMaterialIds, table1, draftKey])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ── Transcription ───────────────────────────────────────────────────────────
@@ -165,9 +257,11 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     setProgress(null)
     setIcloudWait(null)
     setTranscriptMaterialIds([]) // новая партия файлов — прежние id не наши
+    patchDraft(draftKey, { transcription: '', transcriptionParts: [], transcriptMaterialIds: [], table1: null, activeJobs: [] })
 
     const supabase  = createSupabaseClient()
     const allParts: { name: string; text: string }[] = []
+    const runIds: string[] = [] // materialId по каждому файлу — для черновика и save
     const fileErrors: string[] = []
 
     // Initialise per-file queue so the user sees all files upfront
@@ -261,12 +355,21 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
           throw new Error(startBody.error ?? 'Не удалось запустить расшифровку')
         }
 
+        // Джоб — в черновик ДО поллинга: умри вкладка сейчас, при возврате
+        // страница его догонит (resumeJobs), а не начнёт с нуля.
+        patchDraft(draftKey, { activeJobs: [...(readDraft(draftKey)?.activeJobs ?? []), { jobId: startBody.jobId, name: fileName }] })
+
         const { text: finalText, materialId } = await pollTranscribeJob(startBody.jobId, (doneChunks, totalChunks) => {
           updateFile(fi, { status: 'transcribing', chunkIndex: doneChunks, totalChunks: totalChunks ?? doneChunks })
         })
 
         allParts.push({ name: fileName, text: finalText })
-        if (materialId) setTranscriptMaterialIds(prev => [...prev, materialId])
+        if (materialId) runIds.push(materialId)
+        patchDraft(draftKey, {
+          transcriptionParts: [...allParts],
+          transcriptMaterialIds: [...runIds],
+          activeJobs: (readDraft(draftKey)?.activeJobs ?? []).filter(j => j.jobId !== startBody.jobId),
+        })
         updateFile(fi, { status: 'done' })
 
       } catch (err) {
@@ -285,6 +388,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
 
     if (allParts.length > 0) {
       setTranscriptionParts(allParts)
+      setTranscriptMaterialIds(runIds)
       setTranscription(allParts.map(p => p.text).join('\n\n'))
       setStep('transcribed')
     } else {
