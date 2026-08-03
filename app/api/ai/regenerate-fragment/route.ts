@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
-import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
+import { anthropic, MODEL, buildCachedSystem, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt } from '@/lib/ai/prompts/system'
 import { AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
@@ -102,7 +103,7 @@ ${instruction && instruction.trim() ? `\nПОЖЕЛАНИЕ ПОЛЬЗОВАТЕ
     return NextResponse.json({ fragment: newFragment })
   } catch (error) {
     console.error('regenerate-fragment error:', error)
-    const msg = error instanceof Error ? error.message : 'Ошибка сервера'
-    return NextResponse.json({ error: msg }, { status: 500 })
+    await captureException(error, { where: 'regenerate-fragment' })
+    return NextResponse.json({ error: AI_BUSY_MESSAGE }, { status: 503 })
   }
 }

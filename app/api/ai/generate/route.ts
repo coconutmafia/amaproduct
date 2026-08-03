@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { captureException } from '@/lib/sentry'
 import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt, buildValidatorUserPrompt } from '@/lib/ai/prompts/system'
@@ -356,11 +357,13 @@ ${contentType === 'email' ? `Напиши письмо для email-рассыл
         send({ type: 'done', item: contentItem, structuredData, was_validated: wasValidated })
         controller.close()
       } catch (err) {
-        const msg = err instanceof Error ? err.message : (typeof err === 'object' && err !== null && 'message' in err ? String((err as { message: unknown }).message) : 'Generation failed')
         console.error('Generate SSE error:', err)
+        // Сырец — в телеметрию (окно сбоев видно в /admin/errors), клиенту —
+        // честный русский текст без хвостов провайдера.
+        await captureException(err, { where: 'generate SSE' })
         // Generation failed — refund the consumed quota so the user isn't charged
         await refundGeneration(user.id)
-        send({ type: 'error', message: msg })
+        send({ type: 'error', message: 'Генерация сейчас перегружена или временно недоступна — попробуй через минуту-две. Единица контента возвращена.' })
         controller.close()
       }
     },

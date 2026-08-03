@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
-import { anthropic, MODEL } from '@/lib/ai/client'
+import { anthropic, MODEL, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { gateContentUnit, refundGeneration } from '@/lib/generations'
 import { rateLimit } from '@/lib/rateLimit'
@@ -151,6 +152,7 @@ ${ragBlock || '(мало материалов)'}
     return NextResponse.json({ stories })
   } catch (e) {
     console.error('[plan-stories]', e instanceof Error ? e.message : e)
+    await captureException(e, { where: 'plan-stories' })
     if (consumed) {
       try {
         const sb = await createClient()
@@ -158,6 +160,6 @@ ${ragBlock || '(мало материалов)'}
         if (u) await refundGeneration(u.id)
       } catch { /* ignore */ }
     }
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 })
+    return NextResponse.json({ error: AI_BUSY_MESSAGE }, { status: 503 })
   }
 }

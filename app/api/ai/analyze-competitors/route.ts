@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
-import { anthropic, MODEL } from '@/lib/ai/client'
+import { anthropic, MODEL, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { requireProjectAccess } from '@/lib/projects/access'
 
 // Builds a competitor-comparison TABLE from the scraped Instagram data the
@@ -136,6 +137,7 @@ ${mineBlock ? `НАШ АККАУНТ (для вывода):\n${mineBlock}\n\n` :
     return NextResponse.json({ competitors: rows })
   } catch (e) {
     console.error('[analyze-competitors]', e instanceof Error ? e.message : e)
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 })
+    await captureException(e, { where: 'analyze-competitors' })
+    return NextResponse.json({ error: AI_BUSY_MESSAGE }, { status: 503 })
   }
 }

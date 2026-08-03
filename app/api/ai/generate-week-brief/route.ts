@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
+import { captureException } from '@/lib/sentry'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
-import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
+import { anthropic, MODEL, buildCachedSystem, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { getSchemaForPhase, getEmotionalMechanics, getCTAEngine, AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
 import { requireProjectAccess } from '@/lib/projects/access'
@@ -312,8 +313,8 @@ ${daysText}
 
     return NextResponse.json({ days })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Ошибка AI'
-    console.error('[generate-week-brief] error:', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    console.error('[generate-week-brief] error:', err instanceof Error ? err.message : err)
+    await captureException(err, { where: 'generate-week-brief' })
+    return NextResponse.json({ error: AI_BUSY_MESSAGE }, { status: 503 })
   }
 }

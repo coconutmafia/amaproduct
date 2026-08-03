@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
+import { captureException } from '@/lib/sentry'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
-import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
+import { anthropic, MODEL, buildCachedSystem, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt } from '@/lib/ai/prompts/system'
 import {
@@ -438,7 +439,8 @@ ${currentContent}
         }
 
       } catch (error) {
-        send({ type: 'error', message: error instanceof Error ? error.message : 'Ошибка сервера' })
+        await captureException(error, { where: 'edit SSE' })
+        send({ type: 'error', message: AI_BUSY_MESSAGE })
       } finally {
         controller.close()
       }

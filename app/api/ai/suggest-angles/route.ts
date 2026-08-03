@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
-import { anthropic, MODEL } from '@/lib/ai/client'
+import { anthropic, MODEL, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { requireProjectAccess } from '@/lib/projects/access'
@@ -144,6 +145,7 @@ ${trendsBlock ? `\nАКТУАЛЬНЫЕ ТРЕНДЫ (для рилза можн
     return NextResponse.json({ text })
   } catch (e) {
     console.error('[suggest-angles]', e instanceof Error ? e.message : e)
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 })
+    await captureException(e, { where: 'suggest-angles' })
+    return NextResponse.json({ error: AI_BUSY_MESSAGE }, { status: 503 })
   }
 }

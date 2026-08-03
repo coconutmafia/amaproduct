@@ -9,6 +9,7 @@ import { requirePaidAccess } from '@/lib/billing/access'
 import type { Message } from '@/types'
 import { rateLimit } from '@/lib/rateLimit'
 import { requireProjectAccess } from '@/lib/projects/access'
+import { captureException } from '@/lib/sentry'
 
 // Vercel Pro allows up to 300s. Multi-item answers ("5 рилзов") on top of a
 // large RAG system prompt routinely take well over 60s — the old 60s cap was
@@ -60,6 +61,10 @@ function streamingChatResponse(
         controller.close()
       } catch (err) {
         console.error('Chat stream error:', err)
+        // Слепое окно урока 31 июля: обрыв стрима (перегруз/кредиты Anthropic)
+        // раньше жил только в console.error — в /admin/errors его не было, и
+        // окно сбоев диагностировалось задним числом по косвенным уликам.
+        await captureException(err, { where: 'chat stream', gotChars: acc.length })
         if (acc.length > 0) {
           // Don't present a truncated answer as complete — append a visible note,
           // then close so the partial text is kept.
@@ -266,8 +271,12 @@ ${baseSystem}${savedBlock}`
     return streamingChatResponse(systemPrompt, messages.map((m) => ({ role: m.role, content: m.content })), refundIfMetered)
   } catch (error) {
     console.error('Chat error:', error)
-    const msg = error instanceof Error ? error.message : String(error)
-    // Surface the real error to help diagnose (API key, model, etc.)
-    return NextResponse.json({ error: msg || 'Chat failed' }, { status: 500 })
+    // Сырец — в телеметрию (диагностика), клиенту — честный русский текст:
+    // раньше msg уходил как есть и мог протащить текст провайдера.
+    await captureException(error, { where: 'chat route' })
+    return NextResponse.json(
+      { error: 'Ассистент сейчас перегружен или временно недоступен — попробуй через минуту-две. Твоё сообщение не потерялось.' },
+      { status: 503 },
+    )
   }
 }

@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
-import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
+import { anthropic, MODEL, buildCachedSystem, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
 import { requireProjectAccess } from '@/lib/projects/access'
 
@@ -550,7 +551,7 @@ ${isEvergreen ? `
 
   } catch (error) {
     console.error('Warmup plan error:', error)
-    const msg = error instanceof Error ? error.message : 'Ошибка сервера'
-    return NextResponse.json({ error: msg }, { status: 500 })
+    await captureException(error, { where: 'warmup-plan' })
+    return NextResponse.json({ error: AI_BUSY_MESSAGE }, { status: 503 })
   }
 }

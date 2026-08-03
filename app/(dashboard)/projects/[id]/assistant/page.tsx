@@ -13,6 +13,7 @@ import { AssistantMessageBody } from '@/components/chat/AssistantMessageBody'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
 import { friendlyError } from '@/lib/friendlyError'
 import { useChatPin } from '@/lib/useChatPin'
+import { savePendingAnswer, clearPendingAnswer, takePendingAnswer, PENDING_CUT_NOTE } from '@/lib/chatPending'
 import { cleanMarkdown } from '@/lib/cleanText'
 import { isReelsScript } from '@/lib/contentKind'
 
@@ -90,12 +91,18 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
   // функциональный setMessages не даёт затереть opener-сид из контент-плана,
   // если тот успел отработать первым.
   const chatLsKey = `ama_chat_assistant_${id}`
+  const pendingKey = `${chatLsKey}_pending`
   useEffect(() => {
     try {
       const raw = localStorage.getItem(chatLsKey)
-      if (!raw) return
-      const saved = JSON.parse(raw) as ChatMessage[]
-      if (Array.isArray(saved) && saved.length) setMessages((prev) => (prev.length ? prev : saved))
+      // Оборванный стрим-ответ (вкладка умерла на генерации) — доклеиваем к
+      // истории с честной пометкой, чтобы юнит и текст не пропали бесследно.
+      const pending = takePendingAnswer(pendingKey)
+      if (!raw && !pending) return
+      const saved = raw ? (JSON.parse(raw) as ChatMessage[]) : []
+      const restored = Array.isArray(saved) ? saved : []
+      if (pending) restored.push({ role: 'assistant', content: pending + PENDING_CUT_NOTE })
+      if (restored.length) setMessages((prev) => (prev.length ? prev : restored))
     } catch { /* битый черновик — начинаем с чистого */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatLsKey])
@@ -158,10 +165,13 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
         if (done) break
         acc += decoder.decode(value, { stream: true })
         setStreaming(acc)
+        savePendingAnswer(pendingKey, acc)
       }
+      clearPendingAnswer(pendingKey)
       setMessages(prev => [...prev, { role: 'assistant', content: acc }])
       setStreaming('')
     } catch (err) {
+      clearPendingAnswer(pendingKey)
       if ((err as Error).name === 'AbortError') {
         // user stopped — keep whatever streamed
         if (acc.trim()) setMessages(prev => [...prev, { role: 'assistant', content: acc }])

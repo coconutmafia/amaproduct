@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
-import { anthropic, MODEL } from '@/lib/ai/client'
+import { anthropic, MODEL, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { AI_TELLS_TO_AVOID, VISUAL_RULES } from '@/lib/ai/prompts/content-brain'
 
 // Chat/voice edits to already-rendered carousel slides (owner: «подредактировать
@@ -97,6 +98,7 @@ ${AI_TELLS_TO_AVOID}
     return NextResponse.json({ carousel: out })
   } catch (e) {
     console.error('[edit-carousel]', e instanceof Error ? e.message : e)
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 })
+    await captureException(e, { where: 'edit-carousel' })
+    return NextResponse.json({ error: AI_BUSY_MESSAGE }, { status: 503 })
   }
 }

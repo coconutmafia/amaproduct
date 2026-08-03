@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
+import { captureException } from '@/lib/sentry'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
 import { upsertProjectMaterial } from '@/lib/supabase/upsertMaterial'
-import { anthropic, MODEL } from '@/lib/ai/client'
+import { anthropic, MODEL, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { NextResponse } from 'next/server'
 
@@ -185,18 +186,20 @@ export async function POST(request: Request) {
 
         send({ type: 'done' })
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'AI недоступен'
-        console.error('[extract-tone-of-voice] error:', msg)
+        console.error('[extract-tone-of-voice] error:', err instanceof Error ? err.message : err)
+        // Сырец — в телеметрию; в материал и клиенту — честный текст без
+        // хвостов провайдера и стеков (раньше стек лежал в материале!).
+        await captureException(err, { where: 'extract-tone-of-voice' })
         try {
           await upsertProjectMaterial(supabase, {
             project_id:        projectId,
             title:             TOV_TITLE,
             material_type:     'tone_of_voice',
-            raw_content:       `❌ Ошибка извлечения Tone of Voice\n\n${msg}\n\n(Стек: ${err instanceof Error && err.stack ? err.stack.slice(0, 1500) : 'нет'})`,
+            raw_content:       `❌ Tone of Voice не извлёкся: генерация была перегружена. Нажми «Из моих текстов» ещё раз — если повторится, напиши нам.`,
             processing_status: 'error',
           })
         } catch { /* swallow */ }
-        send({ type: 'error', message: msg })
+        send({ type: 'error', message: AI_BUSY_MESSAGE })
       } finally {
         clearInterval(ping)
         closed = true

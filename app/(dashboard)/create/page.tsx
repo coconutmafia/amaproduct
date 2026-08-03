@@ -13,6 +13,7 @@ import { VoiceRuleButton, maybeSuggestRule } from '@/components/chat/VoiceRuleBu
 import { AssistantMessageBody } from '@/components/chat/AssistantMessageBody'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
 import { useChatPin } from '@/lib/useChatPin'
+import { savePendingAnswer, clearPendingAnswer, takePendingAnswer, PENDING_CUT_NOTE } from '@/lib/chatPending'
 import { cleanMarkdown } from '@/lib/cleanText'
 import { isReelsScript } from '@/lib/contentKind'
 
@@ -102,9 +103,14 @@ export default function CreatePage() {
     try {
       if (localStorage.getItem('ama_edit_prefill')) return
       const raw = localStorage.getItem('ama_chat_create')
-      if (!raw) return
-      const saved = JSON.parse(raw) as ChatMessage[]
-      if (Array.isArray(saved) && saved.length) setMessages((prev) => (prev.length ? prev : saved))
+      // Оборванный стрим-ответ (вкладка умерла на генерации) — доклеиваем к
+      // истории с честной пометкой, чтобы юнит и текст не пропали бесследно.
+      const pending = takePendingAnswer('ama_chat_create_pending')
+      if (!raw && !pending) return
+      const saved = raw ? (JSON.parse(raw) as ChatMessage[]) : []
+      const restored = Array.isArray(saved) ? saved : []
+      if (pending) restored.push({ role: 'assistant', content: pending + PENDING_CUT_NOTE })
+      if (restored.length) setMessages((prev) => (prev.length ? prev : restored))
     } catch { /* битый черновик — начинаем с чистого */ }
   }, [])
   useEffect(() => {
@@ -191,9 +197,12 @@ export default function CreatePage() {
         const { value, done } = await reader.read()
         if (done) break
         acc += decoder.decode(value, { stream: true }); setStreaming(acc)
+        savePendingAnswer('ama_chat_create_pending', acc)
       }
+      clearPendingAnswer('ama_chat_create_pending')
       setMessages(prev => [...prev, { role: 'assistant', content: acc }]); setStreaming('')
     } catch (err) {
+      clearPendingAnswer('ama_chat_create_pending')
       if ((err as Error).name === 'AbortError') { if (acc.trim()) setMessages(prev => [...prev, { role: 'assistant', content: acc }]) }
       else toast.error(friendlyError(err, 'Ошибка'))
       setStreaming('')

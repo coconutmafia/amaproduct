@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { AI_BUSY_MESSAGE } from '@/lib/ai/client'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { rateLimit } from '@/lib/rateLimit'
@@ -95,12 +97,16 @@ export async function POST(request: Request) {
     const admin = createAdminClient()
     const path = `${projectId}/ai/${Date.now()}-${mode}.png`
     const { error: upErr } = await admin.storage.from('project-brand').upload(path, buf, { contentType: 'image/png', upsert: true })
-    if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 })
+    if (upErr) {
+      await captureException(new Error(upErr.message), { where: 'generate-image upload' })
+      return NextResponse.json({ error: 'Картинка сгенерировалась, но не сохранилась — попробуй ещё раз.' }, { status: 500 })
+    }
     const url = admin.storage.from('project-brand').getPublicUrl(path).data.publicUrl
 
     return NextResponse.json({ url, aspect, mode })
   } catch (e) {
     console.error('[generate-image]', e instanceof Error ? e.message : e)
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'generation failed' }, { status: 500 })
+    await captureException(e, { where: 'generate-image' })
+    return NextResponse.json({ error: AI_BUSY_MESSAGE }, { status: 503 })
   }
 }

@@ -29,3 +29,10 @@ export const MODEL_HAIKU = 'claude-haiku-4-5'
 export function buildCachedSystem(text: string) {
   return [{ type: 'text' as const, text, cache_control: { type: 'ephemeral' as const } }]
 }
+
+// Честный текст для главного catch AI-роутов. Правило (урок 17/31 июля):
+// в ответ клиенту НИКОГДА не уходит сырой error.message — он тащит хвосты
+// провайдера («credit balance», ссылки на биллинг) и внутренности; сырец
+// кладётся в captureException → error_events, клиент видит это сообщение.
+export const AI_BUSY_MESSAGE =
+  'Генерация сейчас перегружена или временно недоступна — попробуй через минуту-две.'
