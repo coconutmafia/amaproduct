@@ -29,11 +29,11 @@ export async function POST(request: Request) {
   const denied = await requirePaidAccess(user.id)
   if (denied) return denied
 
-  let body: { projectId?: string; storagePath?: string; ext?: string; durationSec?: number }
+  let body: { projectId?: string; storagePath?: string; ext?: string; durationSec?: number; saveTranscriptMaterial?: boolean }
   try { body = await request.json() as typeof body }
   catch { return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 }) }
 
-  const { projectId, storagePath, ext, durationSec } = body
+  const { projectId, storagePath, ext, durationSec, saveTranscriptMaterial } = body
   if (!projectId || !storagePath) return NextResponse.json({ error: 'projectId и storagePath обязательны' }, { status: 400 })
   if (!storagePath.startsWith(`${user.id}/`)) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
 
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
     project_id: projectId,
     type: 'transcribe',
     status: 'queued',
-    payload: { storagePath, ext: ext || 'mp3', durationSec: durationSec ?? null },
+    payload: { storagePath, ext: ext || 'mp3', durationSec: durationSec ?? null, saveTranscriptMaterial: saveTranscriptMaterial === true },
     progress: { doneChunks: 0, totalChunks: durationSec ? null : null },
   }).select('id').single()
   if (error || !job) return NextResponse.json({ error: error?.message ?? 'Не удалось создать задачу' }, { status: 500 })

@@ -2,6 +2,8 @@ import { after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { transcribeWindow } from '@/lib/jobs/transcribeWindow'
 import { captureException } from '@/lib/sentry'
+import { embedMaterialChunks } from '@/lib/ai/embed'
+import { fmtDateRu } from '@/lib/dates'
 
 const CHUNK_SEC = 600     // 10-min windows — matches the client's prior chunking
 const MAX_CHUNKS = 48     // safety cap ≈ 8h, same as before
@@ -14,7 +16,7 @@ interface JobRow {
   user_id: string
   project_id: string | null
   status: string
-  payload: { storagePath: string; ext: string; durationSec?: number | null }
+  payload: { storagePath: string; ext: string; durationSec?: number | null; saveTranscriptMaterial?: boolean }
   progress: { doneChunks?: number; totalChunks?: number | null }
   result: { text?: string } | null
 }
@@ -95,9 +97,38 @@ export async function processTranscribeJob(jobId: string): Promise<void> {
   }
 
   await admin.storage.from('audio-temp').remove([storagePath]).catch(() => {})
+
+  // Расшифровка — в материалы СРАЗУ по готовности (флаг ставит страница
+  // исследования; голосовые заметки и др. потоки не затронуты). Урок 31 июля:
+  // у клиентки упал СЛЕДУЮЩИЙ шаг (таблица, окно без кредитов у провайдера),
+  // она ушла с экрана — и часовая расшифровка пропала вовсе. Текст клиента
+  // не должен зависеть от успеха следующего шага. save-шаг research-analyze
+  // получает materialId и не создаёт дубль.
+  let materialId: string | null = null
+  if (row.payload.saveTranscriptMaterial && row.project_id && text.trim()) {
+    try {
+      const { data: mat } = await admin.from('project_materials').insert({
+        project_id:        row.project_id,
+        title:             `Расшифровка интервью · ${fmtDateRu(Date.now(), { day: 'numeric', month: 'long' })}`,
+        material_type:     'interview_transcript',
+        raw_content:       text,
+        processing_status: 'ready',
+      }).select('id').single()
+      materialId = (mat?.id as string) ?? null
+      // Эмбеддинг не критичен для сохранности текста: упал (например, OpenAI
+      // без кредитов — ровно утро 31 июля) — материал всё равно сохранён.
+      if (materialId) {
+        try { await embedMaterialChunks(materialId, row.project_id, text) }
+        catch (e) { await captureException(e, { where: 'runTranscribeJob embed', jobId }) }
+      }
+    } catch (e) {
+      await captureException(e, { where: 'runTranscribeJob save-material', jobId })
+    }
+  }
+
   await admin.from('jobs').update({
     status: 'done',
-    result: { text },
+    result: { text, materialId },
     progress: { doneChunks: ci, totalChunks: known ? totalChunks : ci },
   }).eq('id', jobId)
 }

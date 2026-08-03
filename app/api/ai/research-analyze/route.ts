@@ -4,6 +4,14 @@ import { requirePaidAccess } from '@/lib/billing/access'
 import { fmtDateRu } from '@/lib/dates'
 import { upsertProjectMaterial } from '@/lib/supabase/upsertMaterial'
 import { embedMaterialChunks } from '@/lib/ai/embed'
+import { captureException } from '@/lib/sentry'
+
+// Честный текст, когда упал САМ вызов Claude (кредиты/перегруз/сеть) — «AI не
+// смог структурировать» здесь ложь: он даже не начал. Утро 31 июля: клиентка
+// несколько раз попала в такое окно (обе кассы пустые), увидела страшную
+// ошибку и ушла. Полная причина — в error_events через captureException.
+const AI_BUSY =
+  'Генерация сейчас перегружена или временно недоступна. Подожди 1-2 минуты и нажми ещё раз — расшифровка не потеряется.'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { NextResponse } from 'next/server'
@@ -262,13 +270,14 @@ export async function POST(request: Request) {
   const body = await request.json() as {
     projectId:     string
     step:          'table1' | 'table2' | 'save' | 'generate_meanings' | 'meanings_status' | 'meanings_batch' | 'meanings_merge'
+    transcriptMaterialIds?: string[]
     transcription?: string
     table1?:       InterviewTable
     batchIndex?:   number
     categories?:   MeaningsCategory[]
   }
 
-  const { projectId, step, transcription, table1, batchIndex, categories } = body
+  const { projectId, step, transcription, table1, batchIndex, categories, transcriptMaterialIds } = body
 
   if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
 
@@ -327,15 +336,21 @@ export async function POST(request: Request) {
         required: ['respondents'],
       },
     }
-    const stream = anthropic.messages.stream({
-      model:       MODEL,
-      max_tokens:  32000,
-      system:      TABLE1_SYSTEM,
-      tools:       [tableTool],
-      tool_choice: { type: 'tool' as const, name: 'interview_table' },
-      messages:    [{ role: 'user', content: buildTable1Prompt(transcription) }],
-    })
-    const finalMsg = await stream.finalMessage()
+    let finalMsg
+    try {
+      const stream = anthropic.messages.stream({
+        model:       MODEL,
+        max_tokens:  32000,
+        system:      TABLE1_SYSTEM,
+        tools:       [tableTool],
+        tool_choice: { type: 'tool' as const, name: 'interview_table' },
+        messages:    [{ role: 'user', content: buildTable1Prompt(transcription) }],
+      })
+      finalMsg = await stream.finalMessage()
+    } catch (e) {
+      await captureException(e, { where: 'research-analyze table1', projectId })
+      return NextResponse.json({ error: AI_BUSY }, { status: 503 })
+    }
     const toolBlock = finalMsg.content.find((b) => b.type === 'tool_use')
     if (finalMsg.stop_reason === 'max_tokens') {
       return NextResponse.json({
@@ -384,15 +399,21 @@ export async function POST(request: Request) {
         required: ['categories'],
       },
     }
-    const t2stream = anthropic.messages.stream({
-      model:       MODEL,
-      max_tokens:  32000,
-      system:      TABLE2_SYSTEM,
-      tools:       [meaningsTool],
-      tool_choice: { type: 'tool' as const, name: 'meanings_map' },
-      messages:    [{ role: 'user', content: buildTable2Prompt(table1) }],
-    })
-    const t2final = await t2stream.finalMessage()
+    let t2final
+    try {
+      const t2stream = anthropic.messages.stream({
+        model:       MODEL,
+        max_tokens:  32000,
+        system:      TABLE2_SYSTEM,
+        tools:       [meaningsTool],
+        tool_choice: { type: 'tool' as const, name: 'meanings_map' },
+        messages:    [{ role: 'user', content: buildTable2Prompt(table1) }],
+      })
+      t2final = await t2stream.finalMessage()
+    } catch (e) {
+      await captureException(e, { where: 'research-analyze table2', projectId })
+      return NextResponse.json({ error: AI_BUSY }, { status: 503 })
+    }
     const t2block = t2final.content.find((b) => b.type === 'tool_use')
     if (!t2block || t2block.type !== 'tool_use') {
       console.error('[research-analyze table2] no tool_use. stop_reason=%s', t2final.stop_reason)
@@ -441,13 +462,25 @@ export async function POST(request: Request) {
     // chars (a 60-min interview ≈ 100k+); the ALWAYS_INCLUDE raw layer keeps a
     // truncated baseline, and the embeddings make the whole thing retrievable
     // by relevance → nothing is lost.
-    const { data: trRow } = await supabase.from('project_materials').insert({
-      project_id:        projectId,
-      title:             `Расшифровка интервью · ${dateLabel}`,
-      material_type:     'interview_transcript',
-      raw_content:       transcription,
-      processing_status: 'ready',
-    }).select('id').single()
+    // Расшифровки уже сохранил transcribe-джоб (по материалу на файл) — если
+    // их id пришли и реально принадлежат проекту (RLS-select), дубль не создаём.
+    let transcriptSavedByJob = false
+    if (Array.isArray(transcriptMaterialIds) && transcriptMaterialIds.length > 0) {
+      const ids = transcriptMaterialIds.filter((x): x is string => typeof x === 'string').slice(0, 20)
+      const { data: owned } = await supabase.from('project_materials')
+        .select('id').in('id', ids).eq('project_id', projectId)
+      transcriptSavedByJob = (owned?.length ?? 0) > 0
+    }
+
+    const { data: trRow } = transcriptSavedByJob
+      ? { data: null }
+      : await supabase.from('project_materials').insert({
+          project_id:        projectId,
+          title:             `Расшифровка интервью · ${dateLabel}`,
+          material_type:     'interview_transcript',
+          raw_content:       transcription,
+          processing_status: 'ready',
+        }).select('id').single()
 
     const { data: tblRow } = await supabase.from('project_materials').insert({
       project_id:        projectId,
@@ -457,8 +490,16 @@ export async function POST(request: Request) {
       processing_status: 'ready',
     }).select('id').single()
 
-    if (trRow?.id) await embedMaterialChunks(trRow.id, projectId, transcription)
-    if (tblRow?.id) await embedMaterialChunks(tblRow.id, projectId, tableText)
+    // Эмбеддинг НЕ должен валить сохранение: материал ценнее индекса. Утро
+    // 31 июля: OpenAI сидел без кредитов — упади embed тут, клиент увидел бы
+    // «ничего не сохраняется» при живых материалах. RAG без чанков всё равно
+    // работает (raw-слой ALWAYS_INCLUDE).
+    try {
+      if (trRow?.id) await embedMaterialChunks(trRow.id, projectId, transcription)
+      if (tblRow?.id) await embedMaterialChunks(tblRow.id, projectId, tableText)
+    } catch (e) {
+      await captureException(e, { where: 'research-analyze save embed', projectId })
+    }
 
     // ── Общая таблица кастдевов (просьба Августы 30 июля: «должна формироваться
     // одна единая, иначе замучаемся искать по отдельным таблицам»). Каждое

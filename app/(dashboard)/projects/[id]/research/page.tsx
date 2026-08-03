@@ -93,7 +93,7 @@ function getAudioDuration(file: File): Promise<number> {
 function pollTranscribeJob(
   jobId: string,
   onProgress: (doneChunks: number, totalChunks: number | null) => void,
-): Promise<string> {
+): Promise<{ text: string; materialId: string | null }> {
   let consecutiveFailures = 0
   const MAX_CONSECUTIVE_FAILURES = 30 // ~2 min of nothing-but-errors → genuinely give up
   return new Promise((resolve, reject) => {
@@ -101,14 +101,14 @@ function pollTranscribeJob(
       try {
         const res = await fetch(`/api/jobs/${jobId}`)
         const body = await res.json() as {
-          job?: { status: string; progress?: { doneChunks?: number; totalChunks?: number | null }; result?: { text?: string }; error?: string }
+          job?: { status: string; progress?: { doneChunks?: number; totalChunks?: number | null }; result?: { text?: string; materialId?: string | null }; error?: string }
           error?: string
         }
         if (!res.ok || !body.job) { reject(new Error(body.error ?? 'Не удалось получить статус расшифровки')); return }
         consecutiveFailures = 0
         const { status, progress, result, error } = body.job
         onProgress(progress?.doneChunks ?? 0, progress?.totalChunks ?? null)
-        if (status === 'done') { resolve(result?.text ?? ''); return }
+        if (status === 'done') { resolve({ text: result?.text ?? '', materialId: result?.materialId ?? null }); return }
         if (status === 'error') { reject(new Error(error ?? 'Ошибка расшифровки')); return }
         setTimeout(poll, 2500)
       } catch {
@@ -139,6 +139,9 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   const [transcription, setTranscription] = useState('')
   // per-file parts — used for batch analysis (avoid hitting AI output token limit)
   const [transcriptionParts, setTranscriptionParts] = useState<{ name: string; text: string }[]>([])
+  // Материалы расшифровок, уже сохранённые transcribe-джобом (по одному на
+  // файл) — save-шаг переиспользует их и не создаёт дубль.
+  const [transcriptMaterialIds, setTranscriptMaterialIds] = useState<string[]>([])
   const [table1, setTable1]           = useState<InterviewTable | null>(null)
   const [analysisBatch, setAnalysisBatch] = useState<{ current: number; total: number } | null>(null)
   const [expandedRespondent, setExpandedRespondent] = useState<string | null>(null)
@@ -161,6 +164,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     setStep('transcribing')
     setProgress(null)
     setIcloudWait(null)
+    setTranscriptMaterialIds([]) // новая партия файлов — прежние id не наши
 
     const supabase  = createSupabaseClient()
     const allParts: { name: string; text: string }[] = []
@@ -248,18 +252,21 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         const startRes = await fetch('/api/jobs/transcribe', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ projectId: id, storagePath, ext, durationSec: durationSec > 0 ? durationSec : undefined }),
+          // saveTranscriptMaterial: расшифровка ложится в материалы сразу по
+          // готовности джоба — не зависит от успеха шага таблицы (урок 31 июля).
+          body:    JSON.stringify({ projectId: id, storagePath, ext, durationSec: durationSec > 0 ? durationSec : undefined, saveTranscriptMaterial: true }),
         })
         const startBody = await startRes.json() as { jobId?: string; error?: string }
         if (!startRes.ok || startBody.error || !startBody.jobId) {
           throw new Error(startBody.error ?? 'Не удалось запустить расшифровку')
         }
 
-        const finalText = await pollTranscribeJob(startBody.jobId, (doneChunks, totalChunks) => {
+        const { text: finalText, materialId } = await pollTranscribeJob(startBody.jobId, (doneChunks, totalChunks) => {
           updateFile(fi, { status: 'transcribing', chunkIndex: doneChunks, totalChunks: totalChunks ?? doneChunks })
         })
 
         allParts.push({ name: fileName, text: finalText })
+        if (materialId) setTranscriptMaterialIds(prev => [...prev, materialId])
         updateFile(fi, { status: 'done' })
 
       } catch (err) {
@@ -404,7 +411,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       const res = await fetch('/api/ai/research-analyze', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ projectId: id, step: 'save', transcription, table1 }),
+        body:    JSON.stringify({ projectId: id, step: 'save', transcription, table1, transcriptMaterialIds }),
       })
       const data = await res.json() as { error?: string }
       if (!res.ok || data.error) throw new Error(data.error ?? 'Save failed')
@@ -413,7 +420,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       toast.error(friendlyError(err, 'Ошибка сохранения'))
       setStep('table1')
     }
-  }, [id, transcription, table1])
+  }, [id, transcription, table1, transcriptMaterialIds])
 
   // ── Export helpers ──────────────────────────────────────────────────────────
   const exportTable1CSV = useCallback(() => {
