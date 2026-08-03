@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireProjectAccess } from '@/lib/projects/access'
@@ -153,7 +154,8 @@ export async function POST(request: Request) {
         if (u) await refundGeneration(u.id)
       } catch { /* ignore */ }
     }
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'Не удалось обработать видео' }, { status: 500 })
+    await captureException(e, { where: 'video overlay (sync)' })
+    return NextResponse.json({ error: 'Не удалось обработать видео — попробуй ещё раз' }, { status: 500 })
   } finally {
     await cleanup()
   }

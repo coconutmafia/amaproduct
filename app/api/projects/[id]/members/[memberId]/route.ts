@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { getProjectRole } from '@/lib/projects/access'
 
@@ -29,7 +30,10 @@ export async function PATCH(
     .eq('project_id', projectId)
     .select('id')
     .maybeSingle()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    await captureException(new Error(error.message), { where: 'members DELETE' })
+    return NextResponse.json({ error: 'Не удалось удалить участника — попробуй ещё раз' }, { status: 500 })
+  }
   if (!data) return NextResponse.json({ error: 'Участник не найден' }, { status: 404 })
 
   return NextResponse.json({ ok: true })
@@ -57,7 +61,10 @@ export async function DELETE(
     .eq('project_id', projectId)
     .select('id')
     .maybeSingle()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    await captureException(new Error(error.message), { where: 'members DELETE' })
+    return NextResponse.json({ error: 'Не удалось удалить участника — попробуй ещё раз' }, { status: 500 })
+  }
   if (!data) return NextResponse.json({ error: 'Нет доступа или участник не найден' }, { status: 404 })
 
   return NextResponse.json({ ok: true })

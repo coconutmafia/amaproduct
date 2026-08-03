@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { assertPublicUrl } from '@/lib/security/ssrf'
-import { anthropic, MODEL } from '@/lib/ai/client'
+import { anthropic, MODEL, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { FONT_KEYS, FONTS } from '@/lib/fonts'
 import sharp from 'sharp'
 
@@ -105,7 +106,10 @@ export async function POST(request: Request) {
       const { data: row } = await admin.from('projects').select('brand_kit').eq('id', projectId).single()
       const existing = (row?.brand_kit as Record<string, unknown>) || {}
       const { error } = await admin.from('projects').update({ brand_kit: { ...existing, story } }).eq('id', projectId)
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) {
+        await captureException(new Error(error.message), { where: 'brand-kit analyze save' })
+        return NextResponse.json({ error: 'Не удалось сохранить результат разбора — попробуй ещё раз' }, { status: 500 })
+      }
       return NextResponse.json({ accentColor: accent, bg, text, bgStyle, story })
     }
 
@@ -129,11 +133,15 @@ export async function POST(request: Request) {
       brand_kit: brandKit,
       brand_kit_status: 'ready',
     }).eq('id', projectId)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      await captureException(new Error(error.message), { where: 'brand-kit analyze save' })
+      return NextResponse.json({ error: 'Не удалось сохранить результат разбора — попробуй ещё раз' }, { status: 500 })
+    }
 
     return NextResponse.json({ accentColor: accent, bg, text, bgStyle, kit: brandKit })
   } catch (e) {
     console.error('[brand-kit/analyze]', e instanceof Error ? e.message : e)
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'analyze failed' }, { status: 500 })
+    await captureException(e, { where: 'brand-kit analyze' })
+    return NextResponse.json({ error: AI_BUSY_MESSAGE }, { status: 503 })
   }
 }

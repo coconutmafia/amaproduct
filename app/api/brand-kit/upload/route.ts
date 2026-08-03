@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireProjectAccess } from '@/lib/projects/access'
@@ -41,7 +42,10 @@ export async function POST(request: Request) {
         contentType: f.type || 'image/jpeg',
         upsert: true,
       })
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) {
+        await captureException(new Error(error.message), { where: 'brand-kit upload' })
+        return NextResponse.json({ error: 'Не удалось загрузить файл — попробуй ещё раз' }, { status: 500 })
+      }
       urls.push(admin.storage.from('project-brand').getPublicUrl(path).data.publicUrl)
     }
 
@@ -51,7 +55,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ urls })
   } catch (e) {
     console.error('[brand-kit/upload]', e instanceof Error ? e.message : e)
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'upload failed' }, { status: 500 })
+    await captureException(e, { where: 'brand-kit upload' })
+    return NextResponse.json({ error: 'Не удалось загрузить файл — попробуй ещё раз' }, { status: 500 })
   }
 }
 
@@ -94,6 +99,7 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ ok: true })
   } catch (e) {
     console.error('[brand-kit/upload DELETE]', e instanceof Error ? e.message : e)
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'delete failed' }, { status: 500 })
+    await captureException(e, { where: 'brand-kit delete' })
+    return NextResponse.json({ error: 'Не удалось удалить файл — попробуй ещё раз' }, { status: 500 })
   }
 }

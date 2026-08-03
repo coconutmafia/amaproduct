@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireProjectAccess } from '@/lib/projects/access'
@@ -51,7 +52,8 @@ export async function GET(request: Request) {
     if (!data) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     return NextResponse.json({ sets: readSets((data.brand_kit as Record<string, unknown>) || {}) })
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 })
+    await captureException(e, { where: 'stories sets GET' })
+    return NextResponse.json({ error: 'Не удалось загрузить серии — обнови страницу' }, { status: 500 })
   }
 }
 
@@ -114,11 +116,15 @@ export async function POST(request: Request) {
     }
 
     const { error } = await admin.from('projects').update({ brand_kit: { ...kit, story_sets: sets } }).eq('id', projectId)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      await captureException(new Error(error.message), { where: 'stories sets DELETE' })
+      return NextResponse.json({ error: 'Не удалось удалить серию — попробуй ещё раз' }, { status: 500 })
+    }
     return NextResponse.json({ set: next, sets })
   } catch (e) {
     console.error('[stories/sets POST]', e instanceof Error ? e.message : e)
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 })
+    await captureException(e, { where: 'stories sets POST' })
+    return NextResponse.json({ error: 'Не удалось сохранить серию — попробуй ещё раз' }, { status: 500 })
   }
 }
 
@@ -140,9 +146,13 @@ export async function DELETE(request: Request) {
     const victim = sets.find((s) => s.id === setId)
     if (victim) await removeSetFiles(projectId, [victim])
     const { error } = await admin.from('projects').update({ brand_kit: { ...kit, story_sets: sets.filter((s) => s.id !== setId) } }).eq('id', projectId)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      await captureException(new Error(error.message), { where: 'stories sets DELETE' })
+      return NextResponse.json({ error: 'Не удалось удалить серию — попробуй ещё раз' }, { status: 500 })
+    }
     return NextResponse.json({ ok: true })
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 })
+    await captureException(e, { where: 'stories sets DELETE' })
+    return NextResponse.json({ error: 'Не удалось удалить серию — попробуй ещё раз' }, { status: 500 })
   }
 }

@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
-import { anthropic, MODEL_SONNET } from '@/lib/ai/client'
+import { anthropic, MODEL_SONNET, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 
 // Bridges chat-generated TEXT → the structured carousel shape the slide renderer
 // needs. The chat produces clean text (no JSON by design), so when the user wants
@@ -78,6 +79,7 @@ ${text.slice(0, 6000)}
     return NextResponse.json({ carousel })
   } catch (e) {
     console.error('[carousel/structure]', e instanceof Error ? e.message : e)
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 })
+    await captureException(e, { where: 'carousel structure' })
+    return NextResponse.json({ error: AI_BUSY_MESSAGE }, { status: 503 })
   }
 }

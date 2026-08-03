@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { captureException } from '@/lib/sentry'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse, after } from 'next/server'
 import { rateLimit } from '@/lib/rateLimit'
@@ -35,7 +36,10 @@ export async function POST(request: Request) {
     status:     'queued',
     payload:    { username },
   }).select('id').single()
-  if (error || !job) return NextResponse.json({ error: error?.message ?? 'Не удалось создать задачу' }, { status: 500 })
+  if (error || !job) {
+    await captureException(new Error(error?.message || 'job insert failed'), { where: 'blog-audit standalone POST' })
+    return NextResponse.json({ error: 'Не удалось создать задачу — попробуй ещё раз' }, { status: 500 })
+  }
 
   after(() => processStandaloneBlogAuditJob(job.id as string))
 

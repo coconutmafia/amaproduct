@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { isRlsError, READ_ONLY_MESSAGE } from '@/lib/projects/access'
 
@@ -122,7 +123,8 @@ export async function PATCH(request: Request) {
   const { error } = await supabase.from(table).update(patch).eq('id', body.itemId)
   if (error) {
     if (isRlsError(error)) return NextResponse.json({ error: READ_ONLY_MESSAGE }, { status: 403 })
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    await captureException(new Error(error.message), { where: 'content results PATCH' })
+    return NextResponse.json({ error: 'Не удалось сохранить результат — попробуй ещё раз' }, { status: 500 })
   }
 
   // ── Learning loop: a TEXT piece that performed becomes a style example,

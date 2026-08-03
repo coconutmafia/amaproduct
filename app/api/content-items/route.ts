@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { isRlsError, READ_ONLY_MESSAGE } from '@/lib/projects/access'
 import type { WarmupPhase } from '@/types'
@@ -57,10 +58,12 @@ export async function POST(request: Request) {
 
     if (error) {
       if (isRlsError(error)) return NextResponse.json({ error: READ_ONLY_MESSAGE }, { status: 403 })
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      await captureException(new Error(error.message), { where: 'content-items POST' })
+      return NextResponse.json({ error: 'Не удалось сохранить контент — попробуй ещё раз' }, { status: 500 })
     }
     return NextResponse.json({ item })
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed' }, { status: 500 })
+    await captureException(e, { where: 'content-items POST' })
+    return NextResponse.json({ error: 'Не удалось сохранить контент — попробуй ещё раз' }, { status: 500 })
   }
 }

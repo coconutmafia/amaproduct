@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -63,7 +64,10 @@ export async function POST(request: Request) {
     payload: { storagePath, ext: ext || 'mp3', durationSec: durationSec ?? null, saveTranscriptMaterial: saveTranscriptMaterial === true },
     progress: { doneChunks: 0, totalChunks: durationSec ? null : null },
   }).select('id').single()
-  if (error || !job) return NextResponse.json({ error: error?.message ?? 'Не удалось создать задачу' }, { status: 500 })
+  if (error || !job) {
+    await captureException(new Error(error?.message || 'job insert failed'), { where: 'transcribe POST' })
+    return NextResponse.json({ error: 'Не удалось создать задачу — попробуй ещё раз' }, { status: 500 })
+  }
 
   // Kick off the first leg AFTER the response is sent — the client gets the
   // jobId immediately and starts polling; this doesn't block that response.

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { captureException } from '@/lib/sentry'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { after } from 'next/server'
@@ -104,7 +105,10 @@ export async function POST(request: Request) {
     status:     'queued',
     payload:    { projectId, username, accountType },
   }).select('id').single()
-  if (error || !job) return NextResponse.json({ error: error?.message ?? 'Не удалось создать задачу' }, { status: 500 })
+  if (error || !job) {
+    await captureException(new Error(error?.message || 'job insert failed'), { where: 'instagram scrape POST' })
+    return NextResponse.json({ error: 'Не удалось создать задачу — попробуй ещё раз' }, { status: 500 })
+  }
 
   after(() => processInstagramScrapeJob(job.id as string))
 

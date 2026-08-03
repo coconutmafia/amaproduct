@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireProjectAccess } from '@/lib/projects/access'
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
     if (error || !data) return NextResponse.json({ error: 'Не удалось создать ссылку для загрузки' }, { status: 500 })
     return NextResponse.json({ path, token: data.token })
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 })
+    await captureException(e, { where: 'video upload-url' })
+    return NextResponse.json({ error: 'Не удалось подготовить загрузку видео — попробуй ещё раз' }, { status: 500 })
   }
 }

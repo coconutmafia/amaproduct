@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getProjectRole } from '@/lib/projects/access'
@@ -24,7 +25,10 @@ export async function GET(
     .select('id, user_id, invited_email, role, status, created_at, accepted_at')
     .eq('project_id', projectId)
     .order('created_at', { ascending: true })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    await captureException(new Error(error.message), { where: 'members GET' })
+    return NextResponse.json({ error: 'Не удалось загрузить команду проекта — обнови страницу' }, { status: 500 })
+  }
 
   return NextResponse.json({ role, members: members ?? [] })
 }
@@ -99,7 +103,8 @@ export async function POST(
 
   if (error) {
     if (error.code === '23505') return NextResponse.json({ error: `${email} уже приглашён(а) в этот проект` }, { status: 400 })
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    await captureException(new Error(error.message), { where: 'members POST' })
+    return NextResponse.json({ error: 'Не удалось добавить участника — попробуй ещё раз' }, { status: 500 })
   }
 
   const { subject, html } = projectInviteEmail(project?.name ?? 'AMAproduct', inviteRole)

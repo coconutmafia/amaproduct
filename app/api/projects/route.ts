@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 
 export async function POST(request: Request) {
@@ -48,7 +49,8 @@ export async function POST(request: Request) {
         .single()
       if (error) {
         console.error('create_product error:', error)
-        return NextResponse.json({ error: error.message || 'Не удалось добавить продукт' }, { status: 500 })
+        await captureException(new Error(error.message || 'product insert failed'), { where: 'projects add-product' })
+        return NextResponse.json({ error: 'Не удалось добавить продукт — попробуй ещё раз' }, { status: 500 })
       }
 
       const raw_content = [
@@ -79,7 +81,15 @@ export async function POST(request: Request) {
 
       if (error) {
         console.error('create_warmup_plan error:', error)
-        return NextResponse.json({ error: error.message || error.details || 'DB insert failed' }, { status: 500 })
+        // project_limit_reached — доменная ошибка триггера (миграция 035):
+        // клиентский friendlyError переводит её в «закончились проекты на
+        // тарифе», поэтому она обязана дойти как есть. Остальное — сырец.
+        const raw = error.message || error.details || ''
+        if (/project_limit_reached/i.test(raw)) {
+          return NextResponse.json({ error: raw }, { status: 500 })
+        }
+        await captureException(new Error(raw || 'project insert failed'), { where: 'projects create' })
+        return NextResponse.json({ error: 'Не удалось создать проект — попробуй ещё раз' }, { status: 500 })
       }
       return NextResponse.json({ planId: plan.id })
     }

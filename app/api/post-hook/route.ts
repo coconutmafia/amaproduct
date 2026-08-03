@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
-import { anthropic, MODEL_SONNET } from '@/lib/ai/client'
+import { anthropic, MODEL_SONNET, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 
 // Picks ONE short, scroll-stopping hook from a post so it can sit on the post
 // IMAGE, while the full text goes in the caption. Short + cheap → Sonnet is fine.
@@ -52,6 +53,7 @@ ${text.slice(0, 4000)}
     return NextResponse.json({ hook })
   } catch (e) {
     console.error('[post-hook]', e instanceof Error ? e.message : e)
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 })
+    await captureException(e, { where: 'post-hook' })
+    return NextResponse.json({ error: AI_BUSY_MESSAGE }, { status: 503 })
   }
 }

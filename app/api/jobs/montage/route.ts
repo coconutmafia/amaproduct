@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -66,7 +67,8 @@ export async function POST(request: Request) {
   }).select('id').single()
   if (error || !job) {
     await refundGenerations(user.id, VIDEO_MONTAGE_UNITS)
-    return NextResponse.json({ error: error?.message ?? 'Не удалось создать задачу' }, { status: 500 })
+    await captureException(new Error(error?.message || 'job insert failed'), { where: 'montage POST' })
+    return NextResponse.json({ error: 'Не удалось создать задачу — попробуй ещё раз' }, { status: 500 })
   }
 
   after(() => processMontageJob(job.id as string))

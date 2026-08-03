@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { upsertProjectMaterial } from '@/lib/supabase/upsertMaterial'
 import { isRlsError, READ_ONLY_MESSAGE } from '@/lib/projects/access'
@@ -47,11 +48,13 @@ export async function POST(request: Request) {
     })
     if (error) {
       if (isRlsError(error)) return NextResponse.json({ error: READ_ONLY_MESSAGE }, { status: 403 })
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      await captureException(new Error(error.message), { where: 'voice-rules POST' })
+      return NextResponse.json({ error: 'Не удалось сохранить правило голоса — попробуй ещё раз' }, { status: 500 })
     }
     return NextResponse.json({ ok: true, rules: next })
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 })
+    await captureException(e, { where: 'voice-rules POST' })
+    return NextResponse.json({ error: 'Не удалось сохранить правило голоса — попробуй ещё раз' }, { status: 500 })
   }
 }
 
@@ -70,6 +73,7 @@ export async function GET(request: Request) {
       .maybeSingle()
     return NextResponse.json({ rules: (data?.raw_content as string | null) || '' })
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 })
+    await captureException(e, { where: 'voice-rules GET' })
+    return NextResponse.json({ error: 'Не удалось загрузить правила голоса — обнови страницу' }, { status: 500 })
   }
 }

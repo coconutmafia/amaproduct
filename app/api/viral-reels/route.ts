@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { captureException } from '@/lib/sentry'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { after } from 'next/server'
@@ -27,7 +28,8 @@ export async function GET(request: Request) {
   const { data, error } = await q
   if (error) {
     if (error.message?.includes('does not exist')) return NextResponse.json({ reels: [], needsMigration: true })
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    await captureException(new Error(error.message), { where: 'viral-reels GET' })
+    return NextResponse.json({ error: 'Не удалось загрузить рилзы — обнови страницу' }, { status: 500 })
   }
   return NextResponse.json({ reels: data ?? [] })
 }
@@ -41,7 +43,10 @@ export async function DELETE(request: Request) {
   const id = searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
   const { error } = await supabase.from('viral_reels').delete().eq('id', id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    await captureException(new Error(error.message), { where: 'viral-reels DELETE' })
+    return NextResponse.json({ error: 'Не удалось удалить рилз — попробуй ещё раз' }, { status: 500 })
+  }
   return NextResponse.json({ ok: true })
 }
 
@@ -89,7 +94,10 @@ export async function POST(request: Request) {
     status:     'queued',
     payload:    { url, scope, projectId: scope === 'project' ? body.projectId : null, niches: body.niches ?? [], createdBy: user.id },
   }).select('id').single()
-  if (error || !job) return NextResponse.json({ error: error?.message ?? 'Не удалось создать задачу' }, { status: 500 })
+  if (error || !job) {
+    await captureException(new Error(error?.message || 'job insert failed'), { where: 'viral-reels POST' })
+    return NextResponse.json({ error: 'Не удалось создать задачу — попробуй ещё раз' }, { status: 500 })
+  }
 
   after(() => processViralReelJob(job.id as string))
 
