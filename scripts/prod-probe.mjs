@@ -410,9 +410,116 @@ async function storageLimit() {
   log(del.ok ? '✅ 2. тестовый файл удалён' : `⚠️ 2. не удалился (${del.status}) — удали руками: materials/${path}`)
 }
 
+// ── ПРОБНИК: живой смоук шага исследования (table1 + save) ───────────────────
+// Родился 31 июля: у клиентки падало «Создать таблицу», телеметрия шага была
+// слепой, и причину пришлось ГАДАТЬ. Этот смоук гоняет реальный путь прода
+// под QA-ботом: логин без пароля → временный проект → research-analyze
+// table1 (живой Claude-вызов, ~$0.05) → save → проверка материалов → уборка.
+// Ошибка любого шага печатается целиком (и с 31 июля дублируется в error_events).
+//   node scripts/prod-probe.mjs research-smoke [--run]
+async function researchSmoke() {
+  const APP = 'https://amaproduct.com'
+  const QA = 'ama-qa-bot@gmail.com'
+  log('\n=== Пробник: живой смоук исследования (table1 + save) ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) QA-бот: magiclink → verify → сессия (пароль не нужен)')
+    log('  2) создать временный проект ama-probe-research-*')
+    log(`  3) POST ${APP}/api/ai/research-analyze step=table1 (короткое синтетическое интервью)`)
+    log('  4) step=save → проверить, что материалы появились')
+    log('  5) удалить материалы и проект')
+    return
+  }
+  const anon = (() => {
+    const txt = readFileSync(join(ROOT, '.env.local'), 'utf8')
+    const m = txt.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY в .env.local'); return }
+
+  // 1) сессия QA-бота без пароля
+  const gl = await api('/auth/v1/admin/generate_link', {
+    method: 'POST',
+    body: JSON.stringify({ type: 'magiclink', email: QA }),
+  })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log('❌ generate_link не дал email_otp:', gl.status); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST',
+    headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA, token: otp }),
+  }).then(r => r.json())
+  if (!ver?.access_token) { log('❌ verify не дал сессию'); return }
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64')}`
+  log('✅ 1. сессия QA-бота получена')
+
+  // 2) временный проект от имени QA-бота
+  const qaId = ver.user?.id
+  const projName = `${PROBE_PREFIX}research-${Date.now()}`
+  const prj = await api('/rest/v1/projects', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ owner_id: qaId, name: projName, niche: 'смоук', status: 'active' }),
+  })
+  const projectId = Array.isArray(prj.body) ? prj.body[0]?.id : prj.body?.id
+  if (!projectId) { log('❌ 2. проект не создался:', prj.status, JSON.stringify(prj.body).slice(0, 200)); return }
+  log(`✅ 2. проект ${projName}`)
+
+  const cleanup = async () => {
+    await api(`/rest/v1/project_materials?project_id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    await api(`/rest/v1/projects?id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    log('🧹 уборка: материалы и проект удалены')
+  }
+
+  try {
+    const transcription = [
+      'Участница: Мария, 34 года, Санкт-Петербург.',
+      'Вопрос: чем занимаешься? Ответ: преподаю йогу шесть лет, две студии, утренние группы.',
+      'Вопрос: что сейчас самое сложное? Ответ: не хватает новых учениц, все приходят по сарафану, соцсети не веду.',
+      'Вопрос: что уже пробовала? Ответ: делала таргет через знакомую, слила пятнадцать тысяч, заявок ноль, очень разочаровалась.',
+    ].join('\n')
+
+    // 3) table1 — живой Claude-вызов тем же путём, что у клиента
+    let t0 = Date.now()
+    const t1 = await fetch(`${APP}/api/ai/research-analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ projectId, step: 'table1', transcription }),
+    })
+    const t1body = await t1.json().catch(() => null)
+    if (!t1.ok || !t1body?.table1) {
+      log(`❌ 3. table1 УПАЛ: HTTP ${t1.status} за ${((Date.now() - t0) / 1000).toFixed(1)}с`)
+      log('   тело:', JSON.stringify(t1body).slice(0, 400))
+      return
+    }
+    log(`✅ 3. table1 ок за ${((Date.now() - t0) / 1000).toFixed(1)}с (участников: ${t1body.table1.respondents?.length})`)
+
+    // 4) save — вставка материалов + мастер-таблица
+    t0 = Date.now()
+    const sv = await fetch(`${APP}/api/ai/research-analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ projectId, step: 'save', transcription, table1: t1body.table1 }),
+    })
+    const svBody = await sv.json().catch(() => null)
+    if (!sv.ok) {
+      log(`❌ 4. save УПАЛ: HTTP ${sv.status} за ${((Date.now() - t0) / 1000).toFixed(1)}с`)
+      log('   тело:', JSON.stringify(svBody).slice(0, 400))
+      return
+    }
+    const mats = await api(`/rest/v1/project_materials?select=title,material_type&project_id=eq.${projectId}`)
+    const kinds = (mats.body || []).map((m) => m.material_type).sort().join(', ')
+    log(`✅ 4. save ок за ${((Date.now() - t0) / 1000).toFixed(1)}с; материалов: ${mats.body?.length} (${kinds})`)
+    log('\n🎉 ПУТЬ ЖИВ: расшифровка → таблица → сохранение работают на проде прямо сейчас.')
+  } finally {
+    await cleanup()
+  }
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
