@@ -659,10 +659,10 @@ async function meaningsSmoke() {
       return
     }
     const txt = map.raw_content || ''
-    const hasLessonHeader = /\[(БОЛИ|ХОТЕЛКИ\/ПОТРЕБНОСТИ|ТРИГГЕРЫ|ВОЗРАЖЕНИЯ|ПРЕИМУЩЕСТВА)\]/.test(txt)
+    const hasLessonHeader = /\[(БОЛИ|ХОТЕЛКИ, ПОТРЕБНОСТИ|ТРИГГЕРЫ|ВОЗРАЖЕНИЯ|ВАШИ ПРЕИМУЩЕСТВА)\]/.test(txt)
     const rowsCount = (txt.match(/^—\s*«/gm) || []).length
     const ideas = (txt.match(/Идея контента:/g) || []).length
-    const hasNeeds = /\[ХОТЕЛКИ\/ПОТРЕБНОСТИ\]/.test(txt)
+    const hasNeeds = /\[ХОТЕЛКИ, ПОТРЕБНОСТИ\]/.test(txt)
     log(`   формат урока: ${hasLessonHeader ? 'да' : 'НЕТ'}; формулировок-строк: ${rowsCount}; идей: ${ideas}; потребности: ${hasNeeds ? 'есть' : 'НЕТ'}`)
     log('   превью:', txt.slice(0, 220).replace(/\n/g, ' | '))
     if (hasLessonHeader && rowsCount >= 3 && ideas >= 3) {
