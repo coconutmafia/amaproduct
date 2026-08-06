@@ -17,12 +17,20 @@ export const COMPLETENESS_WEIGHTS: Record<string, number> = {
   product_description:  5,
 }
 
+// Разделы, слитые в интерфейсе в один блок: вес зачитывается, если есть ЛЮБОЙ
+// из типов. «Воронки» слиты с тактикой (4 августа) — новые клиенты грузят всё
+// как marketing_tactics, и вес воронок не должен стать недостижимым.
+const MERGED_SATISFIES: Record<string, string[]> = {
+  funnel_description: ['funnel_description', 'marketing_tactics'],
+}
+
 /** Compute the 0-100 completeness score from the set of ready material types. */
 export function computeCompleteness(readyTypes: Iterable<string>): number {
   const set = new Set(readyTypes)
   let score = 0
   for (const [type, weight] of Object.entries(COMPLETENESS_WEIGHTS)) {
-    if (set.has(type)) score += weight
+    const satisfiedBy = MERGED_SATISFIES[type] ?? [type]
+    if (satisfiedBy.some((t) => set.has(t))) score += weight
   }
   return Math.min(100, score)
 }

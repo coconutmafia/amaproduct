@@ -26,8 +26,9 @@ const MATERIAL_TYPES: Array<{ value: MaterialType; label: string; category: stri
   { value: 'tone_of_voice',       label: 'Tone of Voice',                category: 'СТРАТЕГИЯ' },
   { value: 'cases_reviews',       label: 'Кейсы и отзывы',              category: 'СОЦДОКАЗАТЕЛЬСТВА' },
   { value: 'marketing_strategy',  label: 'Маркетинговая стратегия',      category: 'МАРКЕТИНГ' },
-  { value: 'marketing_tactics',   label: 'Маркетинговая тактика',        category: 'МАРКЕТИНГ' },
-  { value: 'funnel_description',  label: 'Описание воронок',             category: 'МАРКЕТИНГ' },
+  // «Описание воронок» слито с тактикой (4 августа) — новые загрузки идут
+  // одним типом; старые funnel_description-материалы живут в этом же блоке.
+  { value: 'marketing_tactics',   label: 'Маркетинговая тактика (воронки и схема продаж)', category: 'МАРКЕТИНГ' },
   { value: 'chatbot_description', label: 'Описание чат-ботов',           category: 'МАРКЕТИНГ' },
   { value: 'product_description', label: 'Описание продукта',            category: 'МАРКЕТИНГ' },
   { value: 'content_reference',   label: 'Референсы контента',           category: 'МАРКЕТИНГ' },

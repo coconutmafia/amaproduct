@@ -100,14 +100,11 @@ const TYPE_META: Record<string, { label: string; hint: string; category: string 
     hint: 'Общий стратегический документ: позиционирование, цели, ключевые сообщения.',
     category: 'МАРКЕТИНГ',
   },
+  // «Маркетинговая тактика» и «Описание воронок» объединены в один раздел
+  // (просьба команды 4 августа) — воронки живут здесь через LEGACY_TYPE_ALIAS.
   marketing_tactics: {
-    label: 'Маркетинговая тактика',
-    hint: 'Конкретная тактика продвижения и продаж: где и как ты привлекаешь аудиторию, как ты доводишь её до продажи.',
-    category: 'МАРКЕТИНГ',
-  },
-  funnel_description: {
-    label: 'Описание воронок',
-    hint: 'Как устроены твои воронки продаж: шаги, точки входа, что происходит на каждом этапе.',
+    label: 'Маркетинговая тактика (воронки и схема продаж)',
+    hint: 'Конкретная тактика продвижения и продаж: где и как ты привлекаешь аудиторию, как доводишь её до продажи, как устроены твои воронки — шаги, точки входа, схема продаж.',
     category: 'МАРКЕТИНГ',
   },
   chatbot_description: {
@@ -125,7 +122,13 @@ const TYPE_META: Record<string, { label: string; hint: string; category: string 
 // Retired types that no longer have their own block. Materials uploaded before
 // the block was removed are shown under a current type so they stay visible and
 // deletable (and keep feeding generation) instead of silently disappearing.
-const LEGACY_TYPE_ALIAS: Record<string, string> = { audience_survey: 'audience_research' }
+const LEGACY_TYPE_ALIAS: Record<string, string> = {
+  audience_survey: 'audience_research',
+  // Раздел «Описание воронок» слит с тактикой (просьба команды, 4 августа):
+  // старые материалы видны/удаляемы в объединённом блоке, material_type в
+  // данных НЕ меняется — RAG и вес прогресса видят funnel_description как раньше.
+  funnel_description: 'marketing_tactics',
+}
 const normalizeType = (t: string): string => LEGACY_TYPE_ALIAS[t] ?? t
 
 const CATEGORIES = [
@@ -133,7 +136,7 @@ const CATEGORIES = [
   { key: 'INSTAGRAM', title: 'INSTAGRAM', types: ['my_instagram', 'competitors'] },
   { key: 'СТРАТЕГИЯ', title: 'СТРАТЕГИЯ', types: ['unpacking_map', 'meanings_map', 'tone_of_voice'] },
   { key: 'СОЦИАЛЬНЫЕ ДОКАЗАТЕЛЬСТВА', title: 'СОЦИАЛЬНЫЕ ДОКАЗАТЕЛЬСТВА', types: ['cases_reviews'] },
-  { key: 'МАРКЕТИНГ', title: 'МАРКЕТИНГ', types: ['marketing_strategy', 'marketing_tactics', 'funnel_description', 'chatbot_description'] },
+  { key: 'МАРКЕТИНГ', title: 'МАРКЕТИНГ', types: ['marketing_strategy', 'marketing_tactics', 'chatbot_description'] },
   { key: 'ЛИЧНОСТЬ', title: 'ЛИЧНОСТЬ', types: ['blog_lines'] },
 ]
 
