@@ -793,9 +793,71 @@ async function rebuildMeanings() {
   log(`\nИтог: пересобрано ${ok}, с проблемами ${fail}. Старые карты заменены только там, где сборка прошла.`)
 }
 
+// ── ИНСТРУМЕНТ: ручная выдача полного доступа (команда/партнёры) ─────────────
+// «Выдай полный доступ, как раньше» — по образцу 9 ручных аккаунтов команды:
+// subscription_status=active, tier=producer, trial_ends_at=2027-12-31,
+// payment_provider=null (вебхуки платёжек такой профиль не трогают).
+// Если аккаунта нет — с флагом --create заводим его через админ-API с
+// подтверждённой почтой: человек входит «по коду на почту» (штатный путь).
+// Идемпотентно: повторный запуск просто досводит поля к эталону.
+//
+// Использование:
+//   node scripts/prod-probe.mjs grant-access --email user@mail.com [--create] [--run]
+async function grantAccess() {
+  const email = (arg('email') || '').trim().toLowerCase()
+  const create = process.argv.includes('--create')
+  log('\n=== Инструмент: ручная выдача полного доступа ===')
+  if (!email || !email.includes('@')) { log('❌ укажи --email user@mail.com'); return }
+  log(`email: ${email}${create ? ' (+создание аккаунта, если нет)' : ''}`)
+
+  // Ищем юзера в auth (постранично, регистронезависимо)
+  let user = null
+  for (let page = 1; page <= 10 && !user; page++) {
+    const { body } = await api(`/auth/v1/admin/users?page=${page}&per_page=100`)
+    const users = body?.users || []
+    user = users.find(u => (u.email || '').toLowerCase() === email) || null
+    if (users.length < 100) break
+  }
+  log(user ? `найден auth-юзер: ${user.id} (создан ${user.created_at.slice(0, 10)})` : 'auth-юзера НЕТ')
+
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    if (!user && create) log('  1) создать auth-юзера (email_confirm=true; вход — «по коду на почту»)')
+    if (!user && !create) { log('  ❌ аккаунта нет; добавь --create или попроси человека зарегистрироваться'); return }
+    log('  2) профиль → active / producer / trial_ends_at=2027-12-31 (эталон ручных выдач)')
+    log('  3) проверить итоговый профиль')
+    return
+  }
+
+  if (!user) {
+    if (!create) { log('❌ аккаунта нет; добавь --create или попроси человека зарегистрироваться'); return }
+    const created = await api('/auth/v1/admin/users', {
+      method: 'POST',
+      body: JSON.stringify({ email, email_confirm: true }),
+    })
+    if (!created.body?.id) { log(`❌ не создался: ${created.status} ${JSON.stringify(created.body).slice(0, 200)}`); return }
+    user = created.body
+    log(`✅ 1. аккаунт создан: ${user.id}`)
+  }
+
+  const upd = await api(`/rest/v1/profiles?id=eq.${user.id}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({
+      subscription_status: 'active',
+      subscription_tier:   'producer',
+      trial_ends_at:       '2027-12-31T00:00:00+00:00',
+    }),
+  })
+  const prof = Array.isArray(upd.body) ? upd.body[0] : null
+  if (!prof) { log(`❌ профиль не обновился: ${upd.status} ${JSON.stringify(upd.body).slice(0, 200)}`); return }
+  log(`✅ 2. профиль: ${prof.subscription_status} / ${prof.subscription_tier} / триал до ${String(prof.trial_ends_at).slice(0, 10)}`)
+  log('\n🎉 Полный доступ выдан. Вход: «Войти по коду» на странице логина (пароль не нужен) — или «Забыли пароль», чтобы задать свой.')
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
