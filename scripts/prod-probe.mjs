@@ -793,24 +793,25 @@ async function rebuildMeanings() {
   log(`\nИтог: пересобрано ${ok}, с проблемами ${fail}. Старые карты заменены только там, где сборка прошла.`)
 }
 
-// ── ИНСТРУМЕНТ: ручная выдача полного доступа (команда/партнёры) ─────────────
-// «Выдай полный доступ, как раньше» — по образцу 9 ручных аккаунтов команды:
-// subscription_status=active, tier=producer, trial_ends_at=2027-12-31,
-// payment_provider=null (вебхуки платёжек такой профиль не трогают).
-// Если аккаунта нет — с флагом --create заводим его через админ-API с
-// подтверждённой почтой: человек входит «по коду на почту» (штатный путь).
-// Идемпотентно: повторный запуск просто досводит поля к эталону.
+// ── ИНСТРУМЕНТ: ручная выдача доступа новому юзеру ──────────────────────────
+// Процедура «как мы это делали» (уточнена Матвеем 9 августа после того, как
+// ассистент додумал не то): СОЗДАТЬ аккаунт, ЗАДАТЬ ПАРОЛЬ, отдать владельцу
+// логин+пароль; условия клиента = 2 МЕСЯЦА ТРИАЛА (trialing / trial /
+// trial_ends_at=+60 дней) — как у ручных lana/natalia/arefeva. По истечении
+// chain-watch сам переведёт в view_only. НЕ копировать профиль команды
+// (producer/2027) — это только для своих, явным флагом --tier producer.
 //
 // Использование:
-//   node scripts/prod-probe.mjs grant-access --email user@mail.com [--create] [--run]
+//   node scripts/prod-probe.mjs grant-access --email user@mail.com [--days 60] [--tier producer] [--run]
+// Пароль генерируется и печатается в конце — передать владельцу.
 async function grantAccess() {
   const email = (arg('email') || '').trim().toLowerCase()
-  const create = process.argv.includes('--create')
-  log('\n=== Инструмент: ручная выдача полного доступа ===')
+  const days = Number(arg('days') || 60)
+  const teamTier = arg('tier') // 'producer' — профиль команды, БЕЗ триала
+  log('\n=== Инструмент: выдача доступа (аккаунт + пароль) ===')
   if (!email || !email.includes('@')) { log('❌ укажи --email user@mail.com'); return }
-  log(`email: ${email}${create ? ' (+создание аккаунта, если нет)' : ''}`)
+  log(`email: ${email} | условия: ${teamTier ? `КОМАНДА (${teamTier}, до 2027-12-31)` : `клиентский триал ${days} дней`}`)
 
-  // Ищем юзера в auth (постранично, регистронезависимо)
   let user = null
   for (let page = 1; page <= 10 && !user; page++) {
     const { body } = await api(`/auth/v1/admin/users?page=${page}&per_page=100`)
@@ -818,41 +819,61 @@ async function grantAccess() {
     user = users.find(u => (u.email || '').toLowerCase() === email) || null
     if (users.length < 100) break
   }
-  log(user ? `найден auth-юзер: ${user.id} (создан ${user.created_at.slice(0, 10)})` : 'auth-юзера НЕТ')
+  log(user ? `auth-юзер уже есть: ${user.id}` : 'auth-юзера нет — будет создан')
 
   if (!RUN) {
     log('\n[DRY-RUN] план (добавь --run):')
-    if (!user && create) log('  1) создать auth-юзера (email_confirm=true; вход — «по коду на почту»)')
-    if (!user && !create) { log('  ❌ аккаунта нет; добавь --create или попроси человека зарегистрироваться'); return }
-    log('  2) профиль → active / producer / trial_ends_at=2027-12-31 (эталон ручных выдач)')
-    log('  3) проверить итоговый профиль')
+    log(`  1) ${user ? 'обновить пароль существующему' : 'создать аккаунт (email подтверждён)'} + сгенерировать пароль`)
+    log(`  2) профиль → ${teamTier ? `active / ${teamTier} / 2027-12-31` : `trialing / trial / +${days} дней`}`)
+    log('  3) проверить вход паролем и платный гейт; напечатать логин+пароль')
     return
   }
 
+  const { randomInt } = await import('node:crypto')
+  const words = ['Sokol', 'Reka', 'Gora', 'Luna', 'Vetka', 'Polet', 'Zima', 'More', 'Sever', 'Iskra']
+  const pw = `${words[randomInt(10)]}-${words[randomInt(10)]}-${randomInt(1000, 9999)}`
+
   if (!user) {
-    if (!create) { log('❌ аккаунта нет; добавь --create или попроси человека зарегистрироваться'); return }
     const created = await api('/auth/v1/admin/users', {
       method: 'POST',
-      body: JSON.stringify({ email, email_confirm: true }),
+      body: JSON.stringify({ email, email_confirm: true, password: pw }),
     })
     if (!created.body?.id) { log(`❌ не создался: ${created.status} ${JSON.stringify(created.body).slice(0, 200)}`); return }
     user = created.body
     log(`✅ 1. аккаунт создан: ${user.id}`)
+  } else {
+    const pr = await api(`/auth/v1/admin/users/${user.id}`, { method: 'PUT', body: JSON.stringify({ password: pw }) })
+    if (pr.status >= 300) { log(`❌ пароль не установился: ${pr.status}`); return }
+    log('✅ 1. пароль обновлён существующему аккаунту')
   }
 
+  const profile = teamTier
+    ? { subscription_status: 'active', subscription_tier: teamTier, trial_ends_at: '2027-12-31T00:00:00+00:00' }
+    : { subscription_status: 'trialing', subscription_tier: 'trial', trial_ends_at: new Date(Date.now() + days * 864e5).toISOString() }
   const upd = await api(`/rest/v1/profiles?id=eq.${user.id}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=representation' },
-    body: JSON.stringify({
-      subscription_status: 'active',
-      subscription_tier:   'producer',
-      trial_ends_at:       '2027-12-31T00:00:00+00:00',
-    }),
+    body: JSON.stringify(profile),
   })
   const prof = Array.isArray(upd.body) ? upd.body[0] : null
   if (!prof) { log(`❌ профиль не обновился: ${upd.status} ${JSON.stringify(upd.body).slice(0, 200)}`); return }
-  log(`✅ 2. профиль: ${prof.subscription_status} / ${prof.subscription_tier} / триал до ${String(prof.trial_ends_at).slice(0, 10)}`)
-  log('\n🎉 Полный доступ выдан. Вход: «Войти по коду» на странице логина (пароль не нужен) — или «Забыли пароль», чтобы задать свой.')
+  log(`✅ 2. профиль: ${prof.subscription_status} / ${prof.subscription_tier} / до ${String(prof.trial_ends_at).slice(0, 10)}`)
+
+  // Проверка фактом: вход паролем
+  const anon = (() => {
+    const txt2 = readFileSync(join(ROOT, '.env.local'), 'utf8')
+    const m = txt2.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  const login = await fetch(`${U}/auth/v1/token?grant_type=password`, {
+    method: 'POST',
+    headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: pw }),
+  }).then(r => r.json())
+  log(login.access_token ? '✅ 3. вход по паролю проверен' : `❌ 3. вход не сработал: ${JSON.stringify(login).slice(0, 120)}`)
+
+  log(`\nЛОГИН:  ${email}`)
+  log(`ПАРОЛЬ: ${pw}`)
 }
 
 // ── роутинг ──────────────────────────────────────────────────────────────────
