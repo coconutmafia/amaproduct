@@ -101,9 +101,17 @@ export function audienceResearchToPivotAoa(text: string): string[][] {
     if (!p) { p = { label: r.label, name: r.name, seg: r.seg, answers: new Map() }; byKey.set(key, p); order.push(p) }
     if (!p.answers.has(qk)) p.answers.set(qk, r.a)
   }
+  // Общие вопросы — влево, уникальные для одного участника — вправо: ядро
+  // интервью читается сразу, а не тонет среди разреженных колонок (файл
+  // Дарьи: 5 общих вопросов и 21 индивидуальный). Порядок стабилен при
+  // равенстве (по первому появлению).
+  const answeredBy = new Map<string, number>()
+  for (const q of questions) answeredBy.set(q.key, order.filter((p) => (p.answers.get(q.key) ?? '').trim() !== '').length)
+  const sorted = [...questions].sort((a, b) => (answeredBy.get(b.key) ?? 0) - (answeredBy.get(a.key) ?? 0))
+
   const hasLabel = order.some((p) => p.label)
-  const head = [...(hasLabel ? ['Кастдев'] : []), 'Участник', 'Сегмент', ...questions.map((q) => q.title)]
-  const rows = order.map((p) => [...(hasLabel ? [p.label] : []), p.name, p.seg, ...questions.map((q) => p.answers.get(q.key) ?? '')])
+  const head = [...(hasLabel ? ['Кастдев'] : []), 'Участник', 'Сегмент', ...sorted.map((q) => q.title)]
+  const rows = order.map((p) => [...(hasLabel ? [p.label] : []), p.name, p.seg, ...sorted.map((q) => p.answers.get(q.key) ?? '')])
   return [head, ...rows]
 }
 

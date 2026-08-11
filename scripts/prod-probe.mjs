@@ -876,9 +876,120 @@ async function grantAccess() {
   log(`ПАРОЛЬ: ${pw}`)
 }
 
+// ── ИНСТРУМЕНТ: канонизация вопросов кастдевов проекта ───────────────────────
+// Файл Дарьи (11 августа): table1 формулировал один и тот же вопрос по-разному
+// в разных кастдевах → сводка 45 колонок с дырами. Промпт-канонизация чинит
+// БУДУЩИЕ кастдевы; этот инструмент чистит УЖЕ НАКОПЛЕННЫЕ: Claude группирует
+// вопросы проекта в канонические, затем строки «Вопрос: X» переписываются на
+// канонические во всех research-материалах проекта (ОТВЕТЫ НЕ ТРОГАЮТСЯ).
+//
+//   node scripts/prod-probe.mjs canon-questions --project <id> [--run]
+async function canonQuestions() {
+  const projectId = arg('project')
+  log('\n=== Инструмент: канонизация вопросов кастдевов ===')
+  if (!projectId) { log('❌ укажи --project <id>'); return }
+
+  const { body: mats } = await api(`/rest/v1/project_materials?select=id,title,raw_content&project_id=eq.${projectId}&material_type=eq.audience_research`)
+  if (!Array.isArray(mats) || mats.length === 0) { log('❌ research-материалов нет'); return }
+  const norm = (q) => q.toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim()
+  const uniq = new Map()
+  for (const m of mats) {
+    for (const line of String(m.raw_content || '').matchAll(/^\s*Вопрос:\s*(.+)$/gm)) {
+      const q = line[1].trim()
+      if (!uniq.has(norm(q))) uniq.set(norm(q), q)
+    }
+  }
+  const questions = [...uniq.values()]
+  log(`материалов: ${mats.length}, уникальных формулировок вопросов: ${questions.length}`)
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) Claude (форс-тул): сгруппировать формулировки в канонические (~$0.02)')
+    log('  2) заменить строки «Вопрос: X» на канонические во всех research-материалах')
+    log('  3) показать колонки/заполненность сводки до и после')
+    return
+  }
+
+  const anthropicKey = (() => {
+    const txt = readFileSync(join(ROOT, '.env.local'), 'utf8')
+    const m = txt.match(/^ANTHROPIC_API_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anthropicKey) { log('❌ нет ANTHROPIC_API_KEY'); return }
+
+  const tool = {
+    name: 'question_groups',
+    description: 'Группы формулировок одного и того же вопроса',
+    input_schema: {
+      type: 'object',
+      properties: {
+        groups: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              canonical: { type: 'string', description: 'Каноническая формулировка (лучшая из группы, обобщённая)' },
+              variants:  { type: 'array', items: { type: 'string' }, description: 'ВСЕ формулировки группы дословно, включая каноническую' },
+            },
+            required: ['canonical', 'variants'],
+          },
+        },
+      },
+      required: ['groups'],
+    },
+  }
+  const prompt = `Ниже — формулировки вопросов из кастдев-интервью ОДНОГО проекта. Модель формулировала один и тот же вопрос по-разному в разных интервью. Сгруппируй формулировки: в одну группу попадают только вопросы С ОДНИМ И ТЕМ ЖЕ СМЫСЛОМ (спрашивают об одном и том же). Вопросы с разным смыслом НЕ объединяй. Для каждой группы выбери каноническую формулировку — самую ясную и обобщённую. Каждая входная формулировка обязана попасть ровно в одну группу (группа из одной формулировки — нормально).
+
+ФОРМУЛИРОВКИ:
+${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-opus-4-8',
+      max_tokens: 8000,
+      tools: [tool],
+      tool_choice: { type: 'tool', name: 'question_groups' },
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  }).then(r => r.json())
+  const block = (resp.content || []).find(b => b.type === 'tool_use')
+  const groups = block?.input?.groups || []
+  if (!groups.length) { log('❌ Claude не вернул группы:', JSON.stringify(resp).slice(0, 300)); return }
+  const mapping = new Map() // norm(вариант) → каноническая
+  let merged = 0
+  for (const g of groups) {
+    for (const v of (g.variants || [])) {
+      if (norm(v) !== norm(g.canonical)) merged++
+      mapping.set(norm(v), g.canonical)
+    }
+  }
+  log(`✅ 1. групп: ${groups.length} (слито вариаций: ${merged})`)
+
+  // Замена в материалах — построчно, только строки «Вопрос:»
+  let changedMats = 0
+  for (const m of mats) {
+    const before = String(m.raw_content || '')
+    const after = before.replace(/^(\s*Вопрос:\s*)(.+)$/gm, (full, pre, q) => {
+      const canon = mapping.get(norm(q.trim()))
+      return canon ? `${pre}${canon}` : full
+    })
+    if (after !== before) {
+      const upd = await api(`/rest/v1/project_materials?id=eq.${m.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ raw_content: after }),
+      })
+      if (upd.status < 300) changedMats++
+      else log(`  ⚠️ не обновился «${m.title}»: ${upd.status}`)
+    }
+  }
+  log(`✅ 2. материалов переписано: ${changedMats} из ${mats.length}`)
+  log('Проверь сводку повторным скачиванием — колонки должны схлопнуться.')
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
