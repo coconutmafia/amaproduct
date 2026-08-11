@@ -710,9 +710,13 @@ export async function POST(request: Request) {
         try {
           send({ type: 'status', message: 'Анализирую все интервью...' })
 
+          // 32k выхода (как у table1): карта по уроку — строка на КАЖДУЮ
+          // формулировку клиента, и на проекте с 20+ кастдевами (Katia,
+          // 11 августа) 16k обрезались на середине tool-JSON → «карта не
+          // собралась». 32k ≈ 350+ строк — запас на самые толстые проекты.
           const aiStream = anthropic.messages.stream({
             model:       MODEL,
-            max_tokens:  16000,
+            max_tokens:  32000,
             system:      TABLE2_SYSTEM,
             tools:       [meaningsRowsTool],
             tool_choice: { type: 'tool' as const, name: 'meanings_rows' },
@@ -729,20 +733,27 @@ export async function POST(request: Request) {
           const rows = normalizeMeaningRows(rawRows)
 
           if (rows.length === 0) {
+            // Сырой stop_reason — в телеметрию (окно сбоев видно в
+            // /admin/errors), клиенту — человеческий текст без техдеталей
+            // (скрин 11 августа: «stop_reason=max_tokens» на экране клиента).
             console.error('[generate_meanings] no rows. stop_reason=%s blocks=%s',
               finalMsg.stop_reason, finalMsg.content.map(b => b.type).join(','))
+            await captureException(
+              new Error(`generate_meanings: пустая карта, stop_reason=${finalMsg.stop_reason}`),
+              { where: 'generate_meanings no-rows', projectId, materials: materials.length },
+            )
             try {
               await upsertProjectMaterial(supabase, {
                 project_id:        projectId,
                 title:             MEANINGS_TITLE,
                 material_type:     'meanings_map',
-                raw_content:       `❌ Карта не собралась (модель не вернула строк, stop_reason=${finalMsg.stop_reason}). Нажми «Обновить карту» ещё раз — если повторится, напиши нам.`,
+                raw_content:       '❌ Карта не собралась с первого захода. Нажми «Обновить карту из исследования» ещё раз — данные кастдевов не потерялись. Если повторится, напиши нам.',
                 processing_status: 'error',
               })
             } catch { /* swallow */ }
             send({
               type: 'error',
-              message: 'AI не смог собрать карту с первого захода. Нажми «Обновить карту» ещё раз.',
+              message: 'Карта не собралась с первого захода. Нажми «Обновить карту» ещё раз — данные не потерялись.',
             })
             return
           }
