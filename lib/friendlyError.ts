@@ -28,7 +28,7 @@ const CYRILLIC = /[а-яё]/i
 // пути сервера. Добавляя новый источник ошибок с русским префиксом, проверь,
 // что его технический хвост ловится здесь.
 const TECHNICAL =
-  /(row-level security|violates|duplicate key|null value|permission denied|\bJWT\b|PGRST|foreign key|Failed to fetch|fetch failed|NetworkError|ECONN|ETIMEDOUT|Unexpected token|is not defined|is not a function|Cannot read propert|undefined is not|relation ".*" does not|column .* does not|500 Internal|50[23] |ffmpeg|Command failed|\/var\/task|\/tmp\/|node_modules|ENOENT|spawn |exit code|no credits|credit balance|insufficient_quota|exceeded your current quota|platform\.openai\.com|console\.anthropic|api\.openai\.com|api\.anthropic\.com|\bOpenAI\b|\bAnthropic\b|Apify|\bWhisper\b|invalid.?api.?key|incorrect API key|overloaded_error|aborted due to timeout|[A-Z0-9]+_(?:TOKEN|KEY|SECRET))/i
+  /(row-level security|violates|duplicate key|null value|permission denied|\bJWT\b|PGRST|foreign key|Failed to fetch|fetch failed|Load failed|NetworkError|ECONN|ETIMEDOUT|Unexpected token|is not defined|is not a function|Cannot read propert|undefined is not|relation ".*" does not|column .* does not|500 Internal|50[23] |ffmpeg|Command failed|\/var\/task|\/tmp\/|node_modules|ENOENT|spawn |exit code|no credits|credit balance|insufficient_quota|exceeded your current quota|platform\.openai\.com|console\.anthropic|api\.openai\.com|api\.anthropic\.com|\bOpenAI\b|\bAnthropic\b|Apify|\bWhisper\b|invalid.?api.?key|incorrect API key|overloaded_error|aborted due to timeout|[A-Z0-9]+_(?:TOKEN|KEY|SECRET))/i
 
 function extractMessage(error: unknown): string {
   if (error instanceof Error) return error.message

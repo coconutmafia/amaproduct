@@ -29,8 +29,8 @@ function friendlyUploadError(raw: string): string {
   if (/mime|not allowed|unsupported|invalid.*type/i.test(m)) {
     return 'Формат файла не поддерживается. Загрузи запись в mp3, m4a или wav.'
   }
-  if (/failed to fetch|networkerror|network error|timeout|timed out|aborted|econn/i.test(m)) {
-    return 'Не удалось загрузить — похоже, проблема со связью. Проверь интернет и попробуй ещё раз.'
+  if (/failed to fetch|load failed|networkerror|network error|timeout|timed out|aborted|econn/i.test(m)) {
+    return 'Не удалось загрузить — похоже, связь моргнула. Проверь интернет и нажми «Повторить загрузку».'
   }
   if (/сессия истекла/i.test(m)) return m
   // Русское осмысленное сообщение сервера показываем как есть, иначе — общий текст.
@@ -196,6 +196,12 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   // Черновик (см. ResearchDraft выше): восстановление после выгрузки вкладки.
   const draftKey = `ama_research_${id}`
   const restoredRef = useRef(false)
+  // Файлы, у которых сорвалась ЗАЛИВКА (мобильная сеть моргнула — Safari
+  // «Load failed», скрины клиента 11 августа): держим File в памяти, чтобы
+  // «Повторить загрузку» работал без повторного выбора файла. Живёт до
+  // перезагрузки страницы — при перезагрузке файл придётся выбрать заново
+  // (File нельзя сохранить в черновик).
+  const failedFilesRef = useRef(new Map<number, File>())
 
   const resumeJobs = useCallback(async (
     jobs: { jobId: string; name: string }[],
@@ -282,6 +288,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     setProgress(null)
     setIcloudWait(null)
     setTranscriptMaterialIds([]) // новая партия файлов — прежние id не наши
+    failedFilesRef.current.clear()
     patchDraft(draftKey, { transcription: '', transcriptionParts: [], transcriptMaterialIds: [], table1: null, activeJobs: [], analysisPartial: null })
 
     const supabase  = createSupabaseClient()
@@ -343,26 +350,40 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         }
 
         // ── 1. Upload to Supabase Storage via signed URL ────────────────────
+        // До 3 попыток со СВЕЖЕЙ подписанной ссылкой на каждую (токен
+        // одноразовый): мобильная сеть рвёт длинные заливки — Safari отдаёт
+        // «Load failed», и раньше файл сразу падал в ошибку (скрины клиента
+        // 11 августа: 2 файла из 5 умерли на заливке).
         updateFile(fi, { status: 'uploading' })
 
-        const urlRes  = await fetch('/api/ai/transcribe/upload-url', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ ext }),
-        })
-        const urlBody = await urlRes.text()
-        let urlData: { path?: string; token?: string; error?: string }
-        try { urlData = JSON.parse(urlBody) as typeof urlData }
-        catch { throw new Error(`Ошибка получения ссылки (${urlRes.status})`) }
-        if (!urlRes.ok || urlData.error) throw new Error(urlData.error ?? 'Ошибка получения ссылки')
+        let storagePath = ''
+        let lastUploadErr: unknown = null
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const urlRes  = await fetch('/api/ai/transcribe/upload-url', {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body:    JSON.stringify({ ext }),
+            })
+            const urlBody = await urlRes.text()
+            let urlData: { path?: string; token?: string; error?: string }
+            try { urlData = JSON.parse(urlBody) as typeof urlData }
+            catch { throw new Error(`Ошибка получения ссылки (${urlRes.status})`) }
+            if (!urlRes.ok || urlData.error) throw new Error(urlData.error ?? 'Ошибка получения ссылки')
 
-        const storagePath = urlData.path!
-        const uploadToken = urlData.token!
-
-        const { error: uploadError } = await supabase.storage
-          .from('audio-temp')
-          .uploadToSignedUrl(storagePath, uploadToken, file)
-        if (uploadError) throw new Error(`Ошибка загрузки: ${uploadError.message}`)
+            const { error: uploadError } = await supabase.storage
+              .from('audio-temp')
+              .uploadToSignedUrl(urlData.path!, urlData.token!, file)
+            if (uploadError) throw new Error(`Ошибка загрузки: ${uploadError.message}`)
+            storagePath = urlData.path!
+            lastUploadErr = null
+            break
+          } catch (e) {
+            lastUploadErr = e
+            if (attempt < 3) await new Promise(r => setTimeout(r, 1500 * attempt))
+          }
+        }
+        if (!storagePath) throw lastUploadErr instanceof Error ? lastUploadErr : new Error('Ошибка загрузки')
         uploadedPaths.push(storagePath)
 
         // ── 2. Старт фонового джоба (roadmap #8): сервер сам доведёт до конца
@@ -388,8 +409,11 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         updateFile(fi, { status: 'transcribing', jobId: startBody.jobId })
       } catch (err) {
         // Файл не дошёл до старта джоба — помечаем и продолжаем с остальными.
+        // File остаётся в памяти: «Повторить загрузку» перезальёт без
+        // повторного выбора файла из телефона.
         const msg = err instanceof Error ? err.message : 'Неизвестная ошибка'
         fileErrors.push(msg)
+        failedFilesRef.current.set(fi, files[fi])
         updateFile(fi, { status: 'error', error: msg })
         // Залитый, но не пригодившийся файл подчищаем; файлы СО стартовавшим
         // джобом не трогаем — их жизненным циклом управляет сам джоб (и
@@ -551,6 +575,73 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fileQueue, draftKey])
 
+  // ── Повтор ЗАЛИВКИ файла, у которого сорвалась сеть до старта джоба ─────────
+  // File лежит в памяти (failedFilesRef) — перезаливаем без повторного выбора,
+  // стартуем джоб и доклеиваем расшифровку, как retryFile.
+  const retryUpload = useCallback(async (fi: number) => {
+    const file = failedFilesRef.current.get(fi)
+    const name = fileQueue[fi]?.name || `файл ${fi + 1}`
+    if (!file) return
+    setFileQueue(prev => prev.map((s, i) => i === fi ? { ...s, status: 'uploading', error: undefined } : s))
+    const supabase = createSupabaseClient()
+    try {
+      const rawExt = name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? ''
+      const ext = rawExt || 'mp3'
+      let storagePath = ''
+      let lastErr: unknown = null
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const urlRes = await fetch('/api/ai/transcribe/upload-url', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ext }),
+          })
+          const urlData = await urlRes.json().catch(() => ({})) as { path?: string; token?: string; error?: string }
+          if (!urlRes.ok || !urlData.path || !urlData.token) throw new Error(urlData.error ?? 'Ошибка получения ссылки')
+          const { error: upErr } = await supabase.storage.from('audio-temp').uploadToSignedUrl(urlData.path, urlData.token, file)
+          if (upErr) throw new Error(`Ошибка загрузки: ${upErr.message}`)
+          storagePath = urlData.path
+          lastErr = null
+          break
+        } catch (e) {
+          lastErr = e
+          if (attempt < 3) await new Promise(r => setTimeout(r, 1500 * attempt))
+        }
+      }
+      if (!storagePath) throw lastErr instanceof Error ? lastErr : new Error('Ошибка загрузки')
+
+      const durationSec = await getAudioDuration(file)
+      const startRes = await fetch('/api/jobs/transcribe', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: id, storagePath, ext, durationSec: durationSec > 0 ? durationSec : undefined, saveTranscriptMaterial: true }),
+      })
+      const startBody = await startRes.json() as { jobId?: string; error?: string }
+      if (!startRes.ok || !startBody.jobId) throw new Error(startBody.error ?? 'Не удалось запустить расшифровку')
+
+      failedFilesRef.current.delete(fi)
+      patchDraft(draftKey, { activeJobs: [...(readDraft(draftKey)?.activeJobs ?? []), { jobId: startBody.jobId, name }] })
+      setFileQueue(prev => prev.map((s, i) => i === fi ? { ...s, status: 'transcribing', jobId: startBody.jobId } : s))
+
+      const { text, materialId } = await pollTranscribeJob(startBody.jobId, (done, total) => {
+        setFileQueue(prev => prev.map((s, i) => i === fi ? { ...s, chunkIndex: done, totalChunks: total ?? done } : s))
+      })
+      setFileQueue(prev => prev.map((s, i) => i === fi ? { ...s, status: 'done' } : s))
+      setTranscriptionParts(prev => {
+        const next = [...prev, { name, text }]
+        setTranscription(next.map(p => p.text).join('\n\n'))
+        return next
+      })
+      if (materialId) setTranscriptMaterialIds(prev => [...prev, materialId])
+      patchDraft(draftKey, { activeJobs: (readDraft(draftKey)?.activeJobs ?? []).filter(j => j.jobId !== startBody.jobId), analysisPartial: null })
+      setStep(s => (s === 'upload' || s === 'transcribing') ? 'transcribed' : s)
+      toast.success(`«${name}» загружен и расшифрован`)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Ошибка загрузки'
+      const retryable = (e as TranscribeJobError).retryable === true
+      setFileQueue(prev => prev.map((s, i) => i === fi ? { ...s, status: 'error', error: msg, retryable } : s))
+      toast.error(friendlyUploadError(msg))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileQueue, draftKey, id])
+
   // ── Analysis: batch by 3 files to stay within AI output token limit ──────────
   // With many files the combined transcription can produce 10-15 respondents,
   // which requires 15-20K output tokens — more than the model's 8K cap.
@@ -617,11 +708,14 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       setStep('table1')
       setExpandedRespondent(allRespondents[0]?.id ?? null)
     } catch (err) {
+      // Скрин клиента 11 августа: «Ошибка анализа» без продолжения читалась
+      // как тупик, хотя анализ резюмится. Говорим прямо, что делать: сетевой
+      // обрыв на минутном вызове — самая частая причина на телефоне.
       const partial = readDraft(draftKey)?.analysisPartial
       const suffix = partial && partial.nextBatch > 0 && partial.nextBatch < partial.totalBatches
-        ? ` Готовые части (${partial.nextBatch} из ${partial.totalBatches}) сохранены — нажми ещё раз, продолжу с места обрыва.`
-        : ''
-      toast.error(friendlyError(err, 'Ошибка анализа') + suffix)
+        ? ` Готовые части (${partial.nextBatch} из ${partial.totalBatches}) сохранены — нажми «Создать таблицу» ещё раз, продолжу с места обрыва.`
+        : ' Похоже, связь моргнула — нажми «Создать таблицу» ещё раз, расшифровка не потерялась.'
+      toast.error(friendlyError(err, 'Ошибка анализа') + suffix, { duration: 10000 })
       setAnalysisBatch(null)
       setStep('transcribed')
     }
@@ -768,6 +862,15 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                               <RefreshCw className="h-3 w-3" /> Повторить — продолжу с места обрыва
                             </button>
                           )}
+                          {f.status === 'error' && !f.jobId && failedFilesRef.current.has(i) && (
+                            <button
+                              type="button"
+                              onClick={() => retryUpload(i)}
+                              className="mt-1.5 inline-flex items-center gap-1 px-2 py-1 rounded-md border border-red-200 bg-white text-[11px] font-medium text-red-700 hover:bg-red-50 transition-colors"
+                            >
+                              <RefreshCw className="h-3 w-3" /> Повторить загрузку
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -869,6 +972,15 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                   className="mt-1.5 inline-flex items-center gap-1 px-2 py-1 rounded-md border border-red-200 bg-white text-[11px] font-medium text-red-700 hover:bg-red-50 transition-colors"
                 >
                   <RefreshCw className="h-3 w-3" /> Повторить — продолжу с места обрыва
+                </button>
+              )}
+              {!f.jobId && failedFilesRef.current.has(i) && (
+                <button
+                  type="button"
+                  onClick={() => retryUpload(i)}
+                  className="mt-1.5 inline-flex items-center gap-1 px-2 py-1 rounded-md border border-red-200 bg-white text-[11px] font-medium text-red-700 hover:bg-red-50 transition-colors"
+                >
+                  <RefreshCw className="h-3 w-3" /> Повторить загрузку
                 </button>
               )}
             </div>
