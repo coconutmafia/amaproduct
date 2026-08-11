@@ -59,7 +59,17 @@ const TABLE1_SYSTEM = `Ты — аналитик аудиторного иссл
 Твоя задача — структурировать расшифровку интервью в чёткую таблицу.
 Всегда возвращай ТОЛЬКО валидный JSON без markdown-обёрток, без пояснений.`
 
-function buildTable1Prompt(transcription: string): string {
+function buildTable1Prompt(transcription: string, knownQuestions: string[] = []): string {
+  // Блок канонизации: вопросы должны совпадать МЕЖДУ кастдевами проекта —
+  // иначе сводная таблица (строка = участник, колонки = вопросы) рассыпается
+  // на десятки колонок-вариаций с пустотами.
+  const canonBlock = knownQuestions.length > 0 ? `
+
+ЕДИНЫЙ СПИСОК ВОПРОСОВ ПРОЕКТА (уже использованы в прошлых кастдевах):
+${knownQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
+
+ПРАВИЛО: если вопрос интервью ПО СМЫСЛУ совпадает с одним из списка — используй ДОСЛОВНО эту формулировку (символ в символ), даже если в записи он прозвучал другими словами. Новую формулировку заводи только для вопроса, которого в списке действительно нет.` : ''
+
   return `Проанализируй расшифровку интервью с аудиторией. Верни ТОЛЬКО JSON.
 
 РАСШИФРОВКА:
@@ -67,6 +77,7 @@ ${transcription}
 
 ЗАДАЧА: Определи всех участников (респондентов) и все вопросы интервью.
 Для каждого участника и каждого вопроса заполни структуру.
+Формулируй вопросы ОБОБЩЁННО и ПОВТОРЯЕМО (без деталей конкретного диалога): один и тот же вопрос в разных интервью обязан получить одинаковую формулировку.${canonBlock}
 
 Блоки вопросов:
 - point_a: текущая ситуация / что не устраивает / боли
@@ -387,6 +398,30 @@ export async function POST(request: Request) {
   if (step === 'table1') {
     if (!transcription) return NextResponse.json({ error: 'transcription required' }, { status: 400 })
 
+    // Канонизация вопросов (файл Дарьи, 11 августа): модель формулировала один
+    // и тот же вопрос по-разному в разных кастдевах — сводная таблица получала
+    // 45 колонок с дырами вместо ~15 общих. Даём модели список формулировок,
+    // УЖЕ использованных в этом проекте (из мастер-таблицы): совпадающий по
+    // смыслу вопрос обязан быть переиспользован дословно.
+    let knownQuestions: string[] = []
+    try {
+      const { data: master } = await supabase
+        .from('project_materials')
+        .select('raw_content')
+        .eq('project_id', projectId)
+        .eq('title', MASTER_RESEARCH_TITLE)
+        .maybeSingle()
+      if (master?.raw_content) {
+        const seen = new Set<string>()
+        for (const m of String(master.raw_content).matchAll(/^\s*Вопрос:\s*(.+)$/gm)) {
+          const q = m[1].trim()
+          const k = q.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ')
+          if (q && !seen.has(k)) { seen.add(k); knownQuestions.push(q) }
+        }
+        knownQuestions = knownQuestions.slice(0, 60)
+      }
+    } catch { /* мастера ещё нет — обычный режим */ }
+
     // Поймано 25 июля (три интервью разом): свободный JSON при max_tokens 8000
     // обрезался на середине → парс падал «AI не смог структурировать данные».
     // Теперь: форс-тул (валидный JSON гарантирует API, не regex) + стрим с
@@ -436,7 +471,7 @@ export async function POST(request: Request) {
         system:      TABLE1_SYSTEM,
         tools:       [tableTool],
         tool_choice: { type: 'tool' as const, name: 'interview_table' },
-        messages:    [{ role: 'user', content: buildTable1Prompt(transcription) }],
+        messages:    [{ role: 'user', content: buildTable1Prompt(transcription, knownQuestions) }],
       })
       finalMsg = await stream.finalMessage()
     } catch (e) {

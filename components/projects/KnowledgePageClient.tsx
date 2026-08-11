@@ -1094,11 +1094,14 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
           await downloadXlsxBook(safe, [{ name: 'Карта смыслов', aoa, mergeRepeats: [0, 1] }])
           return
         }
-        // Кастдев-книга «как в уроке»: сводка первым листом, карта смыслов
-        // проекта (если уже собрана) — вторым, вертикальный вид — служебным.
+        // Кастдев-книга СТРОГО как эталон урока: два листа — «Касдевы»
+        // (строка = участник) и «Карта смыслов». Вертикальный служебный лист
+        // убран (Августа, 11 августа: «почему горизонтально и вертикально,
+        // зачем?» — путал команду); вернуть при нужде — одна строка.
         const sheets: XlsxSheet[] = []
         const pivot = audienceResearchToPivotAoa(content)
         if (pivot.length > 1) sheets.push({ name: 'Касдевы', aoa: pivot })
+        else sheets.push({ name: 'Кастдевы', aoa })
         const mapMat = materials.find(m => m.material_type === 'meanings_map' && m.processing_status === 'ready')
         if (mapMat) {
           try {
@@ -1110,7 +1113,6 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
             }
           } catch { /* карта не скачалась — книга кастдевов всё равно уедет */ }
         }
-        sheets.push({ name: 'Кастдевы — вертикально', aoa })
         await downloadXlsxBook(safe, sheets)
         return
       }

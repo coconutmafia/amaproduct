@@ -63,24 +63,47 @@ export function audienceResearchToAoa(text: string): string[][] {
 // команды 31 июля): строка = участник, колонки = вопросы, ячейка = дословный
 // ответ. Уникальность участника — в паре с кастдевом (в мастере имена могут
 // повторяться между интервью).
+// Нормализованный ключ вопроса: регистр/ё/пунктуация/пробелы не должны
+// плодить отдельные колонки (файл Дарьи 11 августа: «…ценностям организации?»
+// и «…ценностям организации» были ДВУМЯ колонками, ответы врозь).
+function questionKey(q: string): string {
+  return q.toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim()
+}
+
 export function audienceResearchToPivotAoa(text: string): string[][] {
   const out = parseResearch(text)
   if (out.length === 0) return []
-  const questions: string[] = []
-  const seenQ = new Set<string>()
+  // Группировка вопросов: одинаковые после нормализации — одна колонка;
+  // плюс безопасное слияние «один текст — ПОЛНЫЙ префикс другого» (модель
+  // часто добавляет хвост «по шкале от 1 до 10» к тому же вопросу). Разные
+  // по смыслу вопросы под это правило не попадают.
+  type Q = { key: string; title: string }
+  const questions: Q[] = []
+  const keyOf = (raw: string): string => {
+    const k = questionKey(raw)
+    const hit = questions.find((q) => q.key === k || q.key.startsWith(k + ' ') || k.startsWith(q.key + ' '))
+    if (hit) {
+      // Заголовок колонки — самая длинная формулировка группы (полнее);
+      // ключ группы стабилен с первого появления (по нему уже лежат ответы).
+      if (raw.length > hit.title.length) hit.title = raw
+      return hit.key
+    }
+    questions.push({ key: k, title: raw })
+    return k
+  }
   type P = { label: string; name: string; seg: string; answers: Map<string, string> }
   const order: P[] = []
   const byKey = new Map<string, P>()
   for (const r of out) {
-    if (!seenQ.has(r.q)) { seenQ.add(r.q); questions.push(r.q) }
+    const qk = keyOf(r.q)
     const key = `${r.label}::${r.name}::${r.seg}`
     let p = byKey.get(key)
     if (!p) { p = { label: r.label, name: r.name, seg: r.seg, answers: new Map() }; byKey.set(key, p); order.push(p) }
-    if (!p.answers.has(r.q)) p.answers.set(r.q, r.a)
+    if (!p.answers.has(qk)) p.answers.set(qk, r.a)
   }
   const hasLabel = order.some((p) => p.label)
-  const head = [...(hasLabel ? ['Кастдев'] : []), 'Участник', 'Сегмент', ...questions]
-  const rows = order.map((p) => [...(hasLabel ? [p.label] : []), p.name, p.seg, ...questions.map((q) => p.answers.get(q) ?? '')])
+  const head = [...(hasLabel ? ['Кастдев'] : []), 'Участник', 'Сегмент', ...questions.map((q) => q.title)]
+  const rows = order.map((p) => [...(hasLabel ? [p.label] : []), p.name, p.seg, ...questions.map((q) => p.answers.get(q.key) ?? '')])
   return [head, ...rows]
 }
 
