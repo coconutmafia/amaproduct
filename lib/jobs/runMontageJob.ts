@@ -109,7 +109,7 @@ export async function processMontageJob(jobId: string): Promise<void> {
     try {
       const { data: proj } = await admin.from('projects').select('*').eq('id', projectId).maybeSingle()
       const cl = (proj as { content_language?: string | null } | null)?.content_language
-      if (cl === 'en' || cl === 'es') whisperLang = cl
+      if (cl === 'en' || cl === 'es' || cl === 'de') whisperLang = cl
     } catch { /* колонки может не быть до 038 — ru */ }
     const tr = await openai.audio.transcriptions.create({
       file: await toFile(audioBuf, 'audio.mp3', { type: 'audio/mpeg' }),

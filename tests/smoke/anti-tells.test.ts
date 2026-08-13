@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { AI_TELLS_TO_AVOID, AI_TELLS_TO_AVOID_EN, getAiTells, PLATFORM_SAFE_LANGUAGE } from '@/lib/ai/prompts/content-brain'
+import { AI_TELLS_TO_AVOID, AI_TELLS_TO_AVOID_EN, AI_TELLS_TO_AVOID_ES, AI_TELLS_TO_AVOID_DE, getAiTells, PLATFORM_SAFE_LANGUAGE } from '@/lib/ai/prompts/content-brain'
 
 // Владелец продукта (Августа) лично ловила эти GPT-измы в контенте и требовала
 // их убрать НАВСЕГДА («я с ними борюсь-борюсь, они всё равно возникают»).
@@ -56,12 +56,29 @@ describe('английские анти-AI-запреты закреплены �
     expect(AI_TELLS_TO_AVOID_EN).toContain('STACCATO')
   })
 
-  it('getAiTells ветвится по языку и НЕ меняет старое поведение', () => {
+  it('getAiTells ветвится по языку; null (нет настройки) = русская ветка, как до 038', () => {
     expect(getAiTells('en')).toBe(AI_TELLS_TO_AVOID_EN)
-    // null (нет настройки), ru и es → русская ветка, как до миграции 038
+    expect(getAiTells('es')).toBe(AI_TELLS_TO_AVOID_ES)
+    expect(getAiTells('de')).toBe(AI_TELLS_TO_AVOID_DE)
     expect(getAiTells(null)).toBe(AI_TELLS_TO_AVOID)
     expect(getAiTells('ru')).toBe(AI_TELLS_TO_AVOID)
-    expect(getAiTells('es')).toBe(AI_TELLS_TO_AVOID)
+  })
+})
+
+// Испанская и немецкая ветки (решение Матвея 13.08: блоги клиентов бывают на
+// en/es/de — качество как у русского). Ключевые запреты каждого языка закреплены.
+describe('испанские и немецкие анти-AI-запреты закреплены', () => {
+  it.each(['No es solo', 'Seamos honestos', 'desbloquear', 'Mar. Sol.'])('ES-ветка запрещает «%s»', (phrase) => {
+    expect(AI_TELLS_TO_AVOID_ES.toLowerCase()).toContain(phrase.toLowerCase())
+  })
+  it('ES: устная речь рилз 10-25 слов', () => {
+    expect(AI_TELLS_TO_AVOID_ES).toMatch(/10-25 palabras/)
+  })
+  it.each(['nicht nur', 'Mal ehrlich', 'entfesseln', 'Meer. Sonne.', 'Nominalstil'])('DE-ветка запрещает «%s»', (phrase) => {
+    expect(AI_TELLS_TO_AVOID_DE.toLowerCase()).toContain(phrase.toLowerCase())
+  })
+  it('DE: устная речь рилз 10-25 слов', () => {
+    expect(AI_TELLS_TO_AVOID_DE).toMatch(/10-25 Wörter/)
   })
 })
 

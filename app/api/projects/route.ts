@@ -197,13 +197,13 @@ export async function PATCH(request: Request) {
           instagram_url?: string; telegram_url?: string
           vk_url?: string; youtube_url?: string
           status?: 'active' | 'draft' | 'archived'
-          content_language?: 'ru' | 'en' | 'es' | null
+          content_language?: 'ru' | 'en' | 'es' | 'de' | null
         }
       }
       // Язык контента: только известные значения; null = «как раньше» (по TOV)
       if ('content_language' in fields
         && fields.content_language !== null
-        && !['ru', 'en', 'es'].includes(fields.content_language as string)) {
+        && !['ru', 'en', 'es', 'de'].includes(fields.content_language as string)) {
         return NextResponse.json({ error: 'Bad content_language' }, { status: 400 })
       }
       // Verify ownership first

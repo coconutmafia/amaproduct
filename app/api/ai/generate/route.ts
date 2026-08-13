@@ -92,9 +92,14 @@ export async function POST(request: Request) {
         const systemPrompt = buildSystemPrompt(ragContext, project)
 
         // Язык контента: примеры-значения в JSON-шаблонах ниже модель копирует
-        // ДОСЛОВНО в вывод («30-60 сек», «Вариант А») — для английского блога
-        // они обязаны быть английскими, иначе в EN-контент просачивается русский.
-        const isEn = resolveContentLanguage(project) === 'en'
+        // ДОСЛОВНО в вывод («30-60 сек», «Вариант А») — для en/es/de блогов они
+        // обязаны быть на языке блога, иначе в контент просачивается русский.
+        const contentLang = resolveContentLanguage(project)
+        const JEX = ({
+          en: { dur: '30-60 sec', timing: '0-3 sec', bg: 'color or photo', main: 'the main thing in frame', headline: '1-4 words', subtext: 'one short phrase or empty', voice: 'what the author says out loud in this story (1-2 sentences)', options: '"Option A","Option B"', transition: 'next step', day: 'Day', opening: 'Opening', mainTopic: 'Main topic', qa: 'Q&A', closing: 'Closing / offer', link: '[INSERT_LINK]' },
+          es: { dur: '30-60 seg', timing: '0-3 seg', bg: 'color o foto', main: 'lo principal en el encuadre', headline: '1-4 palabras', subtext: 'una frase corta o vacío', voice: 'lo que la autora dice en voz alta en esta historia (1-2 frases)', options: '"Opción A","Opción B"', transition: 'siguiente paso', day: 'Día', opening: 'Apertura', mainTopic: 'Tema principal', qa: 'Preguntas y respuestas', closing: 'Cierre / oferta', link: '[INSERTAR_ENLACE]' },
+          de: { dur: '30-60 Sek', timing: '0-3 Sek', bg: 'Farbe oder Foto', main: 'das Wichtigste im Bild', headline: '1-4 Wörter', subtext: 'eine kurze Zeile oder leer', voice: 'was die Autorin in dieser Story laut sagt (1-2 Sätze)', options: '"Option A","Option B"', transition: 'nächster Schritt', day: 'Tag', opening: 'Einstieg', mainTopic: 'Hauptthema', qa: 'Fragen und Antworten', closing: 'Abschluss / Angebot', link: '[LINK_EINFÜGEN]' },
+        } as const)[contentLang as 'en' | 'es' | 'de'] ?? null
 
         const contentTypeLabel: Record<string, string> = {
           post: 'пост для Instagram/VK',
@@ -172,7 +177,7 @@ ${contentType === 'reels' ? `\n${getViralReelsFramework()}\n` : ''}
 ${additionalInstructions ? `ДОПОЛНИТЕЛЬНО: ${additionalInstructions}` : ''}
 
 ${contentType === 'reels' ? `Верни JSON в формате:
-{"reels":{"title":"...","hook_text":"...","total_duration":"${isEn ? '30-60 sec' : '30-60 сек'}","scenes":[{"scene":1,"timing":"${isEn ? '0-3 sec' : '0-3 сек'}","type":"hook","visual":{"description":"...","camera":"...","action":"..."},"text_overlay":"...","audio":{"speech":"...","tone":"..."},"transition":"cut"}],"description_text":"..."}}
+{"reels":{"title":"...","hook_text":"...","total_duration":"${JEX ? JEX.dur : '30-60 сек'}","scenes":[{"scene":1,"timing":"${JEX ? JEX.timing : '0-3 сек'}","type":"hook","visual":{"description":"...","camera":"...","action":"..."},"text_overlay":"...","audio":{"speech":"...","tone":"..."},"transition":"cut"}],"description_text":"..."}}
 ВАЖНО: НЕ добавляй хэштеги — ни в description_text, ни отдельным полем. У этого блогера хэштегов нет.` : ''}
 
 ${contentType === 'carousel' ? `Верни JSON в формате:
@@ -184,16 +189,16 @@ headline = 1–4 слова (крупный акцент). subtext = 1 коро�
 Смысл и детали — в поле "voiceover" (что автор говорит голосом) и "visual" (что показывает).
 
 Верни JSON (5–10 сторис, не больше):
-{"stories_series":{"total_stories":N,"goal":"...","stories":[{"story_number":1,"type":"opener","visual":{"background":"${isEn ? 'color or photo' : 'цвет или фото'}","main_element":"${isEn ? 'the main thing in frame' : 'что главное в кадре'}"},"text":{"headline":"${isEn ? '1-4 words' : '1-4 слова'}","subtext":"${isEn ? 'one short phrase or empty' : '1 фраза или пусто'}"},"voiceover":"${isEn ? 'what the author says out loud in this story (1-2 sentences)' : 'что автор говорит голосом в этой сторис (1-2 предложения)'}","interactive":{"type":"poll","question":"...","options":[${isEn ? '"Option A","Option B"' : '"Вариант А","Вариант Б"'}]},"transition":"${isEn ? 'next step' : 'следующий шаг'}"}]}}` : ''}
+{"stories_series":{"total_stories":N,"goal":"...","stories":[{"story_number":1,"type":"opener","visual":{"background":"${JEX ? JEX.bg : 'цвет или фото'}","main_element":"${JEX ? JEX.main : 'что главное в кадре'}"},"text":{"headline":"${JEX ? JEX.headline : '1-4 слова'}","subtext":"${JEX ? JEX.subtext : '1 фраза или пусто'}"},"voiceover":"${JEX ? JEX.voice : 'что автор говорит голосом в этой сторис (1-2 предложения)'}","interactive":{"type":"poll","question":"...","options":[${JEX ? JEX.options : '"Вариант А","Вариант Б"'}]},"transition":"${JEX ? JEX.transition : 'следующий шаг'}"}]}}` : ''}
 
-${contentType !== 'post' ? (isEn
-  ? `⚠️ VOICE IN ALL TEXT FIELDS OF THE JSON (hook, headline, body, description_text, voiceover, speech, subject etc.): this blogger's living language. NO em dashes. NO staccato noun fragments ("Sea. Sun. A new life.") or "Not A. Not B. Just C." telegraph — only connected phrases. NO template lead-ins ("Here's the thing", "It's not just X, it's Y"). No corporate speak, no empty promises — concrete details only. Followers read these fields; post rules apply.`
+${contentType !== 'post' ? (JEX
+  ? `⚠️ VOICE IN ALL TEXT FIELDS OF THE JSON (hook, headline, body, description_text, voiceover, speech, subject etc.): this blogger's living language, in the blog's language. NO em dashes. NO staccato noun fragments ("Sea. Sun. A new life.") or "Not A. Not B. Just C." telegraph — only connected phrases. NO negative parallelism ("It's not just X, it's Y") or template lead-ins ("Here's the thing"). No corporate speak, no empty promises — concrete details only. Followers read these fields; post rules apply.`
   : `⚠️ ГОЛОС ВО ВСЕХ ТЕКСТОВЫХ ПОЛЯХ JSON (hook, headline, body, description_text, voiceover, speech, subject и т.д.): живой язык этого блогера. БЕЗ тире «—». БЕЗ существительных через точку («Море. Солнце. Новая жизнь.») и телеграфных обрывков («Не А. Не Б. А В.») — только связные фразы. БЕЗ шаблонных подводок «И знаешь(те), что самое…?». Без канцелярита и пустых обещаний («скажу конкретно», «разбираю внутри») — только конкретика. Эти поля читает подписчик, правила как для постов.`) : ''}
 ${contentType === 'post' ? 'Напиши текст поста (без JSON). Начни с крючка. Включи переход к CTA. БЕЗ хэштегов.' : ''}
 ${contentType === 'live' ? `Верни JSON в формате:
-{"live":{"title":"...","duration_min":60,"goal":"...","structure":[{"block":"${isEn ? 'Opening' : 'Вступление'}","duration_min":5,"content":"...","interactive":"..."},{"block":"${isEn ? 'Main topic' : 'Основная тема'}","duration_min":30,"content":"...","interactive":"..."},{"block":"${isEn ? 'Q&A' : 'Ответы на вопросы'}","duration_min":15,"content":"...","interactive":"..."},{"block":"${isEn ? 'Closing / offer' : 'Закрытие/оффер'}","duration_min":10,"content":"...","interactive":"..."}],"promo_text":"..."}}` : ''}
+{"live":{"title":"...","duration_min":60,"goal":"...","structure":[{"block":"${JEX ? JEX.opening : 'Вступление'}","duration_min":5,"content":"...","interactive":"..."},{"block":"${JEX ? JEX.mainTopic : 'Основная тема'}","duration_min":30,"content":"...","interactive":"..."},{"block":"${JEX ? JEX.qa : 'Ответы на вопросы'}","duration_min":15,"content":"...","interactive":"..."},{"block":"${JEX ? JEX.closing : 'Закрытие/оффер'}","duration_min":10,"content":"...","interactive":"..."}],"promo_text":"..."}}` : ''}
 ${contentType === 'email' ? `Напиши письмо для email-рассылки. Верни JSON в формате:
-{"email":{"subject":"...","preheader":"...","body":"...","cta_text":"...","cta_url":"${isEn ? '[INSERT_LINK]' : '[ВСТАВИТЬ_ССЫЛКУ]'}","ps":"..."}}` : ''}`
+{"email":{"subject":"...","preheader":"...","body":"...","cta_text":"...","cta_url":"${JEX ? JEX.link : '[ВСТАВИТЬ_ССЫЛКУ]'}","ps":"..."}}` : ''}`
 
         // ── Step 2: Generate ────────────────────────────────────────────────
         send({ type: 'status', message: 'Генерирую контент...' })
@@ -235,7 +240,7 @@ ${contentType === 'email' ? `Напиши письмо для email-рассыл
             model: MODEL,
             max_tokens: 1500,
             system: buildCachedSystem(systemPrompt), // same full context — validator knows TOV, niche, methodology
-            messages: [{ role: 'user', content: buildValidatorUserPrompt(generatedText, isEn ? 'en' : null) }],
+            messages: [{ role: 'user', content: buildValidatorUserPrompt(generatedText, contentLang) }],
           })
 
           finalText = ''
@@ -313,7 +318,7 @@ ${contentType === 'email' ? `Напиши письмо для email-рассыл
 
         const title = contentType === 'post'
           ? finalText.split('\n')[0].substring(0, 80)
-          : `${contentType} — ${isEn ? 'Day' : 'День'} ${dayNumber}`
+          : `${contentType} — ${JEX ? JEX.day : 'День'} ${dayNumber}`
 
         // ── Step 5: Save to DB ──────────────────────────────────────────────
         const { count } = await supabase

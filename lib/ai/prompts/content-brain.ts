@@ -283,11 +283,13 @@ export const CONTENT_BRAIN_ANTI_PATTERNS = `❌ Идеальный герой б
 
 // ── CONTENT LANGUAGE ─────────────────────────────────────────────────────────
 // Язык КОНТЕНТА (не интерфейса): что настройка проекта говорит генераторам.
+// Клиенты русскоговорящие, но блоги ведут и на en/es/de (решение Матвея 13.08):
+// разговор с ассистентом — на языке пользователя, контент — на языке блога.
 // NULL/неизвестно = поведение до миграции 038 — язык выводится из языка TOV
-// (так живёт испанский контент Katia Ustina — не ломать!).
-export type ContentLanguage = 'ru' | 'en' | 'es'
+// (так живёт испанский контент Katia Ustina без настройки — не ломать!).
+export type ContentLanguage = 'ru' | 'en' | 'es' | 'de'
 
-const CONTENT_LANGUAGES: ContentLanguage[] = ['ru', 'en', 'es']
+const CONTENT_LANGUAGES: ContentLanguage[] = ['ru', 'en', 'es', 'de']
 
 export function resolveContentLanguage(
   project?: { content_language?: string | null } | null
@@ -301,6 +303,7 @@ const LANGUAGE_NAME_RU: Record<ContentLanguage, string> = {
   ru: 'РУССКИЙ',
   en: 'АНГЛИЙСКИЙ',
   es: 'ИСПАНСКИЙ',
+  de: 'НЕМЕЦКИЙ',
 }
 
 /**
@@ -321,32 +324,36 @@ export function getContentLanguageDirective(lang: ContentLanguage | null): strin
 /**
  * Эвристика языка уже написанного текста — для роутов, которые пере-
  * структурируют готовый контент (карусель, пост-хук, раскадровка сторис) и не
- * знают проекта. 'en' включает АНГЛИЙСКУЮ ветку анти-AI-запретов; null — русскую
- * (легаси). Поэтому осторожно с ложными «en»:
- *  - URL/@хэндлы/**акценты** не считаются (русский текст со ссылкой — не английский);
- *  - испанский текст (маркеры ¿¡ñ + служебные слова) — это НЕ 'en': отдаём null,
- *    т.е. русскую ветку — ровно как было до миграции 038 (испанский клиент жив).
+ * знают проекта. Возвращает en/es/de → включается родная ветка анти-AI-запретов;
+ * null → русская (кириллица или непонятно). Осторожно с ложной латиницей:
+ * URL/@хэндлы/**акценты** не считаются буквами (русский текст со ссылкой — не
+ * английский). es/de распознаются по своим символам (¿¡ñ / äöüß) и плотности
+ * служебных слов; при равенстве очков побеждает английский.
  */
-export function detectTextLanguage(text: string): 'en' | null {
+export function detectTextLanguage(text: string): 'en' | 'es' | 'de' | null {
   const clean = String(text)
     .replace(/https?:\/\/\S+/g, ' ')
     .replace(/@[a-z0-9_.]+/gi, ' ')
     .replace(/\*\*/g, ' ')
-  const letters = (clean.match(/[a-zA-Zа-яА-ЯёЁ]/g) || []).length
+  const letters = (clean.match(/[a-zA-Zа-яА-ЯёЁäöüßÄÖÜáéíóúüñÁÉÍÓÚÑ¿¡]/g) || []).length
   if (letters < 40) return null // слишком коротко, чтобы судить
-  const latin = (clean.match(/[a-zA-Z]/g) || []).length
+  const latin = (clean.match(/[a-zA-ZäöüßÄÖÜáéíóúüñÁÉÍÓÚÑ]/g) || []).length
   if (latin / letters <= 0.6) return null
-  // Испанский: явные символы или плотность служебных слов
-  if (/[¿¡ñÑ]/.test(clean)) return null
-  const words = clean.toLowerCase().match(/[a-záéíóúü]+/g) || []
-  const esStop = new Set(['que', 'de', 'la', 'el', 'los', 'las', 'una', 'uno', 'para', 'como', 'está', 'esto', 'pero', 'por', 'con', 'más', 'te', 'tu', 'mi', 'es', 'un', 'en', 'no', 'se', 'del', 'al'])
+  // Явные символы языка решают сразу
+  if (/[¿¡]|ñ/i.test(clean)) return 'es'
+  if (/ß/.test(clean)) return 'de'
+  const words = clean.toLowerCase().match(/[a-záéíóúüäöß]+/g) || []
+  const esStop = new Set(['que', 'de', 'la', 'el', 'los', 'las', 'una', 'uno', 'para', 'como', 'está', 'esto', 'pero', 'por', 'con', 'más', 'te', 'tu', 'mi', 'es', 'un', 'en', 'no', 'se', 'del', 'al', 'y'])
   const enStop = new Set(['the', 'and', 'you', 'that', 'this', 'for', 'with', 'was', 'are', 'have', 'not', 'but', 'what', 'when', 'your', 'from', 'they', 'she', 'his', 'her'])
-  let esHits = 0, enHits = 0
+  const deStop = new Set(['und', 'der', 'die', 'das', 'ich', 'nicht', 'mit', 'für', 'ist', 'auf', 'dass', 'ein', 'eine', 'wie', 'aber', 'dem', 'den', 'mir', 'mich', 'dir', 'du', 'wir', 'was', 'sich', 'auch'])
+  let esHits = 0, enHits = 0, deHits = 0
   for (const w of words) {
     if (esStop.has(w)) esHits++
     if (enStop.has(w)) enHits++
+    if (deStop.has(w)) deHits++
   }
-  if (esHits > enHits && esHits >= 3) return null
+  if (deHits > enHits && deHits > esHits && deHits >= 3) return 'de'
+  if (esHits > enHits && esHits >= 3) return 'es'
   return 'en'
 }
 
@@ -434,13 +441,90 @@ export const AI_TELLS_TO_AVOID_EN = `HOW NOT TO SOUND LIKE AI (English readers s
 
 8. REELS SCRIPT / VOICEOVER = SPOKEN LANGUAGE, NOT TELEGRAPH. Mentally SAY every line out loud: if it sounds like clipped fragments ("Three pastas. One counter. Different product."), a real person would never say it — merge into natural speech ("There are three different pastas on the same counter, and the product is completely different"). A spoken line is usually 10-25 words with natural connectors, like talking to a friend. Rule 2 applies to voiceover even MORE strictly than to written text.`
 
+// ── ANTI-AI-TELLS (ESPAÑOL) ──────────────────────────────────────────────────
+// Испанский близнец: те же классы паттернов (тире-драма, staccato, негативный
+// параллелизм, фальшивые подводки, AI-словарь, герундий-хвосты, устная речь),
+// написан по-испански с испанскими примерами — как EN-ветка.
+export const AI_TELLS_TO_AVOID_ES = `CÓMO NO SONAR COMO IA (los lectores lo detectan al instante — cúmplelo estrictamente):
+
+1. NADA DE RAYAS «—» COMO PAUSA DRAMÁTICA. Es una de las marcas más reconocibles del texto de IA; en voz alta suena robótico. Reescribe la frase con palabras.
+   ❌ "El lanzamiento — un desastre total."  ✅ "El lanzamiento terminó siendo un desastre total."
+   ❌ "No es talento — es práctica."  ✅ "Al final es práctica, no talento."
+
+2. NADA DE FRAGMENTOS STACCATO sin verbo, uno tras otro: nadie habla así.
+   ❌ "Mar. Sol. Una vida nueva."  ✅ "Mar, sol y lo que parecía una vida nueva."
+   ❌ "Sin filtros. Sin guiones. Solo yo."  ✅ "Sin filtros ni guiones, solo yo."
+   Lo mismo con "No A. No B. Solo C." — únelo en una frase viva.
+
+3. NADA DE PARALELISMO NEGATIVO, en ninguna forma:
+   ❌ "No es solo un cuadro. Es una forma de ver."
+   ❌ "No se trata de arte. Se trata de atención."
+   Afirma directo: ✅ "Pintar me enseñó a fijarme en cosas que antes pasaba de largo."
+
+4. NADA DE MULETILLAS DE ARRANQUE NI FALSA CONFIANZA:
+   ❌ "Aquí va la verdad:" / "Seamos honestos" / "¿Sabes qué es lo más loco?" / "Y lo mejor de todo?" / "Sumerjámonos" / "Prepárate"
+   Haz la transición con una afirmación o ve directo al grano.
+
+5. NADA DE VOCABULARIO DE IA: desbloquear, potenciar, elevar, transformador, revolucionario, "en el mundo actual", "capturar la esencia", "una obra maestra" (sobre tu propio trabajo), "no te lo pierdas".
+   Usa la palabra simple que diría una persona: aprender, empezar, mejorar, mi trabajo, esta pieza.
+
+6. NADA DE COLAS DE GERUNDIO pegadas para fingir profundidad:
+   ❌ "…, reflejando mi profunda conexión con la naturaleza."  ❌ "…, evocando una sensación de movimiento."
+   Si la idea importa, dale su propia frase con sujeto y verbo. Si no, córtala.
+
+7. OFERTAS VACÍAS — nombra SIEMPRE el valor concreto.
+   ❌ "Escríbeme 'ARTE' y te cuento los detalles." (¿detalles de QUÉ?)
+   ✅ "Escríbeme 'ARTE' y te mando la lista de cuadros disponibles con medidas y precios."
+
+8. GUION DE REELS / VOZ EN OFF = LENGUA HABLADA, NO TELÉGRAFO. Di cada línea en voz alta mentalmente: una línea hablada tiene 10-25 palabras con conectores naturales, como hablando con una amiga. La regla 2 aplica a la voz en off TODAVÍA más estricto.`
+
+// ── ANTI-AI-TELLS (DEUTSCH) ──────────────────────────────────────────────────
+// Немецкий близнец: те же классы + немецкая специфика (Nominalstil-канцелярит,
+// «nicht nur …, sondern …», du-Form как в живых блогах).
+export const AI_TELLS_TO_AVOID_DE = `WIE DU NICHT NACH KI KLINGST (Leser erkennen es sofort — halte dich strikt daran):
+
+1. KEINE GEDANKENSTRICHE «—» ODER « – » ALS DRAMA-PAUSE. Das ist eines der klarsten KI-Merkmale; laut gesprochen klingt es roboterhaft. Schreib den Satz mit Wörtern um.
+   ❌ "Der Launch — eine komplette Katastrophe."  ✅ "Der Launch wurde zur kompletten Katastrophe."
+   ❌ "Es ist kein Talent — es ist Übung."  ✅ "Am Ende ist es Übung, kein Talent."
+   (Bindestriche in Komposita wie "selbst-gemischt" sind okay.)
+
+2. KEINE STAKKATO-FRAGMENTE ohne Verb hintereinander: so redet kein Mensch.
+   ❌ "Meer. Sonne. Ein neues Leben."  ✅ "Meer, Sonne und etwas, das sich nach einem neuen Leben anfühlte."
+   ❌ "Keine Filter. Kein Skript. Nur ich."  ✅ "Ohne Filter und Skript, einfach nur ich."
+   Genauso "Nicht A. Nicht B. Nur C." — verbinde es zu einem lebendigen Satz.
+
+3. KEIN NEGATIV-PARALLELISMUS, in keiner Form:
+   ❌ "Es geht nicht nur um Kunst. Es geht um Aufmerksamkeit."
+   ❌ "Das ist kein Hobby. Das ist eine Lebensweise."
+   Sag die Aussage direkt: ✅ "Malen hat mir beigebracht, Dinge zu sehen, an denen ich früher vorbeigelaufen bin."
+
+4. KEINE FLOSKEL-EINSTIEGE UND FAKE-VERTRAULICHKEIT:
+   ❌ "Mal ehrlich:" / "Und weißt du was?" / "Das Beste daran?" / "Tauchen wir ein" / "Spoiler:" / "Aber jetzt kommt's:"
+   Mach den Übergang als Aussage oder komm direkt zum Punkt.
+
+5. KEIN KI-VOKABULAR: entfesseln, freischalten, transformativ, revolutionär, bahnbrechend, "in der heutigen schnelllebigen Welt", "die Essenz einfangen", "ein Meisterwerk" (über die eigene Arbeit), "verpasse nicht".
+   Und KEIN Nominalstil-Beamtendeutsch im persönlichen Blog ("die Umsetzung der Optimierung ermöglicht…") — schreib, wie Menschen reden, in der du-Form wie im echten Blog.
+
+6. KEINE PARTIZIP- UND RELATIV-ANHÄNGSEL als Fake-Tiefe:
+   ❌ "…, was meine tiefe Verbindung zur Natur widerspiegelt."
+   Wenn der Gedanke wichtig ist, bekommt er einen eigenen Satz mit Subjekt und Verb. Wenn nicht, streich ihn.
+
+7. LEERE ANGEBOTE — nenne IMMER den konkreten Wert.
+   ❌ "Schreib mir 'KUNST' und ich erzähle dir mehr." (mehr WOVON?)
+   ✅ "Schreib mir 'KUNST' und ich schicke dir die Liste der verfügbaren Bilder mit Größen und Preisen."
+
+8. REELS-SKRIPT / VOICEOVER = GESPROCHENE SPRACHE, KEIN TELEGRAMM. Sprich jede Zeile im Kopf laut aus: eine gesprochene Zeile hat 10-25 Wörter mit natürlichen Verbindungen, wie im Gespräch mit einer Freundin. Regel 2 gilt im Voiceover NOCH strenger.`
+
 /**
- * Анти-AI-запреты по языку контента. en → английская ветка; ru/es/null →
- * русская (для испанского отдельной ветки пока нет — поведение как до
- * миграции 038: универсальные принципы русской ветки модель переносит сама).
+ * Анти-AI-запреты по языку контента: en/es/de — родные ветки (решение Матвея
+ * 13.08 — блоги клиентов бывают на этих трёх языках, качество = как у русского);
+ * ru и null — русская ветка (null = легаси-поведение до миграции 038).
  */
 export function getAiTells(lang: ContentLanguage | null): string {
-  return lang === 'en' ? AI_TELLS_TO_AVOID_EN : AI_TELLS_TO_AVOID
+  if (lang === 'en') return AI_TELLS_TO_AVOID_EN
+  if (lang === 'es') return AI_TELLS_TO_AVOID_ES
+  if (lang === 'de') return AI_TELLS_TO_AVOID_DE
+  return AI_TELLS_TO_AVOID
 }
 
 // ── VISUAL DESIGN RULES ──────────────────────────────────────────────────────

@@ -18,11 +18,12 @@ import { contentItemToText } from '@/lib/contentToText'
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('resolveContentLanguage: настройка проекта → язык контента', () => {
-  it('явные ru/en/es распознаются (с нормализацией регистра/пробелов)', () => {
+  it('явные ru/en/es/de распознаются (с нормализацией регистра/пробелов)', () => {
     expect(resolveContentLanguage({ content_language: 'en' })).toBe('en')
     expect(resolveContentLanguage({ content_language: ' EN ' })).toBe('en')
     expect(resolveContentLanguage({ content_language: 'ru' })).toBe('ru')
     expect(resolveContentLanguage({ content_language: 'es' })).toBe('es')
+    expect(resolveContentLanguage({ content_language: 'de' })).toBe('de')
   })
   it('нет настройки / мусор → null (легаси-поведение, НЕ русский по умолчанию)', () => {
     expect(resolveContentLanguage(null)).toBeNull()
@@ -30,7 +31,7 @@ describe('resolveContentLanguage: настройка проекта → язык
     expect(resolveContentLanguage({})).toBeNull()
     expect(resolveContentLanguage({ content_language: null })).toBeNull()
     expect(resolveContentLanguage({ content_language: '' })).toBeNull()
-    expect(resolveContentLanguage({ content_language: 'de' })).toBeNull()
+    expect(resolveContentLanguage({ content_language: 'fr' })).toBeNull()
     expect(resolveContentLanguage({ content_language: 'english' })).toBeNull()
   })
 })
@@ -51,6 +52,9 @@ describe('директива языка в системном промпте', (
   })
   it('es → испанская директива (живой кейс: Katia Ustina может закрепиться настройкой)', () => {
     expect(getContentLanguageDirective('es')).toContain('ИСПАНСКИЙ')
+  })
+  it('de → немецкая директива (решение Матвея 13.08: блоги и на немецком)', () => {
+    expect(getContentLanguageDirective('de')).toContain('НЕМЕЦКИЙ')
   })
 })
 
@@ -74,15 +78,23 @@ describe('detectTextLanguage: эвристика для роутов без proj
     )).toBeNull()
   })
   // Регрессия doubt-check 13.08: испанский — латиница, но НЕ английский.
-  // en-ветка запретов на испанском тексте = смена поведения для клиента,
-  // который жил на русской ветке (Katia Ustina, блог на испанском).
-  it('испанский текст → null (русская ветка, как до миграции 038)', () => {
+  // С 13.08 (решение Матвея) у испанского СВОЯ ветка запретов — детект обязан
+  // отличать es от en, а не сваливать всё латинское в английский.
+  it('испанский текст → es (своя ветка запретов, не английская)', () => {
     expect(detectTextLanguage(
       'Voy a describirte tu día, y a los diez segundos vas a querer apagar esto, porque es la historia de tu vida y no la puedes cambiar.'
-    )).toBeNull()
+    )).toBe('es')
     expect(detectTextLanguage(
       '¿Sabes cuánto cobran por fingir que son una chica en OnlyFans? Hasta cinco mil euros al mes.'
-    )).toBeNull()
+    )).toBe('es')
+  })
+  it('немецкий текст → de', () => {
+    expect(detectTextLanguage(
+      'Letzten Winter hätte ich diesen Account fast gelöscht, und niemand hat es gewusst. Heute erzähle ich dir, warum ich geblieben bin.'
+    )).toBe('de')
+    expect(detectTextLanguage(
+      'Ich male die Blumen so groß, wie sie sich anfühlen. Wenn du einer Pfingstrose deine volle Aufmerksamkeit schenkst, hört sie auf, klein zu sein.'
+    )).toBe('de')
   })
   it('русский текст с URL и @хэндлами → null (ссылки не считаются языком)', () => {
     expect(detectTextLanguage(
@@ -123,8 +135,17 @@ describe('валидатор постов языкозависимый', () => {
     const p = buildValidatorUserPrompt('Some english post text.', 'en')
     expect(p).toContain('Negative parallelism')
     expect(p).toContain('Staccato')
-    expect(p).toContain('НА АНГЛИЙСКОМ')
+    expect(p).toContain('английском')
+    expect(p).toContain('НА ТОМ ЖЕ ЯЗЫКЕ')
     expect(p).toContain('Менять язык текста')
+  })
+  it('es/de: свои чек-листы, тот же запрет перевода', () => {
+    const es = buildValidatorUserPrompt('Un texto en español.', 'es')
+    expect(es).toContain('Paralelismo negativo')
+    expect(es).toContain('испанском')
+    const de = buildValidatorUserPrompt('Ein deutscher Text.', 'de')
+    expect(de).toContain('Negativ-Parallelismus')
+    expect(de).toContain('немецком')
   })
   it('null/ru: старый русский чек-лист на месте', () => {
     const p = buildValidatorUserPrompt('Текст поста.')
@@ -142,11 +163,14 @@ describe('система промптов: цепочка языка не рвё
     // Старая захардкоженная строка не должна вернуться в обход директивы
     expect(src).not.toContain('Язык ответа: тот, на котором написан TOV')
   })
-  it('generate: примеры-значения в JSON-шаблонах ветвятся по языку (isEn)', () => {
+  it('generate: примеры-значения в JSON-шаблонах ветвятся по языку (en/es/de)', () => {
     const src = readFileSync(join(process.cwd(), 'app/api/ai/generate/route.ts'), 'utf8')
     expect(src).toContain("'30-60 sec'")
+    expect(src).toContain("'30-60 seg'")
+    expect(src).toContain("'30-60 Sek'")
     expect(src).toContain('"Option A"')
-    expect(src).toMatch(/isEn \? 'Day' : 'День'/)
+    expect(src).toContain('"Opción A"')
+    expect(src).toMatch(/JEX \? JEX\.day : 'День'/)
   })
   it('extract-tone-of-voice: язык описания не прибит к русскому + цитаты дословно', () => {
     const src = readFileSync(join(process.cwd(), 'app/api/ai/extract-tone-of-voice/route.ts'), 'utf8')
@@ -155,10 +179,14 @@ describe('система промптов: цепочка языка не рвё
     // Безусловное «, на русском,» в структуре ответа — регресс к старому багу
     expect(src).not.toMatch(/СТРУКТУРА ОТВЕТА \(в свободной форме, на русском/)
   })
-  it('проектные PATCH принимают content_language только из белого списка', () => {
+  it('проектные PATCH принимают content_language только из белого списка (ru/en/es/de)', () => {
     const src = readFileSync(join(process.cwd(), 'app/api/projects/route.ts'), 'utf8')
-    expect(src).toContain("['ru', 'en', 'es']")
+    expect(src).toContain("['ru', 'en', 'es', 'de']")
     expect(src).toContain('Bad content_language')
+  })
+  it('миграция 038 допускает все четыре языка', () => {
+    const sql = readFileSync(join(process.cwd(), 'supabase/migrations/038_project_content_language.sql'), 'utf8')
+    expect(sql).toContain("('ru', 'en', 'es', 'de')")
   })
   it('раскадровка сторис ловит и английский придуманный CTA (dm me / link in bio)', () => {
     const src = readFileSync(join(process.cwd(), 'app/api/ai/plan-stories/route.ts'), 'utf8')
@@ -168,6 +196,7 @@ describe('система промптов: цепочка языка не рвё
   it('карусельный рендер: подпись-листалка языкозависимая (SWIPE для en)', () => {
     const brandKit = readFileSync(join(process.cwd(), 'app/api/brand-kit/route.ts'), 'utf8')
     expect(brandKit).toContain("en: 'SWIPE →'")
+    expect(brandKit).toContain("de: 'WEITER →'")
     const engine = readFileSync(join(process.cwd(), 'lib/carousel/engine.tsx'), 'utf8')
     expect(engine).toContain('theme.swipeLabel')
     // Захардкоженная русская подпись в JSX рендера — регресс
@@ -214,5 +243,38 @@ describe('contentItemToText: метки блоков подстраиваютс�
   it('body_text имеет приоритет — детект не переписывает готовый текст', () => {
     expect(contentItemToText({ body_text: 'готовый текст', structured_data: enReels.structured_data }))
       .toBe('готовый текст')
+  })
+  it('испанская карусель → испанские метки (Diapositiva/Portada)', () => {
+    const esCarousel = {
+      structured_data: {
+        carousel: {
+          cover: { headline: 'Por qué dejé de pintar lo que se vende', subheadline: 'Una historia sobre atención y coraje' },
+          slides: [
+            { slide: 2, headline: 'Durante dos años pinté ramos seguros', body: 'Se vendían bien y nadie discutía con ellos, pero cada cuadro me costaba más que el anterior.' },
+          ],
+          last_slide: { text: 'Ahora pinto lo que puedo habitar', action: 'Escríbeme ARTE y te mando la lista de cuadros disponibles' },
+        },
+      },
+    }
+    const text = contentItemToText(esCarousel)
+    expect(text).toContain('Portada:')
+    expect(text).toContain('Diapositiva 2:')
+    expect(text).not.toContain('Слайд')
+  })
+  it('немецкий рилз → немецкие метки (Szene)', () => {
+    const deReels = {
+      structured_data: {
+        reels: {
+          title: 'Warum ich fast aufgehört hätte',
+          hook_text: 'Letzten Winter hätte ich fast alles gelöscht',
+          scenes: [
+            { scene: 1, timing: '0-3 Sek', text_overlay: 'Fast gelöscht', audio: { speech: 'Letzten Winter hätte ich diesen Account fast gelöscht, und niemand hat davon gewusst.' }, visual: { action: 'Geht ins Atelier und macht das Licht an' } },
+          ],
+        },
+      },
+    }
+    const text = contentItemToText(deReels)
+    expect(text).toContain('Szene 1')
+    expect(text).not.toContain('Сцена')
   })
 })

@@ -22,8 +22,8 @@ export interface Project {
   youtube_url: string | null
   status: 'active' | 'archived' | 'draft'
   completeness_score: number
-  /** Язык контента блога (ru/en/es). null = как раньше: язык TOV, иначе русский (миграция 038). */
-  content_language: 'ru' | 'en' | 'es' | null
+  /** Язык контента блога (ru/en/es/de). null = как раньше: язык TOV, иначе русский (миграция 038). */
+  content_language: 'ru' | 'en' | 'es' | 'de' | null
   created_at: string
   updated_at: string
 }

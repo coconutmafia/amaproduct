@@ -1266,13 +1266,13 @@ async function anglesSmoke() {
 // ⚠️ Пишет в КЛИЕНТСКИЙ проект (исключение из правила ama-probe-*) — запускать
 // только по явной задаче владельца (13 августа: «закрепим настройкой» для
 // Darina Komorowski). Использование:
-//   node scripts/prod-probe.mjs set-language <projectId> <ru|en|es|null> --run
+//   node scripts/prod-probe.mjs set-language <projectId> <ru|en|es|de|null> --run
 async function setLanguage() {
   const projectId = process.argv[3]
   const lang = process.argv[4]
   log('\n=== Пробник: выставить content_language проекту ===')
-  if (!projectId || !['ru', 'en', 'es', 'null'].includes(lang || '')) {
-    log('Использование: node scripts/prod-probe.mjs set-language <projectId> <ru|en|es|null> [--run]')
+  if (!projectId || !['ru', 'en', 'es', 'de', 'null'].includes(lang || '')) {
+    log('Использование: node scripts/prod-probe.mjs set-language <projectId> <ru|en|es|de|null> [--run]')
     return
   }
   const cur = await api(`/rest/v1/projects?id=eq.${projectId}&select=id,name,content_language`)

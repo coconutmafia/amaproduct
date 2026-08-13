@@ -23,6 +23,18 @@ const L10N = {
     story: 'Story', voice: 'Voice', cover: 'Cover', slide: 'Slide',
     lastSlide: 'Final slide', subject: 'Subject',
   },
+  es: {
+    hook: 'Gancho', duration: 'Duración', scene: 'Escena', overlay: 'Texto en pantalla',
+    voiceover: 'Voz en off', action: 'Acción', description: 'Descripción del vídeo',
+    story: 'Historia', voice: 'Voz', cover: 'Portada', slide: 'Diapositiva',
+    lastSlide: 'Última diapositiva', subject: 'Asunto',
+  },
+  de: {
+    hook: 'Hook', duration: 'Dauer', scene: 'Szene', overlay: 'Text im Bild',
+    voiceover: 'Voiceover', action: 'Aktion', description: 'Videobeschreibung',
+    story: 'Story', voice: 'Stimme', cover: 'Cover', slide: 'Slide',
+    lastSlide: 'Letzter Slide', subject: 'Betreff',
+  },
 }
 
 // Служебные enum-значения из JSON-схем ('cut', 'hook', 'poll'…) — латиница,
@@ -38,22 +50,27 @@ function collectStringValues(v: unknown, acc: string[] = []): string[] {
 
 function labelsFor(sd: Dict): typeof L10N.ru {
   const text = collectStringValues(sd).join(' ')
-  const letters = (text.match(/[a-zA-Zа-яА-ЯёЁ]/g) || []).length
+  const letters = (text.match(/[a-zA-Zа-яА-ЯёЁäöüßÄÖÜáéíóúüñÁÉÍÓÚÑ]/g) || []).length
   if (letters < 40) return L10N.ru
-  const latin = (text.match(/[a-zA-Z]/g) || []).length
+  const latin = (text.match(/[a-zA-ZäöüßÄÖÜáéíóúüñÁÉÍÓÚÑ]/g) || []).length
   if (latin / letters <= 0.6) return L10N.ru
-  // Испанский контент — латиница, но НЕ английский: метки оставляем как раньше
-  // (русские), т.к. испанской локализации меток нет. Маркеры: ¿¡ñ + служебные слова.
-  if (/[¿¡ñÑ]/.test(text)) return L10N.ru
-  const words = text.toLowerCase().match(/[a-záéíóúü]+/g) || []
-  let esHits = 0, enHits = 0
-  const esStop = new Set(['que', 'de', 'la', 'el', 'los', 'las', 'una', 'para', 'como', 'está', 'pero', 'por', 'con', 'más', 'es', 'un', 'en', 'no', 'se', 'del', 'al'])
+  // Латиница ≠ английский: различаем en/es/de по символам и служебным словам
+  // (та же логика, что detectTextLanguage в content-brain — локально, чтобы не
+  // тянуть модуль промптов в клиентский бандл).
+  if (/[¿¡]|ñ/i.test(text)) return L10N.es
+  if (/ß/.test(text)) return L10N.de
+  const words = text.toLowerCase().match(/[a-záéíóúüäöß]+/g) || []
+  let esHits = 0, enHits = 0, deHits = 0
+  const esStop = new Set(['que', 'de', 'la', 'el', 'los', 'las', 'una', 'para', 'como', 'está', 'pero', 'por', 'con', 'más', 'es', 'un', 'en', 'no', 'se', 'del', 'al', 'y'])
   const enStop = new Set(['the', 'and', 'you', 'that', 'this', 'for', 'with', 'was', 'are', 'have', 'not', 'but', 'what', 'your', 'from', 'they'])
+  const deStop = new Set(['und', 'der', 'die', 'das', 'ich', 'nicht', 'mit', 'für', 'ist', 'auf', 'dass', 'ein', 'eine', 'wie', 'aber', 'dem', 'den', 'mir', 'mich', 'dir', 'du', 'wir', 'sich', 'auch'])
   for (const w of words) {
     if (esStop.has(w)) esHits++
     if (enStop.has(w)) enHits++
+    if (deStop.has(w)) deHits++
   }
-  if (esHits > enHits && esHits >= 3) return L10N.ru
+  if (deHits > enHits && deHits > esHits && deHits >= 3) return L10N.de
+  if (esHits > enHits && esHits >= 3) return L10N.es
   return L10N.en
 }
 

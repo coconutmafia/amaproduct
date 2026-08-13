@@ -184,6 +184,26 @@ export function buildValidatorUserPrompt(generatedContent: string, lang: Content
 6. Template lead-ins ("Here's the thing:", "Let's be honest", "And you know what's crazy?") → make it a statement or go straight to the point
 7. Empty offers ("DM me and I'll share the details") → name the concrete value the person gets
 8. "-ing" analysis tails ("..., reflecting my deep connection to art") → give the thought its own sentence or cut it`
+    : lang === 'es'
+    ? `ЧТО ПРОВЕРИТЬ И ИСПРАВИТЬ (только это; текст испанский — исправления тоже на испанском):
+1. Frases de IA ("desbloquear", "potenciar", "transformador", "revolucionario", "en el mundo actual", "capturar la esencia", "no te lo pierdas") → sustitúyelas por lenguaje concreto y simple
+2. ¿Arranque de calentamiento en vez de ir al grano? ("Hoy quiero contarte...", "Me emociona compartir...") → córtalo, empieza por la sustancia
+3. Rayas "—" como pausa dramática → reescribe la frase con palabras
+4. Fragmentos staccato ("Mar. Sol. Una vida nueva.", "No A. No B. Solo C.") → une CADA cadena en una frase viva y conectada
+5. Paralelismo negativo ("No es solo X, es Y", "No se trata de X. Se trata de Y.") → afirma directo
+6. Muletillas de arranque ("Aquí va la verdad:", "Seamos honestos", "¿Sabes qué es lo más loco?") → conviértelo en afirmación o ve directo al punto
+7. Ofertas vacías ("Escríbeme y te cuento los detalles") → nombra el valor concreto
+8. Colas de gerundio ("..., reflejando mi conexión con el arte") → dale su propia frase o córtala`
+    : lang === 'de'
+    ? `ЧТО ПРОВЕРИТЬ И ИСПРАВИТЬ (только это; текст немецкий — исправления тоже на немецком):
+1. KI-Phrasen ("entfesseln", "freischalten", "transformativ", "bahnbrechend", "in der heutigen schnelllebigen Welt", "die Essenz einfangen", "verpasse nicht") → durch konkrete, einfache Sprache ersetzen
+2. Aufwärm-Einstieg statt Substanz? ("Heute möchte ich erzählen...", "Ich freue mich, zu teilen...") → streichen, direkt mit der Sache anfangen
+3. Gedankenstriche "—"/" – " als Drama-Pause → Satz mit Wörtern umschreiben
+4. Stakkato-Fragmente ("Meer. Sonne. Ein neues Leben.", "Nicht A. Nicht B. Nur C.") → JEDE solche Kette zu einem lebendigen Satz verbinden
+5. Negativ-Parallelismus ("Es geht nicht nur um X, sondern um Y", "Das ist kein X. Das ist Y.") → Aussage direkt sagen
+6. Floskel-Einstiege ("Mal ehrlich:", "Und weißt du was?", "Das Beste daran?") → Aussage statt Ankündigung
+7. Leere Angebote ("Schreib mir und ich erzähle dir mehr") → konkreten Wert benennen
+8. Partizip-Anhängsel ("..., was meine Verbindung zur Kunst widerspiegelt") → eigener Satz oder streichen; kein Nominalstil`
     : `ЧТО ПРОВЕРИТЬ И ИСПРАВИТЬ (только это):
 1. Есть ли запрещённые фразы? ("уникальная возможность", "незабываемый опыт", "революционный", "в современном мире", "не упустите шанс" и подобные) → замени на конкретику
 2. Начинается ли текст с разгона вместо сути? ("Сегодня хочу рассказать...", "Я рада поделиться...") → убери, начни сразу с главного
@@ -196,7 +216,7 @@ export function buildValidatorUserPrompt(generatedContent: string, lang: Content
 
   return `Ты редактор. Перед тобой текст, написанный от имени конкретного блогера.
 
-ЗАДАЧА: найти и исправить ТОЛЬКО GPT-паттерны. НЕ переписывай стиль, НЕ улучшай структуру — только убирай маркерные AI-фразы и заменяй их живым языком.${lang === 'en' ? ' Текст английский — верни его НА АНГЛИЙСКОМ, не переводи.' : ''}
+ЗАДАЧА: найти и исправить ТОЛЬКО GPT-паттерны. НЕ переписывай стиль, НЕ улучшай структуру — только убирай маркерные AI-фразы и заменяй их живым языком.${lang && lang !== 'ru' ? ` Текст на языке блога (${lang === 'en' ? 'английском' : lang === 'es' ? 'испанском' : 'немецком'}) — верни его НА ТОМ ЖЕ ЯЗЫКЕ, не переводи.` : ''}
 
 ТЕКСТ:
 ${generatedContent}

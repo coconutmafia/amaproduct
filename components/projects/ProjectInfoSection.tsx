@@ -38,11 +38,14 @@ const STATUS_OPTIONS = [
 
 // Язык, на котором AI пишет КОНТЕНТ (пост/рилз/сторис/карусель) этого проекта.
 // «Авто» = как раньше: язык Tone of Voice, без TOV — русский.
+// Общаться с ассистентом при этом можно на любом языке (чат отвечает на языке
+// сообщений) — настройка касается только САМОГО контента.
 const LANGUAGE_OPTIONS = [
   { value: '',   label: 'Авто (по Tone of Voice)' },
   { value: 'ru', label: 'Русский' },
   { value: 'en', label: 'English' },
   { value: 'es', label: 'Español' },
+  { value: 'de', label: 'Deutsch' },
 ]
 
 export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
@@ -401,7 +404,7 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
                   ))}
                 </div>
                 <p className="text-[10px] text-muted-foreground">
-                  AI пишет весь контент (посты, рилз, сторис, карусели) на этом языке — даже если материалы проекта на другом
+                  AI пишет весь контент (посты, рилз, сторис, карусели) на этом языке — даже если материалы проекта на другом. Общаться с ассистентом можно по-русски: настройка касается только самого контента.
                 </p>
               </div>
 
