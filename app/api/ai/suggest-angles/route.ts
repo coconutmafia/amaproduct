@@ -46,7 +46,9 @@ export async function POST(request: Request) {
     const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
-    const { data: project } = await supabase.from('projects').select('id, niche, content_language').eq('id', projectId).single()
+    // select('*'), НЕ явный список: до наката 038 колонки content_language нет,
+    // явный select ронял роут 404 для всех (пойман doubt-check живьём на проде).
+    const { data: project } = await supabase.from('projects').select('*').eq('id', projectId).single()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     // Хук — это контент (фраза в кадре/в тексте): для блога на другом языке он
     // обязан быть на языке блога, даже если разговор и «почему зайдёт» русские.

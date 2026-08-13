@@ -235,7 +235,7 @@ ${contentType === 'email' ? `Напиши письмо для email-рассыл
             model: MODEL,
             max_tokens: 1500,
             system: buildCachedSystem(systemPrompt), // same full context — validator knows TOV, niche, methodology
-            messages: [{ role: 'user', content: buildValidatorUserPrompt(generatedText) }],
+            messages: [{ role: 'user', content: buildValidatorUserPrompt(generatedText, isEn ? 'en' : null) }],
           })
 
           finalText = ''

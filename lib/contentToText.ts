@@ -25,8 +25,12 @@ const L10N = {
   },
 }
 
+// Служебные enum-значения из JSON-схем ('cut', 'hook', 'poll'…) — латиница,
+// но НЕ признак английского контента; в подсчёт языка не идут.
+const ENUM_TOKENS = new Set(['cut', 'hook', 'poll', 'quiz', 'question', 'opener', 'cta', 'top', 'center', 'bottom', 'with', 'without', 'auto', 'post', 'reels', 'stories', 'carousel', 'email', 'live'])
+
 function collectStringValues(v: unknown, acc: string[] = []): string[] {
-  if (typeof v === 'string') acc.push(v)
+  if (typeof v === 'string') { if (!ENUM_TOKENS.has(v.trim().toLowerCase())) acc.push(v) }
   else if (Array.isArray(v)) v.forEach(x => collectStringValues(x, acc))
   else if (v && typeof v === 'object') Object.values(v as Dict).forEach(x => collectStringValues(x, acc))
   return acc
@@ -37,7 +41,20 @@ function labelsFor(sd: Dict): typeof L10N.ru {
   const letters = (text.match(/[a-zA-Zа-яА-ЯёЁ]/g) || []).length
   if (letters < 40) return L10N.ru
   const latin = (text.match(/[a-zA-Z]/g) || []).length
-  return latin / letters > 0.6 ? L10N.en : L10N.ru
+  if (latin / letters <= 0.6) return L10N.ru
+  // Испанский контент — латиница, но НЕ английский: метки оставляем как раньше
+  // (русские), т.к. испанской локализации меток нет. Маркеры: ¿¡ñ + служебные слова.
+  if (/[¿¡ñÑ]/.test(text)) return L10N.ru
+  const words = text.toLowerCase().match(/[a-záéíóúü]+/g) || []
+  let esHits = 0, enHits = 0
+  const esStop = new Set(['que', 'de', 'la', 'el', 'los', 'las', 'una', 'para', 'como', 'está', 'pero', 'por', 'con', 'más', 'es', 'un', 'en', 'no', 'se', 'del', 'al'])
+  const enStop = new Set(['the', 'and', 'you', 'that', 'this', 'for', 'with', 'was', 'are', 'have', 'not', 'but', 'what', 'your', 'from', 'they'])
+  for (const w of words) {
+    if (esStop.has(w)) esHits++
+    if (enStop.has(w)) enHits++
+  }
+  if (esHits > enHits && esHits >= 3) return L10N.ru
+  return L10N.en
 }
 
 export function contentItemToText(item: {

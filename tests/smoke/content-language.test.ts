@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   resolveContentLanguage,
   getContentLanguageDirective,
   detectTextLanguage,
 } from '@/lib/ai/prompts/content-brain'
+import { buildValidatorUserPrompt } from '@/lib/ai/prompts/system'
 import { contentItemToText } from '@/lib/contentToText'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -71,6 +72,64 @@ describe('detectTextLanguage: эвристика для роутов без proj
     expect(detectTextLanguage(
       'Мой новый пост про selfcare и work-life balance: как я перестала выгорать и начала жить.'
     )).toBeNull()
+  })
+  // Регрессия doubt-check 13.08: испанский — латиница, но НЕ английский.
+  // en-ветка запретов на испанском тексте = смена поведения для клиента,
+  // который жил на русской ветке (Katia Ustina, блог на испанском).
+  it('испанский текст → null (русская ветка, как до миграции 038)', () => {
+    expect(detectTextLanguage(
+      'Voy a describirte tu día, y a los diez segundos vas a querer apagar esto, porque es la historia de tu vida y no la puedes cambiar.'
+    )).toBeNull()
+    expect(detectTextLanguage(
+      '¿Sabes cuánto cobran por fingir que son una chica en OnlyFans? Hasta cinco mil euros al mes.'
+    )).toBeNull()
+  })
+  it('русский текст с URL и @хэндлами → null (ссылки не считаются языком)', () => {
+    expect(detectTextLanguage(
+      'Разбор профиля @darinakomorowski тут: https://very-long-url.example.com/path/to/page?utm_source=instagram&utm_campaign=aug — сохрани себе и посмотри вечером.'
+    )).toBeNull()
+  })
+})
+
+// Регрессия doubt-check 13.08 (БЛОКЕР, был жив на проде): явный select с
+// content_language в списке колонок валит роут 404 в окне «деплой → миграция
+// 038», пока колонки нет (PostgREST 42703). suggest-angles лежал для ВСЕХ
+// клиентов. Правило: колонку читаем ТОЛЬКО через select('*').
+describe('окно деплой→миграция: content_language нигде не в явном select', () => {
+  const walk = (dir: string, acc: string[] = []): string[] => {
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name)
+      if (name === 'node_modules' || name === '.next' || name === '.git') continue
+      if (statSync(p).isDirectory()) walk(p, acc)
+      else if (/\.(ts|tsx)$/.test(name)) acc.push(p)
+    }
+    return acc
+  }
+  it('ни один select-список колонок не содержит content_language', () => {
+    const files = [...walk(join(process.cwd(), 'app')), ...walk(join(process.cwd(), 'lib'))]
+    const offenders: string[] = []
+    for (const f of files) {
+      const src = readFileSync(f, 'utf8')
+      // .select('...content_language...') с чем-то кроме одиночной звёздочки
+      const m = src.match(/\.select\(\s*['"`][^'"`]*content_language[^'"`]*['"`]/g)
+      if (m) offenders.push(`${f}: ${m.join(' | ')}`)
+    }
+    expect(offenders, `Явный select с content_language уронит роут до наката 038 — используй select('*'):\n${offenders.join('\n')}`).toEqual([])
+  })
+})
+
+describe('валидатор постов языкозависимый', () => {
+  it('en: проверяет английские GPT-паттерны и запрещает перевод', () => {
+    const p = buildValidatorUserPrompt('Some english post text.', 'en')
+    expect(p).toContain('Negative parallelism')
+    expect(p).toContain('Staccato')
+    expect(p).toContain('НА АНГЛИЙСКОМ')
+    expect(p).toContain('Менять язык текста')
+  })
+  it('null/ru: старый русский чек-лист на месте', () => {
+    const p = buildValidatorUserPrompt('Текст поста.')
+    expect(p).toContain('уникальная возможность')
+    expect(p).toContain('Существительные/обрывки через точку')
   })
 })
 

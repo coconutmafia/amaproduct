@@ -170,16 +170,21 @@ ${RETENTION_ENGINE}
 ${getContentLanguageDirective(contentLanguage)}`
 }
 
-// Validator: fixes only GPT-patterns, preserves the author's voice — does NOT rewrite style
-export function buildValidatorUserPrompt(generatedContent: string): string {
-  return `Ты редактор. Перед тобой текст, написанный от имени конкретного блогера.
-
-ЗАДАЧА: найти и исправить ТОЛЬКО GPT-паттерны. НЕ переписывай стиль, НЕ улучшай структуру — только убирай маркерные AI-фразы и заменяй их живым языком.
-
-ТЕКСТ:
-${generatedContent}
-
-ЧТО ПРОВЕРИТЬ И ИСПРАВИТЬ (только это):
+// Validator: fixes only GPT-patterns, preserves the author's voice — does NOT rewrite style.
+// Чек-лист языкозависимый: русские маркеры бессмысленны в английском тексте
+// (и наоборот) — для en проверяем английские GPT-паттерны.
+export function buildValidatorUserPrompt(generatedContent: string, lang: ContentLanguage | null = null): string {
+  const checks = lang === 'en'
+    ? `ЧТО ПРОВЕРИТЬ И ИСПРАВИТЬ (только это; текст английский — исправления тоже на английском):
+1. Banned AI phrases? ("unique opportunity", "game-changer", "unlock", "delve", "elevate", "in today's fast-paced world", "capturing the essence", "I'm excited to share", "Don't miss out") → replace with concrete plain wording
+2. Warm-up opening instead of the point? ("Today I want to share...", "I'm thrilled to announce...") → cut it, start with the substance
+3. Em dashes "—" as dramatic pivots → rewrite the sentence with words instead of the dash
+4. Staccato noun fragments ("Sea. Sun. A new life.", "Not A. Not B. Just C.") → merge EVERY such chain into one living connected sentence
+5. Negative parallelism ("It's not just X, it's Y", "This isn't about X. It's about Y.") → state the claim directly
+6. Template lead-ins ("Here's the thing:", "Let's be honest", "And you know what's crazy?") → make it a statement or go straight to the point
+7. Empty offers ("DM me and I'll share the details") → name the concrete value the person gets
+8. "-ing" analysis tails ("..., reflecting my deep connection to art") → give the thought its own sentence or cut it`
+    : `ЧТО ПРОВЕРИТЬ И ИСПРАВИТЬ (только это):
 1. Есть ли запрещённые фразы? ("уникальная возможность", "незабываемый опыт", "революционный", "в современном мире", "не упустите шанс" и подобные) → замени на конкретику
 2. Начинается ли текст с разгона вместо сути? ("Сегодня хочу рассказать...", "Я рада поделиться...") → убери, начни сразу с главного
 3. Есть ли абстрактные тезисы без примеров? → добавь "например" + конкретная деталь из контекста
@@ -187,12 +192,22 @@ ${generatedContent}
 5. ТИРЕ как драматический обрыв ("Запуск — миллион рублей.") → перепиши живой фразой со словами вместо тире. Обычное тире в определении оставь.
 6. Существительные/обрывки через точку ("Море. Солнце. Новая жизнь.", "Не А. Не Б. А В.") → перепиши КАЖДОЕ такое перечисление живой связной фразой ("море, солнце и вроде бы новая жизнь"). Ни одного не оставляй — это главный маркер AI.
 7. Пустой оффер ("напиши X в комментарии, скажу конкретно", "разбираю внутри") → сделай конкретным: что именно человек получит.
-8. Шаблонные вопросы-подводки ("И знаешь, что самое тупое?", "И знаете, что самое важное?", "И знаешь, почему?") → замени утверждением: "Самое тупое: …" / сразу скажи причину.
+8. Шаблонные вопросы-подводки ("И знаешь, что самое тупое?", "И знаете, что самое важное?", "И знаешь, почему?") → замени утверждением: "Самое тупое: …" / сразу скажи причину.`
+
+  return `Ты редактор. Перед тобой текст, написанный от имени конкретного блогера.
+
+ЗАДАЧА: найти и исправить ТОЛЬКО GPT-паттерны. НЕ переписывай стиль, НЕ улучшай структуру — только убирай маркерные AI-фразы и заменяй их живым языком.${lang === 'en' ? ' Текст английский — верни его НА АНГЛИЙСКОМ, не переводи.' : ''}
+
+ТЕКСТ:
+${generatedContent}
+
+${checks}
 
 НЕЛЬЗЯ:
 - Менять структуру текста
 - Переписывать то, что уже звучит хорошо
 - Добавлять новые смыслы которых не было
+- Менять язык текста
 
 ВЕРНИ ТОЛЬКО ИСПРАВЛЕННЫЙ ТЕКСТ — без комментариев, без пояснений.`
 }

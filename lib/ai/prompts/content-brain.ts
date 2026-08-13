@@ -213,7 +213,9 @@ function detectNicheKey(niche: string): string | null {
   if (/фитнес|спорт|здоров|похуд|трениров|диет|тело|fitness|workout|health|weight|training/.test(n)) return 'fitness'
   if (/психолог|коуч|терапи|личност|отношен|эмоци|psycholog|coach|therap|mindset|relationship/.test(n)) return 'psychology'
   if (/бизнес|маркет|деньг|финанс|продаж|запуск|доход|монетиз|business|marketing|money|financ|sales|launch/.test(n)) return 'business'
-  if (/красот|стиль|бьюти|мода|уход|визаж|имидж|beauty|style|fashion|makeup|skincare/.test(n)) return 'beauty'
+  // 'styling|stylist', а не 'style': голое 'style' ловило 'lifestyle' и уводило
+  // lifestyle-блог в бьюти-словарь
+  if (/красот|стиль|бьюти|мода|уход|визаж|имидж|beauty|styling|stylist|fashion|makeup|skincare/.test(n)) return 'beauty'
   if (/обучен|образован|курс|учеб|навык|профес|educat|course|learning|teach|skill/.test(n)) return 'education'
   return null
 }
@@ -319,15 +321,33 @@ export function getContentLanguageDirective(lang: ContentLanguage | null): strin
 /**
  * Эвристика языка уже написанного текста — для роутов, которые пере-
  * структурируют готовый контент (карусель, пост-хук, раскадровка сторис) и не
- * знают проекта. Латиница доминирует → английский… или испанский, но для
- * выбора анти-AI-веток это неважно: es-ветки пока нет, а правило «пиши на
- * языке исходника» задаётся отдельно и работает для любого языка.
+ * знают проекта. 'en' включает АНГЛИЙСКУЮ ветку анти-AI-запретов; null — русскую
+ * (легаси). Поэтому осторожно с ложными «en»:
+ *  - URL/@хэндлы/**акценты** не считаются (русский текст со ссылкой — не английский);
+ *  - испанский текст (маркеры ¿¡ñ + служебные слова) — это НЕ 'en': отдаём null,
+ *    т.е. русскую ветку — ровно как было до миграции 038 (испанский клиент жив).
  */
 export function detectTextLanguage(text: string): 'en' | null {
-  const letters = (text.match(/[a-zA-Zа-яА-ЯёЁ]/g) || []).length
+  const clean = String(text)
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/@[a-z0-9_.]+/gi, ' ')
+    .replace(/\*\*/g, ' ')
+  const letters = (clean.match(/[a-zA-Zа-яА-ЯёЁ]/g) || []).length
   if (letters < 40) return null // слишком коротко, чтобы судить
-  const latin = (text.match(/[a-zA-Z]/g) || []).length
-  return latin / letters > 0.6 ? 'en' : null
+  const latin = (clean.match(/[a-zA-Z]/g) || []).length
+  if (latin / letters <= 0.6) return null
+  // Испанский: явные символы или плотность служебных слов
+  if (/[¿¡ñÑ]/.test(clean)) return null
+  const words = clean.toLowerCase().match(/[a-záéíóúü]+/g) || []
+  const esStop = new Set(['que', 'de', 'la', 'el', 'los', 'las', 'una', 'uno', 'para', 'como', 'está', 'esto', 'pero', 'por', 'con', 'más', 'te', 'tu', 'mi', 'es', 'un', 'en', 'no', 'se', 'del', 'al'])
+  const enStop = new Set(['the', 'and', 'you', 'that', 'this', 'for', 'with', 'was', 'are', 'have', 'not', 'but', 'what', 'when', 'your', 'from', 'they', 'she', 'his', 'her'])
+  let esHits = 0, enHits = 0
+  for (const w of words) {
+    if (esStop.has(w)) esHits++
+    if (enStop.has(w)) enHits++
+  }
+  if (esHits > enHits && esHits >= 3) return null
+  return 'en'
 }
 
 // ── ANTI-AI-TELLS ─────────────────────────────────────────────────────────────

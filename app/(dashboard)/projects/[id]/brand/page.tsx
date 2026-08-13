@@ -32,6 +32,7 @@ interface Brand {
   accentStyle: AccentStyle
   styleNotes: string
   swipeHint: boolean // подпись «ЛИСТАЙ ДАЛЬШЕ →» на слайдах карусели
+  swipeLabel?: string // текст подписи на языке блога (отдаёт brand-kit GET)
 }
 const DEFAULTS: Brand = { accentColor: '#EC1E8C', bg: '#F3EEE7', text: '#262321', bgStyle: 'paper', handle: '', logoUrl: null, font: 'montserrat', accentStyle: 'gradient', styleNotes: '', swipeHint: true }
 
@@ -89,6 +90,7 @@ export default function BrandPage() {
           accentStyle: d.accentStyle === 'flat' ? 'flat' : 'gradient',
           styleNotes: d.styleNotes || '',
           swipeHint: d.swipeHint !== false,
+          swipeLabel: d.swipeLabel || undefined,
         }
         setBrand(main)
         if (d.kit?.summary) setKitSummary(d.kit.summary)

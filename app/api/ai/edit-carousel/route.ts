@@ -44,6 +44,13 @@ export async function POST(request: Request) {
       ...slides.map((sl, i) => `Слайд ${i + 2}:\n  headline: ${str(sl.headline)}\n  body: ${str(sl.body)}`),
       ...(last ? [`Финальный слайд:\n  text: ${str(last.text)}\n  action: ${str(last.action)}`] : []),
     ].join('\n')
+    // Язык детектим по ЗНАЧЕНИЯМ слайдов (без «Слайд/headline:»-скелета — его
+    // латинские ключи и русские метки искажают долю латиницы)
+    const valuesOnly = [
+      str(cover.headline), str(cover.subheadline),
+      ...slides.flatMap((sl) => [str(sl.headline), str(sl.body)]),
+      ...(last ? [str(last.text), str(last.action)] : []),
+    ].join(' ')
 
     const prompt = `Ты — продюсер каруселей. Блогер уже собрал слайды карусели и просит внести ПРАВКУ (часто надиктована голосом, может ссылаться на номер слайда).
 
@@ -60,7 +67,7 @@ ${instruction.slice(0, 1500)}
 - Если просят перенести/не разрывать число или фразу — переформулируй строку так, чтобы она легла целиком.
 - ЯЗЫК СЛАЙДОВ НЕ МЕНЯЙ: правки пиши на языке самих слайдов (английские слайды → английские правки), даже если просьба блогера на другом языке. Переводить слайды можно только если об этом прямо попросили.
 ${VISUAL_RULES}
-${getAiTells(detectTextLanguage(current))}
+${getAiTells(detectTextLanguage(valuesOnly))}
 
 Верни ПОЛНУЮ обновлённую карусель через инструмент edit_carousel.`
 
