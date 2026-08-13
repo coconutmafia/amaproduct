@@ -1193,6 +1193,75 @@ async function englishSmoke() {
   }
 }
 
+// ── ПРОБНИК: суggest-angles жив (регрессия инцидента 13.08) ──────────────────
+// Инцидент: явный select с колонкой content_language до наката 038 ронял роут
+// 404 для всех. Пробник бьёт живой suggest-angles на временном проекте БЕЗ
+// content_language — должен вернуть углы, а не 404. Работает и до, и после 038.
+async function anglesSmoke() {
+  const APP = 'https://amaproduct.com'
+  const QA = 'ama-qa-bot@gmail.com'
+  log('\n=== Пробник: suggest-angles отвечает (регрессия 13.08) ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) QA-бот: magiclink → verify → сессия')
+    log('  2) временный проект ama-probe-angles-* (без content_language)')
+    log(`  3) POST ${APP}/api/ai/suggest-angles → ждём текст с вариантами, НЕ 404`)
+    log('  4) удалить проект')
+    return
+  }
+  const anon = (() => {
+    const txt = readFileSync(join(ROOT, '.env.local'), 'utf8')
+    const m = txt.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY в .env.local'); return }
+  const gl = await api('/auth/v1/admin/generate_link', {
+    method: 'POST', body: JSON.stringify({ type: 'magiclink', email: QA }),
+  })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log('❌ generate_link не дал email_otp:', gl.status); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST',
+    headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA, token: otp }),
+  }).then(r => r.json())
+  if (!ver?.access_token) { log('❌ verify не дал сессию'); return }
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+  log('✅ 1. сессия QA-бота получена')
+
+  const prj = await api('/rest/v1/projects', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ owner_id: ver.user?.id, name: `${PROBE_PREFIX}angles-${Date.now()}`, niche: 'смоук', status: 'active' }),
+  })
+  const projectId = Array.isArray(prj.body) ? prj.body[0]?.id : prj.body?.id
+  if (!projectId) { log('❌ 2. проект не создался:', prj.status); return }
+  log('✅ 2. временный проект создан')
+  try {
+    const t0 = Date.now()
+    const res = await fetch(`${APP}/api/ai/suggest-angles`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ projectId, type: 'post', brief: 'почему клиенты уходят после первой консультации' }),
+    })
+    const body = await res.json().catch(() => null)
+    if (res.status === 404) {
+      log(`❌ 3. РЕГРЕССИЯ ИНЦИДЕНТА: suggest-angles снова 404 (${((Date.now() - t0) / 1000).toFixed(1)}с) — проверь select колонок`)
+      return
+    }
+    if (!res.ok || !body?.text) {
+      log(`❌ 3. suggest-angles HTTP ${res.status}:`, JSON.stringify(body).slice(0, 200))
+      return
+    }
+    log(`✅ 3. углы пришли за ${((Date.now() - t0) / 1000).toFixed(1)}с: «${String(body.text).slice(0, 100).replace(/\n/g, ' ')}…»`)
+    log('\n🎉 suggest-angles ЖИВ.')
+  } finally {
+    await api(`/rest/v1/projects?id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    log('🧹 уборка: проект удалён')
+  }
+}
+
 // ── ПРОБНИК: выставить язык блога клиентскому проекту ────────────────────────
 // ⚠️ Пишет в КЛИЕНТСКИЙ проект (исключение из правила ama-probe-*) — запускать
 // только по явной задаче владельца (13 августа: «закрепим настройкой» для
@@ -1227,7 +1296,7 @@ async function setLanguage() {
 
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
