@@ -43,6 +43,7 @@ export function CarouselDesigner({ projectId }: { projectId: string }) {
         font: d.font || undefined,
         accentStyle: d.accentStyle === 'flat' ? 'flat' : 'gradient',
         swipeHint: d.swipeHint,
+        swipeLabel: d.swipeLabel,
       }))
     }).catch(() => {})
   }, [projectId])

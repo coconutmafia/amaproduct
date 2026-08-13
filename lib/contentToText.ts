@@ -5,6 +5,41 @@ type Dict = Record<string, unknown>
 const s = (v: unknown) => (typeof v === 'string' ? v : v == null ? '' : String(v))
 const arr = (v: unknown): Dict[] => (Array.isArray(v) ? (v as Dict[]) : [])
 
+// Метки-заголовки («Сцена», «Озвучка») подбираются под язык САМОГО контента:
+// англоязычный рилз не должен читаться «Сцена 1 / Озвучка: ...». Язык
+// определяется по строковым ЗНАЧЕНИЯМ (ключи JSON латинские всегда и не в счёт).
+// Локальный хелпер, не импорт из prompts/content-brain — эта либа попадает в
+// клиентский бандл, тянуть туда весь модуль промптов нельзя.
+const L10N = {
+  ru: {
+    hook: 'Хук', duration: 'Длительность', scene: 'Сцена', overlay: 'Текст на экране',
+    voiceover: 'Озвучка', action: 'Действие', description: 'Описание под видео',
+    story: 'Сторис', voice: 'Голос', cover: 'Обложка', slide: 'Слайд',
+    lastSlide: 'Финальный слайд', subject: 'Тема',
+  },
+  en: {
+    hook: 'Hook', duration: 'Duration', scene: 'Scene', overlay: 'On-screen text',
+    voiceover: 'Voiceover', action: 'Action', description: 'Caption',
+    story: 'Story', voice: 'Voice', cover: 'Cover', slide: 'Slide',
+    lastSlide: 'Final slide', subject: 'Subject',
+  },
+}
+
+function collectStringValues(v: unknown, acc: string[] = []): string[] {
+  if (typeof v === 'string') acc.push(v)
+  else if (Array.isArray(v)) v.forEach(x => collectStringValues(x, acc))
+  else if (v && typeof v === 'object') Object.values(v as Dict).forEach(x => collectStringValues(x, acc))
+  return acc
+}
+
+function labelsFor(sd: Dict): typeof L10N.ru {
+  const text = collectStringValues(sd).join(' ')
+  const letters = (text.match(/[a-zA-Zа-яА-ЯёЁ]/g) || []).length
+  if (letters < 40) return L10N.ru
+  const latin = (text.match(/[a-zA-Z]/g) || []).length
+  return latin / letters > 0.6 ? L10N.en : L10N.ru
+}
+
 export function contentItemToText(item: {
   body_text?: string | null
   structured_data?: unknown
@@ -13,21 +48,22 @@ export function contentItemToText(item: {
   const sd = item.structured_data as Dict | null | undefined
   if (!sd) return ''
   const out: string[] = []
+  const t = labelsFor(sd)
 
   const reels = sd.reels as Dict | undefined
   if (reels) {
     if (s(reels.title)) out.push(s(reels.title), '')
-    if (s(reels.hook_text)) out.push(`Хук: ${s(reels.hook_text)}`)
-    if (s(reels.total_duration)) out.push(`Длительность: ${s(reels.total_duration)}`)
+    if (s(reels.hook_text)) out.push(`${t.hook}: ${s(reels.hook_text)}`)
+    if (s(reels.total_duration)) out.push(`${t.duration}: ${s(reels.total_duration)}`)
     arr(reels.scenes).forEach((sc, i) => {
       const audio = sc.audio as Dict | undefined
       const visual = sc.visual as Dict | undefined
-      out.push(`\nСцена ${s(sc.scene) || i + 1}${sc.timing ? ` (${s(sc.timing)})` : ''}:`)
-      if (s(sc.text_overlay)) out.push(`Текст на экране: ${s(sc.text_overlay)}`)
-      if (audio && s(audio.speech)) out.push(`Озвучка: ${s(audio.speech)}`)
-      if (visual && s(visual.action)) out.push(`Действие: ${s(visual.action)}`)
+      out.push(`\n${t.scene} ${s(sc.scene) || i + 1}${sc.timing ? ` (${s(sc.timing)})` : ''}:`)
+      if (s(sc.text_overlay)) out.push(`${t.overlay}: ${s(sc.text_overlay)}`)
+      if (audio && s(audio.speech)) out.push(`${t.voiceover}: ${s(audio.speech)}`)
+      if (visual && s(visual.action)) out.push(`${t.action}: ${s(visual.action)}`)
     })
-    if (s(reels.description_text)) out.push(`\nОписание под видео:\n${s(reels.description_text)}`)
+    if (s(reels.description_text)) out.push(`\n${t.description}:\n${s(reels.description_text)}`)
     return out.join('\n').trim()
   }
 
@@ -35,10 +71,10 @@ export function contentItemToText(item: {
   if (stories) {
     arr(stories.stories).forEach((st, i) => {
       const text = st.text as Dict | undefined
-      out.push(`Сторис ${s(st.story_number) || i + 1}:`)
+      out.push(`${t.story} ${s(st.story_number) || i + 1}:`)
       if (text && s(text.headline)) out.push(s(text.headline))
       if (text && s(text.subtext)) out.push(s(text.subtext))
-      if (s(st.voiceover)) out.push(`Голос: ${s(st.voiceover)}`)
+      if (s(st.voiceover)) out.push(`${t.voice}: ${s(st.voiceover)}`)
       out.push('')
     })
     return out.join('\n').trim()
@@ -48,20 +84,20 @@ export function contentItemToText(item: {
   if (carousel) {
     const cover = carousel.cover as Dict | undefined
     if (cover) {
-      out.push('Обложка:')
+      out.push(`${t.cover}:`)
       if (s(cover.headline)) out.push(s(cover.headline))
       if (s(cover.subheadline)) out.push(s(cover.subheadline))
       out.push('')
     }
     arr(carousel.slides).forEach((sl, i) => {
-      out.push(`Слайд ${s(sl.slide) || i + 2}:`)
+      out.push(`${t.slide} ${s(sl.slide) || i + 2}:`)
       if (s(sl.headline)) out.push(s(sl.headline))
       if (s(sl.body)) out.push(s(sl.body))
       out.push('')
     })
     const lastSlide = carousel.last_slide as Dict | undefined
     if (lastSlide) {
-      out.push('Финальный слайд:')
+      out.push(`${t.lastSlide}:`)
       if (s(lastSlide.text)) out.push(s(lastSlide.text))
       if (s(lastSlide.action)) out.push(s(lastSlide.action))
     }
@@ -70,7 +106,7 @@ export function contentItemToText(item: {
 
   const email = sd.email as Dict | undefined
   if (email) {
-    if (s(email.subject)) out.push(`Тема: ${s(email.subject)}`)
+    if (s(email.subject)) out.push(`${t.subject}: ${s(email.subject)}`)
     if (s(email.body)) out.push(s(email.body))
     return out.join('\n').trim()
   }

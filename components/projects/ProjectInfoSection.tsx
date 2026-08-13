@@ -26,6 +26,7 @@ interface ProjectInfoSectionProps {
     telegram_url?: string | null
     vk_url?: string | null
     youtube_url?: string | null
+    content_language?: string | null
   }
 }
 
@@ -33,6 +34,15 @@ const STATUS_OPTIONS = [
   { value: 'active',   label: 'Активный',  color: 'bg-green-500/15 text-green-400 border-green-500/25' },
   { value: 'draft',    label: 'Черновик',  color: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/25' },
   { value: 'archived', label: 'Архив',     color: 'bg-gray-500/15 text-gray-400 border-gray-500/25' },
+]
+
+// Язык, на котором AI пишет КОНТЕНТ (пост/рилз/сторис/карусель) этого проекта.
+// «Авто» = как раньше: язык Tone of Voice, без TOV — русский.
+const LANGUAGE_OPTIONS = [
+  { value: '',   label: 'Авто (по Tone of Voice)' },
+  { value: 'ru', label: 'Русский' },
+  { value: 'en', label: 'English' },
+  { value: 'es', label: 'Español' },
 ]
 
 export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
@@ -62,6 +72,10 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
   const [telegram, setTelegram] = useState(project.telegram_url ?? '')
   const [vk, setVk] = useState(project.vk_url ?? '')
   const [youtube, setYoutube] = useState(project.youtube_url ?? '')
+  // '' = авто (по TOV). Ключ уходит в PATCH только если значение МЕНЯЛИ:
+  // до наката миграции 038 колонки в БД нет, и лишний ключ валил бы сохранение.
+  const initialLanguage = project.content_language ?? ''
+  const [contentLanguage, setContentLanguage] = useState(initialLanguage)
 
   const hasContent = project.description || project.target_audience || project.content_goals
   const currentStatus = STATUS_OPTIONS.find(s => s.value === (project.status ?? 'active')) ?? STATUS_OPTIONS[0]
@@ -86,6 +100,9 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
             telegram_url: telegram.trim() || null,
             vk_url: vk.trim() || null,
             youtube_url: youtube.trim() || null,
+            ...(contentLanguage !== initialLanguage
+              ? { content_language: contentLanguage || null }
+              : {}),
           },
         }),
       })
@@ -197,6 +214,15 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
           {!editing ? (
             /* ── Read mode ── */
             <div className="p-4 space-y-3">
+              {project.content_language && (
+                <div>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Язык блога</p>
+                  <p className="text-sm text-foreground leading-relaxed">
+                    {LANGUAGE_OPTIONS.find(o => o.value === project.content_language)?.label ?? project.content_language}
+                    <span className="text-muted-foreground"> — весь контент AI пишет на этом языке</span>
+                  </p>
+                </div>
+              )}
               {project.description && (
                 <div>
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">О блогере</p>
@@ -352,6 +378,31 @@ export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Blog content language */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Язык блога</Label>
+                <div className="flex flex-wrap gap-2">
+                  {LANGUAGE_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setContentLanguage(opt.value)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+                        contentLanguage === opt.value
+                          ? 'bg-primary/15 text-primary border-primary/40 ring-1 ring-offset-1 ring-offset-background border-primary/40'
+                          : 'border-border text-muted-foreground hover:border-primary/40'
+                      }`}
+                    >
+                      {contentLanguage === opt.value && <Check className="h-3 w-3" />}
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  AI пишет весь контент (посты, рилз, сторис, карусели) на этом языке — даже если материалы проекта на другом
+                </p>
               </div>
 
               <div className="space-y-1">

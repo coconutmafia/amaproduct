@@ -5,12 +5,18 @@ import {
   HUMANIZATION_ENGINE,
   RETENTION_ENGINE,
   CONTENT_BRAIN_ANTI_PATTERNS,
-  AI_TELLS_TO_AVOID,
+  getAiTells,
+  getContentLanguageDirective,
+  resolveContentLanguage,
   PLATFORM_SAFE_LANGUAGE,
+  type ContentLanguage,
 } from './content-brain'
 
-// Phrases that immediately signal AI-generated generic text — never use these
-const BANNED_PHRASES = `
+// Phrases that immediately signal AI-generated generic text — never use these.
+// Анти-AI-ветка подставляется по языку контента: русские примеры бессмысленны
+// в английском тексте (и наоборот), остальные запреты универсальны.
+function bannedPhrases(lang: ContentLanguage | null): string {
+  return `
 АБСОЛЮТНО ЗАПРЕЩЁННЫЕ ФРАЗЫ И ПАТТЕРНЫ (нарушение = провал):
 ❌ "уникальная возможность" / "уникальный шанс"
 ❌ "незабываемый опыт" / "трансформирующий опыт"
@@ -28,10 +34,11 @@ const BANNED_PHRASES = `
 ❌ ХЭШТЕГИ. НИКОГДА не добавляй #хэштеги — ни в конце поста, ни внутри. Совсем. У этого блогера хэштегов в постах нет.
 ${CONTENT_BRAIN_ANTI_PATTERNS}
 
-${AI_TELLS_TO_AVOID}
+${getAiTells(lang)}
 
 ${PLATFORM_SAFE_LANGUAGE}
 `.trim()
+}
 
 export function buildSystemPrompt(context: RAGContext, project: Project): string {
   const socials = [project.instagram_url, project.vk_url, project.telegram_url, project.youtube_url]
@@ -112,11 +119,13 @@ ${context.voiceRules}
 `
     : ''
 
+  const contentLanguage = resolveContentLanguage(project)
+
   return `Ты — профессиональный автор контента для онлайн-запусков.
 Ты пишешь ОТ ИМЕНИ конкретного блогера/эксперта, используя его голос, его истории, его материалы.
 Ты НЕ пишешь "маркетинговые тексты". Ты пишешь живые посты, которые звучат как реальный человек.
 ${voiceRulesSection}
-${BANNED_PHRASES}
+${bannedPhrases(contentLanguage)}
 
 ═══════════════════════════════════════
 МЕТОДОЛОГИЯ ПРОГРЕВА (следуй строго)
@@ -158,7 +167,7 @@ ${HUMANIZATION_ENGINE}
 
 ${RETENTION_ENGINE}
 
-Язык ответа: тот, на котором написан TOV. Если TOV нет — русский.`
+${getContentLanguageDirective(contentLanguage)}`
 }
 
 // Validator: fixes only GPT-patterns, preserves the author's voice — does NOT rewrite style

@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt } from '@/lib/ai/prompts/system'
-import { AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
+import { AI_TELLS_TO_AVOID, resolveContentLanguage } from '@/lib/ai/prompts/content-brain'
 import { gateContentUnit, refundGeneration } from '@/lib/generations'
 import { requirePaidAccess } from '@/lib/billing/access'
 import type { Message } from '@/types'
@@ -259,7 +259,7 @@ ${genFormat ? `
 ═══ РЕЖИМ ГЕНЕРАЦИИ ЕДИНИЦЫ КОНТЕНТА (${genFormat}) ═══
 Этот текст пользователь сохранит и опубликует как есть. Поэтому:
 - Выдавай СРАЗУ только сам готовый текст контента, ничего лишнего.
-- 🚫 НИКАКОГО JSON, фигурных скобок {}, ключей "key": или служебной разметки — только готовый человеческий текст. Для карусели/рилз/сторис разбивай на блоки ОБЫЧНЫМ текстом, каждый с новой строки («Слайд 1:», затем заголовок и текст; «Сцена 1 (0-3 сек):», затем что на экране и озвучка).
+- 🚫 НИКАКОГО JSON, фигурных скобок {}, ключей "key": или служебной разметки — только готовый человеческий текст. Для карусели/рилз/сторис разбивай на блоки ОБЫЧНЫМ текстом, каждый с новой строки (${resolveContentLanguage(project) === 'en' ? '«Slide 1:», затем заголовок и текст; «Scene 1 (0-3 sec):», затем что на экране и озвучка — метки блоков тоже на английском' : '«Слайд 1:», затем заголовок и текст; «Сцена 1 (0-3 сек):», затем что на экране и озвучка'}).
 - НЕ начинай со вводных фраз («Окей», «Конечно», «Вот», «Держи», «Делаем», «Готово», «Отлично») и НЕ повторяй тему/задание перед текстом.
 - НЕ добавляй комментарии после текста («Готово!», «Если нужно — поправлю», «Хочешь иначе?»).
 - Первая строка ответа = первая строка контента. Последняя строка ответа = последняя строка контента.` : ''}

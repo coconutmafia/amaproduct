@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
 import { anthropic, MODEL, AI_BUSY_MESSAGE } from '@/lib/ai/client'
-import { AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
+import { getAiTells, resolveContentLanguage } from '@/lib/ai/prompts/content-brain'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { requireProjectAccess } from '@/lib/projects/access'
 
@@ -46,8 +46,11 @@ export async function POST(request: Request) {
     const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
-    const { data: project } = await supabase.from('projects').select('id, niche').eq('id', projectId).single()
+    const { data: project } = await supabase.from('projects').select('id, niche, content_language').eq('id', projectId).single()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    // Хук — это контент (фраза в кадре/в тексте): для блога на другом языке он
+    // обязан быть на языке блога, даже если разговор и «почему зайдёт» русские.
+    const contentLang = resolveContentLanguage(project as { content_language?: string | null })
 
     const ru = TYPE_RU[type] || type
     const phaseLabel = PHASE_RU[phase] || phase
@@ -86,9 +89,9 @@ export async function POST(request: Request) {
 
 ОПИРАЙСЯ на материалы блогера ниже (боли/желания аудитории, кейсы, голос). НЕ выдумывай факты, цифры и кейсы, которых там нет.
 
-${AI_TELLS_TO_AVOID}
+${getAiTells(contentLang)}
 
-⚠️ Особенно для hook: это фраза, которую блогер скажет В КАДРЕ — проговори её вслух, никаких рубленых обрубков через точку.
+⚠️ Особенно для hook: это фраза, которую блогер скажет В КАДРЕ — проговори её вслух, никаких рубленых обрубков через точку.${contentLang && contentLang !== 'ru' ? `\n⚠️ ЯЗЫК: hook и reel_trend-механику пиши на языке блога (${contentLang === 'en' ? 'английском' : 'испанском'}) — это контент. approach и why — по-русски (это разговор с блогером).` : ''}
 
 МАТЕРИАЛЫ БЛОГЕРА:
 ${ragBlock || '(материалов мало — опирайся на тему и проверенные форматы)'}

@@ -4,6 +4,14 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { FONT_KEYS } from '@/lib/fonts'
+import { resolveContentLanguage } from '@/lib/ai/prompts/content-brain'
+
+// Подпись-листалка на языке блога проекта (настройка «Язык блога»).
+const SWIPE_LABELS: Record<string, string> = {
+  ru: 'ЛИСТАЙ ДАЛЬШЕ →',
+  en: 'SWIPE →',
+  es: 'DESLIZA →',
+}
 
 // Read / manually-save a project's brand kit (colours, bg style, handle, logo).
 // GET ?projectId=  → brand fields (used by the brand page + slide renderer).
@@ -29,6 +37,8 @@ function shape(p: Record<string, unknown>) {
     styleNotes: (kit.styleNotes as string) || null,
     // false = убрать «ЛИСТАЙ ДАЛЬШЕ →» со слайдов (блог не на русском и т.п.)
     swipeHint: kit.swipeHint === false ? false : true,
+    // Текст листалки — на языке блога (не только вкл/выкл, как раньше)
+    swipeLabel: SWIPE_LABELS[resolveContentLanguage(p as { content_language?: string | null }) ?? 'ru'],
     kit: (p.brand_kit as Record<string, unknown>) || null,
   }
 }
@@ -40,9 +50,11 @@ export async function GET(request: Request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const projectId = new URL(request.url).searchParams.get('projectId')
     if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
+    // select('*'), а не список колонок: до наката миграции 038 колонки
+    // content_language ещё нет — явный select с ней валил бы GET целиком.
     const { data } = await supabase
       .from('projects')
-      .select('brand_accent_color, brand_bg_color, brand_text_color, brand_bg_style, brand_handle, brand_logo_url, brand_kit_status, brand_kit')
+      .select('*')
       .eq('id', projectId).single()
     if (!data) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     return NextResponse.json(shape(data))

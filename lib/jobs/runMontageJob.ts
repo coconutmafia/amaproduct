@@ -103,9 +103,17 @@ export async function processMontageJob(jobId: string): Promise<void> {
     const audioBuf = await readFile(audioPath)
     const { default: OpenAI, toFile } = await import('openai')
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+    // Язык речи = язык блога проекта (монтаж — это видео самого блогера:
+    // английский блог говорит в кадре по-английски). Нет настройки → ru.
+    let whisperLang = 'ru'
+    try {
+      const { data: proj } = await admin.from('projects').select('*').eq('id', projectId).maybeSingle()
+      const cl = (proj as { content_language?: string | null } | null)?.content_language
+      if (cl === 'en' || cl === 'es') whisperLang = cl
+    } catch { /* колонки может не быть до 038 — ru */ }
     const tr = await openai.audio.transcriptions.create({
       file: await toFile(audioBuf, 'audio.mp3', { type: 'audio/mpeg' }),
-      model: 'whisper-1', language: 'ru',
+      model: 'whisper-1', language: whisperLang,
       response_format: 'verbose_json',
       timestamp_granularities: ['word'],
     })

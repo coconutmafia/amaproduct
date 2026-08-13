@@ -44,11 +44,13 @@ export interface CarouselTheme {
   handle: string
   logoUrl?: string
   swipeHint: boolean
+  swipeLabel: string // текст подписи-листалки; язык = язык блога проекта
   onPhotoText: string // text colour used over photos/scrims
 }
 
 export const DEFAULT_THEME: CarouselTheme = {
   swipeHint: true,
+  swipeLabel: 'ЛИСТАЙ ДАЛЬШЕ →',
   bg: '#F3EEE7',
   bgAlt: '#FBF8F3',
   bgStyle: 'paper',
@@ -78,6 +80,9 @@ export interface BrandInput {
   // Подпись «ЛИСТАЙ ДАЛЬШЕ →» на слайдах карусели. Дефолт true; false — убрать
   // (клиент 31 июля: блог не на русском, зашитая русская подпись ломала карусель).
   swipeHint?: boolean | null
+  // Текст подписи-листалки: для блога не на русском brand-kit отдаёт перевод
+  // («SWIPE →» / «DESLIZA →») по настройке «Язык блога» проекта.
+  swipeLabel?: string | null
 }
 
 function hexLum(hex?: string): number {
@@ -122,6 +127,7 @@ export function themeFromBrand(brand?: BrandInput): CarouselTheme {
   return {
     ...DEFAULT_THEME,
     swipeHint: brand?.swipeHint !== false,
+    swipeLabel: brand?.swipeLabel?.trim() || DEFAULT_THEME.swipeLabel,
     accent,
     ...grad,
     accentStyle: brand?.accentStyle === 'flat' ? 'flat' : 'gradient',
@@ -424,7 +430,7 @@ function Footer({ theme, size, index, total }: { theme: CarouselTheme; size: Siz
       {multi ? (
         <div style={{ display: 'flex', alignItems: 'center' }}>
           {!isLast && theme.swipeHint && (
-            <div style={{ display: 'flex', color: theme.accent, fontSize: 22, fontWeight: 800, letterSpacing: 3 }}>ЛИСТАЙ ДАЛЬШЕ →</div>
+            <div style={{ display: 'flex', color: theme.accent, fontSize: 22, fontWeight: 800, letterSpacing: 3 }}>{theme.swipeLabel}</div>
           )}
           <div style={{ display: 'flex', marginLeft: 18, color: theme.textMuted, fontSize: 22, fontWeight: 800 }}>
             {String(index + 1).padStart(2, '0')}/{String(total).padStart(2, '0')}

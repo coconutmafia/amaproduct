@@ -5,6 +5,7 @@ import { requirePaidAccess } from '@/lib/billing/access'
 import { upsertProjectMaterial } from '@/lib/supabase/upsertMaterial'
 import { anthropic, MODEL, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { requireProjectAccess } from '@/lib/projects/access'
+import { resolveContentLanguage, type ContentLanguage } from '@/lib/ai/prompts/content-brain'
 import { NextResponse } from 'next/server'
 
 export const dynamic     = 'force-dynamic'
@@ -14,17 +15,30 @@ const TOV_SYSTEM = `Ты — эксперт по анализу авторско
 На вход тебе дают тексты, которые автор писал САМ, без AI.
 Твоя задача — извлечь его настоящий Tone of Voice как эталон стиля.`
 
-function buildPrompt(units: string[]): string {
+// Язык описания ToV = язык контента блога (настройка проекта; без неё — язык
+// самих текстов). Это несущая деталь: генераторы без явной настройки берут
+// язык ответа «как у TOV» — русское описание английского голоса заставляло бы
+// весь контент говорить по-русски. Фирменные обороты — ВСЕГДА дословно на
+// языке автора: переведённая цитата перестаёт быть якорем голоса.
+function buildPrompt(units: string[], lang: ContentLanguage | 'auto'): string {
   const samples = units
     .map((u, i) => `=== ОБРАЗЕЦ ${i + 1} ===\n${u.trim()}`)
     .join('\n\n')
+
+  const langLine = lang === 'en'
+    ? 'НА АНГЛИЙСКОМ ЯЗЫКЕ (блог автора английский — описание голоса тоже английское)'
+    : lang === 'es'
+    ? 'НА ИСПАНСКОМ ЯЗЫКЕ (блог автора испанский — описание голоса тоже испанское)'
+    : lang === 'ru'
+    ? 'на русском'
+    : 'НА ЯЗЫКЕ ОБРАЗЦОВ (описание голоса пишется на том же языке, на котором автор ведёт блог)'
 
   return `Проанализируй ${units.length} текстов одного автора и опиши его Tone of Voice так,
 чтобы по этому описанию можно было воспроизвести его голос при генерации нового контента.
 
 ${samples}
 
-СТРУКТУРА ОТВЕТА (в свободной форме, на русском, прозой, с подзаголовками):
+СТРУКТУРА ОТВЕТА (в свободной форме, ${langLine}, прозой, с подзаголовками):
 
 ## Общая характеристика
 - формальный / разговорный / смешанный
@@ -50,7 +64,9 @@ ${samples}
 ## Фирменные приёмы
 - характерные обороты, повторяющиеся конструкции, любые «отпечатки» голоса
 
-Пиши кратко и по делу. Без JSON и markdown-code-блоков — просто текст с подзаголовками.`
+ЖЕЛЕЗНОЕ ПРАВИЛО ЦИТАТ: примеры слов, оборотов и фирменных приёмов выписывай ДОСЛОВНО на языке автора, в кавычках. НЕ переводи их — переведённая цитата теряет голос.
+
+Пиши кратко и по делу. Без JSON и markdown-code-блоков — просто текст с подзаголовками. Заголовки разделов пиши на том же языке, что и всё описание.`
 }
 
 export async function POST(request: Request) {
@@ -76,6 +92,16 @@ export async function POST(request: Request) {
 
   const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
+
+  // Язык блога проекта: явная настройка → описание ToV на нём; нет настройки →
+  // 'auto' (модель пишет описание на языке образцов). До миграции 038 колонки
+  // может не быть — maybeSingle без падения, поведение как раньше.
+  let tovLang: ContentLanguage | 'auto' = 'auto'
+  try {
+    const { data: proj } = await supabase
+      .from('projects').select('*').eq('id', projectId).maybeSingle()
+    tovLang = resolveContentLanguage(proj as { content_language?: string | null } | null) ?? 'auto'
+  } catch { /* колонки/проекта нет — auto */ }
 
   const TOV_TITLE = 'Tone of Voice (извлечён из твоих текстов)'
 
@@ -133,7 +159,7 @@ export async function POST(request: Request) {
           model:      MODEL,
           max_tokens: 4000,
           system:     TOV_SYSTEM,
-          messages:   [{ role: 'user', content: buildPrompt(clean) }],
+          messages:   [{ role: 'user', content: buildPrompt(clean, tovLang) }],
         })
         for await (const chunk of aiStream) {
           if (chunk.type === 'content_block_delta') send({ type: 'progress' })

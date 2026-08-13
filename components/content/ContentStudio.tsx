@@ -21,7 +21,7 @@ import { ReelsMontagePanel } from '@/components/content/ReelsMontagePanel'
 import { type Block, type SlideValue } from '@/components/carousel/FreeCanvas'
 
 type Format = 'post' | 'carousel' | 'stories' | 'reels'
-interface Brand { accentColor?: string; bg?: string; text?: string; bgStyle?: string; handle?: string; logoUrl?: string; font?: string; accentStyle?: 'gradient' | 'flat'; styleNotes?: string; swipeHint?: boolean }
+interface Brand { accentColor?: string; bg?: string; text?: string; bgStyle?: string; handle?: string; logoUrl?: string; font?: string; accentStyle?: 'gradient' | 'flat'; styleNotes?: string; swipeHint?: boolean; swipeLabel?: string }
 
 const FORMATS: { id: Format; label: string }[] = [
   { id: 'post', label: 'Пост' },
@@ -69,7 +69,7 @@ export function ContentStudio({ projectId, initialFormat = 'post', initialText =
   useEffect(() => {
     fetch(`/api/brand-kit?projectId=${projectId}`).then((r) => r.json()).then((d) => {
       if (d && !d.error && (d.accentColor || d.bg || d.handle || d.logoUrl || d.font)) {
-        setBrand({ accentColor: d.accentColor, bg: d.bg, text: d.text, bgStyle: d.bgStyle, handle: d.handle, logoUrl: d.logoUrl, font: d.font, accentStyle: d.accentStyle, styleNotes: d.styleNotes, swipeHint: d.swipeHint })
+        setBrand({ accentColor: d.accentColor, bg: d.bg, text: d.text, bgStyle: d.bgStyle, handle: d.handle, logoUrl: d.logoUrl, font: d.font, accentStyle: d.accentStyle, styleNotes: d.styleNotes, swipeHint: d.swipeHint, swipeLabel: d.swipeLabel })
       }
     }).catch(() => {})
   }, [projectId])

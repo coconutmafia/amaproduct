@@ -987,9 +987,247 @@ ${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`
   log('Проверь сводку повторным скачиванием — колонки должны схлопнуться.')
 }
 
+// ── ПРОБНИК: живой смоук английского языка (задача 13 августа) ───────────────
+// Проверяет мандат «на английском ВСЁ работает как на русском»: временный
+// проект с content_language='en' → (1) ToV из английских текстов выходит
+// АНГЛИЙСКИМ с дословными цитатами; (2) сгенерённый пост — английский, без
+// em dash и EN-GPT-измов; (3) рилз — английские реплики; (4) карусель-структура
+// не переводит английский текст. Требует применённой миграции 038.
+async function englishSmoke() {
+  const APP = 'https://amaproduct.com'
+  const QA = 'ama-qa-bot@gmail.com'
+  log('\n=== Пробник: английский язык первым классом (миграция 038) ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) QA-бот: magiclink → verify → сессия')
+    log('  2) временный проект ama-probe-english-* с content_language=en (упадёт, если 038 не применена)')
+    log(`  3) POST ${APP}/api/ai/extract-tone-of-voice с 4 английскими текстами → ToV должен выйти английским`)
+    log(`  4) POST ${APP}/api/ai/generate post → английский, без «—», без "it's not just"/"here's the thing"`)
+    log(`  5) POST ${APP}/api/ai/generate reels → английские реплики сцен`)
+    log(`  6) POST ${APP}/api/carousel/structure с английским текстом → слайды не переведены`)
+    log('  7) удалить контент, style_examples, материалы и проект')
+    return
+  }
+  const anon = (() => {
+    const txt = readFileSync(join(ROOT, '.env.local'), 'utf8')
+    const m = txt.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY в .env.local'); return }
+
+  const gl = await api('/auth/v1/admin/generate_link', {
+    method: 'POST',
+    body: JSON.stringify({ type: 'magiclink', email: QA }),
+  })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log('❌ generate_link не дал email_otp:', gl.status); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST',
+    headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA, token: otp }),
+  }).then(r => r.json())
+  if (!ver?.access_token) { log('❌ verify не дал сессию'); return }
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+  log('✅ 1. сессия QA-бота получена')
+
+  const qaId = ver.user?.id
+  const projName = `${PROBE_PREFIX}english-${Date.now()}`
+  const prj = await api('/rest/v1/projects', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({
+      owner_id: qaId, name: projName, status: 'active',
+      niche: 'Contemporary abstract painting, acrylic on canvas',
+      content_language: 'en',
+    }),
+  })
+  const projectId = Array.isArray(prj.body) ? prj.body[0]?.id : prj.body?.id
+  if (!projectId) {
+    const errTxt = JSON.stringify(prj.body || '')
+    if (/content_language/.test(errTxt) || prj.status === 400) {
+      log(`❌ 2. проект с content_language не создался (HTTP ${prj.status}).`)
+      log('   ПОХОЖЕ, МИГРАЦИЯ 038 НЕ ПРИМЕНЕНА: supabase/migrations/038_project_content_language.sql')
+      log('   Применить в Supabase SQL editor и перезапустить пробник.')
+    } else {
+      log('❌ 2. проект не создался:', prj.status, errTxt.slice(0, 200))
+    }
+    return
+  }
+  log(`✅ 2. проект ${projName} (content_language=en)`)
+
+  const cleanup = async () => {
+    await api(`/rest/v1/content_items?project_id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    await api(`/rest/v1/style_examples?project_id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    await api(`/rest/v1/project_materials?project_id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    await api(`/rest/v1/projects?id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    log('🧹 уборка: контент, примеры стиля, материалы и проект удалены')
+  }
+
+  // Метрики языка/GPT-измов
+  const latinShare = (s) => {
+    const letters = (String(s).match(/[a-zA-Zа-яА-ЯёЁ]/g) || []).length
+    return letters ? (String(s).match(/[a-zA-Z]/g) || []).length / letters : 0
+  }
+  const enTells = (s) => {
+    const hits = []
+    if (/—/.test(s)) hits.push('em dash «—»')
+    if (/it'?s not just/i.test(s)) hits.push('"it\'s not just"')
+    if (/here'?s the thing/i.test(s)) hits.push('"here\'s the thing"')
+    if (/let'?s dive in/i.test(s)) hits.push('"let\'s dive in"')
+    if (/#[a-z0-9_]+/i.test(s)) hits.push('хэштеги')
+    return hits
+  }
+  const readSSE = async (res) => {
+    const reader = res.body.getReader()
+    const dec = new TextDecoder()
+    let buf = '', done = false, errMsg = ''
+    while (true) {
+      const { value, done: end } = await reader.read()
+      if (end) break
+      buf += dec.decode(value, { stream: true })
+      for (const ev of buf.split('\n\n')) {
+        const line = ev.split('\n').find(l => l.startsWith('data: '))
+        if (!line) continue
+        try {
+          const m = JSON.parse(line.slice(6))
+          if (m.type === 'done') done = true
+          if (m.type === 'error') errMsg = m.message || 'error'
+        } catch { /* ping */ }
+      }
+    }
+    return { done, errMsg }
+  }
+
+  try {
+    // ── 3. ToV из английских текстов (сценарий Darina) ──────────────────────
+    const units = [
+      'Every person has something they can look at endlessly. For me, it is living water: its breath, its shimmer, its quiet movement under the light. I can stand by the sea for an hour and never get bored, watching how the surface keeps rewriting itself.',
+      'I like looking at a painting as if I were stepping into it. To sense what it smells like there, whether the wind is moving through my hair, what the colours feel like on my skin. A painting is finished when I can walk inside it and stay a while.',
+      'People often ask me why I paint flowers so large. Honestly, I paint them the size they feel. When you really look at a peony, when you give it your full attention, it stops being small. Attention changes the scale of things, and that is what my work is about.',
+      'This series took me eight months. Some canvases waited in the corner for weeks until I understood what they were missing. I have learned not to rush them: paintings, like people, open up when they are ready, not when you demand it.',
+    ]
+    let t0 = Date.now()
+    const tovRes = await fetch(`${APP}/api/ai/extract-tone-of-voice`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ projectId, units }),
+    })
+    if (!tovRes.ok || !tovRes.body) {
+      log(`❌ 3. extract-tone-of-voice HTTP ${tovRes.status}:`, (await tovRes.text().catch(() => '')).slice(0, 300))
+      return
+    }
+    const tovStream = await readSSE(tovRes)
+    if (tovStream.errMsg) { log(`❌ 3. ToV-стрим вернул ошибку: ${tovStream.errMsg}`); return }
+    const tovMat = await api(`/rest/v1/project_materials?select=raw_content,processing_status&project_id=eq.${projectId}&material_type=eq.tone_of_voice`)
+    const tov = Array.isArray(tovMat.body) ? tovMat.body[0] : null
+    if (!tov || tov.processing_status !== 'ready') { log('❌ 3. ToV-материал не ready:', JSON.stringify(tovMat.body).slice(0, 200)); return }
+    const tovLatin = latinShare(tov.raw_content)
+    const tovQuotes = /["“”'‘’«»]/.test(tov.raw_content)
+    log(`✅ 3. ToV за ${((Date.now() - t0) / 1000).toFixed(1)}с: ${tov.raw_content.length} симв, латиницы ${(tovLatin * 100).toFixed(0)}%, цитаты: ${tovQuotes ? 'есть' : 'НЕТ'}`)
+    log('   превью:', tov.raw_content.slice(0, 180).replace(/\n/g, ' | '))
+    if (tovLatin < 0.7) { log('❌ ToV НЕ английский (ожидали ≥70% латиницы) — описание уехало в русский'); return }
+
+    // ── 4. Пост на английском ────────────────────────────────────────────────
+    t0 = Date.now()
+    const postRes = await fetch(`${APP}/api/ai/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ projectId, contentType: 'post', dayNumber: 1, totalDays: 7, phase: 'awareness' }),
+    })
+    if (!postRes.ok || !postRes.body) { log(`❌ 4. generate post HTTP ${postRes.status}`); return }
+    const postStream = await readSSE(postRes)
+    if (postStream.errMsg) { log(`❌ 4. generate post ошибка: ${postStream.errMsg}`); return }
+    const postItems = await api(`/rest/v1/content_items?select=body_text,title&project_id=eq.${projectId}&content_type=eq.post&order=created_at.desc&limit=1`)
+    const post = Array.isArray(postItems.body) ? postItems.body[0] : null
+    if (!post?.body_text) { log('❌ 4. пост не сохранился'); return }
+    const postLatin = latinShare(post.body_text)
+    const postTells = enTells(post.body_text)
+    log(`✅ 4. пост за ${((Date.now() - t0) / 1000).toFixed(1)}с: ${post.body_text.length} симв, латиницы ${(postLatin * 100).toFixed(0)}%${postTells.length ? `, ⚠️ GPT-измы: ${postTells.join(', ')}` : ', GPT-измов нет'}`)
+    log('   превью:', post.body_text.slice(0, 180).replace(/\n/g, ' | '))
+    if (postLatin < 0.7) { log('❌ ПОСТ НЕ АНГЛИЙСКИЙ — язык контента не прокинулся'); return }
+
+    // ── 5. Рилз на английском ────────────────────────────────────────────────
+    t0 = Date.now()
+    const reelsRes = await fetch(`${APP}/api/ai/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ projectId, contentType: 'reels', dayNumber: 2, totalDays: 7, phase: 'awareness' }),
+    })
+    if (!reelsRes.ok || !reelsRes.body) { log(`❌ 5. generate reels HTTP ${reelsRes.status}`); return }
+    const reelsStream = await readSSE(reelsRes)
+    if (reelsStream.errMsg) { log(`❌ 5. generate reels ошибка: ${reelsStream.errMsg}`); return }
+    const reelsItems = await api(`/rest/v1/content_items?select=structured_data,body_text&project_id=eq.${projectId}&content_type=eq.reels&order=created_at.desc&limit=1`)
+    const reelsItem = Array.isArray(reelsItems.body) ? reelsItems.body[0] : null
+    const reels = reelsItem?.structured_data?.reels
+    if (!reels?.scenes?.length) { log('❌ 5. рилз без сцен:', JSON.stringify(reelsItem || {}).slice(0, 200)); return }
+    const speech = reels.scenes.map(s => `${s?.audio?.speech || ''} ${s?.text_overlay || ''}`).join(' ')
+    const speechLatin = latinShare(speech)
+    const speechTells = enTells(speech)
+    log(`✅ 5. рилз за ${((Date.now() - t0) / 1000).toFixed(1)}с: сцен ${reels.scenes.length}, латиницы в репликах ${(speechLatin * 100).toFixed(0)}%${speechTells.length ? `, ⚠️ GPT-измы: ${speechTells.join(', ')}` : ', GPT-измов нет'}`)
+    if (speechLatin < 0.7) { log('❌ РЕПЛИКИ РИЛЗА НЕ АНГЛИЙСКИЕ'); return }
+
+    // ── 6. Карусель-структура не переводит английский текст ─────────────────
+    t0 = Date.now()
+    const carText = [
+      'Why I stopped painting what sells.',
+      'Slide 2: For two years I painted safe bouquets, because they sold well and nobody argued with them.',
+      'Slide 3: Then one collector told me she bought my painting because it felt like standing inside the rain. That sentence changed my studio.',
+      'Slide 4: Now I paint what I can walk into, and the right people find it.',
+    ].join('\n')
+    const carRes = await fetch(`${APP}/api/carousel/structure`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ text: carText, type: 'carousel' }),
+    })
+    const carBody = await carRes.json().catch(() => null)
+    if (!carRes.ok || !carBody?.carousel) { log(`❌ 6. carousel/structure HTTP ${carRes.status}:`, JSON.stringify(carBody).slice(0, 200)); return }
+    const slidesText = JSON.stringify(carBody.carousel)
+    const carLatin = latinShare(slidesText.replace(/"(cover|slides|last_slide|headline|subheadline|body|text|action|emoji|slide|total_slides)"/g, ''))
+    log(`✅ 6. карусель за ${((Date.now() - t0) / 1000).toFixed(1)}с: слайдов ${carBody.carousel.total_slides}, латиницы ${(carLatin * 100).toFixed(0)}%`)
+    if (carLatin < 0.7) { log('❌ СЛАЙДЫ ПЕРЕВЕДЕНЫ НА РУССКИЙ — правило «язык исходника» не сработало'); return }
+
+    log('\n🎉 АНГЛИЙСКИЙ ПЕРВЫМ КЛАССОМ ЖИВ: ToV английский, пост/рилз английские без EN-GPT-измов, карусель не переводит.')
+  } finally {
+    await cleanup()
+  }
+}
+
+// ── ПРОБНИК: выставить язык блога клиентскому проекту ────────────────────────
+// ⚠️ Пишет в КЛИЕНТСКИЙ проект (исключение из правила ama-probe-*) — запускать
+// только по явной задаче владельца (13 августа: «закрепим настройкой» для
+// Darina Komorowski). Использование:
+//   node scripts/prod-probe.mjs set-language <projectId> <ru|en|es|null> --run
+async function setLanguage() {
+  const projectId = process.argv[3]
+  const lang = process.argv[4]
+  log('\n=== Пробник: выставить content_language проекту ===')
+  if (!projectId || !['ru', 'en', 'es', 'null'].includes(lang || '')) {
+    log('Использование: node scripts/prod-probe.mjs set-language <projectId> <ru|en|es|null> [--run]')
+    return
+  }
+  const cur = await api(`/rest/v1/projects?id=eq.${projectId}&select=id,name,content_language`)
+  const proj = Array.isArray(cur.body) ? cur.body[0] : null
+  if (!proj) { log('❌ проект не найден:', projectId); return }
+  log(`проект: «${proj.name}» (${projectId})`)
+  log(`язык сейчас: ${proj.content_language ?? 'НЕ ЗАДАН (авто по TOV)'} → станет: ${lang}`)
+  if (!RUN) {
+    log('\n[DRY-RUN] ничего не пишу. Добавь --run чтобы применить.')
+    return
+  }
+  const upd = await api(`/rest/v1/projects?id=eq.${projectId}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ content_language: lang === 'null' ? null : lang }),
+  })
+  if (upd.status >= 300) { log(`❌ не обновилось: ${upd.status}`, JSON.stringify(upd.body).slice(0, 200)); return }
+  const after = Array.isArray(upd.body) ? upd.body[0] : upd.body
+  log(`✅ обновлено: content_language = ${after?.content_language ?? 'null'}`)
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))

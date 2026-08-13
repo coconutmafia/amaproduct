@@ -25,6 +25,7 @@ interface Brand {
   accentStyle?: 'gradient' | 'flat'
   styleNotes?: string
   swipeHint?: boolean
+  swipeLabel?: string
 }
 
 function slideCount(carousel: Dict): number {
@@ -139,7 +140,7 @@ export function CarouselSlides({
           const r = await fetch(`/api/brand-kit?projectId=${projectId}`)
           const d = await r.json()
           if (r.ok && (d.accentColor || d.bg || d.handle || d.logoUrl || d.font)) {
-            b = { accentColor: d.accentColor, bg: d.bg, text: d.text, bgStyle: d.bgStyle, handle: d.handle, logoUrl: d.logoUrl, font: d.font, accentStyle: d.accentStyle, styleNotes: d.styleNotes, swipeHint: d.swipeHint }
+            b = { accentColor: d.accentColor, bg: d.bg, text: d.text, bgStyle: d.bgStyle, handle: d.handle, logoUrl: d.logoUrl, font: d.font, accentStyle: d.accentStyle, styleNotes: d.styleNotes, swipeHint: d.swipeHint, swipeLabel: d.swipeLabel }
           }
         } catch { /* default theme */ }
       }

@@ -209,11 +209,12 @@ const NICHE_DICT: Record<string, string> = {
 
 function detectNicheKey(niche: string): string | null {
   const n = niche.toLowerCase()
-  if (/фитнес|спорт|здоров|похуд|трениров|диет|тело/.test(n)) return 'fitness'
-  if (/психолог|коуч|терапи|личност|отношен|эмоци/.test(n)) return 'psychology'
-  if (/бизнес|маркет|деньг|финанс|продаж|запуск|доход|монетиз/.test(n)) return 'business'
-  if (/красот|стиль|бьюти|мода|уход|визаж|имидж/.test(n)) return 'beauty'
-  if (/обучен|образован|курс|учеб|навык|профес/.test(n)) return 'education'
+  // Ниша может быть описана и по-русски, и по-английски (блоги не только русские)
+  if (/фитнес|спорт|здоров|похуд|трениров|диет|тело|fitness|workout|health|weight|training/.test(n)) return 'fitness'
+  if (/психолог|коуч|терапи|личност|отношен|эмоци|psycholog|coach|therap|mindset|relationship/.test(n)) return 'psychology'
+  if (/бизнес|маркет|деньг|финанс|продаж|запуск|доход|монетиз|business|marketing|money|financ|sales|launch/.test(n)) return 'business'
+  if (/красот|стиль|бьюти|мода|уход|визаж|имидж|beauty|style|fashion|makeup|skincare/.test(n)) return 'beauty'
+  if (/обучен|образован|курс|учеб|навык|профес|educat|course|learning|teach|skill/.test(n)) return 'education'
   return null
 }
 
@@ -257,10 +258,12 @@ export const PLATFORM_SAFE_LANGUAGE = `БЕЗОПАСНОСТЬ ОХВАТОВ (
 1. НЕ ДАВАЙ АБСОЛЮТНЫХ ГАРАНТИЙ РЕЗУЛЬТАТА — площадка занижает охват контента с обещаниями стопроцентного эффекта, особенно в темах здоровья и денег.
    ❌ "Гарантированный результат" / "100% сработает у каждого" / "вылечивает" / "избавит от [диагноз] навсегда"
    ❌ "Гарантированный доход" / "заработок без усилий" / "стабильные Х₽ уже через неделю"
+   ❌ (англ.) "guaranteed results" / "works for 100% of people" / "guaranteed income" / "effortless money"
    ✅ Вместо гарантии — конкретный кейс с цифрами ("у Х получилось за 3 месяца") или честная вероятность ("не всем подходит, но у большинства моих клиентов...")
 
 2. НЕ ИСПОЛЬЗУЙ ОБЩИЙ ENGAGEMENT-BAIT — Meta официально подтверждает, что понижает охват постов с призывами лайкать/отмечать без содержательной причины.
    ❌ "Лайкни, если согласен" / "Отметь друга, который..." / "Двойной тап, если..." / "Сохрани, чтобы не потерять"
+   ❌ (англ.) "Like if you agree" / "Tag a friend who..." / "Double tap if..." / "Save this so you don't lose it"
    ✅ ЭТО НЕ КАСАЕТСЯ конкретного предметного призыва этого продукта ("Напиши СТРАТЕГИЯ в комментарии — пришлю разбор") — это адресный лид-магнит, а не пустая накрутка вовлечения, его оставляй как есть.
 
 3. Диагнозы и медицинские термины — если ниша про здоровье, формулируй как личный опыт/наблюдение, а не как медицинское утверждение ("я заметила, что..." вместо "это лечит...").`
@@ -275,6 +278,57 @@ export const CONTENT_BRAIN_ANTI_PATTERNS = `❌ Идеальный герой б
 ❌ Обещания без доказательств: "это изменит вашу жизнь"
 ❌ Корпоративный язык в личном блоге: "данный подход позволяет"
 ❌ Слово "эксперт" применительно к самому блогеру`
+
+// ── CONTENT LANGUAGE ─────────────────────────────────────────────────────────
+// Язык КОНТЕНТА (не интерфейса): что настройка проекта говорит генераторам.
+// NULL/неизвестно = поведение до миграции 038 — язык выводится из языка TOV
+// (так живёт испанский контент Katia Ustina — не ломать!).
+export type ContentLanguage = 'ru' | 'en' | 'es'
+
+const CONTENT_LANGUAGES: ContentLanguage[] = ['ru', 'en', 'es']
+
+export function resolveContentLanguage(
+  project?: { content_language?: string | null } | null
+): ContentLanguage | null {
+  const raw = (project?.content_language ?? '').toString().trim().toLowerCase()
+  return (CONTENT_LANGUAGES as string[]).includes(raw) ? (raw as ContentLanguage) : null
+}
+
+// Названия для директив в промптах (по-русски — промпты русские).
+const LANGUAGE_NAME_RU: Record<ContentLanguage, string> = {
+  ru: 'РУССКИЙ',
+  en: 'АНГЛИЙСКИЙ',
+  es: 'ИСПАНСКИЙ',
+}
+
+/**
+ * Директива языка контента для системного промпта.
+ * null → ДОСЛОВНО старое правило (язык TOV, иначе русский) — обратная
+ * совместимость для всех существующих проектов без настройки.
+ * Явный язык → жёсткое правило: КОНТЕНТ только на нём, разговор — на языке
+ * пользователя (клиент может общаться по-русски, а блог вести на английском).
+ */
+export function getContentLanguageDirective(lang: ContentLanguage | null): string {
+  if (!lang) return 'Язык ответа: тот, на котором написан TOV. Если TOV нет — русский.'
+  return `ЯЗЫК КОНТЕНТА: ${LANGUAGE_NAME_RU[lang]} — это язык, на котором блогер ведёт блог (настройка проекта).
+ВЕСЬ генерируемый контент — посты, сценарии рилз (реплики и текст на экране), сторис, слайды каруселей, хуки, заголовки, CTA, письма — пиши ТОЛЬКО на этом языке, даже если материалы проекта (кастдевы, стратегия, распаковка) написаны на другом.
+Разговор с пользователем (пояснения, вопросы, варианты «как зайти») веди на языке его сообщений — но сам контент выдавай на языке блога.
+Цитаты аудитории из материалов при использовании в контенте переводи на язык блога естественно, без кальки.`
+}
+
+/**
+ * Эвристика языка уже написанного текста — для роутов, которые пере-
+ * структурируют готовый контент (карусель, пост-хук, раскадровка сторис) и не
+ * знают проекта. Латиница доминирует → английский… или испанский, но для
+ * выбора анти-AI-веток это неважно: es-ветки пока нет, а правило «пиши на
+ * языке исходника» задаётся отдельно и работает для любого языка.
+ */
+export function detectTextLanguage(text: string): 'en' | null {
+  const letters = (text.match(/[a-zA-Zа-яА-ЯёЁ]/g) || []).length
+  if (letters < 40) return null // слишком коротко, чтобы судить
+  const latin = (text.match(/[a-zA-Z]/g) || []).length
+  return latin / letters > 0.6 ? 'en' : null
+}
 
 // ── ANTI-AI-TELLS ─────────────────────────────────────────────────────────────
 // Concrete "tells" that instantly read as ChatGPT (flagged by the owner). Example-
@@ -313,6 +367,61 @@ export const AI_TELLS_TO_AVOID = `КАК НЕ ВЫДАТЬ ЧТО ТЕКСТ П�
    ❌ «ровно то же самое» / «С [чем-то] ровно то же самое» — склей живой связкой: ✅ «и с инфопродуктами всё точно так же», ✅ «та же история и с курсами» — или начни сразу с сути.
 
 7. СЦЕНАРИЙ РИЛЗ / ОЗВУЧКА = УСТНАЯ РЕЧЬ, НЕ ТЕЛЕГРАФ. Мысленно ПРОГОВОРИ каждую реплику вслух: если звучит рублеными обрубками («Три пасты. Один прилавок. Продукт разный.») — так живой человек НЕ говорит, склей в естественное предложение («Три разные пасты стоят на одном прилавке, и продукт у них совершенно разный»). Реплика в кадре — обычно 10-25 слов с естественными связками, как в разговоре с подругой. Правило №2 (существительные через точку) в озвучке действует ЕЩЁ ЖЁСТЧЕ, чем в тексте.`
+
+// ── ANTI-AI-TELLS (ENGLISH) ──────────────────────────────────────────────────
+// Английский близнец AI_TELLS_TO_AVOID: паттерны, по которым англоязычный
+// читатель мгновенно узнаёт ChatGPT. Источник — задокументированные признаки
+// AI-текста (Wikipedia «Signs of AI writing» / WikiProject AI Cleanup) +
+// зеркала запретов Августы. Написан ПО-АНГЛИЙСКИ намеренно: модель, пишущая
+// английский контент, точнее соблюдает запреты с англоязычными примерами.
+// Русская ветка при этом НЕ подключается — её примеры бессмысленны в EN-тексте.
+export const AI_TELLS_TO_AVOID_EN = `HOW NOT TO SOUND LIKE AI (English readers spot these instantly — follow strictly):
+
+1. NO EM DASHES ("—") IN CONTENT. This is the single most recognizable giveaway of AI-written English. Real bloggers rarely type them, and in a voiceover they read as robotic pauses. When your hand reaches for a dash, stop and rewrite the sentence with words.
+   ❌ "The launch — a complete disaster."  ✅ "The launch turned into a complete disaster."
+   ❌ "It's not talent — it's practice."  ✅ "It comes down to practice, not talent."
+   No em dashes in posts, reels scripts, stories, or slides. (Hyphens inside compound words like "hand-painted" are fine.)
+
+2. NO STACCATO NOUN FRAGMENTS. Chains of short verbless fragments are a top AI marker, and nobody talks like that out loud.
+   ❌ "Sea. Sun. A new life."  ✅ "Sea, sun, and what felt like a new life."
+   ❌ "No filters. No scripts. Just me."  ✅ "No filters or scripts, just me."
+   ❌ "The result? Silence."  ✅ "And the result was silence."
+   Same for "Not A. Not B. Just C." constructions: merge them into one living sentence.
+
+3. NO NEGATIVE PARALLELISM, in any form. The "it's not just X, it's Y" template is the most overused AI construction on Instagram:
+   ❌ "It's not just a painting. It's a way of seeing."
+   ❌ "This isn't about art. It's about attention."
+   ❌ "Not only does it calm you, it changes you."
+   State the claim directly instead: ✅ "Painting taught me to notice things I used to walk past."
+
+4. NO TEMPLATE LEAD-INS AND FAKE-CANDID HOOKS. These stamp the text as AI immediately:
+   ❌ "Here's the thing:" / "Let's be honest" / "Real talk:" / "And you know what's crazy?" / "But here's what nobody tells you" / "Want to know the best part?" / "Plot twist:" / "Let's dive in" / "Buckle up"
+   Make the transition a statement or go straight to the point:
+   ❌ "And you know what's crazy? I almost quit."  ✅ "The crazy part: I almost quit."
+
+5. NO AI VOCABULARY. These words and stock phrases read as ChatGPT, not as a person: delve, unlock, unleash, elevate, empower, foster, tapestry, testament, vibrant, game-changer, transformative, journey (figurative), "in today's fast-paced world", "capturing the essence", "a masterpiece" (about your own work), "I'm excited to share", "Don't miss out".
+   Use the plain word a person would say: learn, start, improve, change, my work, this piece.
+
+6. NO "-ING" ANALYSIS TAILS glued onto sentences to fake depth:
+   ❌ "…, reflecting my deep connection to nature."   ❌ "…, evoking a sense of movement."
+   ❌ "…, showcasing the beauty of everyday moments."
+   If the thought matters, give it its own sentence with a subject and a verb. If it doesn't, cut it.
+
+7. EMPTY OFFERS — always name the CONCRETE value, never an offer for its own sake.
+   ❌ "DM me 'ART' and I'll share the details." (details of WHAT?)
+   ✅ "DM me 'ART' and I'll send the list of available paintings with sizes and prices."
+   Same for vague "this is exactly what I cover inside" — say WHAT exactly and WHERE.
+
+8. REELS SCRIPT / VOICEOVER = SPOKEN LANGUAGE, NOT TELEGRAPH. Mentally SAY every line out loud: if it sounds like clipped fragments ("Three pastas. One counter. Different product."), a real person would never say it — merge into natural speech ("There are three different pastas on the same counter, and the product is completely different"). A spoken line is usually 10-25 words with natural connectors, like talking to a friend. Rule 2 applies to voiceover even MORE strictly than to written text.`
+
+/**
+ * Анти-AI-запреты по языку контента. en → английская ветка; ru/es/null →
+ * русская (для испанского отдельной ветки пока нет — поведение как до
+ * миграции 038: универсальные принципы русской ветки модель переносит сама).
+ */
+export function getAiTells(lang: ContentLanguage | null): string {
+  return lang === 'en' ? AI_TELLS_TO_AVOID_EN : AI_TELLS_TO_AVOID
+}
 
 // ── VISUAL DESIGN RULES ──────────────────────────────────────────────────────
 // Distilled from the owner's lesson «Визуальная концепция профиля» (knowledge

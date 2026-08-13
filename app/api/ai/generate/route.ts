@@ -3,7 +3,7 @@ import { captureException } from '@/lib/sentry'
 import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt, buildValidatorUserPrompt } from '@/lib/ai/prompts/system'
-import { getSchemaForPhase, getHookEngine, getEmotionalMechanics, getCTAEngine, getViralReelsFramework } from '@/lib/ai/prompts/content-brain'
+import { getSchemaForPhase, getHookEngine, getEmotionalMechanics, getCTAEngine, getViralReelsFramework, resolveContentLanguage } from '@/lib/ai/prompts/content-brain'
 import { gateContentUnit, refundGeneration } from '@/lib/generations'
 import { requirePaidAccess } from '@/lib/billing/access'
 import { contentItemToText } from '@/lib/contentToText'
@@ -91,6 +91,11 @@ export async function POST(request: Request) {
 
         const systemPrompt = buildSystemPrompt(ragContext, project)
 
+        // Язык контента: примеры-значения в JSON-шаблонах ниже модель копирует
+        // ДОСЛОВНО в вывод («30-60 сек», «Вариант А») — для английского блога
+        // они обязаны быть английскими, иначе в EN-контент просачивается русский.
+        const isEn = resolveContentLanguage(project) === 'en'
+
         const contentTypeLabel: Record<string, string> = {
           post: 'пост для Instagram/VK',
           carousel: 'пост-карусель',
@@ -167,7 +172,7 @@ ${contentType === 'reels' ? `\n${getViralReelsFramework()}\n` : ''}
 ${additionalInstructions ? `ДОПОЛНИТЕЛЬНО: ${additionalInstructions}` : ''}
 
 ${contentType === 'reels' ? `Верни JSON в формате:
-{"reels":{"title":"...","hook_text":"...","total_duration":"30-60 сек","scenes":[{"scene":1,"timing":"0-3 сек","type":"hook","visual":{"description":"...","camera":"...","action":"..."},"text_overlay":"...","audio":{"speech":"...","tone":"..."},"transition":"cut"}],"description_text":"..."}}
+{"reels":{"title":"...","hook_text":"...","total_duration":"${isEn ? '30-60 sec' : '30-60 сек'}","scenes":[{"scene":1,"timing":"${isEn ? '0-3 sec' : '0-3 сек'}","type":"hook","visual":{"description":"...","camera":"...","action":"..."},"text_overlay":"...","audio":{"speech":"...","tone":"..."},"transition":"cut"}],"description_text":"..."}}
 ВАЖНО: НЕ добавляй хэштеги — ни в description_text, ни отдельным полем. У этого блогера хэштегов нет.` : ''}
 
 ${contentType === 'carousel' ? `Верни JSON в формате:
@@ -179,14 +184,16 @@ headline = 1–4 слова (крупный акцент). subtext = 1 коро�
 Смысл и детали — в поле "voiceover" (что автор говорит голосом) и "visual" (что показывает).
 
 Верни JSON (5–10 сторис, не больше):
-{"stories_series":{"total_stories":N,"goal":"...","stories":[{"story_number":1,"type":"opener","visual":{"background":"цвет или фото","main_element":"что главное в кадре"},"text":{"headline":"1-4 слова","subtext":"1 фраза или пусто"},"voiceover":"что автор говорит голосом в этой сторис (1-2 предложения)","interactive":{"type":"poll","question":"...","options":["Вариант А","Вариант Б"]},"transition":"следующий шаг"}]}}` : ''}
+{"stories_series":{"total_stories":N,"goal":"...","stories":[{"story_number":1,"type":"opener","visual":{"background":"${isEn ? 'color or photo' : 'цвет или фото'}","main_element":"${isEn ? 'the main thing in frame' : 'что главное в кадре'}"},"text":{"headline":"${isEn ? '1-4 words' : '1-4 слова'}","subtext":"${isEn ? 'one short phrase or empty' : '1 фраза или пусто'}"},"voiceover":"${isEn ? 'what the author says out loud in this story (1-2 sentences)' : 'что автор говорит голосом в этой сторис (1-2 предложения)'}","interactive":{"type":"poll","question":"...","options":[${isEn ? '"Option A","Option B"' : '"Вариант А","Вариант Б"'}]},"transition":"${isEn ? 'next step' : 'следующий шаг'}"}]}}` : ''}
 
-${contentType !== 'post' ? `⚠️ ГОЛОС ВО ВСЕХ ТЕКСТОВЫХ ПОЛЯХ JSON (hook, headline, body, description_text, voiceover, speech, subject и т.д.): живой язык этого блогера. БЕЗ тире «—». БЕЗ существительных через точку («Море. Солнце. Новая жизнь.») и телеграфных обрывков («Не А. Не Б. А В.») — только связные фразы. БЕЗ шаблонных подводок «И знаешь(те), что самое…?». Без канцелярита и пустых обещаний («скажу конкретно», «разбираю внутри») — только конкретика. Эти поля читает подписчик, правила как для постов.` : ''}
+${contentType !== 'post' ? (isEn
+  ? `⚠️ VOICE IN ALL TEXT FIELDS OF THE JSON (hook, headline, body, description_text, voiceover, speech, subject etc.): this blogger's living language. NO em dashes. NO staccato noun fragments ("Sea. Sun. A new life.") or "Not A. Not B. Just C." telegraph — only connected phrases. NO template lead-ins ("Here's the thing", "It's not just X, it's Y"). No corporate speak, no empty promises — concrete details only. Followers read these fields; post rules apply.`
+  : `⚠️ ГОЛОС ВО ВСЕХ ТЕКСТОВЫХ ПОЛЯХ JSON (hook, headline, body, description_text, voiceover, speech, subject и т.д.): живой язык этого блогера. БЕЗ тире «—». БЕЗ существительных через точку («Море. Солнце. Новая жизнь.») и телеграфных обрывков («Не А. Не Б. А В.») — только связные фразы. БЕЗ шаблонных подводок «И знаешь(те), что самое…?». Без канцелярита и пустых обещаний («скажу конкретно», «разбираю внутри») — только конкретика. Эти поля читает подписчик, правила как для постов.`) : ''}
 ${contentType === 'post' ? 'Напиши текст поста (без JSON). Начни с крючка. Включи переход к CTA. БЕЗ хэштегов.' : ''}
 ${contentType === 'live' ? `Верни JSON в формате:
-{"live":{"title":"...","duration_min":60,"goal":"...","structure":[{"block":"Вступление","duration_min":5,"content":"...","interactive":"..."},{"block":"Основная тема","duration_min":30,"content":"...","interactive":"..."},{"block":"Ответы на вопросы","duration_min":15,"content":"...","interactive":"..."},{"block":"Закрытие/оффер","duration_min":10,"content":"...","interactive":"..."}],"promo_text":"..."}}` : ''}
+{"live":{"title":"...","duration_min":60,"goal":"...","structure":[{"block":"${isEn ? 'Opening' : 'Вступление'}","duration_min":5,"content":"...","interactive":"..."},{"block":"${isEn ? 'Main topic' : 'Основная тема'}","duration_min":30,"content":"...","interactive":"..."},{"block":"${isEn ? 'Q&A' : 'Ответы на вопросы'}","duration_min":15,"content":"...","interactive":"..."},{"block":"${isEn ? 'Closing / offer' : 'Закрытие/оффер'}","duration_min":10,"content":"...","interactive":"..."}],"promo_text":"..."}}` : ''}
 ${contentType === 'email' ? `Напиши письмо для email-рассылки. Верни JSON в формате:
-{"email":{"subject":"...","preheader":"...","body":"...","cta_text":"...","cta_url":"[ВСТАВИТЬ_ССЫЛКУ]","ps":"..."}}` : ''}`
+{"email":{"subject":"...","preheader":"...","body":"...","cta_text":"...","cta_url":"${isEn ? '[INSERT_LINK]' : '[ВСТАВИТЬ_ССЫЛКУ]'}","ps":"..."}}` : ''}`
 
         // ── Step 2: Generate ────────────────────────────────────────────────
         send({ type: 'status', message: 'Генерирую контент...' })
@@ -306,7 +313,7 @@ ${contentType === 'email' ? `Напиши письмо для email-рассыл
 
         const title = contentType === 'post'
           ? finalText.split('\n')[0].substring(0, 80)
-          : `${contentType} — День ${dayNumber}`
+          : `${contentType} — ${isEn ? 'Day' : 'День'} ${dayNumber}`
 
         // ── Step 5: Save to DB ──────────────────────────────────────────────
         const { count } = await supabase

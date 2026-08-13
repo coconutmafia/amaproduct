@@ -39,7 +39,7 @@ export interface Block {
   xPct: number; yPct: number; widthPct: number
   size: number; color: string; plate: boolean; align: 'left' | 'center'; rotation: number
 }
-export interface Brand { accentColor: string; bg: string; text: string; bgStyle?: string; font?: string; accentStyle?: 'gradient' | 'flat'; swipeHint?: boolean }
+export interface Brand { accentColor: string; bg: string; text: string; bgStyle?: string; font?: string; accentStyle?: 'gradient' | 'flat'; swipeHint?: boolean; swipeLabel?: string }
 
 // One slide's data — the controlled value of FreeCanvas.
 export interface SlideValue {
@@ -61,7 +61,7 @@ export function exportBrandFor(v: SlideValue, brand: Brand) {
   // Non-photo backgrounds render via the engine's Backdrop using these hints.
   // font + accentStyle travel with every bg mode so the chosen font / accent
   // fill apply to the free designer too.
-  const base = { accentColor: brand.accentColor, font: brand.font, accentStyle: brand.accentStyle }
+  const base = { accentColor: brand.accentColor, font: brand.font, accentStyle: brand.accentStyle, swipeHint: brand.swipeHint, swipeLabel: brand.swipeLabel }
   return v.bgMode === 'paper' ? { ...base, text: brand.text, bgStyle: 'paper' }
     : v.bgMode === 'dark' ? { ...base, bg: '#121214', text: '#FFFFFF', bgStyle: 'solid' }
     : v.bgMode === 'light' ? { ...base, bg: brand.bg, text: brand.text, bgStyle: 'solid' }

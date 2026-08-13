@@ -41,7 +41,7 @@ export async function scrapeReel(url: string, token: string): Promise<ScrapedRee
   }
 }
 
-export async function transcribeVideo(videoUrl: string, apiKey: string): Promise<string> {
+export async function transcribeVideo(videoUrl: string, apiKey: string, language: string = 'ru'): Promise<string> {
   try {
     const vid = await fetch(videoUrl)
     if (!vid.ok) return ''
@@ -64,7 +64,7 @@ export async function transcribeVideo(videoUrl: string, apiKey: string): Promise
     const openai = new OpenAI({ apiKey })
     const audio = await toFile(blob, 'reel.mp4', { type: blob.type || 'video/mp4' })
     const text = await openai.audio.transcriptions.create({
-      file: audio, model: 'whisper-1', language: 'ru', response_format: 'text',
+      file: audio, model: 'whisper-1', language, response_format: 'text',
     })
     return (text as unknown as string).trim()
   } catch { return '' }

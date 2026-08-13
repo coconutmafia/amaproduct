@@ -43,7 +43,17 @@ export async function processViralReelJob(jobId: string): Promise<void> {
 
     let transcript = ''
     if (reel.videoUrl && openaiKey) {
-      transcript = await transcribeVideo(reel.videoUrl, openaiKey)
+      // Язык речи в рилзе: для проектного импорта берём язык блога проекта
+      // (английский блог импортирует английские референсы). Нет настройки → ru.
+      let whisperLang = 'ru'
+      if (projectId) {
+        try {
+          const { data: proj } = await admin.from('projects').select('*').eq('id', projectId).maybeSingle()
+          const cl = (proj as { content_language?: string | null } | null)?.content_language
+          if (cl === 'en' || cl === 'es') whisperLang = cl
+        } catch { /* колонки может не быть до 038 — ru */ }
+      }
+      transcript = await transcribeVideo(reel.videoUrl, openaiKey, whisperLang)
     }
 
     const prompt = `Разбери залетевший Instagram рилз. Это реальный успешный референс, который нужно потом адаптировать другим блогерам.

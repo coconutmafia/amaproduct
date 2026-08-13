@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
 import { anthropic, MODEL, AI_BUSY_MESSAGE } from '@/lib/ai/client'
-import { AI_TELLS_TO_AVOID, VISUAL_RULES } from '@/lib/ai/prompts/content-brain'
+import { getAiTells, detectTextLanguage, VISUAL_RULES } from '@/lib/ai/prompts/content-brain'
 
 // Chat/voice edits to already-rendered carousel slides (owner: «подредактировать
 // не могу, только скачать как есть»). Takes the structured carousel + a free-form
@@ -58,8 +58,9 @@ ${instruction.slice(0, 1500)}
 - Количество слайдов НЕ меняй, если прямо не попросили добавить/убрать слайд.
 - Можно менять: тексты, выделение **слов** акцентом, разбивку фраз (переносом строки), сокращать/удлинять.
 - Если просят перенести/не разрывать число или фразу — переформулируй строку так, чтобы она легла целиком.
+- ЯЗЫК СЛАЙДОВ НЕ МЕНЯЙ: правки пиши на языке самих слайдов (английские слайды → английские правки), даже если просьба блогера на другом языке. Переводить слайды можно только если об этом прямо попросили.
 ${VISUAL_RULES}
-${AI_TELLS_TO_AVOID}
+${getAiTells(detectTextLanguage(current))}
 
 Верни ПОЛНУЮ обновлённую карусель через инструмент edit_carousel.`
 
