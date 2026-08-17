@@ -530,7 +530,7 @@ async function meaningsSmoke() {
     log('\n[DRY-RUN] план (добавь --run):')
     log('  1) QA-бот: magiclink → verify → сессия')
     log('  2) временный проект ama-probe-meanings-* + синтетическая кастдев-таблица (REST)')
-    log(`  3) POST ${APP}/api/ai/research-analyze step=generate_meanings (SSE до конца)`)
+    log(`  3) POST ${APP}/api/ai/research-analyze step=generate_meanings (202 → поллинг meanings_status)`)
     log('  4) проверить материал: формат урока ([БОЛИ] … / — «…» / Идея контента), есть потребности')
     log('  5) удалить материалы и проект')
     return
@@ -625,32 +625,29 @@ async function meaningsSmoke() {
       headers: { 'Content-Type': 'application/json', cookie },
       body: JSON.stringify({ projectId, step: 'generate_meanings' }),
     })
-    if (!res.ok || !res.body) {
-      log(`❌ 3. generate_meanings HTTP ${res.status}`)
+    // Контракт 17.08: 202 + фоновая сборка в after(), статус поллится
+    // step=meanings_status (переход processing → ready/error).
+    if (res.status !== 202) {
+      log(`❌ 3. generate_meanings HTTP ${res.status} (ждали 202)`)
       log('   тело:', (await res.text().catch(() => '')).slice(0, 300))
       return
     }
-    // Дочитываем SSE до конца (done/error)
-    const reader = res.body.getReader()
-    const dec = new TextDecoder()
-    let buf = '', done = false, errMsg = ''
-    while (true) {
-      const { value, done: end } = await reader.read()
-      if (end) break
-      buf += dec.decode(value, { stream: true })
-      for (const ev of buf.split('\n\n')) {
-        const line = ev.split('\n').find(l => l.startsWith('data: '))
-        if (!line) continue
-        try {
-          const m = JSON.parse(line.slice(6))
-          if (m.type === 'done') done = true
-          if (m.type === 'error') errMsg = m.message || 'error'
-        } catch { /* ping */ }
-      }
+    let done = false, errMsg = ''
+    const deadline = Date.now() + 8 * 60_000
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 5000))
+      const st = await fetch(`${APP}/api/ai/research-analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', cookie },
+        body: JSON.stringify({ projectId, step: 'meanings_status' }),
+      }).then(r => r.json()).catch(() => null)
+      if (!st) continue
+      if (st.status === 'ready') { done = true; break }
+      if (st.status === 'error') { errMsg = st.error || 'error'; break }
     }
-    if (errMsg) { log(`❌ 3. стрим вернул ошибку за ${((Date.now() - t0) / 1000).toFixed(1)}с: ${errMsg}`); return }
-    if (!done) { log('⚠️ 3. стрим кончился без done — проверяю материал (сервер мог доделать)') }
-    log(`✅ 3. generate_meanings отработал за ${((Date.now() - t0) / 1000).toFixed(1)}с`)
+    if (errMsg) { log(`❌ 3. фоновая сборка упала за ${((Date.now() - t0) / 1000).toFixed(1)}с: ${errMsg}`); return }
+    if (!done) { log('❌ 3. карта не дособралась за 8 минут'); return }
+    log(`✅ 3. generate_meanings (фон + поллинг) отработал за ${((Date.now() - t0) / 1000).toFixed(1)}с`)
 
     const check = await api(`/rest/v1/project_materials?select=raw_content,processing_status&project_id=eq.${projectId}&material_type=eq.meanings_map`)
     const map = Array.isArray(check.body) ? check.body[0] : null
@@ -686,11 +683,16 @@ async function meaningsSmoke() {
 // проекты — на это есть явное «да» владельца продукта в чате 3 августа.
 async function rebuildMeanings() {
   const APP = 'https://amaproduct.com'
+  // --project <id>: пересобрать ТОЛЬКО один проект (17.08, точечная починка
+  // карты Кристины Маринич) — без флага, как раньше, все проекты с картами.
+  const onlyProject = arg('project')
   log('\n=== Пробник-миграция: пересборка карт смыслов (слайд-канон) ===')
+  if (onlyProject) log(`режим: только проект ${onlyProject}`)
 
   const { body: maps } = await api('/rest/v1/project_materials?select=id,project_id,title,created_at&material_type=eq.meanings_map&order=created_at.desc')
   const byProject = new Map()
   for (const m of (maps || [])) {
+    if (onlyProject && m.project_id !== onlyProject) continue
     if (!byProject.has(m.project_id)) byProject.set(m.project_id, [])
     byProject.get(m.project_id).push(m)
   }
@@ -750,33 +752,30 @@ async function rebuildMeanings() {
       if (!ver?.access_token) throw new Error('verify не дал сессию')
       const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
 
-      // 2) тот же путь, что кнопка «Обновить карту»
+      // 2) тот же путь, что кнопка «Обновить карту» (контракт 17.08: 202 +
+      //    фоновая сборка, статус — step=meanings_status до ready/error)
       const t0 = Date.now()
       const res = await fetch(`${APP}/api/ai/research-analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', cookie },
         body: JSON.stringify({ projectId: pid, step: 'generate_meanings' }),
       })
-      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 120)}`)
-      const reader = res.body.getReader()
-      const dec = new TextDecoder()
-      let buf = '', done = false, errMsg = ''
-      while (true) {
-        const { value, done: end } = await reader.read()
-        if (end) break
-        buf += dec.decode(value, { stream: true })
-        for (const ev of buf.split('\n\n')) {
-          const line = ev.split('\n').find(l => l.startsWith('data: '))
-          if (!line) continue
-          try {
-            const m = JSON.parse(line.slice(6))
-            if (m.type === 'done') done = true
-            if (m.type === 'error') errMsg = m.message || 'error'
-          } catch { /* ping */ }
-        }
+      if (res.status !== 202) throw new Error(`HTTP ${res.status} (ждали 202): ${(await res.text().catch(() => '')).slice(0, 120)}`)
+      let done = false, errMsg = ''
+      const deadline = Date.now() + 8 * 60_000
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 5000))
+        const st = await fetch(`${APP}/api/ai/research-analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', cookie },
+          body: JSON.stringify({ projectId: pid, step: 'meanings_status' }),
+        }).then(r => r.json()).catch(() => null)
+        if (!st) continue
+        if (st.status === 'ready') { done = true; break }
+        if (st.status === 'error') { errMsg = st.error || 'error'; break }
       }
       if (errMsg) throw new Error(errMsg)
-      if (!done) throw new Error('стрим кончился без done')
+      if (!done) throw new Error('карта не дособралась за 8 минут')
 
       // 3) проверка формата
       const { body: check } = await api(`/rest/v1/project_materials?select=raw_content,processing_status&project_id=eq.${pid}&material_type=eq.meanings_map&limit=1`)

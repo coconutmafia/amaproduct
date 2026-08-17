@@ -3,9 +3,14 @@ import { createClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
+import { captureException } from '@/lib/sentry'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 90 // Apify profile scrape can take up to ~60-80s on cold start
+// 300, а не 90: холодный Apify ест до 80с, а фолбэк-цепочка IG (методы 1-5 по
+// 10-12с) сверху — при 90с функцию убивал Vercel ДО честного ответа, и клиент
+// видел generic-тост вместо нашего сообщения (кейс Иры Varshavsky 16.08 — у неё
+// первопричиной был 402, но класс таймаута реален и ловился бы тем же тостом).
+export const maxDuration = 300
 
 function decodeHtml(s: string): string {
   return s
@@ -329,6 +334,12 @@ export async function POST(request: Request) {
 
     if (!bio && posts.length === 0) {
       const tried = [telegramRaw && 'Telegram', instagramRaw && 'Instagram'].filter(Boolean).join(' и ')
+      // Телеметрия: до 17.08 полный провал скрейпа был виден только в
+      // console.warn (то есть нигде) — жалобы клиентов приходили раньше сигнала.
+      await captureException(
+        new Error(`autofill: не удалось получить данные (${tried})`),
+        { where: 'projects/autofill scrape-empty', instagram: instagramRaw.slice(0, 80), telegram: telegramRaw.slice(0, 80) },
+      )
       // Honest message: usually it's a temporary block / private account, not the
       // user's fault. Always offer the manual path so onboarding is never a dead end.
       return NextResponse.json({
@@ -391,8 +402,12 @@ ${content}
       content_goals: parsed.content_goals || '',
     })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Ошибка анализа'
-    console.error('[autofill] Error:', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    // Сырец — в телеметрию; клиенту — человеческий текст (сырой err.message
+    // мог протащить хвосты провайдеров/путей — граница доверия).
+    console.error('[autofill] Error:', err instanceof Error ? err.message : err)
+    await captureException(err, { where: 'projects/autofill' })
+    return NextResponse.json({
+      error: 'Не удалось проанализировать профиль — попробуй ещё раз через минуту. Поля можно заполнить и вручную ниже.',
+    }, { status: 500 })
   }
 }

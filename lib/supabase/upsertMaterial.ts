@@ -30,9 +30,19 @@ export async function upsertProjectMaterial(
     .maybeSingle()
 
   if (existing?.id) {
+    // created_at бампается ОСОЗНАННО (17.08, кейс Кристины Маринич): у
+    // project_materials нет updated_at, а бейдж «добавлено кастдевов: N —
+    // обнови карту» сравнивает created_at карты с created_at кастдевов. Без
+    // бампа пересборка карты НИКОГДА не гасила бейдж — «обновляю, а он висит».
+    // Семантика поля для переcобираемых материалов (карта, ToV, таблицы):
+    // «когда эта версия собрана», сортировка списка материалов это отражает.
     const { error } = await supabase
       .from('project_materials')
-      .update({ raw_content: m.raw_content, processing_status: m.processing_status })
+      .update({
+        raw_content:       m.raw_content,
+        processing_status: m.processing_status,
+        created_at:        new Date().toISOString(),
+      })
       .eq('id', existing.id)
     return { error: error ? { message: error.message } : null }
   }

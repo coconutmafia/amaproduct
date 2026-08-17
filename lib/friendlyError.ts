@@ -51,6 +51,10 @@ function extractMessage(error: unknown): string {
 // our fault and the user CAN act on them, so translate them explicitly.
 const DOMAIN_MAP: Array<[RegExp, string]> = [
   [/project_limit_reached/i, 'На твоём тарифе закончились проекты. Выбери тариф выше на странице «Тарифы» — и создавай больше.'],
+  // 402 от requirePaidAccess. До 17.08 код проваливался в generic-фолбэк, и
+  // Ира Varshavsky 9 раз видела «Не удалось получить данные профиля» там, где
+  // правда была «подключи тариф» (авто-заполнение до оформления подписки).
+  [/payment_required/i, 'Эта функция доступна после подключения тарифа. Открой страницу «Тарифы», выбери план — и продолжай.'],
 ]
 
 export function friendlyError(error: unknown, fallback: string = SERVICE_ERROR_MESSAGE): string {

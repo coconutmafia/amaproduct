@@ -1146,53 +1146,54 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
     }
   }
 
-  // SSE stream — same pattern as warmup-plan (proven to work on this host).
-  // Server heartbeats every chunk + 10s ping so the connection never goes
-  // silent. One AI pass over all interviews. Result is also saved server-
-  // side, so a dropped connection still leaves the map (refresh shows it).
+  // Фоновая сборка + поллинг (17.08): сервер отвечает 202 сразу и собирает
+  // карту в after() — сборка переживает закрытие вкладки и блокировку телефона
+  // (Кристина Маринич жала «Обновить» с телефона, SSE умирал вместе с экраном).
+  // Клиент опрашивает step=meanings_status до ready/error; статус хранится в
+  // самом материале, так что даже если и поллинг оборвётся — карта доедет и
+  // появится после обновления страницы.
   const generateMeaningsMap = async () => {
     setGeneratingMeanings(true)
-    const loadingToast = toast.loading('Собираю карту смыслов из всех интервью (≈1 минута). Не закрывай страницу.')
+    const loadingToast = toast.loading('Собираю карту смыслов из всех интервью (2-5 минут). Страницу можно закрыть — карта сохранится сама.')
     try {
       const res = await fetch('/api/ai/research-analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId, step: 'generate_meanings' }),
       })
-      if (!res.ok && res.headers.get('content-type')?.includes('application/json')) {
+      if (res.status !== 202) {
         const j = await res.json().catch(() => ({})) as { error?: string }
         throw new Error(j.error ?? 'Ошибка генерации')
       }
-      if (!res.body) throw new Error('Нет ответа от сервера')
 
-      const reader  = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = '', done = false, errMsg = ''
-
-      while (true) {
-        const { value, done: streamDone } = await reader.read()
-        if (streamDone) break
-        buffer += decoder.decode(value, { stream: true })
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() ?? ''
-        for (const ev of parts) {
-          const line = ev.split('\n').find(l => l.startsWith('data: '))
-          if (!line) continue
-          try {
-            const m = JSON.parse(line.slice(6)) as { type: string; message?: string }
-            if (m.type === 'status' && m.message) toast.loading(m.message, { id: loadingToast })
-            else if (m.type === 'done') done = true
-            else if (m.type === 'error') errMsg = m.message ?? 'Ошибка генерации карты смыслов'
-          } catch { /* heartbeat */ }
-        }
+      const deadline = Date.now() + 8 * 60_000
+      let outcome: 'ready' | 'error' | 'timeout' = 'timeout'
+      let errText = ''
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 5000))
+        try {
+          const st = await fetch('/api/ai/research-analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId, step: 'meanings_status' }),
+          })
+          if (!st.ok) continue // сеть моргнула — продолжаем поллить
+          const s = await st.json() as { exists?: boolean; status?: string; error?: string }
+          if (s.status === 'ready') { outcome = 'ready'; break }
+          if (s.status === 'error') { outcome = 'error'; errText = s.error ?? 'Ошибка генерации карты смыслов'; break }
+        } catch { /* сеть моргнула — продолжаем поллить */ }
       }
 
-      if (errMsg) throw new Error(errMsg)
-      if (!done) throw new Error('Связь оборвалась, но карта могла сохраниться — обнови страницу через минуту.')
-
       toast.dismiss(loadingToast)
-      toast.success('Карта смыслов готова и сохранена в материалы')
-      reloadKeepScroll()
+      if (outcome === 'ready') {
+        toast.success('Карта смыслов готова и сохранена в материалы')
+        reloadKeepScroll()
+      } else if (outcome === 'error') {
+        toast.error(friendlyError(new Error(errText), 'Ошибка генерации карты смыслов'), { duration: 60000 })
+        reloadKeepScroll()
+      } else {
+        toast('Карта ещё собирается — обнови страницу через пару минут, она появится в материалах.', { duration: 20000 })
+      }
     } catch (err) {
       toast.dismiss(loadingToast)
       toast.error(friendlyError(err, 'Ошибка генерации карты смыслов'), { duration: 60000 })

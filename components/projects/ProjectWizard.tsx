@@ -196,11 +196,18 @@ export function ProjectWizard() {
       })
       const data = await res.json() as {
         error?: string
+        code?: string
         platform?: string
         niche?: string
         description?: string
         target_audience?: string
         content_goals?: string
+      }
+      // 402 до оформления тарифа — честно говорим ЧТО делать, а не «не удалось
+      // получить данные» (Ира Varshavsky, 16.08: 9 попыток об эту стену).
+      if (res.status === 402 || data.code === 'payment_required') {
+        toast.error('Автозаполнение доступно после подключения тарифа. Выбери план на странице «Тарифы» — или заполни поля вручную ниже, это тоже работает.', { duration: 12000 })
+        return
       }
       if (!res.ok) throw new Error(data.error || 'Ошибка анализа')
       // Only fill fields that are currently empty

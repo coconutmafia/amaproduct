@@ -14,7 +14,7 @@ const AI_BUSY =
   'Генерация сейчас перегружена или временно недоступна. Подожди 1-2 минуты и нажми ещё раз — расшифровка не потеряется.'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { requireProjectAccess } from '@/lib/projects/access'
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { MASTER_RESEARCH_TITLE } from '@/lib/researchMaster'
 
 export const maxDuration = 300
@@ -257,11 +257,24 @@ const meaningsRowsTool = {
   },
 }
 
+// Бюджет входа карты смыслов (17.08, кейс Кристины Маринич): жёсткий кап 9000
+// на материал резал «Полные анализы кастдевов» по 30-50k так, что в промпт
+// попадала только шапка-оглавление без единой цитаты — карта «не менялась»
+// даже после успешной пересборки. Теперь кап динамический: до 24k на материал
+// в пределах общего бюджета ~380k символов (~110k токенов; вместе с промптом и
+// 32k выхода влезает в контекст с запасом), но не ниже прежних 9000.
+const MEANINGS_PER_MATERIAL_CAP = 24000
+const MEANINGS_TOTAL_BUDGET     = 380000
+
 function buildMeaningsLessonPrompt(materials: { title: string; raw_content: string }[]): string {
+  const cap = Math.max(
+    PER_MATERIAL_CAP,
+    Math.min(MEANINGS_PER_MATERIAL_CAP, Math.floor(MEANINGS_TOTAL_BUDGET / Math.max(1, materials.length))),
+  )
   const combined = materials
     .map(m => {
-      const content = m.raw_content.length > PER_MATERIAL_CAP
-        ? m.raw_content.slice(0, PER_MATERIAL_CAP) + '\n…(текст обрезан)'
+      const content = m.raw_content.length > cap
+        ? m.raw_content.slice(0, cap) + '\n…(текст обрезан)'
         : m.raw_content
       return `=== ${m.title} ===\n${content}`
     })
@@ -364,12 +377,6 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const rl = await rateLimit(user.id, 'research-analyze')
-  if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
-
-  const denied = await requirePaidAccess(user.id)
-  if (denied) return denied
-
   const body = await request.json() as {
     projectId:     string
     step:          'table1' | 'table2' | 'save' | 'generate_meanings' | 'meanings_status' | 'meanings_batch' | 'meanings_merge'
@@ -384,6 +391,18 @@ export async function POST(request: Request) {
 
   if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
 
+  // meanings_status — дешёвый read для поллинга фоновой сборки карты (17.08):
+  // клиент опрашивает его каждые ~5с, поэтому БЕЗ rateLimit (иначе поллинг сам
+  // съедает лимит research-analyze) и без paid-гейта; членство в проекте
+  // проверяется ниже как для всех шагов.
+  if (step !== 'meanings_status') {
+    const rl = await rateLimit(user.id, 'research-analyze')
+    if (!rl.allowed) return NextResponse.json({ error: rl.message, code: 'rate_limited' }, { status: 429 })
+
+    const denied = await requirePaidAccess(user.id)
+    if (denied) return denied
+  }
+
   const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
@@ -393,6 +412,26 @@ export async function POST(request: Request) {
     .eq('id', projectId)
     .single()
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+
+  // ── Статус карты смыслов (поллинг фоновой сборки) ───────────────────────────
+  if (step === 'meanings_status') {
+    const { data: mat } = await supabase
+      .from('project_materials')
+      .select('processing_status, raw_content, created_at')
+      .eq('project_id', projectId)
+      .eq('material_type', 'meanings_map')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!mat) return NextResponse.json({ exists: false })
+    return NextResponse.json({
+      exists:     true,
+      status:     mat.processing_status,
+      created_at: mat.created_at,
+      // Текст материала отдаём только для error — там человеческое сообщение
+      error: mat.processing_status === 'error' ? String(mat.raw_content ?? '').slice(0, 500) : undefined,
+    })
+  }
 
   // ── Step 1: Transcription → Table 1 ────────────────────────────────────────
   if (step === 'table1') {
@@ -725,26 +764,18 @@ export async function POST(request: Request) {
         project_id:        projectId,
         title:             MEANINGS_TITLE,
         material_type:     'meanings_map',
-        raw_content:       '⏳ Карта смыслов генерируется… Если эта надпись висит дольше 5 минут — что-то пошло не так, попробуй ещё раз.',
+        raw_content:       '⏳ Карта смыслов генерируется… Если эта надпись висит дольше 7 минут — что-то пошло не так, попробуй ещё раз.',
         processing_status: 'processing',
       })
     } catch { /* swallow */ }
 
-    const encoder = new TextEncoder()
-    const stream  = new ReadableStream({
-      async start(controller) {
-        let closed = false
-        const push = (s: string) => { if (!closed) { try { controller.enqueue(encoder.encode(s)) } catch { closed = true } } }
-        const send = (d: Record<string, unknown>) => push(`data: ${JSON.stringify(d)}\n\n`)
-
-        // Never let the connection go silent: immediate first byte, then a
-        // ping every 10s regardless of AI latency / DB write.
-        push(': open\n\n')
-        const ping = setInterval(() => push(': ping\n\n'), 10000)
-
+    // Генерация — в after(): 17.08 Кристина Маринич жала «Обновить карту» с
+    // телефона, SSE-запрос умирал вместе с вкладкой/блокировкой экрана, и
+    // сборка обрывалась без следа (тот же класс, что вылечили у транскрибации
+    // джобами). after() доживает после ответа независимо от клиента; клиент
+    // поллит step=meanings_status до ready/error.
+    after(async () => {
         try {
-          send({ type: 'status', message: 'Анализирую все интервью...' })
-
           // 32k выхода (как у table1): карта по уроку — строка на КАЖДУЮ
           // формулировку клиента, и на проекте с 20+ кастдевами (Katia,
           // 11 августа) 16k обрезались на середине tool-JSON → «карта не
@@ -758,7 +789,7 @@ export async function POST(request: Request) {
             messages:    [{ role: 'user', content: buildMeaningsLessonPrompt(materials) }],
           })
           for await (const chunk of aiStream) {
-            if (chunk.type === 'content_block_delta') send({ type: 'progress' })
+            void chunk // стрим вычитывается ради устойчивости долгого вызова
           }
           const finalMsg = await aiStream.finalMessage()
           const toolBlock = finalMsg.content.find((b) => b.type === 'tool_use')
@@ -786,10 +817,6 @@ export async function POST(request: Request) {
                 processing_status: 'error',
               })
             } catch { /* swallow */ }
-            send({
-              type: 'error',
-              message: 'Карта не собралась с первого захода. Нажми «Обновить карту» ещё раз — данные не потерялись.',
-            })
             return
           }
 
@@ -805,41 +832,40 @@ export async function POST(request: Request) {
 
           if (saveErr) {
             console.error('[generate_meanings] save error:', saveErr)
-            send({ type: 'error', message: `Карта смыслов собрана, но не сохранилась: ${saveErr.message}` })
-            return
+            await captureException(
+              new Error(`generate_meanings: карта собрана, но не сохранилась: ${saveErr.message}`),
+              { where: 'generate_meanings save', projectId },
+            )
+            try {
+              await upsertProjectMaterial(supabase, {
+                project_id:        projectId,
+                title:             MEANINGS_TITLE,
+                material_type:     'meanings_map',
+                raw_content:       '❌ Карта собралась, но не сохранилась. Нажми «Обновить карту из исследования» ещё раз.',
+                processing_status: 'error',
+              })
+            } catch { /* swallow */ }
           }
-
-          send({ type: 'done' })
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'AI недоступен'
-          console.error('[generate_meanings] stream error:', msg)
-          // Persist the error too, so it stays visible in materials
+          console.error('[generate_meanings] error:', msg)
+          await captureException(err, { where: 'generate_meanings after()', projectId })
+          // Persist the error too, so it stays visible in materials. Текст —
+          // человеческий, без сырого msg/стека (их читает клиент в материале).
           try {
             await upsertProjectMaterial(supabase, {
               project_id:        projectId,
               title:             MEANINGS_TITLE,
               material_type:     'meanings_map',
-              raw_content:       `❌ Ошибка генерации карты смыслов\n\n${msg}\n\n(Стек: ${err instanceof Error && err.stack ? err.stack.slice(0, 1500) : 'нет'})`,
+              raw_content:       '❌ Карта смыслов не собралась: генерация была перегружена. Нажми «Обновить карту из исследования» ещё раз — данные кастдевов не потерялись.',
               processing_status: 'error',
             })
           } catch { /* swallow */ }
-          send({ type: 'error', message: msg })
-        } finally {
-          clearInterval(ping)
-          closed = true
-          try { controller.close() } catch { /* already closed */ }
         }
-      },
     })
 
-    return new Response(stream, {
-      headers: {
-        'Content-Type':           'text/event-stream',
-        'Cache-Control':          'no-cache, no-transform',
-        'X-Accel-Buffering':      'no',
-        'X-Content-Type-Options': 'nosniff',
-      },
-    })
+    // 202 сразу: сборка идёт в фоне, клиент поллит step=meanings_status.
+    return NextResponse.json({ started: true }, { status: 202 })
   }
 
   // ── Client-orchestrated map-reduce (avoids one multi-minute request that
