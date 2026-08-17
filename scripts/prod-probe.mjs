@@ -1261,6 +1261,44 @@ async function anglesSmoke() {
   }
 }
 
+// ── ИНСТРУМЕНТ: точечная правка текста материала ─────────────────────────────
+// ⚠️ Пишет в КЛИЕНТСКИЙ материал — только по явной задаче владельца (прецедент:
+// canon-questions). Дефолт — dry-run с диффом; замена СТРОГО одного вхождения.
+// Использование:
+//   node scripts/prod-probe.mjs patch-material <materialId> <find> <replace> [--run]
+// (17.08: профиль Кати у Олеси Солохиной — «мать-одиночка» выдумана моделью,
+//  в расшифровке прямо упомянут муж.)
+async function patchMaterial() {
+  const [, , , materialId, find, replace] = process.argv
+  log('\n=== Инструмент: точечная правка материала ===')
+  if (!materialId || !find || replace === undefined) {
+    log('Использование: node scripts/prod-probe.mjs patch-material <materialId> "<find>" "<replace>" [--run]')
+    return
+  }
+  const { body } = await api(`/rest/v1/project_materials?id=eq.${materialId}&select=id,title,material_type,project_id,raw_content`)
+  const mat = Array.isArray(body) ? body[0] : null
+  if (!mat) { log('❌ материал не найден:', materialId); return }
+  log(`материал: «${mat.title}» (${mat.material_type}), проект ${mat.project_id}`)
+  // NFC-нормализация ОБЕИХ сторон: тайтлы/тексты с маков бывают в NFD,
+  // и визуально одинаковые строки иначе не совпадут.
+  const content = String(mat.raw_content || '').normalize('NFC')
+  const needle = String(find).normalize('NFC')
+  const count = content.split(needle).length - 1
+  if (count === 0) { log('❌ строка не найдена в материале. Первые 200 симв:\n', content.slice(0, 200)); return }
+  if (count > 1) { log(`❌ строка встречается ${count} раз — уточни до однозначной.`); return }
+  const updated = content.replace(needle, String(replace).normalize('NFC'))
+  const at = content.indexOf(needle)
+  log('\n— БЫЛО:  …' + content.slice(Math.max(0, at - 60), at + needle.length + 60).replace(/\n/g, ' | ') + '…')
+  log('— СТАНЕТ: …' + updated.slice(Math.max(0, at - 60), at + String(replace).length + 60).replace(/\n/g, ' | ') + '…')
+  if (!RUN) { log('\n[DRY-RUN] ничего не пишу. Добавь --run чтобы применить.'); return }
+  const upd = await api(`/rest/v1/project_materials?id=eq.${materialId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ raw_content: updated }),
+  })
+  if (upd.status >= 300) { log(`❌ не обновилось: ${upd.status}`, JSON.stringify(upd.body).slice(0, 200)); return }
+  log('✅ применено.')
+}
+
 // ── ПРОБНИК: выставить язык блога клиентскому проекту ────────────────────────
 // ⚠️ Пишет в КЛИЕНТСКИЙ проект (исключение из правила ama-probe-*) — запускать
 // только по явной задаче владельца (13 августа: «закрепим настройкой» для
@@ -1295,7 +1333,7 @@ async function setLanguage() {
 
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
