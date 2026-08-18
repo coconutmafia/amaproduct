@@ -41,6 +41,15 @@ const DEMO = {
   slides: [{ headline: 'пример **слайда**', body: 'текст контента подаётся в фирменном стиле: цвета, шрифт, акценты — твои.' }],
   last_slide: { text: 'нравится?', action: 'это твой фирменный стиль' },
 }
+
+// @font-face для карточек выбора шрифта: те же TTF из public/fonts, которыми
+// рендерит слайды сервер, — образец «Аа Бб 123» в карточке = настоящий шрифт
+// (вопрос клиента 18.08: «как понять, как этот шрифт выглядит?»). Берём один
+// regular-файл на семью — для образца в списке этого достаточно.
+const FONT_PREVIEW_CSS = FONT_KEYS.map((k) => {
+  const f = FONTS[k].files.find((x) => x.weight === 400 && x.style !== 'italic') ?? FONTS[k].files[0]
+  return `@font-face{font-family:'brand-font-${k}';src:url('/fonts/${f.file}');font-display:swap;}`
+}).join('\n')
 const PREVIEWS = [{ i: 0, label: 'Обложка' }, { i: 1, label: 'Слайд' }, { i: 2, label: 'Финал' }]
 
 const ANALYZE_HINT = 'Распознавание занимает ~30-60 секунд'
@@ -325,6 +334,7 @@ export default function BrandPage() {
 
   return (
     <div className="mx-auto max-w-3xl p-5 pb-28">
+      <style dangerouslySetInnerHTML={{ __html: FONT_PREVIEW_CSS }} />
       <Link href={`/projects/${projectId}/knowledge`} className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-4 w-4" /> К материалам
       </Link>
@@ -411,13 +421,33 @@ export default function BrandPage() {
             {/* Project-wide controls (apply to posts AND stories): font, how key
                 words are filled, and free-text wishes for the AI. */}
             <div className="mt-1 flex flex-col gap-3 border-t border-border pt-3">
-              <label className="flex flex-col gap-1 text-xs font-medium text-foreground">
+              <div className="flex flex-col gap-1 text-xs font-medium text-foreground">
                 Шрифт <span className="font-normal text-muted-foreground">(общий для постов и сторис)</span>
-                <select value={brand.font} onChange={(e) => set({ font: e.target.value })}
-                  className="h-9 rounded-lg border border-border bg-background px-2 text-sm">
-                  {FONT_KEYS.map((k) => <option key={k} value={k}>{FONTS[k].label}</option>)}
-                </select>
-              </label>
+                {/* Карточки вместо нативного select (вопрос клиента 18.08: «как
+                    понять, как этот шрифт выглядит?») — образец рисуется САМИМ
+                    шрифтом: TTF лежат в public/fonts, @font-face ниже. Плюс
+                    превью-слайд ниже перерисовывается выбранным шрифтом. */}
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {FONT_KEYS.map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => set({ font: k })}
+                      className={`flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left transition-all ${
+                        brand.font === k
+                          ? 'border-primary/60 bg-primary/10 ring-1 ring-primary/40'
+                          : 'border-border bg-background hover:border-primary/40'
+                      }`}
+                    >
+                      <span style={{ fontFamily: `'brand-font-${k}', sans-serif` }} className="text-xl leading-tight text-foreground">
+                        Аа Бб 123
+                      </span>
+                      <span className="text-[10px] font-normal text-muted-foreground">{FONTS[k].label}</span>
+                    </button>
+                  ))}
+                </div>
+                <span className="font-normal text-muted-foreground">Нажми шрифт — образец «Примеры твоего стиля» ниже перерисуется им через пару секунд.</span>
+              </div>
               <label className="flex flex-col gap-1 text-xs font-medium text-foreground">
                 Выделение ключевых слов
                 <select value={brand.accentStyle} onChange={(e) => set({ accentStyle: e.target.value as AccentStyle })}
