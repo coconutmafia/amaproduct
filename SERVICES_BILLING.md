@@ -4,6 +4,29 @@
 > Августы (европейская карта) + оформления Supabase Pro. Юр-приём денег (Prodamus) — под РФ-данные Августы.
 > ⚠️ Смену карт/оплату делает ВЛАДЕЛЕЦ сам (ассистент финансовые данные не вводит).
 
+## 📮 ДОПОЛНЕНИЕ 18.08 — почта и налоговый номер Августы в каждом сервисе
+
+> Она налоговый резидент (ЕС) и платит налоги за сервисы → в каждом биллинге, кроме карты, нужно
+> указать её **billing email** (куда падают инвойсы) и **Tax ID / VAT number**. Где это лежит:
+
+| Сервис | Где почта для инвойсов | Где налоговый номер (VAT/Tax ID) |
+|---|---|---|
+| **Vercel** | Team → Settings → **Billing → Billing Information** → Billing Email | там же, поле **Tax ID** (тип VAT выбирается из списка стран) |
+| **Supabase** | Organization → **Billing → Email Recipient** | Organization → **Billing → Billing Address & Tax ID** |
+| **Anthropic** | console.anthropic.com → Settings → **Billing → Billing details** (email) | там же, поле **Tax ID/VAT** в billing details |
+| **OpenAI** | platform.openai.com → Settings → **Billing → Billing preferences** (email) | там же: Company name + **Tax ID (VAT)** + business address |
+| **Apify** | Console → **Billing → Billing details** (invoice email) | там же, **VAT ID** + компания/адрес |
+| **Домен** | контактный email аккаунта регистратора | обычно не требуется (физлицо ок) |
+| **Sentry / Resend / GitHub** | free-тарифы — почту сменить можно, налоги не применимы | — |
+| **Stripe** | ⚠️ это ПРИЁМ денег, не расход. Смена налоговых данных Stripe-аккаунта = смена бизнес-профиля (Settings → Business → Tax details) — **отдельное решение**, не делать мимоходом | — |
+| **Prodamus** | РФ-приём: ЛК Продамуса → реквизиты | под ИНН/самозанятость Августы (как ниже) |
+
+> После смены email в Vercel/Supabase/Anthropic/OpenAI/Apify новые инвойсы (обычно и прошлые из
+> раздела Invoices) доступны с её почты — бухгалтерии этого достаточно.
+
+⚠️ Поправка к «⚪ не используются» ниже: **Stripe уже БОЕВОЙ** (rk_live, мировые оплаты подписок
+идут через него с запуска) — блок ниже писан до запуска и в этой части устарел.
+
 ## 🔴 Основные платные сервисы (перенести карту на Августу)
 
 | Сервис | Для чего в AMA | Где аккаунт / где менять карту |
