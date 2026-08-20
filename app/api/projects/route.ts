@@ -211,7 +211,26 @@ export async function PATCH(request: Request) {
         .from('projects').select('id').eq('id', projectId).eq('owner_id', user.id).single()
       if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-      const { error } = await supabase.from('projects').update(fields).eq('id', projectId)
+      // Белый список колонок НА РАНТАЙМЕ (20.08): тип fields — compile-time
+      // иллюзия, в body можно было прислать ЛЮБУЮ колонку (owner_id,
+      // completeness_score, created_at…) и она уезжала в update() как есть.
+      const ALLOWED_PROJECT_FIELDS = [
+        'name', 'niche', 'description', 'target_audience', 'content_goals',
+        'instagram_url', 'telegram_url', 'vk_url', 'youtube_url', 'status',
+        'content_language',
+      ] as const
+      const clean: Record<string, unknown> = {}
+      for (const k of ALLOWED_PROJECT_FIELDS) {
+        if (k in (fields as Record<string, unknown>)) clean[k] = (fields as Record<string, unknown>)[k]
+      }
+      if ('status' in clean && !['active', 'draft', 'archived'].includes(clean.status as string)) {
+        return NextResponse.json({ error: 'Bad status' }, { status: 400 })
+      }
+      if (Object.keys(clean).length === 0) {
+        return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
+      }
+
+      const { error } = await supabase.from('projects').update(clean).eq('id', projectId)
       if (error) throw error
       return NextResponse.json({ success: true })
     }

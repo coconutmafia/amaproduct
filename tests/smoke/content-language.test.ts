@@ -184,6 +184,12 @@ describe('система промптов: цепочка языка не рвё
     expect(src).toContain("['ru', 'en', 'es', 'de']")
     expect(src).toContain('Bad content_language')
   })
+  it('update_project: рантайм-аллоулист колонок, сырые fields в update() не уходят', () => {
+    const src = readFileSync(join(process.cwd(), 'app/api/projects/route.ts'), 'utf8')
+    expect(src).toContain('ALLOWED_PROJECT_FIELDS')
+    expect(src).toContain(".update(clean)")
+    expect(src).not.toContain('.update(fields)')
+  })
   it('миграция 038 допускает все четыре языка', () => {
     const sql = readFileSync(join(process.cwd(), 'supabase/migrations/038_project_content_language.sql'), 'utf8')
     expect(sql).toContain("('ru', 'en', 'es', 'de')")
