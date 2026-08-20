@@ -1269,10 +1269,10 @@ async function anglesSmoke() {
 async function asUser() {
   const APP = 'https://amaproduct.com'
   const email = (process.argv[3] || '').trim().toLowerCase()
-  const paths = process.argv.slice(4).filter(a => a.startsWith('/'))
-  log('\n=== Инструмент: GET глазами юзера ===')
+  const paths = process.argv.slice(4).filter(a => a.startsWith('/') || a.startsWith('POST:'))
+  log('\n=== Инструмент: GET/POST глазами юзера ===')
   if (!email || paths.length === 0) {
-    log('Использование: node scripts/prod-probe.mjs as-user user@mail.com /dashboard /api/materials/<id> --run')
+    log('Использование: node scripts/prod-probe.mjs as-user user@mail.com /dashboard "POST:/api/download-text:filename=a.txt&mime=text/plain&content=hi" --run')
     return
   }
   log(`юзер: ${email}; пути: ${paths.join(', ')}`)
@@ -1297,10 +1297,21 @@ async function asUser() {
   const ref = new URL(U).hostname.split('.')[0]
   const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
   log('✅ сессия получена')
+  // Форма POST: путь вида "POST:/api/x:field=v&field2=v2" — воспроизводит
+  // скрытую форму downloadTextViaServer (webview-безопасные скачивания 20.08)
   for (const p of paths) {
     const t0 = Date.now()
+    const isPost = p.startsWith('POST:')
+    const [, postPath, postBody] = isPost ? p.match(/^POST:([^:]+):(.*)$/s) ?? [] : []
     try {
-      const res = await fetch(APP + p, { headers: { cookie }, redirect: 'manual' })
+      const res = isPost
+        ? await fetch(APP + postPath, {
+            method: 'POST',
+            headers: { cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: postBody,
+            redirect: 'manual',
+          })
+        : await fetch(APP + p, { headers: { cookie }, redirect: 'manual' })
       const ct = res.headers.get('content-type') || ''
       const body = await res.text()
       log(`\n— GET ${p} → ${res.status} (${((Date.now() - t0) / 1000).toFixed(1)}с, ${ct.split(';')[0]}, ${body.length} байт)`)

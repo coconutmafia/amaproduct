@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { friendlyError } from '@/lib/friendlyError'
+import { downloadTextViaServer } from '@/lib/utils/saveFile'
 import { createClient } from '@/lib/supabase/client'
 import {
   ChevronRight, ChevronLeft, CheckCircle2,
@@ -268,14 +269,8 @@ export function UnpackingInterview({ projectId, open, onClose, onSuccess }: Prop
   // ── Download ───────────────────────────────────────────────────────────────
   const handleDownload = useCallback(() => {
     setIsDownloading(true)
-    const doc = buildDocument()
-    const blob = new Blob([doc], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'распаковка-личности.txt'
-    a.click()
-    URL.revokeObjectURL(url)
+    // Через сервер, не blob — работает из Telegram-webview и iOS-PWA (20.08)
+    downloadTextViaServer('распаковка-личности.txt', 'text/plain', buildDocument())
     setIsDownloading(false)
   }, [buildDocument])
 

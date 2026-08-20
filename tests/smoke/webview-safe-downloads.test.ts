@@ -50,3 +50,44 @@ describe('материалы: просмотр и скачивание живу�
     expect(src).toContain('mergeRepeats: [0, 1]')
   })
 })
+
+// Свип 20.08 (мандат Матвея: «все в основном мобильные юзеры — не должно быть
+// проблем»): 手писные <a download> запрещены ВЕЗДЕ, кроме единственного
+// фолбэка внутри lib/utils/saveFile.ts. Текстовые скачивания идут через
+// POST /api/download-text (top-level форма), бинарные — через saveBlobSmart
+// (share-first). Новый код с blob-скачиванием мимо хелпера уронит этот тест.
+describe('репо-широкий запрет ручных <a download> (кроме saveFile.ts)', () => {
+  const { readdirSync, statSync } = require('node:fs') as typeof import('node:fs')
+  const walk = (dir: string, acc: string[] = []): string[] => {
+    for (const name of readdirSync(dir)) {
+      if (name === 'node_modules' || name === '.next' || name === '.git') continue
+      const p = join(dir, name)
+      if (statSync(p).isDirectory()) walk(p, acc)
+      else if (/\.(ts|tsx)$/.test(name)) acc.push(p)
+    }
+    return acc
+  }
+  it('присвоение .download = есть только в saveFile.ts', () => {
+    const files = [...walk(join(process.cwd(), 'components')), ...walk(join(process.cwd(), 'app')), ...walk(join(process.cwd(), 'lib'))]
+    const offenders: string[] = []
+    for (const f of files) {
+      if (f.endsWith('lib/utils/saveFile.ts')) continue
+      const src = readFileSync(f, 'utf8')
+      if (/\.download\s*=\s*/.test(src)) offenders.push(f)
+    }
+    expect(offenders, `Ручной <a download> глушится Telegram-webview/iOS-PWA — используй saveBlobSmart/downloadTextViaServer из lib/utils/saveFile.ts:\n${offenders.join('\n')}`).toEqual([])
+  })
+  it('download-text: только text/*-белый список, attachment, nosniff, лимит, auth', () => {
+    const src = readFileSync(join(process.cwd(), 'app/api/download-text/route.ts'), 'utf8')
+    expect(src).toContain("'text/csv', 'text/markdown', 'text/plain'")
+    expect(src).toContain("filename*=UTF-8''")
+    expect(src).toContain('nosniff')
+    expect(src).toContain('MAX_BYTES')
+    expect(src).toContain('Unauthorized')
+  })
+  it('saveBlobSmart: share-first с фолбэком', () => {
+    const src = readFileSync(join(process.cwd(), 'lib/utils/saveFile.ts'), 'utf8')
+    expect(src).toContain('canShare')
+    expect(src).toContain('AbortError')
+  })
+})

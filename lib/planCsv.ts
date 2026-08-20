@@ -75,15 +75,6 @@ export async function downloadPlanXlsx(name: string, planData: unknown): Promise
   await downloadXlsx(name || 'План прогрева', 'План прогрева', planToAoa(planData))
 }
 
-export function downloadPlanCsv(name: string, planData: unknown): void {
-  const csv = planToCsv(planData)
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${(name || 'План прогрева').replace(/[^\wа-яёА-ЯЁ \-]/gi, '').trim().slice(0, 60) || 'plan'}.csv`
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
-}
+// downloadPlanCsv удалён 20.08 (мёртвый код с <a download> — паттерн глушится
+// Telegram-webview/iOS-PWA; живой экспорт плана идёт через downloadPlanXlsx →
+// downloadXlsxBook → saveBlobSmart).

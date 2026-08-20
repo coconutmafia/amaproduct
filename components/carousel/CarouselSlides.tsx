@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { downscaleImage } from '@/lib/downscaleImage'
 import { friendlyError } from '@/lib/friendlyError'
+import { saveBlobSmart } from '@/lib/utils/saveFile'
 
 type Dict = Record<string, unknown>
 
@@ -44,14 +45,10 @@ async function renderSlide(carousel: Dict, index: number, brand?: Brand, photos?
 }
 
 function download(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = name
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 4000)
+  // share-first: blob+<a download> молча умирает в Telegram-webview и iOS-PWA,
+  // откуда приходят наши мобильные юзеры (инцидент 20.08) — saveBlobSmart
+  // сначала открывает системный share-sheet, потом классический фолбэк
+  void saveBlobSmart(name, blob)
 }
 
 export function CarouselSlides({

@@ -83,12 +83,10 @@ export async function downloadXlsxBook(filename: string, sheets: XlsxSheet[]): P
   const buf = await wb.xlsx.writeBuffer()
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
   const safe = (filename || 'table').replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().slice(0, 80) || 'table'
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${safe}.xlsx`
-  a.click()
-  URL.revokeObjectURL(url)
+  // share-first вместо <a download>: blob-скачивание молча умирает в
+  // Telegram-webview и iOS-PWA — среде наших мобильных юзеров (20.08)
+  const { saveBlobSmart } = await import('@/lib/utils/saveFile')
+  await saveBlobSmart(`${safe}.xlsx`, blob)
 }
 
 /** Скачать один лист (совместимость со старыми вызовами). */

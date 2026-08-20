@@ -22,6 +22,7 @@ import { StoryEditor, type EditorLoadRequest } from '@/components/carousel/Story
 import { PhotoUploader } from '@/components/content/PhotoUploader'
 import { type Block, type SlideValue } from '@/components/carousel/FreeCanvas'
 import { startOverlayJob, awaitOverlayJob, OverlayPaymentRequired } from '@/lib/videoOverlayJob'
+import { saveBlobSmart } from '@/lib/utils/saveFile'
 
 interface Brand { accentColor?: string; bg?: string; text?: string; bgStyle?: string; handle?: string; logoUrl?: string; font?: string; accentStyle?: 'gradient' | 'flat' }
 interface Frame {
@@ -57,10 +58,10 @@ const frameOverlayText = (f: { headline?: string; body?: string }) =>
 interface StorySet { id: string; created_at: string; script: string; frames: SetFrame[] }
 
 function download(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 4000)
+  // share-first: blob+<a download> молча умирает в Telegram-webview и iOS-PWA,
+  // откуда приходят наши мобильные юзеры (инцидент 20.08) — saveBlobSmart
+  // сначала открывает системный share-sheet, потом классический фолбэк
+  void saveBlobSmart(name, blob)
 }
 
 let _bid = 0

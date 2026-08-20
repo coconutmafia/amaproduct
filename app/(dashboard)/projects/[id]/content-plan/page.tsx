@@ -12,6 +12,7 @@ import { ContentPlanGrid } from '@/components/content/ContentPlanGrid'
 import { AiEditChat } from '@/components/ai/AiEditChat'
 import { toast } from 'sonner'
 import type { ContentItem, ContentType, WarmupPhase, WarmupPlanData, WarmupPhaseData } from '@/types'
+import { downloadTextViaServer } from '@/lib/utils/saveFile'
 
 const DAYS_OF_WEEK = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС']
 
@@ -396,12 +397,9 @@ export default function ContentPlanPage() {
     }
 
     const md   = lines.join('\n')
-    const blob = new Blob(['﻿' + md], { type: 'text/markdown;charset=utf-8' })
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
     const safeName = (planName || 'content-plan').replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().slice(0, 60) || 'content-plan'
-    a.href = url; a.download = `${safeName} — Неделя ${week}.md`; a.click()
-    URL.revokeObjectURL(url)
+    // Через сервер, не blob — работает из Telegram-webview и iOS-PWA (20.08)
+    downloadTextViaServer(`${safeName} — Неделя ${week}.md`, 'text/markdown', '﻿' + md)
     toast.success('Скачано')
   }, [days, week, planName])
 

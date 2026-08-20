@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { downscaleImage } from '@/lib/downscaleImage'
 import { friendlyError } from '@/lib/friendlyError'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
+import { saveBlobSmart } from '@/lib/utils/saveFile'
 
 interface Brand {
   accentColor?: string; bg?: string; text?: string
@@ -22,10 +23,10 @@ function firstLine(text: string): string {
 }
 
 function download(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 4000)
+  // share-first: blob+<a download> молча умирает в Telegram-webview и iOS-PWA,
+  // откуда приходят наши мобильные юзеры (инцидент 20.08) — saveBlobSmart
+  // сначала открывает системный share-sheet, потом классический фолбэк
+  void saveBlobSmart(name, blob)
 }
 
 export function PostImage({ text, projectId, brand, storageKey }: { text: string; projectId?: string; brand?: Brand; storageKey?: string }) {

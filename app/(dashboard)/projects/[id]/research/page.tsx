@@ -9,6 +9,7 @@ import { ArrowLeft, Upload, Mic, Loader2, ChevronDown, ChevronUp, Sparkles, Down
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import type { InterviewTable, Respondent } from '@/app/api/ai/research-analyze/route'
+import { downloadTextViaServer } from '@/lib/utils/saveFile'
 
 // Максимальный размер аудиофайла (МБ). Должен совпадать с лимитом загрузки
 // Supabase (Free = 50 МБ жёстко; Pro — сколько выставишь в Project Settings →
@@ -1292,9 +1293,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
 function downloadCSV(rows: string[][], filename: string) {
   const escape = (s: string) => `"${s.replace(/"/g, '""')}"`
   const csv    = rows.map(r => r.map(escape).join(',')).join('\n')
-  const blob   = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
-  const url    = URL.createObjectURL(blob)
-  const a      = document.createElement('a')
-  a.href = url; a.download = filename; a.click()
-  URL.revokeObjectURL(url)
+  // Через сервер, не blob: blob+<a download> молча не работает в
+  // Telegram-webview и iOS-PWA — а юзеры приходят именно оттуда (20.08)
+  downloadTextViaServer(filename, 'text/csv', '﻿' + csv)
 }
