@@ -18,9 +18,8 @@ import { toast } from 'sonner'
 import Link from 'next/link'
 import { friendlyError } from '@/lib/friendlyError'
 import { computeCompleteness } from '@/lib/completeness'
-import { audienceResearchToAoa, audienceResearchToPivotAoa, meaningsMapToAoa } from '@/lib/researchTables'
-import { downloadXlsxBook, type XlsxSheet } from '@/lib/utils/xlsxTable'
-import { downloadDocx, openMaterialInBrowser } from '@/lib/utils/docxText'
+// Сборка xlsx/docx и просмотр переехали на сервер и в модалку (20.08):
+// blob-скачивания и window.open глушились Telegram-webview / iOS-PWA / Safari.
 import {
   CheckCircle2, Circle, Loader, AlertCircle, Upload, BookOpen,
   X, File, Loader2, Plus, FileText, ChevronDown, ChevronUp,
@@ -1047,8 +1046,12 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
 
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [openingId, setOpeningId] = useState<string | null>(null)
+  // Просмотр материала — МОДАЛКА в этой же странице (инцидент 20.08, Полина):
+  // window.open после await молча глушится встроенными браузерами (сайт открыт
+  // из Telegram), iOS-PWA и настольным Safari с блокировкой попапов — клиент
+  // видел вечное «ничего не произошло». Модалке никакие попапы не нужны.
+  const [viewer, setViewer] = useState<{ id: string; title: string; content: string } | null>(null)
 
-  // «Посмотреть» — open the material right in the browser, nothing downloaded.
   const openMaterial = async (id: string, title: string) => {
     setOpeningId(id)
     try {
@@ -1057,7 +1060,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
       const data = await res.json() as { raw_content?: string }
       const content = data.raw_content || ''
       if (!content.trim()) { toast.error('В материале пока нет содержимого'); return }
-      openMaterialInBrowser(title, content)
+      setViewer({ id, title, content })
     } catch {
       toast.error('Не удалось открыть материал')
     } finally {
@@ -1065,67 +1068,16 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
     }
   }
 
-  const downloadMaterial = async (id: string, title: string, type?: string) => {
+  // Скачивание — ОБЫЧНАЯ навигация на серверный URL с Content-Disposition
+  // (сборка xlsx/docx переехала на сервер: /api/materials/[id]/download).
+  // Blob + <a download> не работал во встроенных браузерах (Telegram) и
+  // iOS-PWA — тот же инцидент 20.08. Навигацию на attachment браузер/webview
+  // обрабатывает сам («Сохранить/Поделиться») и со страницы НЕ уходит.
+  const downloadMaterial = (id: string) => {
     setDownloadingId(id)
-    try {
-      const res = await fetch(`/api/materials/${id}`)
-      if (!res.ok) throw new Error('Ошибка загрузки')
-      const data = await res.json() as { raw_content?: string }
-      const content = data.raw_content || ''
-      if (!content.trim()) { toast.error('В материале пока нет содержимого'); return }
-      const safe = (title || 'material').replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().slice(0, 80) || 'material'
-
-      // Structured research materials → real XLSX (true columns; comma-CSV
-      // showed as one column in RU Excel / iOS). Pivoted/restructured per spec.
-      //
-      // Состав книги = ЭТАЛОН из урока «Касдевы Ава.xlsx»: ровно два листа —
-      // «Касдевы» (строка = участник) и «Карта смыслов». Листы расшифровок,
-      // которые пришивались ко всем выгрузкам, убраны (войс Августы 3 августа:
-      // «расшифровки тоже выгружаются, зачем непонятно… не могу понять,
-      // сколько вкладок»; Матвей: делать точно как в уроках). Расшифровки
-      // скачиваются по отдельности со страницы материалов, как и были.
-      let aoa: string[][] | null = null
-      if (type === 'audience_research') aoa = audienceResearchToAoa(content)
-      else if (type === 'meanings_map') aoa = meaningsMapToAoa(content)
-      if (aoa && aoa.length > 1) {
-        if (type === 'meanings_map') {
-          // mergeRepeats: категория и общая формулировка слиты по группе строк —
-          // как в эталонном листе урока.
-          await downloadXlsxBook(safe, [{ name: 'Карта смыслов', aoa, mergeRepeats: [0, 1] }])
-          return
-        }
-        // Кастдев-книга СТРОГО как эталон урока: два листа — «Касдевы»
-        // (строка = участник) и «Карта смыслов». Вертикальный служебный лист
-        // убран (Августа, 11 августа: «почему горизонтально и вертикально,
-        // зачем?» — путал команду); вернуть при нужде — одна строка.
-        const sheets: XlsxSheet[] = []
-        const pivot = audienceResearchToPivotAoa(content)
-        if (pivot.length > 1) sheets.push({ name: 'Касдевы', aoa: pivot })
-        else sheets.push({ name: 'Кастдевы', aoa })
-        const mapMat = materials.find(m => m.material_type === 'meanings_map' && m.processing_status === 'ready')
-        if (mapMat) {
-          try {
-            const mr = await fetch(`/api/materials/${mapMat.id}`)
-            if (mr.ok) {
-              const md = await mr.json() as { raw_content?: string }
-              const mapAoa = meaningsMapToAoa(md.raw_content || '')
-              if (mapAoa.length > 1) sheets.push({ name: 'Карта смыслов', aoa: mapAoa, mergeRepeats: [0, 1] })
-            }
-          } catch { /* карта не скачалась — книга кастдевов всё равно уедет */ }
-        }
-        await downloadXlsxBook(safe, sheets)
-        return
-      }
-
-      // Text materials → real .docx (Word/Pages/Docs). Previously we shipped a
-      // styled .html, which the browser just re-opened as a page instead of
-      // saving a usable document (tester). Viewing now lives behind «Посмотреть».
-      await downloadDocx(safe, title, content)
-    } catch {
-      toast.error('Не удалось скачать материал')
-    } finally {
-      setDownloadingId(null)
-    }
+    window.location.href = `/api/materials/${id}/download`
+    // Ответ-attachment страницу не перезагружает — вернём кнопку через пару секунд
+    setTimeout(() => setDownloadingId(null), 2500)
   }
 
   const handleDelete = async (id: string) => {
@@ -1305,7 +1257,7 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
                                 }
                               </button>
                               <button
-                                onClick={() => downloadMaterial(item.id, item.title, type)}
+                                onClick={() => downloadMaterial(item.id)}
                                 disabled={downloadingId === item.id}
                                 className="p-0.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors shrink-0"
                                 title="Скачать (Word / Excel)"
@@ -1568,6 +1520,25 @@ export function KnowledgePageClient({ projectId, completenessScore, initialMater
           setShowImport(false)
         }}
       />
+
+      {/* «Посмотреть» — просмотр материала в модалке (без window.open: он
+          глушится Telegram-webview/iOS-PWA/Safari-попап-блокером — 20.08) */}
+      <Dialog open={!!viewer} onOpenChange={(v) => { if (!v) setViewer(null) }}>
+        <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="pr-8 text-left text-sm leading-snug">{viewer?.title}</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-secondary/20 p-3 text-sm leading-relaxed text-foreground whitespace-pre-wrap">
+            {viewer?.content}
+          </div>
+          <div className="flex justify-end pt-1">
+            <Button size="sm" variant="outline" className="h-8 text-xs border-border"
+              onClick={() => { if (viewer) downloadMaterial(viewer.id) }}>
+              <Download className="mr-1.5 h-3 w-3" /> Скачать файлом
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

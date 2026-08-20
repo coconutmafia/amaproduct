@@ -1261,6 +1261,58 @@ async function anglesSmoke() {
   }
 }
 
+// ── ИНСТРУМЕНТ: GET путей приложения глазами юзера (read-only репродукция) ───
+// «У клиента не открывается» → смотрим ровно то, что видит его браузер:
+// сессия юзера (magiclink+otp, письмо НЕ уходит) → GET страницы/API → статус,
+// content-type, кусок тела. НИЧЕГО не пишет.
+//   node scripts/prod-probe.mjs as-user <email> <path> [path2 ...] --run
+async function asUser() {
+  const APP = 'https://amaproduct.com'
+  const email = (process.argv[3] || '').trim().toLowerCase()
+  const paths = process.argv.slice(4).filter(a => a.startsWith('/'))
+  log('\n=== Инструмент: GET глазами юзера ===')
+  if (!email || paths.length === 0) {
+    log('Использование: node scripts/prod-probe.mjs as-user user@mail.com /dashboard /api/materials/<id> --run')
+    return
+  }
+  log(`юзер: ${email}; пути: ${paths.join(', ')}`)
+  if (!RUN) { log('\n[DRY-RUN] сессию не создаю. Добавь --run.'); return }
+  const anon = (() => {
+    const txt = readFileSync(join(ROOT, '.env.local'), 'utf8')
+    const m = txt.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY'); return }
+  const gl = await api('/auth/v1/admin/generate_link', {
+    method: 'POST', body: JSON.stringify({ type: 'magiclink', email }),
+  })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log('❌ generate_link не дал email_otp:', gl.status, JSON.stringify(gl.body).slice(0, 150)); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST',
+    headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email, token: otp }),
+  }).then(r => r.json())
+  if (!ver?.access_token) { log('❌ verify не дал сессию'); return }
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+  log('✅ сессия получена')
+  for (const p of paths) {
+    const t0 = Date.now()
+    try {
+      const res = await fetch(APP + p, { headers: { cookie }, redirect: 'manual' })
+      const ct = res.headers.get('content-type') || ''
+      const body = await res.text()
+      log(`\n— GET ${p} → ${res.status} (${((Date.now() - t0) / 1000).toFixed(1)}с, ${ct.split(';')[0]}, ${body.length} байт)`)
+      if (res.status >= 300 && res.status < 400) log('   → redirect:', res.headers.get('location'))
+      const slice = ct.includes('json') ? body.slice(0, 300) : body.replace(/\s+/g, ' ').slice(0, 300)
+      log('   тело:', slice)
+    } catch (e) {
+      log(`\n— GET ${p} → FETCH УПАЛ за ${((Date.now() - t0) / 1000).toFixed(1)}с: ${e.message}`)
+    }
+  }
+}
+
 // ── ИНСТРУМЕНТ: точечная правка текста материала ─────────────────────────────
 // ⚠️ Пишет в КЛИЕНТСКИЙ материал — только по явной задаче владельца (прецедент:
 // canon-questions). Дефолт — dry-run с диффом; замена СТРОГО одного вхождения.
@@ -1333,7 +1385,7 @@ async function setLanguage() {
 
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
