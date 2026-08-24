@@ -205,6 +205,35 @@ describe('анализ конкурентов переживает мобилу 
   })
 })
 
+// ── 4d. Чат genFormat: почтовый ящик готового ответа ────────────────────────
+// Замерено пробниками chat-unit-fate/generate-unit-fate (24.08): при смерти
+// вкладки серверная инвокация ПЕРЕЖИВАЕТ обрыв и достримливает В ПУСТОТУ —
+// юнит списан, ответ выброшен, сервер обрыва не видит. Ящик в jobs решает:
+// полный текст ждёт клиента, самолечение застрявшего ящика возвращает юнит.
+describe('чат genFormat: юнит покупает ответ, который переживает мобилу (24.08)', () => {
+  it('роут: ящик только для метеренной генерации, id в заголовке, текст дописывается', () => {
+    const r = read('app/api/ai/chat/route.ts')
+    expect(r).toContain("type:    'chat_gen'")
+    expect(r).toContain("genFormat ? await createGenMailbox(user.id) : null") // бесплатный чат — без ящика
+    expect(r).toContain("'X-Gen-Job'")
+    expect(r).toContain('complete: true')  // полный ответ дописан в ящик
+    expect(r).toContain('complete: false') // обрыв Anthropic с частичным — честно помечен
+  })
+  it('клиент: id в localStorage до первого байта, догон на mount и при моргнувшей сети', () => {
+    const p = read('app/(dashboard)/projects/[id]/assistant/page.tsx')
+    expect(p).toContain("res.headers.get('X-Gen-Job')")
+    expect(p).toContain('saveGenJobId(pendingKey, genJobId)')
+    expect(p).toContain('fetchMailboxAnswer(genJobId)')
+  })
+  it('застрявший ящик: честная ошибка + ВОЗВРАТ юнита (оба пути самолечения)', () => {
+    const m = read('lib/jobs/chatGenMailbox.ts')
+    expect(m).toContain('refundGeneration(')
+    const f = read('lib/jobs/failStuckJob.ts')
+    expect(f).toContain("job.type === 'chat_gen'") // chain-watch >24ч тоже возвращает
+    expect(f).toContain("type === 'chat_gen'")     // и текст честный
+  })
+})
+
 // ── 5. mergeBriefsIntoPlanData: юнит на правила слияния ─────────────────────
 describe('mergeBriefsIntoPlanData', async () => {
   const { mergeBriefsIntoPlanData } = await import('../../lib/jobs/runWeekBriefJob')

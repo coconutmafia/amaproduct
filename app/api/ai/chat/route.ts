@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt } from '@/lib/ai/prompts/system'
@@ -23,6 +24,30 @@ const STREAM_HEADERS = {
   'X-Accel-Buffering': 'no',
 } as const
 
+// ── Почтовый ящик genFormat-ответа (24.08) ───────────────────────────────────
+// Замерено пробником chat-unit-fate: при смерти вкладки серверная инвокация
+// ПЕРЕЖИВАЕТ обрыв и достримливает ответ В ПУСТОТУ (enqueue в отменённый стрим
+// на Vercel не кидает) — юнит списан, готовый ответ выброшен, сервер обрыва
+// не видит (рефанд-по-обрыву невозможен). Фикс класса «долгий запрос умирает
+// на мобиле»: для метеренной генерации (genFormat) заводим строку в jobs ДО
+// стрима, отдаём её id заголовком X-Gen-Job (заголовки доезжают до первого
+// байта), а ГОТОВЫЙ текст дописываем в jobs.result по завершении — клиент,
+// потерявший вкладку, забирает ПОЛНЫЙ ответ по этому id вместо огрызка.
+async function createGenMailbox(userId: string): Promise<string | null> {
+  try {
+    const admin = createAdminClient()
+    const { data } = await admin.from('jobs').insert({
+      user_id: userId,
+      type:    'chat_gen',
+      status:  'processing',
+      payload: {},
+    }).select('id').single()
+    return (data?.id as string) ?? null
+  } catch {
+    return null // ящик — страховка, не условие ответа
+  }
+}
+
 // Stream a chat completion as plain text. If Claude hits the token ceiling
 // mid-answer (stop_reason === 'max_tokens') — likely on "5 рилзов"-style
 // requests — automatically continue from where it stopped (a trailing assistant
@@ -31,6 +56,7 @@ function streamingChatResponse(
   system: string,
   messages: { role: 'user' | 'assistant'; content: string }[],
   onEmptyError?: () => void | Promise<void>,
+  genJobId?: string | null,
 ) {
   const encoder = new TextEncoder()
   // Кэш-брейкпоинт на последнем сообщении: следующий ход диалога и раунды
@@ -42,6 +68,10 @@ function streamingChatResponse(
       ? { role: m.role, content: [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' as const } }] }
       : m
   )
+  const mailbox = async (patch: Record<string, unknown>) => {
+    if (!genJobId) return
+    try { await createAdminClient().from('jobs').update(patch).eq('id', genJobId) } catch { /* страховка */ }
+  }
   const readable = new ReadableStream({
     async start(controller) {
       let acc = ''
@@ -58,6 +88,8 @@ function streamingChatResponse(
           const final = await stream.finalMessage()
           if (final.stop_reason !== 'max_tokens') break
         }
+        // Полный ответ — в ящик (инвокация жива даже при умершей вкладке).
+        await mailbox({ status: 'done', result: { text: acc, complete: true } })
         controller.close()
       } catch (err) {
         console.error('Chat stream error:', err)
@@ -68,17 +100,21 @@ function streamingChatResponse(
         if (acc.length > 0) {
           // Don't present a truncated answer as complete — append a visible note,
           // then close so the partial text is kept.
+          await mailbox({ status: 'done', result: { text: acc, complete: false } })
           try { controller.enqueue(encoder.encode('\n\n⚠️ Ответ прервался — нажми отправить ещё раз, чтобы продолжить.')) } catch { /* ignore */ }
           try { controller.close() } catch { /* already closed */ }
         } else {
           // Nothing was produced — refund the consumed content unit (if metered).
           if (onEmptyError) { try { await onEmptyError() } catch { /* ignore */ } }
+          await mailbox({ status: 'error', error: 'Ассистент сейчас перегружен — попробуй через минуту-две. Единица контента возвращена.' })
           try { controller.error(err) } catch { /* already errored */ }
         }
       }
     },
   })
-  return new Response(readable, { headers: STREAM_HEADERS })
+  return new Response(readable, {
+    headers: genJobId ? { ...STREAM_HEADERS, 'X-Gen-Job': genJobId } : STREAM_HEADERS,
+  })
 }
 
 const SAVED_TYPE_RU: Record<string, string> = { post: 'пост', carousel: 'карусель', reels: 'рилз', stories: 'сторис', email: 'письмо', live: 'эфир' }
@@ -211,7 +247,8 @@ ${sysKnowledge ? `═══ МЕТОДОЛОГИЯ (опирайся на неё
 
       const blocked = await meterGeneration()
       if (blocked) return blocked
-      return streamingChatResponse(standaloneSystem, messages.map((m) => ({ role: m.role, content: m.content })), refundIfMetered)
+      const genJobId = genFormat ? await createGenMailbox(user.id) : null
+      return streamingChatResponse(standaloneSystem, messages.map((m) => ({ role: m.role, content: m.content })), refundIfMetered, genJobId)
     }
 
     // AI generation costs real money and no RLS-gated table write happens in
@@ -274,7 +311,8 @@ ${baseSystem}${savedBlock}`
 
     const blocked = await meterGeneration()
     if (blocked) return blocked
-    return streamingChatResponse(systemPrompt, messages.map((m) => ({ role: m.role, content: m.content })), refundIfMetered)
+    const genJobId = genFormat ? await createGenMailbox(user.id) : null
+    return streamingChatResponse(systemPrompt, messages.map((m) => ({ role: m.role, content: m.content })), refundIfMetered, genJobId)
   } catch (error) {
     console.error('Chat error:', error)
     // Сырец — в телеметрию (диагностика), клиенту — честный русский текст:

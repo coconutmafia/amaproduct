@@ -15,6 +15,7 @@ import { processWarmupPlanJob } from '@/lib/jobs/runWarmupPlanJob'
 import { processWeekBriefJob } from '@/lib/jobs/runWeekBriefJob'
 import { processAutofillJob } from '@/lib/jobs/runAutofillJob'
 import { processCompetitorAnalysisJob } from '@/lib/jobs/runCompetitorAnalysisJob'
+import { processChatGenJob } from '@/lib/jobs/chatGenMailbox'
 import { stuckJobMessage, settleStuckJob } from '@/lib/jobs/failStuckJob'
 
 // Джобы обрабатываются в after()-инвокациях с maxDuration=300s. Если инвокация
@@ -46,6 +47,7 @@ const RUNNERS: Record<string, (jobId: string) => Promise<void>> = {
   week_brief:            processWeekBriefJob,         // one-shot
   project_autofill:      processAutofillJob,          // one-shot
   competitor_analysis:   processCompetitorAnalysisJob, // one-shot
+  chat_gen:              processChatGenJob,           // ящик стрима: не резюмится — честная ошибка + возврат юнита
 }
 
 // GET /api/jobs/[id] — poll a background job's status/progress/result. RLS

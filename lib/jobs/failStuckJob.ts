@@ -28,6 +28,9 @@ export function stuckJobMessage(type: string): string {
   if (type === 'video_overlay') {
     return 'Обработка видео прервалась на сервере — это на нашей стороне. Единица контента возвращена, запусти ещё раз.'
   }
+  if (type === 'chat_gen') {
+    return 'Ответ прервался на сервере — отправь сообщение ещё раз. Единица контента возвращена.'
+  }
   return 'Обработка прервалась на сервере — это на нашей стороне. Запусти ещё раз; если повторится, напиши нам.'
 }
 
@@ -41,6 +44,11 @@ export async function settleStuckJob(admin: SupabaseClient, job: StuckJobRow): P
   if (job.type === 'video_overlay' && job.user_id) {
     // Юнит списан в роуте до джоба. Исходник НЕ трогаем: для серии это материал
     // клиента (keepSource), в одиночном режиме нужен для «Наложить заново».
+    await refundGeneration(job.user_id).catch(() => {})
+  }
+  if (job.type === 'chat_gen' && job.user_id) {
+    // Ящик genFormat-ответа (24.08): юнит списан до стрима, ответ не доехал —
+    // вернуть (инвокация умерла, продолжить диалоговый стрим нечем).
     await refundGeneration(job.user_id).catch(() => {})
   }
   // transcribe: файл нарочно остаётся (окно «Повторить»); чистка — chain-watch 48ч.

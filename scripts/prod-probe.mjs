@@ -1855,9 +1855,252 @@ async function competitorsSmoke() {
   }
 }
 
+// ── ПРОБНИК: судьба юнита в чате при смерти вкладки (диагностика, 24.08) ─────
+// Вопрос мандата: genFormat-генерация в чате списывает юнит ДО стрима, а ответ
+// летит в открытую вкладку. Что происходит при обрыве клиента на середине:
+// (а) списался ли юнит и вернулся ли; (б) ловит ли сервер обрыв (error_events
+// where='chat stream' c gotChars) или догенерирует в пустоту. Пробник рвёт
+// соединение после первых чанков и замеряет всё это. Юнит QA-боту возвращаем.
+//   node scripts/prod-probe.mjs chat-unit-fate [--run]
+async function chatUnitFate() {
+  const APP = 'https://amaproduct.com'
+  const QA = 'ama-qa-bot@gmail.com'
+  log('\n=== Пробник: судьба юнита в чате при смерти вкладки ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) QA-бот: сессия; замер generations_used ДО')
+    log(`  2) POST ${APP}/api/ai/chat genFormat=post (standalone) — читаем ~2с и РВЁМ соединение`)
+    log('  3) ждём 90с; замер generations_used ПОСЛЕ + error_events (chat stream)')
+    log('  4) вернуть юнит QA-боту (PATCH generations_used)')
+    return
+  }
+  const anon = (() => {
+    const txt = readFileSync(join(ROOT, '.env.local'), 'utf8')
+    const m = txt.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY в .env.local'); return }
+
+  const gl = await api('/auth/v1/admin/generate_link', {
+    method: 'POST',
+    body: JSON.stringify({ type: 'magiclink', email: QA }),
+  })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log('❌ generate_link не дал email_otp:', gl.status); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST',
+    headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA, token: otp }),
+  }).then(r => r.json())
+  if (!ver?.access_token) { log('❌ verify не дал сессию'); return }
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+  const qaId = ver.user?.id
+  log('✅ 1. сессия QA-бота получена')
+
+  const readUsed = async () => {
+    const r = await api(`/rest/v1/profiles?select=generations_used&id=eq.${qaId}`)
+    return Array.isArray(r.body) ? r.body[0]?.generations_used : null
+  }
+  const usedBefore = await readUsed()
+  log(`   generations_used ДО: ${usedBefore}`)
+
+  const t0 = Date.now()
+  const controller = new AbortController()
+  let gotChars = 0
+  let aborted = false
+  let genJobId = null
+  try {
+    const res = await fetch(`${APP}/api/ai/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({
+        genFormat: 'post',
+        messages: [{ role: 'user', content: 'Напиши пост про то, как ниша йоги для занятых мам меняет утренние привычки. Подробно, с историей.' }],
+      }),
+      signal: controller.signal,
+    })
+    if (!res.ok) {
+      log(`❌ 2. чат ответил ${res.status}: ${(await res.text()).slice(0, 200)}`)
+      return
+    }
+    // Почтовый ящик (фикс 24.08): id приходит заголовком до первого байта
+    genJobId = res.headers.get('x-gen-job')
+    const reader = res.body.getReader()
+    const dec = new TextDecoder()
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      gotChars += dec.decode(value, { stream: true }).length
+      // Получили первые чанки — рвём соединение, как умершая вкладка
+      if (gotChars > 50) { aborted = true; controller.abort(); break }
+    }
+  } catch (e) {
+    if (!aborted) { log('❌ 2. обрыв не по плану:', e?.message); return }
+  }
+  log(`✅ 2. соединение разорвано на ${gotChars} символах через ${((Date.now() - t0) / 1000).toFixed(1)}с; X-Gen-Job: ${genJobId ?? 'НЕТ'}`)
+
+  log('   жду 90с (сервер достримливает в пустоту — ящик должен наполниться)…')
+  await new Promise(r => setTimeout(r, 90_000))
+
+  const usedAfter = await readUsed()
+  let mailbox = null
+  if (genJobId) {
+    const jr = await api(`/rest/v1/jobs?select=status,result&id=eq.${genJobId}`)
+    mailbox = Array.isArray(jr.body) ? jr.body[0] : null
+  }
+
+  log(`\n── ФАКТЫ ──`)
+  log(`   generations_used: ${usedBefore} → ${usedAfter} (дельта ${usedAfter - usedBefore})`)
+  if (!genJobId) {
+    log('   ❌ заголовка X-Gen-Job нет — ящик не создался (деплой не доехал?)')
+  } else if (mailbox?.status === 'done' && mailbox?.result?.text) {
+    const len = String(mailbox.result.text).length
+    log(`   ✅ ЯЩИК ПОЛОН: status=done, текст ${len} символов (клиент получил лишь ${gotChars})`)
+    if (len > gotChars * 2) log('   → юнит куплен не зря: полный ответ ждёт клиента при возвращении')
+    else log(`   ⚠️ текст в ящике подозрительно короткий (${len}) — глянь content`)
+  } else {
+    log(`   ❌ ящик не наполнился: ${JSON.stringify(mailbox).slice(0, 200)}`)
+  }
+
+  // уборка: вернуть юнит(ы) и удалить ящик
+  if (usedAfter > usedBefore) {
+    const upd = await api(`/rest/v1/profiles?id=eq.${qaId}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ generations_used: usedBefore }),
+    })
+    const now = Array.isArray(upd.body) ? upd.body[0]?.generations_used : null
+    log(`🧹 уборка: generations_used возвращён на ${now}`)
+  }
+  if (genJobId) {
+    await api(`/rest/v1/jobs?id=eq.${genJobId}`, { method: 'DELETE' }).catch(() => {})
+    log('🧹 уборка: ящик удалён')
+  }
+}
+
+// ── ПРОБНИК: судьба юнита в generate при смерти вкладки (диагностика, 24.08) ─
+// Дополняет chat-unit-fate: у generate в КОНЦЕ стрима есть insert в
+// content_items — по нему видно, ПЕРЕЖИВАЕТ ли серверная инвокация обрыв
+// клиента: строка появилась → достримил в пустоту и сохранил; строки нет и
+// юнит вернулся → enqueue кинул (catch с refund); строки нет и юнит не
+// вернулся → инвокацию убило на обрыве. Юнит и мусор возвращаем/убираем.
+//   node scripts/prod-probe.mjs generate-unit-fate [--run]
+async function generateUnitFate() {
+  const APP = 'https://amaproduct.com'
+  const QA = 'ama-qa-bot@gmail.com'
+  log('\n=== Пробник: судьба юнита в generate при смерти вкладки ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) QA-бот: сессия; замер generations_used ДО; временный проект')
+    log(`  2) POST ${APP}/api/ai/generate post — читаем первые байты и РВЁМ`)
+    log('  3) ждём 120с; content_items появился? юнит вернулся?')
+    log('  4) уборка: контент, проект, юнит')
+    return
+  }
+  const anon = (() => {
+    const txt = readFileSync(join(ROOT, '.env.local'), 'utf8')
+    const m = txt.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY в .env.local'); return }
+
+  const gl = await api('/auth/v1/admin/generate_link', {
+    method: 'POST',
+    body: JSON.stringify({ type: 'magiclink', email: QA }),
+  })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log('❌ generate_link не дал email_otp:', gl.status); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST',
+    headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA, token: otp }),
+  }).then(r => r.json())
+  if (!ver?.access_token) { log('❌ verify не дал сессию'); return }
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+  const qaId = ver.user?.id
+  log('✅ 1. сессия QA-бота получена')
+
+  const readUsed = async () => {
+    const r = await api(`/rest/v1/profiles?select=generations_used&id=eq.${qaId}`)
+    return Array.isArray(r.body) ? r.body[0]?.generations_used : null
+  }
+  const usedBefore = await readUsed()
+
+  const projName = `${PROBE_PREFIX}genfate-${Date.now()}`
+  const prj = await api('/rest/v1/projects', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ owner_id: qaId, name: projName, niche: 'йога', status: 'active' }),
+  })
+  const projectId = Array.isArray(prj.body) ? prj.body[0]?.id : prj.body?.id
+  if (!projectId) { log('❌ проект не создался:', prj.status); return }
+  log(`   generations_used ДО: ${usedBefore}; проект ${projName}`)
+
+  const cleanup = async () => {
+    await api(`/rest/v1/content_items?project_id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    await api(`/rest/v1/projects?id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    const usedNow = await readUsed()
+    if (usedNow > usedBefore) {
+      await api(`/rest/v1/profiles?id=eq.${qaId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ generations_used: usedBefore }),
+      })
+    }
+    log(`🧹 уборка: контент/проект удалены, generations_used возвращён на ${usedBefore}`)
+  }
+
+  try {
+    const t0 = Date.now()
+    const controller = new AbortController()
+    let gotChars = 0
+    let aborted = false
+    try {
+      const res = await fetch(`${APP}/api/ai/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', cookie },
+        body: JSON.stringify({ projectId, contentType: 'post', dayNumber: 1, totalDays: 7, phase: 'awareness', dayMeaning: 'почему утренняя практика меняет день' }),
+        signal: controller.signal,
+      })
+      if (!res.ok) { log(`❌ 2. generate ответил ${res.status}: ${(await res.text()).slice(0, 200)}`); return }
+      const reader = res.body.getReader()
+      const dec = new TextDecoder()
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        gotChars += dec.decode(value, { stream: true }).length
+        if (gotChars > 30) { aborted = true; controller.abort(); break }
+      }
+    } catch (e) {
+      if (!aborted) { log('❌ 2. обрыв не по плану:', e?.message); return }
+    }
+    log(`✅ 2. соединение разорвано на ${gotChars} символах через ${((Date.now() - t0) / 1000).toFixed(1)}с`)
+
+    log('   жду 120с…')
+    await new Promise(r => setTimeout(r, 120_000))
+
+    const items = await api(`/rest/v1/content_items?select=id,title,created_at&project_id=eq.${projectId}`)
+    const usedAfter = await readUsed()
+    log(`\n── ФАКТЫ ──`)
+    log(`   content_items: ${Array.isArray(items.body) ? items.body.length : '?'} шт.`)
+    log(`   generations_used: ${usedBefore} → ${usedAfter} (дельта ${usedAfter - usedBefore})`)
+    if ((items.body?.length ?? 0) > 0) {
+      log('   → инвокация ПЕРЕЖИЛА обрыв: достримила в пустоту и СОХРАНИЛА контент')
+      if (usedAfter - usedBefore < 1) log('   → и после сохранения упавший send(done) вернул юнит (двойная щедрость)')
+    } else if (usedAfter - usedBefore < 1) {
+      log('   → контента нет, юнит ВЕРНУЛСЯ: enqueue кинул исключение → catch с refund')
+    } else {
+      log('   → контента нет, юнит НЕ вернулся: инвокацию убило на обрыве клиента')
+    }
+  } finally {
+    await cleanup()
+  }
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))

@@ -13,7 +13,7 @@ import { AssistantMessageBody } from '@/components/chat/AssistantMessageBody'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
 import { friendlyError } from '@/lib/friendlyError'
 import { useChatPin } from '@/lib/useChatPin'
-import { savePendingAnswer, clearPendingAnswer, takePendingAnswer, PENDING_CUT_NOTE } from '@/lib/chatPending'
+import { savePendingAnswer, clearPendingAnswer, takePendingAnswer, saveGenJobId, clearGenJobId, takeGenJobId, fetchMailboxAnswer, PENDING_CUT_NOTE } from '@/lib/chatPending'
 import { cleanMarkdown } from '@/lib/cleanText'
 import { isReelsScript } from '@/lib/contentKind'
 
@@ -98,9 +98,26 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
       // Оборванный стрим-ответ (вкладка умерла на генерации) — доклеиваем к
       // истории с честной пометкой, чтобы юнит и текст не пропали бесследно.
       const pending = takePendingAnswer(pendingKey)
-      if (!raw && !pending) return
+      // Метеренная генерация (юнит списан) пишет ГОТОВЫЙ ответ в ящик на
+      // сервере (X-Gen-Job): замерено 24.08 — инвокация переживает смерть
+      // вкладки и достримливает. Пробуем забрать ПОЛНЫЙ текст; огрызок с
+      // пометкой — только если ящик не ответил.
+      const genJobId = takeGenJobId(pendingKey)
+      if (!raw && !pending && !genJobId) return
       const saved = raw ? (JSON.parse(raw) as ChatMessage[]) : []
       const restored = Array.isArray(saved) ? saved : []
+      if (genJobId) {
+        if (restored.length) setMessages((prev) => (prev.length ? prev : restored))
+        void fetchMailboxAnswer(genJobId).then((full) => {
+          if (full) {
+            setMessages((prev) => [...prev, { role: 'assistant', content: full.text + (full.complete ? '' : PENDING_CUT_NOTE) }])
+            toast.success('Ответ догенерился на сервере — вот он целиком')
+          } else if (pending) {
+            setMessages((prev) => [...prev, { role: 'assistant', content: pending + PENDING_CUT_NOTE }])
+          }
+        })
+        return
+      }
       if (pending) restored.push({ role: 'assistant', content: pending + PENDING_CUT_NOTE })
       if (restored.length) setMessages((prev) => (prev.length ? prev : restored))
     } catch { /* битый черновик — начинаем с чистого */ }
@@ -158,6 +175,12 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
       }
       if (!res.body) throw new Error('Нет ответа')
 
+      // Ящик метеренной генерации: id приходит заголовком ДО первого байта —
+      // кладём в localStorage СРАЗУ (правило «издания 2»): умрёт вкладка —
+      // заберём ПОЛНЫЙ ответ по этому id при возвращении.
+      const genJobId = res.headers.get('X-Gen-Job')
+      if (genJobId) saveGenJobId(pendingKey, genJobId)
+
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       while (true) {
@@ -168,15 +191,31 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
         savePendingAnswer(pendingKey, acc)
       }
       clearPendingAnswer(pendingKey)
+      clearGenJobId(pendingKey)
       setMessages(prev => [...prev, { role: 'assistant', content: acc }])
       setStreaming('')
     } catch (err) {
       clearPendingAnswer(pendingKey)
       if ((err as Error).name === 'AbortError') {
         // user stopped — keep whatever streamed
+        clearGenJobId(pendingKey)
         if (acc.trim()) setMessages(prev => [...prev, { role: 'assistant', content: acc }])
       } else {
-        toast.error(friendlyError(err, 'Ошибка ассистента'))
+        // Связь моргнула на живой вкладке: сервер достримливает без нас
+        // (замерено) — для метеренной генерации догоняем полный ответ из
+        // ящика вместо потери юнита.
+        const genJobId = takeGenJobId(pendingKey)
+        if (genJobId) {
+          toast.message('Связь моргнула — догоняю ответ с сервера…')
+          const full = await fetchMailboxAnswer(genJobId)
+          if (full) {
+            setMessages(prev => [...prev, { role: 'assistant', content: full.text + (full.complete ? '' : PENDING_CUT_NOTE) }])
+          } else {
+            toast.error(friendlyError(err, 'Ошибка ассистента'))
+          }
+        } else {
+          toast.error(friendlyError(err, 'Ошибка ассистента'))
+        }
       }
       setStreaming('')
     } finally {
