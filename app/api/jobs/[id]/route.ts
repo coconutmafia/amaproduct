@@ -10,6 +10,8 @@ import { processStandaloneBlogAuditJob } from '@/lib/jobs/runStandaloneBlogAudit
 import { processViralReelJob } from '@/lib/jobs/runViralReelJob'
 import { processMontageJob } from '@/lib/jobs/runMontageJob'
 import { processVideoOverlayJob } from '@/lib/jobs/runVideoOverlayJob'
+import { processResearchTableJob } from '@/lib/jobs/runResearchTableJob'
+import { processWarmupPlanJob } from '@/lib/jobs/runWarmupPlanJob'
 import { stuckJobMessage, settleStuckJob } from '@/lib/jobs/failStuckJob'
 
 // Джобы обрабатываются в after()-инвокациях с maxDuration=300s. Если инвокация
@@ -32,6 +34,12 @@ const RUNNERS: Record<string, (jobId: string) => Promise<void>> = {
   viral_reel:            processViralReelJob,
   montage:               processMontageJob,
   video_overlay:         processVideoOverlayJob,
+  // Найдено 24.08 (вечер): research_table1 не был в этой карте — потерянная
+  // инвокация уходила в error вместо рестарта, хотя раннер резюмится с
+  // progress.doneBatches. Каждый новый тип джоба ОБЯЗАН попадать сюда
+  // (страж: mobile-background-jobs.test.ts).
+  research_table1:       processResearchTableJob,     // резюмится с doneBatches
+  warmup_plan:           processWarmupPlanJob,        // one-shot
 }
 
 // GET /api/jobs/[id] — poll a background job's status/progress/result. RLS

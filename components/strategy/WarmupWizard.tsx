@@ -280,6 +280,77 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
   const [draftAutoRestored, setDraftAutoRestored] = useState(false)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Мгновенная (не дебаунс) правка черновика — для jobId фоновой генерации:
+  // правило «издания 2» mobile-tab-unload: id джоба обязан лечь в черновик ДО
+  // того, как вкладка может умереть, иначе догонять будет нечего.
+  const patchDraftNow = useCallback((patch: Record<string, unknown>) => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY)
+      const cur = raw ? JSON.parse(raw) : {}
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...cur, ...patch, savedAt: new Date().toISOString() }))
+    } catch { /* ignore */ }
+  }, [DRAFT_KEY])
+
+  // ── Поллинг фоновой генерации плана (24.08) ──────────────────────────────
+  // Джоб живёт на сервере: сеть моргнула / вкладка умерла — поллинг просто
+  // возобновляется (в т.ч. с mount-эффекта ниже). GET /api/jobs/[id] заодно
+  // самолечит застрявший джоб.
+  const pollWarmupJob = useCallback(async (jobId: string) => {
+    setGeneratingSummary(true)
+    setStep(8)
+    const timer = setInterval(() => setGeneratingSeconds((s) => s + 1), 1000)
+    let notFound = 0
+    try {
+      const deadline = Date.now() + 15 * 60_000
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 3000))
+        try {
+          const res = await fetch(`/api/jobs/${jobId}`)
+          if (res.status === 404) {
+            // Джоба нет (например, черновик со старым id) — не поллим вечно.
+            if (++notFound >= 5) {
+              patchDraftNow({ warmupJobId: null })
+              toast.error('Не нашёл запущенную генерацию — нажми «Создать план» ещё раз.')
+              setStep(7)
+              return
+            }
+            continue
+          }
+          if (!res.ok) continue
+          const j = await res.json() as { job?: { status?: string; error?: string | null; result?: { planData?: AIPlanData } | null } }
+          const job = j.job
+          if (!job) continue
+          notFound = 0
+          if (job.status === 'done') {
+            const plan = job.result?.planData
+            // План в черновик СРАЗУ (не дожидаясь дебаунса) — смерть вкладки
+            // между done и автосейвом не теряет результат.
+            patchDraftNow({ warmupJobId: null, aiPlanData: plan ?? null })
+            if (plan?.phases?.length) {
+              setAiPlanData(plan)
+              setPlanApproved(false)
+            } else {
+              toast.error('AI не вернул план. Попробуй ещё раз.')
+              setStep(7)
+            }
+            return
+          }
+          if (job.status === 'error') {
+            patchDraftNow({ warmupJobId: null })
+            toast.error(job.error || 'AI недоступен', { duration: 10000 })
+            setStep(7)
+            return
+          }
+        } catch { /* сеть моргнула — джоб живёт на сервере, продолжаем */ }
+      }
+      toast.message('План ещё готовится на сервере — вернись сюда через пару минут, он будет ждать.', { duration: 15000 })
+    } finally {
+      clearInterval(timer)
+      setGeneratingSummary(false)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patchDraftNow])
+
   // On mount: AUTO-restore any unfinished work so it's never lost when the user
   // navigates away and comes back. Previously the generated plan + the inputs
   // typed before «Создать план» were gone (the reported bug) because restore was
@@ -290,9 +361,14 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       const raw = localStorage.getItem(DRAFT_KEY)
       if (!raw) return
       const draft = JSON.parse(raw)
-      if (draft && (draft.aiPlanData || (draft.step && draft.step > 1) || draft.selectedProductId)) {
+      if (draft && (draft.aiPlanData || (draft.step && draft.step > 1) || draft.selectedProductId || draft.warmupJobId)) {
         restoreDraft()
         setDraftAutoRestored(true)
+      }
+      // Вкладка умерла во время генерации — догоняем фоновый джоб, не заставляя
+      // жать «Создать план» заново (и не тратя вторую генерацию).
+      if (draft?.warmupJobId && !draft.aiPlanData) {
+        void pollWarmupJob(draft.warmupJobId as string)
       }
     } catch { /* ignore */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -356,7 +432,11 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
       try {
         const state = getDraftState()
         if (state.step <= 1 && !state.selectedProductId && !state.aiPlanData) return // не сохраняем пустой черновик
-        localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...state, savedAt: new Date().toISOString() }))
+        // warmupJobId живёт ВНЕ getDraftState (кладётся через patchDraftNow) —
+        // полный перезапис затирал бы id идущей фоновой генерации.
+        const prevRaw = localStorage.getItem(DRAFT_KEY)
+        const prev = prevRaw ? JSON.parse(prevRaw) as { warmupJobId?: string | null } : {}
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...state, warmupJobId: prev?.warmupJobId ?? null, savedAt: new Date().toISOString() }))
         setDraftSavedAt(new Date())
       } catch { /* ignore */ }
     }, 1500)
@@ -427,14 +507,16 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
 
   // Warn before closing/refreshing the tab with unsaved (unapproved) work.
   // In-app navigation no longer loses data (auto-saved + auto-restored on
-  // return); this covers hard reloads and closing the tab.
+  // return); this covers hard reloads and closing the tab. Во время фоновой
+  // генерации предупреждение НЕ нужно: джоб живёт на сервере, jobId в
+  // черновике — закрытие вкладки ничего не теряет.
   useEffect(() => {
-    const hasUnsavedWork = !planSaved && (!!aiPlanData || step > 1 || !!selectedProductId)
+    const hasUnsavedWork = !planSaved && !generatingSummary && (!!aiPlanData || step > 1 || !!selectedProductId)
     if (!hasUnsavedWork) return
     const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
-  }, [planSaved, aiPlanData, step, selectedProductId])
+  }, [planSaved, generatingSummary, aiPlanData, step, selectedProductId])
 
   function toggleWarmType(value: string) {
     setWarmAudienceTypes((prev) =>
@@ -449,7 +531,12 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     return 'Без воронки — прямые продажи'
   }
 
-  // ── Generate plan via AI (polling — no SSE, no browser timeout) ──────────
+  // ── Generate plan via background job (24.08) ─────────────────────────────
+  // Раньше план шёл SSE-стримом в открытую вкладку — смерть вкладки/сети на
+  // телефоне теряла 1-2 минуты генерации (класс «долгий запрос умирает на
+  // мобиле», как у Жени с таблицей). Теперь POST создаёт джоб на сервере,
+  // jobId ложится в черновик СРАЗУ, клиент только поллит — вкладку можно
+  // закрывать, по возвращении план догонит mount-эффект.
   async function generatePlan() {
     setGeneratingSummary(true)
     setGeneratingSeconds(0)
@@ -457,11 +544,8 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
     setPlanApproved(false)
     setStep(8) // сразу показываем loading screen с таймером
 
-    const timer = setInterval(() => setGeneratingSeconds((s) => s + 1), 1000)
-
     try {
-      // Стриминг — каждый чанк Claude сразу летит клиенту, TCP не закрывается
-      const res = await fetch('/api/ai/warmup-plan', {
+      const res = await fetch('/api/jobs/warmup-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -482,61 +566,14 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
           competitors: [extraCompetitors, competitorNotes].filter(Boolean).join('\n\n') || undefined,
         }),
       })
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({})) as { error?: string }
-        throw new Error(errData.error || `Ошибка сервера ${res.status}`)
-      }
-
-      const reader = res.body?.getReader()
-      if (!reader) throw new Error('Нет потока данных')
-
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      const processBuffer = (): AIPlanData | null => {
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() ?? ''
-        for (const part of parts) {
-          if (!part.startsWith('data: ')) continue
-          let data: { type: string; planData?: AIPlanData; message?: string }
-          try {
-            data = JSON.parse(part.slice(6))
-          } catch {
-            continue // невалидный JSON — пропускаем
-          }
-          if (data.type === 'done' && data.planData) return data.planData
-          if (data.type === 'error') throw new Error(data.message || 'AI недоступен')
-          // status/progress — просто игнорируем
-        }
-        return null
-      }
-
-      // Читаем поток — каждый чанк обрабатываем сразу
-      while (true) {
-        const { done, value } = await reader.read()
-        if (value) {
-          buffer += decoder.decode(value, { stream: !done })
-          const plan = processBuffer()
-          if (plan) { setAiPlanData(plan); return }
-        }
-        if (done) break
-      }
-
-      // Обрабатываем остаток буфера
-      if (buffer.trim()) {
-        buffer += '\n\n'
-        const plan = processBuffer()
-        if (plan) { setAiPlanData(plan); return }
-      }
-
-      throw new Error('AI не вернул план. Попробуй ещё раз.')
+      const data = await res.json().catch(() => ({})) as { jobId?: string; error?: string }
+      if (!res.ok || !data.jobId) throw new Error(data.error || `Ошибка сервера ${res.status}`)
+      patchDraftNow({ warmupJobId: data.jobId })
+      await pollWarmupJob(data.jobId)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'AI недоступен'
       toast.error(msg, { duration: 10000 })
       setStep(7) // при ошибке возвращаем на шаг 7
-    } finally {
-      clearInterval(timer)
       setGeneratingSummary(false)
     }
   }
@@ -1219,12 +1256,12 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {generatingSeconds > 0 ? `${generatingSeconds} сек` : 'Запускаю...'}
-                  {generatingSeconds > 20 && ' · план готовится, не закрывай страницу'}
+                  {generatingSeconds > 20 && ' · можно закрыть страницу — план доготовится'}
                 </p>
               </div>
               {generatingSeconds > 30 && (
                 <div className="rounded-lg border border-border bg-secondary/30 px-4 py-2 text-xs text-muted-foreground text-center max-w-[260px]">
-                  Подробный план на {computedDuration} дней требует времени — обычно 1–2 минуты
+                  Подробный план на {computedDuration} дней требует времени — обычно 1–2 минуты. План готовится на сервере: страницу можно закрыть и вернуться позже.
                 </div>
               )}
             </div>
