@@ -20,7 +20,7 @@ import {
 import { downscaleImage } from '@/lib/downscaleImage'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { ArrowSvg, Badge, SHAPE_ASPECT, type FreeShape } from '@/lib/carousel/shapes'
-import { fontFamilyOf } from '@/lib/fonts'
+import { fontFamilyOf, FONT_HAS_ITALIC, type FontKey } from '@/lib/fonts'
 
 let _idc = 0
 const newId = () => `b${++_idc}`
@@ -38,6 +38,10 @@ export interface Block {
   aspect?: number              // w/h for image & shape
   xPct: number; yPct: number; widthPct: number
   size: number; color: string; plate: boolean; align: 'left' | 'center'; rotation: number
+  // Начертание (Марина 24.08: «весь текст жирный, нельзя убрать, нет курсива»).
+  // По умолчанию — жирный без курсива, как раньше.
+  weight?: 'normal' | 'bold'
+  italic?: boolean
 }
 export interface Brand { accentColor: string; bg: string; text: string; bgStyle?: string; font?: string; accentStyle?: 'gradient' | 'flat'; swipeHint?: boolean; swipeLabel?: string }
 
@@ -76,6 +80,7 @@ export function buildFreeSlide(v: SlideValue, index = 0, total = 1) {
       type: b.type, text: b.text, src: b.src, shape: b.shape, aspect: b.aspect,
       xPct: b.xPct, yPct: b.yPct, widthPct: b.widthPct, size: b.size,
       color: b.color, plate: b.plate, align: b.align, rotation: b.rotation,
+      weight: b.weight, italic: b.italic,
     })),
   }
 }
@@ -93,11 +98,13 @@ async function imageAspect(file: File): Promise<number> {
   } catch { return 1 }
 }
 
-function PreviewText({ text, plate, color, brand }: { text: string; plate: boolean; color: string; brand: Brand }) {
+function PreviewText({ text, plate, color, brand, weight = 'bold', italic = false }: { text: string; plate: boolean; color: string; brand: Brand; weight?: 'normal' | 'bold'; italic?: boolean }) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean)
+  const base = weight === 'normal' ? 400 : 800
+  const emW = weight === 'normal' ? 700 : 900
   const nodes = parts.map((p, i) => {
     const em = p.startsWith('**') && p.endsWith('**')
-    return <span key={i} style={{ color: em ? brand.accentColor : (plate ? brand.text : color), fontWeight: em ? 900 : 800 }}>{em ? p.slice(2, -2) : p}</span>
+    return <span key={i} style={{ color: em ? brand.accentColor : (plate ? brand.text : color), fontWeight: em ? emW : base, fontStyle: italic ? 'italic' : 'normal' }}>{em ? p.slice(2, -2) : p}</span>
   })
   if (!plate) return <span>{nodes}</span>
   return (
@@ -137,6 +144,9 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
   const [aiPrompt, setAiPrompt] = useState('')
   const [aiMode, setAiMode] = useState<'sticker' | 'background'>('sticker')
   const [aiBusy, setAiBusy] = useState(false)
+  // Варианты последней генерации (Марина 24.08: «генерирует одну картинку и
+  // она может не подходить») — грид на выбор, тап = применить.
+  const [aiVariants, setAiVariants] = useState<{ url: string; aspect: number; mode: 'sticker' | 'background' }[]>([])
   const [canvasW, setCanvasW] = useState(360)
 
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -278,28 +288,39 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
   async function generateAi() {
     if (!aiPrompt.trim()) { toast.error('Опиши, что нарисовать'); return }
     setAiBusy(true)
+    setAiVariants([])
     try {
       const res = await fetch('/api/ai/generate-image', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, prompt: aiPrompt, mode: aiMode }),
+        body: JSON.stringify({ projectId, prompt: aiPrompt, mode: aiMode, count: 3 }),
       })
-      const d = await res.json().catch(() => ({} as { url?: string; aspect?: number; error?: string }))
+      const d = await res.json().catch(() => ({} as { url?: string; urls?: string[]; aspect?: number; error?: string }))
       if (!res.ok || !d.url) throw new Error(d.error || 'Не удалось сгенерировать картинку')
-      if (aiMode === 'background') {
-        update({ bgMode: 'photo', photoUrl: d.url })
-        toast.success('Фон готов — добавляй текст и элементы')
-      } else {
-        const id = newId()
-        setBlocks((p) => [...p, {
-          id, type: 'image', text: '', src: d.url!, aspect: d.aspect || 1,
-          xPct: 0.3, yPct: 0.34, widthPct: 0.46, size: 56, color: '#FFFFFF', plate: false, align: 'center', rotation: 0,
-        }])
-        setSelected(id)
-        toast.success('Картинка добавлена — двигай и масштабируй')
+      const urls = (d.urls && d.urls.length > 0 ? d.urls : [d.url])
+      if (urls.length === 1) {
+        applyAiVariant({ url: urls[0], aspect: d.aspect || 1, mode: aiMode })
+        return
       }
-      setShowAi(false); setAiPrompt('')
+      setAiVariants(urls.map((u: string) => ({ url: u, aspect: d.aspect || 1, mode: aiMode })))
+      toast.success('Выбери вариант — тапни по картинке')
     } catch (e) { toast.error(friendlyError(e, 'Ошибка')) }
     finally { setAiBusy(false) }
+  }
+
+  function applyAiVariant(v: { url: string; aspect: number; mode: 'sticker' | 'background' }) {
+    if (v.mode === 'background') {
+      update({ bgMode: 'photo', photoUrl: v.url })
+      toast.success('Фон готов — добавляй текст и элементы')
+    } else {
+      const id = newId()
+      setBlocks((p) => [...p, {
+        id, type: 'image', text: '', src: v.url, aspect: v.aspect || 1,
+        xPct: 0.3, yPct: 0.34, widthPct: 0.46, size: 56, color: '#FFFFFF', plate: false, align: 'center', rotation: 0,
+      }])
+      setSelected(id)
+      toast.success('Картинка добавлена — двигай и масштабируй')
+    }
+    setAiVariants([]); setShowAi(false); setAiPrompt('')
   }
 
   function addText() {
@@ -354,11 +375,16 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
   return (
     <>
       <style>{`
+        @font-face{font-family:'MontserratEd';src:url('/fonts/Montserrat-Regular.ttf') format('truetype');font-weight:400;font-display:swap}
+        @font-face{font-family:'MontserratEd';src:url('/fonts/Montserrat-Italic.ttf') format('truetype');font-weight:400;font-style:italic;font-display:swap}
+        @font-face{font-family:'MontserratEd';src:url('/fonts/Montserrat-BoldItalic.ttf') format('truetype');font-weight:700 900;font-style:italic;font-display:swap}
         @font-face{font-family:'MontserratEd';src:url('/fonts/Montserrat-Bold.ttf') format('truetype');font-weight:700;font-display:swap}
         @font-face{font-family:'MontserratEd';src:url('/fonts/Montserrat-ExtraBold.ttf') format('truetype');font-weight:800;font-display:swap}
         @font-face{font-family:'MontserratEd';src:url('/fonts/Montserrat-Black.ttf') format('truetype');font-weight:900;font-display:swap}
         @font-face{font-family:'PT Serif';src:url('/fonts/PTSerif-Regular.ttf') format('truetype');font-weight:400;font-display:swap}
         @font-face{font-family:'PT Serif';src:url('/fonts/PTSerif-Bold.ttf') format('truetype');font-weight:700;font-display:swap}
+        @font-face{font-family:'PT Serif';src:url('/fonts/PTSerif-Italic.ttf') format('truetype');font-weight:400;font-style:italic;font-display:swap}
+        @font-face{font-family:'PT Serif';src:url('/fonts/PTSerif-BoldItalic.ttf') format('truetype');font-weight:700;font-style:italic;font-display:swap}
         @font-face{font-family:'PT Sans Narrow';src:url('/fonts/PTSansNarrow-Regular.ttf') format('truetype');font-weight:400;font-display:swap}
         @font-face{font-family:'PT Sans Narrow';src:url('/fonts/PTSansNarrow-Bold.ttf') format('truetype');font-weight:700;font-display:swap}
         @font-face{font-family:'Yeseva One';src:url('/fonts/YesevaOne-Regular.ttf') format('truetype');font-weight:400;font-display:swap}
@@ -440,6 +466,20 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
             </button>
             <span className="text-[11px] text-muted-foreground">без текста на картинке — текст добавишь сверху сам</span>
           </div>
+          {aiVariants.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-medium text-muted-foreground">Выбери вариант (тапни) — или сгенерируй ещё раз:</p>
+              <div className="grid grid-cols-3 gap-2">
+                {aiVariants.map((v, i) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <button key={i} type="button" onClick={() => applyAiVariant(v)}
+                    className="overflow-hidden rounded-lg border border-border bg-background/60 hover:border-primary focus:border-primary">
+                    <img src={v.url} alt={`вариант ${i + 1}`} className="h-24 w-full object-contain" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
       {showIcons && hasBg && (
@@ -510,7 +550,7 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
               ) : b.type === 'shape' && b.shape ? (
                 <ArrowSvg w={pxW} h={pxW / (b.aspect || SHAPE_ASPECT[b.shape])} color={b.color} curve={b.shape === 'arrow-curve'} />
               ) : (
-                <PreviewText text={b.text} plate={b.plate} color={b.color} brand={brand} />
+                <PreviewText text={b.text} plate={b.plate} color={b.color} brand={brand} weight={b.weight} italic={b.italic} />
               )}
             </div>
           )
@@ -547,6 +587,21 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
 
             {sel.type === 'text' && (
               <>
+                {/* Начертание (Марина 24.08): Ж = жирный/обычный, К = курсив.
+                    К прячем для шрифтов без настоящего italic-файла — иначе
+                    превью врало бы (браузер наклоняет сам, сервер — нет). */}
+                <button type="button" onClick={() => patch(sel.id, { weight: (sel.weight ?? 'bold') === 'bold' ? 'normal' : 'bold' })}
+                  aria-label="жирный"
+                  className={`h-7 w-7 rounded-md border font-bold ${(sel.weight ?? 'bold') === 'bold' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground'}`}>
+                  Ж
+                </button>
+                {FONT_HAS_ITALIC[(brand.font ?? 'montserrat') as FontKey] && (
+                  <button type="button" onClick={() => patch(sel.id, { italic: !sel.italic })}
+                    aria-label="курсив"
+                    className={`h-7 w-7 rounded-md border italic font-semibold ${sel.italic ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground'}`}>
+                    К
+                  </button>
+                )}
                 <button type="button" onClick={() => patch(sel.id, { plate: !sel.plate })}
                   className={`rounded-lg px-2.5 py-1.5 font-medium ${sel.plate ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground'}`}>
                   {sel.plate ? 'на плашке' : 'без плашки'}

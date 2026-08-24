@@ -49,10 +49,13 @@ export async function POST(request: Request) {
     const denied = await requirePaidAccess(user.id)
     if (denied) return denied
 
-    const { projectId, prompt, mode: rawMode } = (await request.json()) as {
-      projectId?: string; prompt?: string; mode?: string
+    const { projectId, prompt, mode: rawMode, count: rawCount } = (await request.json()) as {
+      projectId?: string; prompt?: string; mode?: string; count?: number
     }
     const mode: Mode = rawMode === 'background' ? 'background' : 'sticker'
+    // Варианты на выбор (Марина 24.08: «генерирует одну картинку, и она может
+    // не подходить»). 1..3 за вызов; дефолт 1 — старые клиенты не дорожают.
+    const count = Math.max(1, Math.min(3, Math.floor(Number(rawCount) || 1)))
     if (!projectId) return NextResponse.json({ error: 'projectId обязателен' }, { status: 400 })
     if (!prompt || !prompt.trim()) return NextResponse.json({ error: 'Опиши, что нарисовать' }, { status: 400 })
 
@@ -67,17 +70,18 @@ export async function POST(request: Request) {
     const { default: OpenAI } = await import('openai')
     const openai = new OpenAI({ apiKey })
 
-    let b64: string | undefined
+    let b64s: string[] = []
     try {
       const result = await openai.images.generate({
         model: 'gpt-image-1',
         prompt: buildPrompt(prompt, mode),
         size,
+        n: count,
         quality: 'medium',
         ...(mode === 'sticker' ? { background: 'transparent', output_format: 'png' } : { output_format: 'png' }),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
-      b64 = result.data?.[0]?.b64_json
+      b64s = (result.data ?? []).map((d: { b64_json?: string }) => d.b64_json).filter((x: string | undefined): x is string => !!x)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       console.error('[generate-image] openai', msg)
@@ -91,19 +95,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Не удалось сгенерировать картинку — попробуй ещё раз.' }, { status: 502 })
     }
 
-    if (!b64) return NextResponse.json({ error: 'Пустой ответ генерации' }, { status: 502 })
+    if (b64s.length === 0) return NextResponse.json({ error: 'Пустой ответ генерации' }, { status: 502 })
 
-    const buf = Buffer.from(b64, 'base64')
     const admin = createAdminClient()
-    const path = `${projectId}/ai/${Date.now()}-${mode}.png`
-    const { error: upErr } = await admin.storage.from('project-brand').upload(path, buf, { contentType: 'image/png', upsert: true })
-    if (upErr) {
-      await captureException(new Error(upErr.message), { where: 'generate-image upload' })
+    const stamp = Date.now()
+    const urls: string[] = []
+    for (let i = 0; i < b64s.length; i++) {
+      const buf = Buffer.from(b64s[i], 'base64')
+      const path = `${projectId}/ai/${stamp}-${i}-${mode}.png`
+      const { error: upErr } = await admin.storage.from('project-brand').upload(path, buf, { contentType: 'image/png', upsert: true })
+      if (upErr) {
+        await captureException(new Error(upErr.message), { where: 'generate-image upload' })
+        continue // один вариант не сохранился — остальные всё равно отдаём
+      }
+      urls.push(admin.storage.from('project-brand').getPublicUrl(path).data.publicUrl)
+    }
+    if (urls.length === 0) {
       return NextResponse.json({ error: 'Картинка сгенерировалась, но не сохранилась — попробуй ещё раз.' }, { status: 500 })
     }
-    const url = admin.storage.from('project-brand').getPublicUrl(path).data.publicUrl
 
-    return NextResponse.json({ url, aspect, mode })
+    // url = первый вариант (обратная совместимость), urls = все на выбор
+    return NextResponse.json({ url: urls[0], urls, aspect, mode })
   } catch (e) {
     console.error('[generate-image]', e instanceof Error ? e.message : e)
     await captureException(e, { where: 'generate-image' })

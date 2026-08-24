@@ -20,6 +20,7 @@ export const FONTS: Record<string, { name: string; label: string; files: FontFil
       { file: 'Montserrat-ExtraBold.ttf', weight: 800 },
       { file: 'Montserrat-Black.ttf', weight: 900 },
       { file: 'Montserrat-Italic.ttf', weight: 400, style: 'italic' },
+      { file: 'Montserrat-BoldItalic.ttf', weight: 700, style: 'italic' },
     ],
   },
   'pt-serif': {
@@ -27,6 +28,8 @@ export const FONTS: Record<string, { name: string; label: string; files: FontFil
     files: [
       { file: 'PTSerif-Regular.ttf', weight: 400 },
       { file: 'PTSerif-Bold.ttf', weight: 700 },
+      { file: 'PTSerif-Italic.ttf', weight: 400, style: 'italic' },
+      { file: 'PTSerif-BoldItalic.ttf', weight: 700, style: 'italic' },
     ],
   },
   'pt-sans-narrow': {
@@ -51,6 +54,18 @@ export const DEFAULT_FONT: FontKey = 'montserrat'
 
 // Stable list for UI pickers / AI enums (insertion order).
 export const FONT_KEYS = Object.keys(FONTS) as FontKey[]
+
+// Какие семьи умеют НАСТОЯЩИЙ курсив (зарегистрирован italic-файл). У остальных
+// (PT Sans Narrow, Yeseva One, Marck Script) курсивных начертаний не существует
+// в природе — UI дизайнера прячет кнопку «К», чтобы превью не врало (браузер
+// синтезирует наклон, а серверный рендер satori — нет).
+export const FONT_HAS_ITALIC: Record<FontKey, boolean> = {
+  montserrat: true,
+  'pt-serif': true,
+  'pt-sans-narrow': false,
+  yeseva: false,
+  marck: false,
+}
 
 // Resolve a stored font key → the Satori family name (falls back to the default).
 export function fontFamilyOf(key?: string | null): string {

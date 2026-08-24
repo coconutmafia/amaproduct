@@ -169,6 +169,7 @@ export async function loadFonts(): Promise<FontDef[]> {
 // ── Rich text: inline accent via **markers** (Satori has no inline spans, so we
 //    tokenise into flex-wrap word chips and colour/weight the emphasised ones) ───
 type RichOpts = {
+  italic?: boolean
   size: number
   weight?: number
   color: string
@@ -250,6 +251,7 @@ export function RichText({ text, o }: { text: string; o: RichOpts }): ReactEleme
               display: 'flex',
               ...(it.em ? emFill(o) : { color: o.color }),
               fontSize: o.size,
+              fontStyle: o.italic ? 'italic' : 'normal',
               fontWeight: it.em ? o.accentWeight ?? 800 : o.weight ?? 500,
               marginRight: gap,
               marginLeft: punct ? -gap : 0,
@@ -331,7 +333,7 @@ function parsePlateSegments(text: string, defaultPlated: boolean): PlateSeg[] {
   return segs.length ? segs : [{ plated: defaultPlated, text }]
 }
 
-function StoryText({ text, size, accent, plateBg, platedColor, plainColor, defaultPlated, weight = 800, accentWeight = 900, maxWidth }: {
+function StoryText({ text, size, accent, plateBg, platedColor, plainColor, defaultPlated, weight = 800, accentWeight = 900, maxWidth, italic = false }: {
   text: string
   size: number
   accent: string
@@ -342,6 +344,7 @@ function StoryText({ text, size, accent, plateBg, platedColor, plainColor, defau
   weight?: number
   accentWeight?: number
   maxWidth: number
+  italic?: boolean
 }): ReactElement {
   const segs = parsePlateSegments(text, defaultPlated)
   const padX = Math.round(size * 0.26)
@@ -372,6 +375,7 @@ function StoryText({ text, size, accent, plateBg, platedColor, plainColor, defau
                     // fontFamily inherited from the slide root (theme.fontFamily).
                     display: 'flex', fontSize: size, lineHeight: 1.15,
                     color: t.em ? accent : color,
+                    fontStyle: italic ? 'italic' : 'normal',
                     fontWeight: t.em ? accentWeight : weight,
                     marginRight: i === line.length - 1 ? 0 : Math.round(size * 0.24),
                   }}>{t.word}</div>
@@ -516,6 +520,10 @@ export interface FreeBlock {
   plate?: boolean       // brand plate behind the text
   align?: 'left' | 'center' | 'right'
   rotation?: number     // degrees, rotated around the block centre
+  // Начертание текста (просьба Марины 24.08: «весь текст жирный, нельзя убрать,
+  // нет курсива»). По умолчанию — как раньше: жирный без курсива.
+  weight?: 'normal' | 'bold'
+  italic?: boolean
 }
 
 export interface SlideSpec {
@@ -880,8 +888,9 @@ function Free({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Si
           <div key={i} style={{ position: 'absolute', left, top, width: blockW, display: 'flex', ...rot }}>
             {b.plate
               ? <StoryText text={b.text || ''} size={b.size ?? 56} accent={theme.accent} plateBg={theme.bg}
-                  platedColor={theme.text} plainColor={b.color || '#FFFFFF'} defaultPlated maxWidth={blockW} />
-              : <RichText text={b.text || ''} o={{ size: b.size ?? 56, weight: 800, accentWeight: 900, color: b.color || '#FFFFFF', accent: theme.accent, align: b.align || 'left', lineGap: 6 }} />}
+                  platedColor={theme.text} plainColor={b.color || '#FFFFFF'} defaultPlated maxWidth={blockW}
+                  weight={b.weight === 'normal' ? 400 : 800} italic={!!b.italic} />
+              : <RichText text={b.text || ''} o={{ size: b.size ?? 56, weight: b.weight === 'normal' ? 400 : 800, accentWeight: b.weight === 'normal' ? 700 : 900, color: b.color || '#FFFFFF', accent: theme.accent, align: b.align || 'left', lineGap: 6, italic: !!b.italic }} />}
           </div>
         )
       })}
