@@ -81,6 +81,9 @@ type ResearchDraft = {
     totalBatches: number
     fp: string
   } | null
+  // Фоновый джоб анализа (24.08): id пишется в черновик ДО старта поллинга —
+  // выгрузка вкладки/обрыв сети не теряют анализ, по возвращении догоняем.
+  analysisJobId?: string | null
 }
 function readDraft(key: string): ResearchDraft | null {
   try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as ResearchDraft : null } catch { return null }
@@ -260,6 +263,9 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     } else if (d.table1) {
       setStep('table1')
       toast.message('Восстановил незаконченное исследование — таблица на месте')
+    } else if (d.analysisJobId) {
+      toast.message('Анализ шёл на сервере, пока страница была закрыта — догоняю…')
+      void pollAnalysisJob(d.analysisJobId)
     } else if (d.transcription) {
       setStep('transcribed')
       if (d.analysisPartial && d.analysisPartial.nextBatch < d.analysisPartial.totalBatches) {
@@ -650,78 +656,81 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   // Готовые батчи копятся в черновике (analysisPartial): упал батч 4 из 5 или
   // телефон выгрузил вкладку — следующий запуск продолжит с места обрыва,
   // а не пересчитает (и не переоплатит) всё заново.
+  // Поллинг фонового джоба анализа до done/error. Сетевые морги переживаем
+  // молча (поллинг продолжается), вкладку можно закрыть — джоб дойдёт сам.
+  const pollAnalysisJob = useCallback(async (jobId: string) => {
+    setStep('analyzing1')
+    const deadline = Date.now() + 15 * 60_000
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 4000))
+      try {
+        const res = await fetch(`/api/jobs/${jobId}`)
+        if (!res.ok) continue
+        const j = await res.json() as { job?: { status?: string; error?: string | null; result?: { table1?: InterviewTable } | null; progress?: { doneBatches?: number; totalBatches?: number } | null } }
+        const job = j.job
+        if (!job) continue
+        const pr = job.progress
+        if (job.status === 'processing' && pr?.totalBatches && pr.totalBatches > 1) {
+          setAnalysisBatch({ current: Math.min((pr.doneBatches ?? 0) + 1, pr.totalBatches), total: pr.totalBatches })
+        }
+        if (job.status === 'done') {
+          const table = job.result?.table1
+          patchDraft(draftKey, { analysisJobId: null, analysisPartial: null })
+          setAnalysisBatch(null)
+          if (table && Array.isArray(table.respondents) && table.respondents.length > 0) {
+            setTable1(table)
+            setStep('table1')
+            setExpandedRespondent(table.respondents[0]?.id ?? null)
+          } else {
+            toast.error('AI не нашёл в расшифровке участников интервью. Проверь, что это запись интервью.')
+            setStep('transcribed')
+          }
+          return
+        }
+        if (job.status === 'error') {
+          patchDraft(draftKey, { analysisJobId: null })
+          setAnalysisBatch(null)
+          toast.error((job.error || 'Ошибка анализа') + ' Нажми «Создать таблицу» ещё раз.', { duration: 10000 })
+          setStep('transcribed')
+          return
+        }
+      } catch { /* сеть моргнула — продолжаем поллить, джоб живёт на сервере */ }
+    }
+    setAnalysisBatch(null)
+    toast.message('Анализ ещё идёт на сервере — обнови страницу через пару минут, продолжу с того же места.', { duration: 15000 })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey])
+
+  // ── Analysis: фоновый джоб на сервере (24.08, жалоба Жени Лобовой) ──────────
+  // Раньше батчи гонял браузер длинными запросами — мобильная сеть рвала их
+  // («связь моргнула»). Теперь: один POST создаёт джоб → сервер сам батчит по 3
+  // файла (внутри — та же канонизация и форс-тул), при нехватке времени
+  // продолжает сам себя; клиент только поллит и переживает любые обрывы.
   const analyzeTable1 = useCallback(async () => {
     setStep('analyzing1')
     setAnalysisBatch(null)
     try {
-      const BATCH = 3
       const parts = transcriptionParts.length > 0
         ? transcriptionParts
         : [{ name: 'Интервью', text: transcription }]
-
-      const batches: typeof parts[] = []
-      for (let i = 0; i < parts.length; i += BATCH) batches.push(parts.slice(i, i + BATCH))
-
-      // Отпечаток расшифровки: прогресс прошлого анализа валиден только для
-      // того же самого текста.
-      const fp = `${parts.length}:${parts.reduce((n, p) => n + p.text.length, 0)}`
-      const saved = readDraft(draftKey)?.analysisPartial
-      const allRespondents: Respondent[] = []
-      let startBatch = 0
-      if (saved && saved.fp === fp && saved.nextBatch > 0 && Array.isArray(saved.respondents)) {
-        if (saved.nextBatch >= batches.length) {
-          // Все батчи уже посчитаны (вкладка умерла между последним батчем и
-          // показом таблицы) — собираем таблицу из черновика без единого вызова.
-          patchDraft(draftKey, { analysisPartial: null })
-          setTable1({ respondents: saved.respondents })
-          setAnalysisBatch(null)
-          setStep('table1')
-          setExpandedRespondent(saved.respondents[0]?.id ?? null)
-          return
-        }
-        allRespondents.push(...saved.respondents)
-        startBatch = saved.nextBatch
-        toast.message(`Продолжаю анализ с части ${startBatch + 1} из ${batches.length}`)
-      }
-      setAnalysisBatch({ current: startBatch, total: batches.length })
-
-      for (let bi = startBatch; bi < batches.length; bi++) {
-        setAnalysisBatch({ current: bi + 1, total: batches.length })
-        const batchText = batches[bi]
-          .map((p, i) => batches[bi].length > 1 ? `[Файл ${bi * BATCH + i + 1}: ${p.name}]\n${p.text}` : p.text)
-          .join('\n\n---\n\n')
-
-        const res  = await fetch('/api/ai/research-analyze', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ projectId: id, step: 'table1', transcription: batchText }),
-        })
-        const data = await res.json() as { table1?: InterviewTable; error?: string }
-        if (!res.ok || data.error) throw new Error(data.error ?? `Батч ${bi + 1}: ошибка анализа`)
-        allRespondents.push(...(data.table1?.respondents ?? []))
-        patchDraft(draftKey, { analysisPartial: { respondents: allRespondents, nextBatch: bi + 1, totalBatches: batches.length, fp } })
-      }
-
-      patchDraft(draftKey, { analysisPartial: null })
-      const combined: InterviewTable = { respondents: allRespondents }
-      setTable1(combined)
-      setAnalysisBatch(null)
-      setStep('table1')
-      setExpandedRespondent(allRespondents[0]?.id ?? null)
+      const res = await fetch('/api/jobs/research-table', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ projectId: id, parts }),
+      })
+      const data = await res.json() as { jobId?: string; error?: string }
+      if (!res.ok || !data.jobId) throw new Error(data.error ?? 'Не удалось запустить анализ')
+      // jobId в черновик СРАЗУ (правило «издания 2»): выгрузка вкладки между
+      // стартом и финишем не теряет анализ — по возвращении догоним.
+      patchDraft(draftKey, { analysisJobId: data.jobId, analysisPartial: null })
+      await pollAnalysisJob(data.jobId)
     } catch (err) {
-      // Скрин клиента 11 августа: «Ошибка анализа» без продолжения читалась
-      // как тупик, хотя анализ резюмится. Говорим прямо, что делать: сетевой
-      // обрыв на минутном вызове — самая частая причина на телефоне.
-      const partial = readDraft(draftKey)?.analysisPartial
-      const suffix = partial && partial.nextBatch > 0 && partial.nextBatch < partial.totalBatches
-        ? ` Готовые части (${partial.nextBatch} из ${partial.totalBatches}) сохранены — нажми «Создать таблицу» ещё раз, продолжу с места обрыва.`
-        : ' Похоже, связь моргнула — нажми «Создать таблицу» ещё раз, расшифровка не потерялась.'
-      toast.error(friendlyError(err, 'Ошибка анализа') + suffix, { duration: 10000 })
+      toast.error(friendlyError(err, 'Ошибка анализа') + ' Похоже, связь моргнула — нажми «Создать таблицу» ещё раз, расшифровка не потерялась.', { duration: 10000 })
       setAnalysisBatch(null)
       setStep('transcribed')
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, transcription, transcriptionParts, draftKey])
+  }, [id, transcription, transcriptionParts, draftKey, pollAnalysisJob])
 
   // ── Save to materials ───────────────────────────────────────────────────────
   const saveToMaterials = useCallback(async () => {

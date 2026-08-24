@@ -3,10 +3,10 @@ import { captureException } from '@/lib/sentry'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
 import { upsertProjectMaterial } from '@/lib/supabase/upsertMaterial'
-import { anthropic, MODEL, AI_BUSY_MESSAGE } from '@/lib/ai/client'
+import { anthropic, MODEL } from '@/lib/ai/client'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { resolveContentLanguage, type ContentLanguage } from '@/lib/ai/prompts/content-brain'
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 300
@@ -144,104 +144,89 @@ export async function POST(request: Request) {
     })
   } catch { /* swallow */ }
 
-  // SSE stream with keepalive — mobile networks kill silent connections.
-  const encoder = new TextEncoder()
-  const stream  = new ReadableStream({
-    async start(controller) {
-      let closed = false
-      const push = (s: string) => { if (!closed) { try { controller.enqueue(encoder.encode(s)) } catch { closed = true } } }
-      const send = (d: Record<string, unknown>) => push(`data: ${JSON.stringify(d)}\n\n`)
-      push(': open\n\n')
-      const ping = setInterval(() => push(': ping\n\n'), 10000)
+  // Извлечение — в after() (24.08, свип класса «мобильная вкладка убивает
+  // долгий запрос», жалобы Кристины/Жени): SSE умирал вместе с экраном
+  // телефона. Ответ 202 сразу; клиент поллит статус материала tone_of_voice
+  // (processing → ready/error) — статус живёт в самом материале, поэтому
+  // даже закрытая вкладка ничего не теряет.
+  after(async () => {
+    try {
+      const aiStream = anthropic.messages.stream({
+        model:      MODEL,
+        max_tokens: 4000,
+        system:     TOV_SYSTEM,
+        messages:   [{ role: 'user', content: buildPrompt(clean, tovLang) }],
+      })
+      for await (const chunk of aiStream) {
+        void chunk // стрим вычитывается ради устойчивости долгого вызова
+      }
+      const finalMsg = await aiStream.finalMessage()
+      const text = finalMsg.content
+        .map(b => (b.type === 'text' ? b.text : ''))
+        .join('\n')
+        .trim()
 
-      try {
-        send({ type: 'status', message: 'Анализирую твои тексты и собираю Tone of Voice...' })
-
-        const aiStream = anthropic.messages.stream({
-          model:      MODEL,
-          max_tokens: 4000,
-          system:     TOV_SYSTEM,
-          messages:   [{ role: 'user', content: buildPrompt(clean, tovLang) }],
-        })
-        for await (const chunk of aiStream) {
-          if (chunk.type === 'content_block_delta') send({ type: 'progress' })
-        }
-        const finalMsg = await aiStream.finalMessage()
-        const text = finalMsg.content
-          .map(b => (b.type === 'text' ? b.text : ''))
-          .join('\n')
-          .trim()
-
-        if (!text || text.length < 80) {
-          const blockTypes = finalMsg.content.map(b => b.type).join(',') || 'НЕТ БЛОКОВ'
-          const diagnostic = [
-            `❌ Не удалось извлечь Tone of Voice`,
-            ``,
-            `Причина: AI вернул пустой / слишком короткий ответ.`,
-            `stop_reason: ${finalMsg.stop_reason}`,
-            `Типы блоков: [${blockTypes}]`,
-            `Длина текстового ответа: ${text.length} символов`,
-            ``,
-            `─── Полный ответ AI (первые 4000 символов) ───`,
-            text.slice(0, 4000) || '(пусто)',
-          ].join('\n')
-          try {
-            await upsertProjectMaterial(supabase, {
-              project_id:        projectId,
-              title:             TOV_TITLE,
-              material_type:     'tone_of_voice',
-              raw_content:       diagnostic,
-              processing_status: 'error',
-            })
-          } catch { /* swallow */ }
-          send({ type: 'error', message: 'Не удалось извлечь ToV. Открой материал «Tone of Voice (извлечён из твоих текстов)» — там полная диагностика.' })
-          return
-        }
-
-        const { error: saveErr } = await upsertProjectMaterial(supabase, {
-          project_id:        projectId,
-          title:             TOV_TITLE,
-          material_type:     'tone_of_voice',
-          raw_content:       text,
-          processing_status: 'ready',
-        })
-
-        if (saveErr) {
-          console.error('[extract-tone-of-voice] save error:', saveErr)
-          send({ type: 'error', message: `Tone of Voice собран, но не сохранился: ${saveErr.message}` })
-          return
-        }
-
-        send({ type: 'done' })
-      } catch (err) {
-        console.error('[extract-tone-of-voice] error:', err instanceof Error ? err.message : err)
-        // Сырец — в телеметрию; в материал и клиенту — честный текст без
-        // хвостов провайдера и стеков (раньше стек лежал в материале!).
-        await captureException(err, { where: 'extract-tone-of-voice' })
+      if (!text || text.length < 80) {
+        const blockTypes = finalMsg.content.map(b => b.type).join(',') || 'НЕТ БЛОКОВ'
+        const diagnostic = [
+          `❌ Не удалось извлечь Tone of Voice`,
+          ``,
+          `Причина: AI вернул пустой / слишком короткий ответ.`,
+          `stop_reason: ${finalMsg.stop_reason}`,
+          `Типы блоков: [${blockTypes}]`,
+          `Длина текстового ответа: ${text.length} символов`,
+          ``,
+          `─── Полный ответ AI (первые 4000 символов) ───`,
+          text.slice(0, 4000) || '(пусто)',
+        ].join('\n')
         try {
           await upsertProjectMaterial(supabase, {
             project_id:        projectId,
             title:             TOV_TITLE,
             material_type:     'tone_of_voice',
-            raw_content:       `❌ Tone of Voice не извлёкся: генерация была перегружена. Нажми «Из моих текстов» ещё раз — если повторится, напиши нам.`,
+            raw_content:       diagnostic,
             processing_status: 'error',
           })
         } catch { /* swallow */ }
-        send({ type: 'error', message: AI_BUSY_MESSAGE })
-      } finally {
-        clearInterval(ping)
-        closed = true
-        try { controller.close() } catch { /* already closed */ }
+        return
       }
-    },
+
+      const { error: saveErr } = await upsertProjectMaterial(supabase, {
+        project_id:        projectId,
+        title:             TOV_TITLE,
+        material_type:     'tone_of_voice',
+        raw_content:       text,
+        processing_status: 'ready',
+      })
+      if (saveErr) {
+        console.error('[extract-tone-of-voice] save error:', saveErr)
+        await captureException(new Error(`ToV собран, но не сохранился: ${saveErr.message}`), { where: 'extract-tone-of-voice save' })
+        try {
+          await upsertProjectMaterial(supabase, {
+            project_id:        projectId,
+            title:             TOV_TITLE,
+            material_type:     'tone_of_voice',
+            raw_content:       '❌ Tone of Voice собран, но не сохранился. Нажми «Из моих текстов» ещё раз.',
+            processing_status: 'error',
+          })
+        } catch { /* swallow */ }
+      }
+    } catch (err) {
+      console.error('[extract-tone-of-voice] error:', err instanceof Error ? err.message : err)
+      // Сырец — в телеметрию; в материал — честный текст без хвостов провайдера
+      await captureException(err, { where: 'extract-tone-of-voice' })
+      try {
+        await upsertProjectMaterial(supabase, {
+          project_id:        projectId,
+          title:             TOV_TITLE,
+          material_type:     'tone_of_voice',
+          raw_content:       `❌ Tone of Voice не извлёкся: генерация была перегружена. Нажми «Из моих текстов» ещё раз — если повторится, напиши нам.`,
+          processing_status: 'error',
+        })
+      } catch { /* swallow */ }
+    }
   })
 
-  return new Response(stream, {
-    headers: {
-      'Content-Type':           'text/event-stream',
-      'Cache-Control':          'no-cache, no-transform',
-      'X-Accel-Buffering':      'no',
-      'X-Content-Type-Options': 'nosniff',
-    },
-  })
+  // 202 сразу: извлечение идёт в фоне, клиент поллит материал tone_of_voice.
+  return NextResponse.json({ started: true }, { status: 202 })
 }

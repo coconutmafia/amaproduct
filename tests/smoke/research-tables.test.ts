@@ -219,7 +219,9 @@ describe('meaningsMapToAoa — шапка из урока «Карта смыс�
 // не выкинули при следующем редактировании промпта.
 // ─────────────────────────────────────────────────────────────────────────────
 describe('портрет участника — только названные факты (инцидент 17.08)', () => {
-  const src = readFileSync(join(process.cwd(), 'app/api/ai/research-analyze/route.ts'), 'utf8')
+  // 24.08 ядро table1 переехало в lib/research/table1.ts (общее для роута и
+  // фонового джоба) — правило живёт там; цепочка роут/джоб → ядро закреплена ниже.
+  const src = readFileSync(join(process.cwd(), 'lib/research/table1.ts'), 'utf8')
 
   it('железное правило портрета стоит в промпте table1', () => {
     expect(src).toContain('ЖЕЛЕЗНОЕ ПРАВИЛО ПОРТРЕТА')
@@ -235,5 +237,37 @@ describe('портрет участника — только названные 
   it('числа и обрывки: правило «как прозвучало» на месте', () => {
     expect(src).toContain('Числа пиши как прозвучали')
     expect(src).toContain('обрывки расшифровки')
+  })
+})
+
+
+describe('table1: роут и фоновый джоб используют ОДНО ядро (24.08)', () => {
+  it('роут зовёт runTable1Batch/loadKnownQuestions из lib/research/table1', () => {
+    const route = readFileSync(join(process.cwd(), 'app/api/ai/research-analyze/route.ts'), 'utf8')
+    expect(route).toContain("from '@/lib/research/table1'")
+    expect(route).toContain('runTable1Batch(')
+  })
+  it('джоб research_table1: самопродолжение и прогресс в job.progress', () => {
+    const job = readFileSync(join(process.cwd(), 'lib/jobs/runResearchTableJob.ts'), 'utf8')
+    expect(job).toContain('runTable1Batch(')
+    expect(job).toContain('/api/jobs/continue')
+    expect(job).toContain('doneBatches')
+  })
+  it('continue диспетчеризует по типу джоба', () => {
+    const c = readFileSync(join(process.cwd(), 'app/api/jobs/continue/route.ts'), 'utf8')
+    expect(c).toContain("job?.type === 'research_table1'")
+  })
+  it('клиент исследования: джоб + поллинг, jobId в черновике сразу', () => {
+    const page = readFileSync(join(process.cwd(), 'app/(dashboard)/projects/[id]/research/page.tsx'), 'utf8')
+    expect(page).toContain('/api/jobs/research-table')
+    expect(page).toContain('analysisJobId: data.jobId')
+    expect(page).toContain('pollAnalysisJob(d.analysisJobId)')
+  })
+  it('ToV: 202 + фон + поллинг статуса материала (SSE убран)', () => {
+    const route = readFileSync(join(process.cwd(), 'app/api/ai/extract-tone-of-voice/route.ts'), 'utf8')
+    expect(route).toContain('{ started: true }, { status: 202 }')
+    expect(route).not.toContain('text/event-stream')
+    const dialog = readFileSync(join(process.cwd(), 'components/projects/ToneFromContentDialog.tsx'), 'utf8')
+    expect(dialog).toContain('/api/materials/tov-status')
   })
 })

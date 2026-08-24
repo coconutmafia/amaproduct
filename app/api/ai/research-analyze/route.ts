@@ -16,29 +16,16 @@ import { anthropic, MODEL } from '@/lib/ai/client'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { NextResponse, after } from 'next/server'
 import { MASTER_RESEARCH_TITLE } from '@/lib/researchMaster'
+import { loadKnownQuestions, runTable1Batch } from '@/lib/research/table1'
+import type { InterviewTable } from '@/lib/research/table1'
 
 export const maxDuration = 300
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-export interface RespondentAnswer {
-  question:       string
-  block:          'point_a' | 'point_b' | 'barriers' | 'criteria' | 'other'
-  full_answer:    string
-  key_quotes:     string[]
-  emotional_tone: string
-}
-
-export interface Respondent {
-  id:       string
-  name:     string
-  segment:  string
-  answers:  RespondentAnswer[]
-}
-
-export interface InterviewTable {
-  respondents: Respondent[]
-}
+// Ядро table1 вынесено в lib/research/table1.ts (24.08) — общее для этого роута
+// и фонового джоба runResearchTableJob. Типы реэкспортируются: клиенты
+// импортируют их отсюда исторически.
+export type { RespondentAnswer, Respondent, InterviewTable } from '@/lib/research/table1'
 
 export interface MeaningsCategory {
   type:          'pain' | 'need' | 'trigger' | 'objection'
@@ -55,63 +42,7 @@ export interface MeaningsMap {
 
 // ── Prompts ───────────────────────────────────────────────────────────────────
 
-const TABLE1_SYSTEM = `Ты — аналитик аудиторного исследования.
-Твоя задача — структурировать расшифровку интервью в чёткую таблицу.
-Всегда возвращай ТОЛЬКО валидный JSON без markdown-обёрток, без пояснений.`
-
-function buildTable1Prompt(transcription: string, knownQuestions: string[] = []): string {
-  // Блок канонизации: вопросы должны совпадать МЕЖДУ кастдевами проекта —
-  // иначе сводная таблица (строка = участник, колонки = вопросы) рассыпается
-  // на десятки колонок-вариаций с пустотами.
-  const canonBlock = knownQuestions.length > 0 ? `
-
-ЕДИНЫЙ СПИСОК ВОПРОСОВ ПРОЕКТА (уже использованы в прошлых кастдевах):
-${knownQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
-
-ПРАВИЛО: если вопрос интервью ПО СМЫСЛУ совпадает с одним из списка — используй ДОСЛОВНО эту формулировку (символ в символ), даже если в записи он прозвучал другими словами. Новую формулировку заводи только для вопроса, которого в списке действительно нет.` : ''
-
-  return `Проанализируй расшифровку интервью с аудиторией. Верни ТОЛЬКО JSON.
-
-РАСШИФРОВКА:
-${transcription}
-
-ЗАДАЧА: Определи всех участников (респондентов) и все вопросы интервью.
-Для каждого участника и каждого вопроса заполни структуру.
-Формулируй вопросы ОБОБЩЁННО и ПОВТОРЯЕМО (без деталей конкретного диалога): один и тот же вопрос в разных интервью обязан получить одинаковую формулировку.${canonBlock}
-
-Блоки вопросов:
-- point_a: текущая ситуация / что не устраивает / боли
-- point_b: желаемый результат / идеальная ситуация
-- barriers: барьеры / страхи / возражения / что мешало раньше
-- criteria: критерии выбора специалиста/продукта
-- other: всё остальное
-
-ЖЕЛЕЗНОЕ ПРАВИЛО ПОРТРЕТА (segment) — только факты, которые участник НАЗВАЛ СЛОВАМИ, по ВСЕЙ расшифровке:
-- НИЧЕГО не выводи из умолчаний. Не назвал семейное положение — НЕ пиши его: «живу с ребёнком» ≠ «мать-одиночка» (реальный инцидент: участница упомянула мужа дальше по интервью, а портрет записал её матерью-одиночкой по первому ответу). Муж/жена, упомянутые в ЛЮБОМ месте интервью, = состоит в браке.
-- Числа пиши как прозвучали: «доход около 3» ≠ «3000 в месяц», если единицы и период не названы.
-- Непонятные обрывки расшифровки («мониторщик») в портрет не тащи — пропусти.
-- Сомневаешься в факте — НЕ включай его. Портрет из двух точных фактов лучше портрета с одной выдумкой.
-
-JSON формат (строго, без markdown):
-{
-  "respondents": [
-    {
-      "id": "Участник 1",
-      "name": "имя если упомянуто, иначе пусто",
-      "segment": "демографический портрет ТОЛЬКО из фактов, названных участником (см. железное правило выше)",
-      "answers": [
-        {
-          "question": "краткая суть вопроса (10-15 слов)",
-          "block": "point_a",
-          "full_answer": "полный ответ участника дословно",
-          "key_quotes": ["яркая фраза 1", "яркая фраза 2"],
-          "emotional_tone": "боль/надежда/раздражение/бессилие/страх/желание/нейтрально"
-        }
-      ]
-    }
-  ]
-}`
-}
+// TABLE1_SYSTEM/buildTable1Prompt живут в lib/research/table1.ts (общие с джобом)
 
 const TABLE2_SYSTEM = `Ты — стратег по контенту и маркетингу.
 Твоя задача — из данных исследования аудитории собрать карту смыслов.
@@ -440,105 +371,18 @@ export async function POST(request: Request) {
   }
 
   // ── Step 1: Transcription → Table 1 ────────────────────────────────────────
+  // Синхронный шаг сохранён для обратной совместимости (research-smoke, старые
+  // вкладки); UI с 24.08 ходит через фоновый джоб /api/jobs/research-table —
+  // оба пути зовут ОДНО ядро lib/research/table1.ts.
   if (step === 'table1') {
     if (!transcription) return NextResponse.json({ error: 'transcription required' }, { status: 400 })
-
-    // Канонизация вопросов (файл Дарьи, 11 августа): модель формулировала один
-    // и тот же вопрос по-разному в разных кастдевах — сводная таблица получала
-    // 45 колонок с дырами вместо ~15 общих. Даём модели список формулировок,
-    // УЖЕ использованных в этом проекте (из мастер-таблицы): совпадающий по
-    // смыслу вопрос обязан быть переиспользован дословно.
-    let knownQuestions: string[] = []
-    try {
-      const { data: master } = await supabase
-        .from('project_materials')
-        .select('raw_content')
-        .eq('project_id', projectId)
-        .eq('title', MASTER_RESEARCH_TITLE)
-        .maybeSingle()
-      if (master?.raw_content) {
-        const seen = new Set<string>()
-        for (const m of String(master.raw_content).matchAll(/^\s*Вопрос:\s*(.+)$/gm)) {
-          const q = m[1].trim()
-          const k = q.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ')
-          if (q && !seen.has(k)) { seen.add(k); knownQuestions.push(q) }
-        }
-        knownQuestions = knownQuestions.slice(0, 60)
-      }
-    } catch { /* мастера ещё нет — обычный режим */ }
-
-    // Поймано 25 июля (три интервью разом): свободный JSON при max_tokens 8000
-    // обрезался на середине → парс падал «AI не смог структурировать данные».
-    // Теперь: форс-тул (валидный JSON гарантирует API, не regex) + стрим с
-    // потолком 32k (одно часовое интервью ≈ 2-4k токенов таблицы, три — до 12k;
-    // 32k — запас на пятёрку) + при переполнении честная подсказка.
-    const tableTool = {
-      name: 'interview_table',
-      description: 'Структурированная таблица аудиторного исследования',
-      input_schema: {
-        type: 'object' as const,
-        properties: {
-          respondents: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                id:      { type: 'string' },
-                name:    { type: 'string' },
-                segment: { type: 'string' },
-                answers: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      question:       { type: 'string' },
-                      block:          { type: 'string', description: 'point_a | point_b | barriers | criteria | other' },
-                      full_answer:    { type: 'string' },
-                      key_quotes:     { type: 'array', items: { type: 'string' } },
-                      emotional_tone: { type: 'string' },
-                    },
-                    required: ['question', 'block', 'full_answer'],
-                  },
-                },
-              },
-              required: ['id', 'name', 'answers'],
-            },
-          },
-        },
-        required: ['respondents'],
-      },
+    const knownQuestions = await loadKnownQuestions(supabase, projectId)
+    const r = await runTable1Batch(transcription, knownQuestions)
+    if (!r.ok) {
+      await captureException(new Error(`table1: ${r.error}`), { where: 'research-analyze table1', projectId })
+      return NextResponse.json({ error: r.error }, { status: r.retryable ? 503 : 400 })
     }
-    let finalMsg
-    try {
-      const stream = anthropic.messages.stream({
-        model:       MODEL,
-        max_tokens:  32000,
-        system:      TABLE1_SYSTEM,
-        tools:       [tableTool],
-        tool_choice: { type: 'tool' as const, name: 'interview_table' },
-        messages:    [{ role: 'user', content: buildTable1Prompt(transcription, knownQuestions) }],
-      })
-      finalMsg = await stream.finalMessage()
-    } catch (e) {
-      await captureException(e, { where: 'research-analyze table1', projectId })
-      return NextResponse.json({ error: AI_BUSY }, { status: 503 })
-    }
-    const toolBlock = finalMsg.content.find((b) => b.type === 'tool_use')
-    if (finalMsg.stop_reason === 'max_tokens') {
-      return NextResponse.json({
-        error: 'Интервью слишком длинные для одной таблицы. Загрузи и обработай их по одному — таблицы можно объединить в материалах проекта.',
-      }, { status: 400 })
-    }
-    if (!toolBlock || toolBlock.type !== 'tool_use') {
-      console.error('[research-analyze table1] no tool_use. stop_reason=%s', finalMsg.stop_reason)
-      return NextResponse.json({ error: 'AI не смог структурировать данные. Попробуй ещё раз.' }, { status: 500 })
-    }
-    const data = toolBlock.input as unknown as InterviewTable
-    if (!Array.isArray(data?.respondents) || data.respondents.length === 0) {
-      return NextResponse.json({ error: 'AI не нашёл в расшифровке участников интервью. Проверь, что это запись интервью.' }, { status: 400 })
-    }
-
-    return NextResponse.json({ table1: data })
+    return NextResponse.json({ table1: r.table })
   }
 
   // ── Step 2: Table 1 → Meanings Map ─────────────────────────────────────────

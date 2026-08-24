@@ -29,48 +29,46 @@ export function ToneFromContentDialog({ projectId, open, onClose, onSuccess }: P
       return
     }
     setSubmitting(true)
-    const loadingToast = toast.loading('Анализирую твои тексты — это займёт ~30-60 секунд. Не закрывай страницу.')
+    // Фон + поллинг (24.08, свип класса «мобильная вкладка убивает долгий
+    // запрос»): сервер отвечает 202 сразу и анализирует в after(); статус
+    // живёт в материале tone_of_voice — страницу можно закрывать, ToV доедет.
+    const loadingToast = toast.loading('Анализирую твои тексты (~1 минута). Страницу можно закрыть — ToV сохранится сам.')
     try {
       const res = await fetch('/api/ai/extract-tone-of-voice', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ projectId, units: units.map(u => u.trim()).filter(u => u.length >= 30) }),
       })
-      if (!res.ok && res.headers.get('content-type')?.includes('application/json')) {
+      if (res.status !== 202) {
         const j = await res.json().catch(() => ({})) as { error?: string }
         throw new Error(j.error ?? 'Ошибка')
       }
-      if (!res.body) throw new Error('Нет ответа от сервера')
 
-      const reader  = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = '', done = false, errMsg = ''
-
-      while (true) {
-        const { value, done: streamDone } = await reader.read()
-        if (streamDone) break
-        buffer += decoder.decode(value, { stream: true })
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() ?? ''
-        for (const ev of parts) {
-          const line = ev.split('\n').find(l => l.startsWith('data: '))
-          if (!line) continue
-          try {
-            const m = JSON.parse(line.slice(6)) as { type: string; message?: string }
-            if (m.type === 'status' && m.message) toast.loading(m.message, { id: loadingToast })
-            else if (m.type === 'done')  done = true
-            else if (m.type === 'error') errMsg = m.message ?? 'Ошибка'
-          } catch { /* heartbeat */ }
-        }
+      const deadline = Date.now() + 5 * 60_000
+      let outcome: 'ready' | 'error' | 'timeout' = 'timeout'
+      let errText = ''
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 4000))
+        try {
+          const st = await fetch(`/api/materials/tov-status?projectId=${projectId}`)
+          if (!st.ok) continue
+          const s = await st.json() as { status?: string; error?: string }
+          if (s.status === 'ready') { outcome = 'ready'; break }
+          if (s.status === 'error') { outcome = 'error'; errText = s.error ?? 'Ошибка извлечения ToV'; break }
+        } catch { /* сеть моргнула — продолжаем поллить */ }
       }
 
-      if (errMsg) throw new Error(errMsg)
-      if (!done) throw new Error('Связь оборвалась — обнови страницу через минуту, ToV мог сохраниться.')
-
       toast.dismiss(loadingToast)
-      toast.success('Tone of Voice извлечён и сохранён в материалы')
-      onSuccess()
-      onClose()
+      if (outcome === 'ready') {
+        toast.success('Tone of Voice извлечён и сохранён в материалы')
+        onSuccess()
+        onClose()
+      } else if (outcome === 'error') {
+        throw new Error(errText)
+      } else {
+        toast.message('ToV ещё анализируется — обнови страницу через минуту, он появится в материалах.', { duration: 15000 })
+        onClose()
+      }
     } catch (err) {
       toast.dismiss(loadingToast)
       toast.error(friendlyError(err, 'Ошибка извлечения ToV'), { duration: 30000 })

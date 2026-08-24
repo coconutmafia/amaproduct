@@ -425,7 +425,7 @@ async function researchSmoke() {
     log('\n[DRY-RUN] план (добавь --run):')
     log('  1) QA-бот: magiclink → verify → сессия (пароль не нужен)')
     log('  2) создать временный проект ama-probe-research-*')
-    log(`  3) POST ${APP}/api/ai/research-analyze step=table1 (короткое синтетическое интервью)`)
+    log(`  3) POST ${APP}/api/jobs/research-table (фоновый джоб, как клиент с 24.08) → поллинг`)
     log('  4) step=save → проверить, что материалы появились')
     log('  5) удалить материалы и проект')
     return
@@ -480,20 +480,35 @@ async function researchSmoke() {
       'Вопрос: что уже пробовала? Ответ: делала таргет через знакомую, слила пятнадцать тысяч, заявок ноль, очень разочаровалась.',
     ].join('\n')
 
-    // 3) table1 — живой Claude-вызов тем же путём, что у клиента
+    // 3) table1 — тем же путём, что клиент с 24.08: фоновый джоб + поллинг
     let t0 = Date.now()
-    const t1 = await fetch(`${APP}/api/ai/research-analyze`, {
+    const start = await fetch(`${APP}/api/jobs/research-table`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', cookie },
-      body: JSON.stringify({ projectId, step: 'table1', transcription }),
+      body: JSON.stringify({ projectId, parts: [{ name: 'Интервью', text: transcription }] }),
     })
-    const t1body = await t1.json().catch(() => null)
-    if (!t1.ok || !t1body?.table1) {
-      log(`❌ 3. table1 УПАЛ: HTTP ${t1.status} за ${((Date.now() - t0) / 1000).toFixed(1)}с`)
-      log('   тело:', JSON.stringify(t1body).slice(0, 400))
+    const startBody = await start.json().catch(() => null)
+    if (start.status !== 202 || !startBody?.jobId) {
+      log(`❌ 3. research-table job не создался: HTTP ${start.status}`)
+      log('   тело:', JSON.stringify(startBody).slice(0, 300))
       return
     }
-    log(`✅ 3. table1 ок за ${((Date.now() - t0) / 1000).toFixed(1)}с (участников: ${t1body.table1.respondents?.length})`)
+    let t1body = null
+    const deadline = Date.now() + 5 * 60_000
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 4000))
+      const st = await fetch(`${APP}/api/jobs/${startBody.jobId}`, { headers: { cookie } })
+        .then(r => r.json()).catch(() => null)
+      const job = st?.job
+      if (!job) continue
+      if (job.status === 'done') { t1body = { table1: job.result?.table1 }; break }
+      if (job.status === 'error') { log(`❌ 3. джоб упал: ${job.error}`); return }
+    }
+    if (!t1body?.table1?.respondents?.length) {
+      log(`❌ 3. джоб не дособрался за 5 минут или пустая таблица`)
+      return
+    }
+    log(`✅ 3. table1 (джоб+поллинг) ок за ${((Date.now() - t0) / 1000).toFixed(1)}с (участников: ${t1body.table1.respondents?.length})`)
 
     // 4) save — вставка материалов + мастер-таблица
     t0 = Date.now()
