@@ -1652,9 +1652,212 @@ async function weekBriefSmoke() {
   }
 }
 
+// ── ПРОБНИК: живой смоук автозаполнения мастера (фоновый джоб) ───────────────
+// Проверяет НОВЫЙ мобильный путь онбординга: POST /api/jobs/project-autofill
+// (202+jobId, без projectId — проекта ещё нет) → поллинг → поля профиля.
+// Источник — публичный Telegram-канал (скрейп t.me/s бесплатный, без Apify);
+// один Claude-вызов ~$0.01.
+//   node scripts/prod-probe.mjs autofill-smoke [--run] [--tg=durov]
+async function autofillSmoke() {
+  const APP = 'https://amaproduct.com'
+  const QA = 'ama-qa-bot@gmail.com'
+  const tgArg = process.argv.find(a => a.startsWith('--tg='))
+  const tgHandle = tgArg ? tgArg.slice(5) : 'durov'
+  log('\n=== Пробник: живой смоук автозаполнения мастера (джоб) ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) QA-бот: magiclink → verify → сессия')
+    log(`  2) POST ${APP}/api/jobs/project-autofill (t.me/${tgHandle}) → 202+jobId`)
+    log('  3) поллинг до done → niche/description заполнены')
+    log('  4) удалить джоб')
+    return
+  }
+  const anon = (() => {
+    const txt = readFileSync(join(ROOT, '.env.local'), 'utf8')
+    const m = txt.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY в .env.local'); return }
+
+  const gl = await api('/auth/v1/admin/generate_link', {
+    method: 'POST',
+    body: JSON.stringify({ type: 'magiclink', email: QA }),
+  })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log('❌ generate_link не дал email_otp:', gl.status); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST',
+    headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA, token: otp }),
+  }).then(r => r.json())
+  if (!ver?.access_token) { log('❌ verify не дал сессию'); return }
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+  log('✅ 1. сессия QA-бота получена')
+
+  let jobId = null
+  try {
+    const t0 = Date.now()
+    const start = await fetch(`${APP}/api/jobs/project-autofill`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ telegramUrl: `https://t.me/${tgHandle}` }),
+    })
+    const startBody = await start.json().catch(() => null)
+    if (start.status !== 202 || !startBody?.jobId) {
+      log(`❌ 2. джоб не создался: HTTP ${start.status}`)
+      log('   тело:', JSON.stringify(startBody).slice(0, 300))
+      return
+    }
+    jobId = startBody.jobId
+    log(`✅ 2. джоб создан (${jobId})`)
+
+    let result = null
+    const deadline = Date.now() + 4 * 60_000
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 4000))
+      const st = await fetch(`${APP}/api/jobs/${jobId}`, { headers: { cookie } })
+        .then(r => r.json()).catch(() => null)
+      const job = st?.job
+      if (!job) continue
+      if (job.status === 'done') { result = job.result; break }
+      if (job.status === 'error') { log(`❌ 3. джоб упал: ${job.error}`); return }
+    }
+    if (!result?.niche && !result?.description) {
+      log('❌ 3. поля не заполнились за 4 минуты —', JSON.stringify(result).slice(0, 200))
+      return
+    }
+    log(`✅ 3. поля готовы за ${((Date.now() - t0) / 1000).toFixed(1)}с из ${result.platform}: ниша «${String(result.niche).slice(0, 60)}…»`)
+    log('\n🎉 ПУТЬ ЖИВ: автозаполнение мастера переживает смерть вкладки — джоб доехал без клиента.')
+  } finally {
+    if (jobId) await api(`/rest/v1/jobs?id=eq.${jobId}`, { method: 'DELETE' }).catch(() => {})
+    log('🧹 уборка: джоб удалён')
+  }
+}
+
+// ── ПРОБНИК: живой смоук анализа конкурентов (фоновый джоб) ──────────────────
+// Проверяет НОВЫЙ мобильный путь «Анализ конкурентов»: синтетический материал
+// competitors (REST) → POST /api/jobs/analyze-competitors (202+jobId) →
+// поллинг → строки таблицы. Один Claude-вызов ~$0.02.
+//   node scripts/prod-probe.mjs competitors-smoke [--run]
+async function competitorsSmoke() {
+  const APP = 'https://amaproduct.com'
+  const QA = 'ama-qa-bot@gmail.com'
+  log('\n=== Пробник: живой смоук анализа конкурентов (джоб) ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) QA-бот: magiclink → verify → сессия')
+    log('  2) временный проект ama-probe-comp-* + материал competitors (REST)')
+    log(`  3) POST ${APP}/api/jobs/analyze-competitors → 202+jobId`)
+    log('  4) поллинг до done → строки таблицы (handle/takeaway)')
+    log('  5) удалить материал, джоб и проект')
+    return
+  }
+  const anon = (() => {
+    const txt = readFileSync(join(ROOT, '.env.local'), 'utf8')
+    const m = txt.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY в .env.local'); return }
+
+  const gl = await api('/auth/v1/admin/generate_link', {
+    method: 'POST',
+    body: JSON.stringify({ type: 'magiclink', email: QA }),
+  })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log('❌ generate_link не дал email_otp:', gl.status); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST',
+    headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA, token: otp }),
+  }).then(r => r.json())
+  if (!ver?.access_token) { log('❌ verify не дал сессию'); return }
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+  log('✅ 1. сессия QA-бота получена')
+
+  const qaId = ver.user?.id
+  const projName = `${PROBE_PREFIX}comp-${Date.now()}`
+  const prj = await api('/rest/v1/projects', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ owner_id: qaId, name: projName, niche: 'фитнес-тренер', status: 'active' }),
+  })
+  const projectId = Array.isArray(prj.body) ? prj.body[0]?.id : prj.body?.id
+  if (!projectId) { log('❌ 2. проект не создался:', prj.status, JSON.stringify(prj.body).slice(0, 200)); return }
+
+  const compText = [
+    'Профиль: @fit_marina_pro — 42 300 подписчиков.',
+    'Био: тренер по функциональному фитнесу, мама двоих, онлайн-программы.',
+    'Пост 1 (4 812 лайков, 214 комментов): «Почему присед не убирает живот — разбор с цифрами».',
+    'Пост 2 (2 105 лайков): «Мой день на 1800 ккал — меню без курогрудки».',
+    'Рилз 1 (390 000 просмотров): до/после клиентки за 12 недель, быстрый монтаж.',
+    'Публикуется почти каждый день, сторис с опросами по утрам.',
+  ].join('\n')
+  const mat = await api('/rest/v1/project_materials', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({
+      project_id: projectId,
+      title: `${PROBE_PREFIX}конкурент @fit_marina_pro`,
+      material_type: 'competitors',
+      raw_content: compText,
+      processing_status: 'ready',
+    }),
+  })
+  const matId = Array.isArray(mat.body) ? mat.body[0]?.id : mat.body?.id
+  if (!matId) { log('❌ 2. материал не создался:', mat.status, JSON.stringify(mat.body).slice(0, 200)); return }
+  log(`✅ 2. проект ${projName} + материал competitors`)
+
+  let jobId = null
+  const cleanup = async () => {
+    if (jobId) await api(`/rest/v1/jobs?id=eq.${jobId}`, { method: 'DELETE' }).catch(() => {})
+    await api(`/rest/v1/project_materials?project_id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    await api(`/rest/v1/projects?id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    log('🧹 уборка: материал, джоб и проект удалены')
+  }
+
+  try {
+    const t0 = Date.now()
+    const start = await fetch(`${APP}/api/jobs/analyze-competitors`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ projectId }),
+    })
+    const startBody = await start.json().catch(() => null)
+    if (start.status !== 202 || !startBody?.jobId) {
+      log(`❌ 3. джоб не создался: HTTP ${start.status}`)
+      log('   тело:', JSON.stringify(startBody).slice(0, 300))
+      return
+    }
+    jobId = startBody.jobId
+    log(`✅ 3. джоб создан (${jobId})`)
+
+    let rows = null
+    const deadline = Date.now() + 4 * 60_000
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 4000))
+      const st = await fetch(`${APP}/api/jobs/${jobId}`, { headers: { cookie } })
+        .then(r => r.json()).catch(() => null)
+      const job = st?.job
+      if (!job) continue
+      if (job.status === 'done') { rows = job.result?.competitors; break }
+      if (job.status === 'error') { log(`❌ 4. джоб упал: ${job.error}`); return }
+    }
+    if (!Array.isArray(rows) || rows.length === 0 || !rows[0]?.handle) {
+      log('❌ 4. таблица не дособралась за 4 минуты —', JSON.stringify(rows).slice(0, 200))
+      return
+    }
+    log(`✅ 4. таблица готова за ${((Date.now() - t0) / 1000).toFixed(1)}с: строк ${rows.length}, handle ${rows[0].handle}`)
+    log('\n🎉 ПУТЬ ЖИВ: анализ конкурентов переживает смерть вкладки — джоб доехал без клиента.')
+  } finally {
+    await cleanup()
+  }
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))

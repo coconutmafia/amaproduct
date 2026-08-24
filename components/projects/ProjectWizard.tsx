@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { friendlyError } from '@/lib/friendlyError'
+import { pollJob } from '@/lib/jobs/pollJob'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -182,6 +183,55 @@ export function ProjectWizard() {
     setAiName('')
   }
 
+  // Применить результат автозаполнения: только к ПУСТЫМ полям (functional
+  // updates — работает и из догона, когда замыкание со старым стейтом).
+  const applyAutofillResult = useCallback((data: {
+    platform?: string; niche?: string; description?: string
+    target_audience?: string; content_goals?: string
+  }) => {
+    if (data.niche) setNiche(prev => prev.trim() ? prev : data.niche!)
+    if (data.description) setDescription(prev => prev.trim() ? prev : data.description!)
+    if (data.target_audience) setTargetAudience(prev => prev.trim() ? prev : data.target_audience!)
+    if (data.content_goals) setContentGoals(prev => prev.trim() ? prev : data.content_goals!)
+    toast.success(`Данные заполнены из ${data.platform ?? 'профиля'} — проверь и отредактируй`)
+  }, [])
+
+  // Ключ догона: id идущего автозаполнения (переживает смерть вкладки —
+  // скрейп 20-90с, юзеры мобильные). Отдельно от draftKey: дебаунс-автосейв
+  // черновика полностью перезаписывает свой объект.
+  const autofillJobKey = userId ? `ama_autofill_job_${userId}` : null
+
+  const pollAutofillJob = useCallback(async (jobId: string) => {
+    setAutofillLoading(true)
+    try {
+      const result = await pollJob<{
+        platform?: string; niche?: string; description?: string
+        target_audience?: string; content_goals?: string
+      }>(jobId)
+      applyAutofillResult(result)
+    } catch (err) {
+      toast.error(friendlyError(err, 'Не удалось получить данные профиля'))
+    } finally {
+      try { if (autofillJobKey) localStorage.removeItem(autofillJobKey) } catch { /* ignore */ }
+      setAutofillLoading(false)
+    }
+  }, [applyAutofillResult, autofillJobKey])
+
+  // Догон при возвращении: вкладка умерла во время автозаполнения — джоб дошёл
+  // (или дойдёт) на сервере, подхватываем результат в пустые поля.
+  const autofillResumeRef = useRef(false)
+  useEffect(() => {
+    if (!autofillJobKey || autofillResumeRef.current) return
+    autofillResumeRef.current = true
+    try {
+      const jobId = localStorage.getItem(autofillJobKey)
+      if (!jobId) return
+      toast.message('Догоняю автозаполнение — анализ продолжался на сервере…')
+      void pollAutofillJob(jobId)
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autofillJobKey])
+
   const handleAutofill = async () => {
     if (!instagramUrl.trim() && !telegramUrl.trim()) {
       toast.error('Сначала введи ссылку на Instagram или Telegram')
@@ -189,36 +239,30 @@ export function ProjectWizard() {
     }
     setAutofillLoading(true)
     try {
-      const res = await fetch('/api/projects/autofill', {
+      // Фоновый джоб (24.08): раньше 20-90с sync-запрос жил в открытой вкладке
+      // на первом же шаге онбординга — мобильная сеть его рвала. Теперь джоб
+      // на сервере, jobId в localStorage СРАЗУ, вкладку можно закрывать.
+      const res = await fetch('/api/jobs/project-autofill', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instagramUrl: instagramUrl.trim(), telegramUrl: telegramUrl.trim() }),
       })
-      const data = await res.json() as {
-        error?: string
-        code?: string
-        platform?: string
-        niche?: string
-        description?: string
-        target_audience?: string
-        content_goals?: string
-      }
+      const data = await res.json().catch(() => ({})) as { jobId?: string; error?: string; code?: string }
       // 402 до оформления тарифа — честно говорим ЧТО делать, а не «не удалось
       // получить данные» (Ира Varshavsky, 16.08: 9 попыток об эту стену).
       if (res.status === 402 || data.code === 'payment_required') {
+        setAutofillLoading(false)
         toast.error('Автозаполнение доступно после подключения тарифа. Выбери план на странице «Тарифы» — или заполни поля вручную ниже, это тоже работает.', { duration: 12000 })
         return
       }
-      if (!res.ok) throw new Error(data.error || 'Ошибка анализа')
-      // Only fill fields that are currently empty
-      if (data.niche && !niche.trim()) setNiche(data.niche)
-      if (data.description && !description.trim()) setDescription(data.description)
-      if (data.target_audience && !targetAudience.trim()) setTargetAudience(data.target_audience)
-      if (data.content_goals && !contentGoals.trim()) setContentGoals(data.content_goals)
-      toast.success(`Данные заполнены из ${data.platform ?? 'профиля'} — проверь и отредактируй`)
+      if (!res.ok || !data.jobId) {
+        setAutofillLoading(false)
+        throw new Error(data.error || 'Ошибка анализа')
+      }
+      try { if (autofillJobKey) localStorage.setItem(autofillJobKey, data.jobId) } catch { /* ignore */ }
+      await pollAutofillJob(data.jobId)
     } catch (err) {
       toast.error(friendlyError(err, 'Не удалось получить данные профиля'))
-    } finally {
       setAutofillLoading(false)
     }
   }

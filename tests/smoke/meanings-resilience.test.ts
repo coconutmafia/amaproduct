@@ -70,9 +70,13 @@ describe('payment_required больше не маскируется под др�
     expect(src).toContain("data.code === 'payment_required'")
     expect(src).toContain('вручную')
   })
-  it('autofill: маршрут не отдаёт сырой err.message и шлёт телеметрию', () => {
+  it('autofill: ядро не отдаёт сырой err.message и шлёт телеметрию', () => {
+    // 24.08: логика уехала в ядро lib/projects/autofill.ts (общее для
+    // sync-роута и джоба) — телеметрия и санитизация живут там.
+    const core = readFileSync(join(process.cwd(), 'lib/projects/autofill.ts'), 'utf8')
+    expect(core).toContain('captureException')
+    expect(core).not.toMatch(/error:\s*(?:err|e)\.message/)
     const src = readFileSync(join(process.cwd(), 'app/api/projects/autofill/route.ts'), 'utf8')
-    expect(src).toContain('captureException')
     expect(src).toContain('maxDuration = 300')
     expect(src).not.toMatch(/NextResponse\.json\(\{ error: msg \}/)
   })

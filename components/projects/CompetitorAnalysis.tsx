@@ -2,9 +2,10 @@
 
 // "Анализ конкурентов" — generates a comparison table from the project's scraped
 // competitor Instagram data and lets the owner preview + download it as XLSX.
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { downloadXlsx } from '@/lib/utils/xlsxTable'
 import { friendlyError } from '@/lib/friendlyError'
+import { pollJob } from '@/lib/jobs/pollJob'
 import { toast } from 'sonner'
 import { Search, Loader2, Download } from 'lucide-react'
 
@@ -30,21 +31,57 @@ export function CompetitorAnalysis({ projectId }: { projectId: string }) {
   const [busy, setBusy] = useState(false)
   const [rows, setRows] = useState<Row[]>([])
 
-  async function run() {
+  // Ключ догона: id идущего анализа (переживает смерть вкладки на мобиле).
+  const jobKey = `ama_competitors_job_${projectId}`
+
+  const poll = useCallback(async (jobId: string) => {
     setBusy(true)
     try {
-      const res = await fetch('/api/ai/analyze-competitors', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ projectId }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Ошибка анализа')
-      setRows((data.competitors || []) as Row[])
+      const result = await pollJob<{ competitors?: Row[] }>(jobId)
+      setRows((result.competitors || []) as Row[])
       setOpen(true)
     } catch (e) {
       toast.error(friendlyError(e, 'Не удалось проанализировать'))
     } finally {
+      try { localStorage.removeItem(jobKey) } catch { /* ignore */ }
+      setBusy(false)
+    }
+  }, [jobKey])
+
+  // Догон при возвращении: вкладка умерла во время анализа — джоб дошёл (или
+  // дойдёт) на сервере, таблица откроется сама.
+  const resumeRef = useRef(false)
+  useEffect(() => {
+    if (resumeRef.current) return
+    resumeRef.current = true
+    try {
+      const jobId = localStorage.getItem(jobKey)
+      if (!jobId) return
+      toast.message('Догоняю анализ конкурентов — он продолжался на сервере…')
+      void poll(jobId)
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function run() {
+    setBusy(true)
+    try {
+      // Фоновый джоб (24.08): раньше 30-120с sync-запрос жил в открытой
+      // вкладке — мобильная сеть его рвала. jobId в localStorage СРАЗУ.
+      const res = await fetch('/api/jobs/analyze-competitors', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ projectId }),
+      })
+      const data = await res.json().catch(() => ({})) as { jobId?: string; error?: string }
+      if (!res.ok || !data.jobId) {
+        setBusy(false)
+        throw new Error(data.error || 'Ошибка анализа')
+      }
+      try { localStorage.setItem(jobKey, data.jobId) } catch { /* ignore */ }
+      await poll(data.jobId)
+    } catch (e) {
+      toast.error(friendlyError(e, 'Не удалось проанализировать'))
       setBusy(false)
     }
   }

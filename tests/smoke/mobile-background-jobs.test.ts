@@ -147,6 +147,64 @@ describe('план недели переживает мобилу (24.08)', () =
   })
 })
 
+// ── 4b. Автозаполнение мастера: джоб-путь и одно ядро ───────────────────────
+describe('автозаполнение мастера переживает мобилу (24.08)', () => {
+  it('ядро одно: sync-роут и джоб используют lib/projects/autofill', () => {
+    const core = read('lib/projects/autofill.ts')
+    expect(core).toContain('scrapeInstagram') // скрейп живёт в ядре
+    expect(core).toContain('runAutofill')
+    const sync = read('app/api/projects/autofill/route.ts')
+    expect(sync).toContain("from '@/lib/projects/autofill'")
+    expect(sync).not.toContain('apify.com') // не раздваиваем скрейп
+    const job = read('lib/jobs/runAutofillJob.ts')
+    expect(job).toContain('runAutofill(')
+  })
+  it('джоб-роут: 202 + after() + гейты (429/402) как у sync-пути', () => {
+    const r = read('app/api/jobs/project-autofill/route.ts')
+    expect(r).toContain("type:    'project_autofill'")
+    expect(r).toContain('after(() => processAutofillJob(')
+    expect(r).toContain('{ status: 202 }')
+    expect(r).toContain('requirePaidAccess')
+    expect(r).toContain("rateLimit(user.id, 'autofill')")
+  })
+  it('клиент: джоб + поллинг, jobId в localStorage сразу, догон, 402-подсказка жива', () => {
+    const w = read('components/projects/ProjectWizard.tsx')
+    expect(w).toContain('/api/jobs/project-autofill')
+    expect(w).toContain('ama_autofill_job_')
+    expect(w).toContain('pollAutofillJob(jobId)') // mount-догон
+    expect(w).toContain('payment_required') // честный 402 (Ира, 16.08) не потерян
+    expect(w).not.toContain('/api/projects/autofill') // клиент больше не на sync
+  })
+})
+
+// ── 4c. Анализ конкурентов: джоб-путь и одно ядро ───────────────────────────
+describe('анализ конкурентов переживает мобилу (24.08)', () => {
+  it('ядро одно: sync-роут и джоб используют lib/ai/competitorTable', () => {
+    const core = read('lib/ai/competitorTable.ts')
+    expect(core).toContain('competitor_analysis') // форс-тул живёт в ядре
+    const sync = read('app/api/ai/analyze-competitors/route.ts')
+    expect(sync).toContain("from '@/lib/ai/competitorTable'")
+    expect(sync).not.toContain('tool_choice') // не раздваиваем промпт
+    const job = read('lib/jobs/runCompetitorAnalysisJob.ts')
+    expect(job).toContain('analyzeCompetitors(')
+  })
+  it('джоб-роут: 202 + after() + fail-fast без материалов конкурентов', () => {
+    const r = read('app/api/jobs/analyze-competitors/route.ts')
+    expect(r).toContain("type:       'competitor_analysis'")
+    expect(r).toContain('after(() => processCompetitorAnalysisJob(')
+    expect(r).toContain('{ status: 202 }')
+    expect(r).toContain('requirePaidAccess')
+    expect(r).toContain('Сначала добавь конкурентов')
+  })
+  it('клиент: джоб + поллинг, jobId в localStorage сразу, догон', () => {
+    const c = read('components/projects/CompetitorAnalysis.tsx')
+    expect(c).toContain('/api/jobs/analyze-competitors')
+    expect(c).toContain('ama_competitors_job_')
+    expect(c).toContain('void poll(jobId)') // mount-догон
+    expect(c).not.toContain('/api/ai/analyze-competitors') // клиент больше не на sync
+  })
+})
+
 // ── 5. mergeBriefsIntoPlanData: юнит на правила слияния ─────────────────────
 describe('mergeBriefsIntoPlanData', async () => {
   const { mergeBriefsIntoPlanData } = await import('../../lib/jobs/runWeekBriefJob')
