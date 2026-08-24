@@ -113,7 +113,7 @@ describe('запрет AI-маркеров подключён во всех ге
     'app/api/ai/edit-carousel/route.ts',
     'app/api/ai/edit-stories/route.ts',
     'app/api/ai/regenerate-fragment/route.ts',
-    'app/api/ai/generate-week-brief/route.ts',  // темы контент-плана
+    'lib/ai/weekBrief.ts',                      // темы контент-плана (ядро с 24.08: роут и джоб)
     'lib/ai/warmupPlan.ts',                     // план прогрева (ядро с 24.08: роут и джоб)
     'app/api/ai/suggest-angles/route.ts',       // углы/хуки
   ]

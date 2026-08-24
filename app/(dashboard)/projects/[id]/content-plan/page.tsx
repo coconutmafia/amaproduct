@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { friendlyError } from '@/lib/friendlyError'
+import { pollJob } from '@/lib/jobs/pollJob'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, Sparkles, AlertCircle, Zap, HelpCircle, ChevronDown, ChevronUp } from 'lucide-react'
@@ -279,6 +280,59 @@ export default function ContentPlanPage() {
     })
   }, [persistPlan])
 
+  // Применить готовые брифы к дням недели + сохранить план. Используется и
+  // живым путём (сразу после done), и догоном (вернулись на страницу, пока
+  // джоб работал). Уважает выбор форматов на ТЕКУЩИЙ момент.
+  const applyWeekBrief = useCallback((briefDays: Array<{ day: number; brief: Record<string, string> }>) => {
+    setDays(prev => {
+      const next = prev.map(d => {
+        const briefDay = briefDays.find(b => b.day === d.day)
+        if (!briefDay) return d
+        // Respect the user's format choice — keep only briefs for the
+        // formats they actually chose; do NOT re-add removed formats.
+        const chosen = (d.plannedTypes && d.plannedTypes.length > 0)
+          ? d.plannedTypes
+          : (Object.keys(briefDay.brief) as ContentType[])
+        const filteredBrief: Record<string, string> = {}
+        for (const f of chosen) {
+          if (briefDay.brief[f]) filteredBrief[f] = briefDay.brief[f]
+        }
+        const newTheme = Object.values(filteredBrief).join(' · ')
+        return { ...d, theme: newTheme, plannedTypes: chosen, dayBriefs: filteredBrief }
+      })
+      void persistPlan(next)
+      return next
+    })
+  }, [persistPlan])
+
+  // Ключ догона: id идущей генерации плана недели (переживает смерть вкладки).
+  const weekBriefJobKey = `ama_week_brief_job_${id}`
+
+  const pollWeekBriefJob = useCallback(async (jobId: string, forWeek: number, loadingToast: string | number) => {
+    try {
+      const result = await pollJob<{ days?: Array<{ day: number; brief: Record<string, string> }> }>(jobId)
+      try { localStorage.removeItem(weekBriefJobKey) } catch { /* ignore */ }
+      toast.dismiss(loadingToast)
+      const briefDays = Array.isArray(result.days) ? result.days : []
+      if (briefDays.length === 0) {
+        toast.error('AI вернул пустой план — попробуй ещё раз')
+        return
+      }
+      if (forWeek === week) {
+        applyWeekBrief(briefDays)
+      } else {
+        // Пока генерилось, юзер ушёл на другую неделю: джоб уже сохранил брифы
+        // в план на сервере — при переключении неделя подтянется из базы.
+        void loadPlanData(week)
+      }
+      toast.success('План недели готов и сохранён! Кликай на тип контента чтобы сгенерировать')
+    } catch (e) {
+      try { localStorage.removeItem(weekBriefJobKey) } catch { /* ignore */ }
+      toast.dismiss(loadingToast)
+      toast.error(friendlyError(e, 'Ошибка'))
+    }
+  }, [week, applyWeekBrief, loadPlanData, weekBriefJobKey])
+
   const handleGenerateWeekBrief = useCallback(async () => {
     const briefDays = days.filter(d => d.phase).map(d => ({
       day: d.day,
@@ -293,61 +347,50 @@ export default function ContentPlanPage() {
       toast.error('Нет данных плана прогрева для этой недели')
       return
     }
-    const loadingToast = toast.loading('Составляю план недели — обычно 20-40 секунд. Не закрывай страницу.')
+    // Фоновый джоб (24.08): раньше 20-60с sync-запрос жил в открытой вкладке и
+    // мобильная сеть/блокировка экрана его рвала. Теперь джоб сам сохраняет
+    // брифы в план на сервере — вкладку можно закрывать, догоним по jobId.
+    const loadingToast = toast.loading('Составляю план недели — обычно 20-40 секунд. Можно уходить со страницы — план сохранится сам.')
     try {
-      const res = await fetch('/api/ai/generate-week-brief', {
+      const res = await fetch('/api/jobs/week-brief', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: id, days: briefDays }),
+        body: JSON.stringify({ projectId: id, days: briefDays, warmupPlanId }),
       })
-      const rawText = await res.text()
-      if (!res.ok) {
-        let errData: { error?: string; hint?: string } = {}
-        try { errData = JSON.parse(rawText) } catch { /* ignore */ }
-        const msg = errData.error || `Ошибка ${res.status}`
+      const data = await res.json().catch(() => ({})) as { jobId?: string; error?: string; hint?: string }
+      if (!res.ok || !data.jobId) {
         toast.dismiss(loadingToast)
-        if (errData.hint) {
-          toast.error(msg, { description: errData.hint, duration: 6000 })
-        } else {
-          toast.error(msg)
-        }
+        const msg = data.error || `Ошибка ${res.status}`
+        if (data.hint) toast.error(msg, { description: data.hint, duration: 6000 })
+        else toast.error(msg)
         return
       }
-      let data: { days: Array<{ day: number; brief: Record<string, string> }> }
-      try {
-        data = JSON.parse(rawText)
-      } catch {
-        toast.dismiss(loadingToast)
-        toast.error('AI вернул некорректный ответ, попробуй ещё раз')
-        return
-      }
-      // Update themes in days state, then persist the week plan
-      setDays(prev => {
-        const next = prev.map(d => {
-          const briefDay = data.days.find(b => b.day === d.day)
-          if (!briefDay) return d
-          // Respect the user's format choice — keep only briefs for the
-          // formats they actually chose; do NOT re-add removed formats.
-          const chosen = (d.plannedTypes && d.plannedTypes.length > 0)
-            ? d.plannedTypes
-            : (Object.keys(briefDay.brief) as ContentType[])
-          const filteredBrief: Record<string, string> = {}
-          for (const f of chosen) {
-            if (briefDay.brief[f]) filteredBrief[f] = briefDay.brief[f]
-          }
-          const newTheme = Object.values(filteredBrief).join(' · ')
-          return { ...d, theme: newTheme, plannedTypes: chosen, dayBriefs: filteredBrief }
-        })
-        void persistPlan(next)
-        return next
-      })
-      toast.dismiss(loadingToast)
-      toast.success('План недели готов и сохранён! Кликай на тип контента чтобы сгенерировать')
+      // jobId в localStorage СРАЗУ (правило «издания 2» mobile-tab-unload):
+      // выгрузка вкладки между стартом и финишем не теряет генерацию.
+      try { localStorage.setItem(weekBriefJobKey, JSON.stringify({ jobId: data.jobId, week })) } catch { /* ignore */ }
+      await pollWeekBriefJob(data.jobId, week, loadingToast)
     } catch (e) {
       toast.dismiss(loadingToast)
       toast.error(friendlyError(e, 'Ошибка'))
     }
-  }, [id, days, persistPlan])
+  }, [id, days, week, warmupPlanId, weekBriefJobKey, pollWeekBriefJob])
+
+  // Догон при возвращении: вкладка умерла во время генерации плана недели —
+  // джоб дошёл (или дойдёт) на сервере, показываем прогресс и подхватываем.
+  const briefResumeRef = useRef(false)
+  useEffect(() => {
+    if (briefResumeRef.current) return
+    briefResumeRef.current = true
+    try {
+      const raw = localStorage.getItem(weekBriefJobKey)
+      if (!raw) return
+      const saved = JSON.parse(raw) as { jobId?: string; week?: number }
+      if (!saved?.jobId) return
+      const loadingToast = toast.loading('Догоняю план недели — генерация продолжалась на сервере…')
+      void pollWeekBriefJob(saved.jobId, saved.week ?? week, loadingToast)
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleExport = useCallback(async () => {
     if (!days || days.length === 0) {

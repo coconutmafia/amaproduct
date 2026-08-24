@@ -1409,9 +1409,252 @@ async function setLanguage() {
   log(`✅ обновлено: content_language = ${after?.content_language ?? 'null'}`)
 }
 
+// ── ПРОБНИК: живой смоук плана прогрева (фоновый джоб, 24.08) ────────────────
+// Проверяет НОВЫЙ мобильный путь мастера прогрева: POST /api/jobs/warmup-plan
+// (202+jobId) → поллинг GET /api/jobs/[id] → planData с фазами. Один живой
+// Claude-вызов (~$0.05-0.1). Сетап дешёвый: временный проект без материалов
+// (план строится по нише/продукту — та же ветка, что у клиента без загрузок).
+//   node scripts/prod-probe.mjs warmup-smoke [--run]
+async function warmupSmoke() {
+  const APP = 'https://amaproduct.com'
+  const QA = 'ama-qa-bot@gmail.com'
+  log('\n=== Пробник: живой смоук плана прогрева (джоб + поллинг) ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) QA-бот: magiclink → verify → сессия (пароль не нужен)')
+    log('  2) создать временный проект ama-probe-warmup-*')
+    log(`  3) POST ${APP}/api/jobs/warmup-plan (evergreen 14 дней) → 202+jobId`)
+    log('  4) поллинг /api/jobs/[id] до done → проверить planData.phases')
+    log('  5) удалить джоб и проект')
+    return
+  }
+  const anon = (() => {
+    const txt = readFileSync(join(ROOT, '.env.local'), 'utf8')
+    const m = txt.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY в .env.local'); return }
+
+  // 1) сессия QA-бота без пароля
+  const gl = await api('/auth/v1/admin/generate_link', {
+    method: 'POST',
+    body: JSON.stringify({ type: 'magiclink', email: QA }),
+  })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log('❌ generate_link не дал email_otp:', gl.status); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST',
+    headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA, token: otp }),
+  }).then(r => r.json())
+  if (!ver?.access_token) { log('❌ verify не дал сессию'); return }
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+  log('✅ 1. сессия QA-бота получена')
+
+  // 2) временный проект
+  const qaId = ver.user?.id
+  const projName = `${PROBE_PREFIX}warmup-${Date.now()}`
+  const prj = await api('/rest/v1/projects', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ owner_id: qaId, name: projName, niche: 'йога для занятых мам', status: 'active' }),
+  })
+  const projectId = Array.isArray(prj.body) ? prj.body[0]?.id : prj.body?.id
+  if (!projectId) { log('❌ 2. проект не создался:', prj.status, JSON.stringify(prj.body).slice(0, 200)); return }
+  log(`✅ 2. проект ${projName}`)
+
+  let jobId = null
+  const cleanup = async () => {
+    if (jobId) await api(`/rest/v1/jobs?id=eq.${jobId}`, { method: 'DELETE' }).catch(() => {})
+    await api(`/rest/v1/projects?id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    log('🧹 уборка: джоб и проект удалены')
+  }
+
+  try {
+    // 3) создать джоб — тем же путём, что клиент WarmupWizard с 24.08
+    const t0 = Date.now()
+    const start = await fetch(`${APP}/api/jobs/warmup-plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({
+        projectId,
+        productName: 'Онлайн-курс по утренней йоге',
+        duration: 14,
+        warmupType: 'evergreen',
+        funnelDesc: 'Без воронки — прямые продажи',
+        warmTypes: ['content_only'],
+        useCases: false,
+        hooks: [],
+      }),
+    })
+    const startBody = await start.json().catch(() => null)
+    if (start.status !== 202 || !startBody?.jobId) {
+      log(`❌ 3. джоб не создался: HTTP ${start.status}`)
+      log('   тело:', JSON.stringify(startBody).slice(0, 300))
+      return
+    }
+    jobId = startBody.jobId
+    log(`✅ 3. джоб создан (${jobId})`)
+
+    // 4) поллинг — как клиент
+    let plan = null
+    const deadline = Date.now() + 6 * 60_000
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 4000))
+      const st = await fetch(`${APP}/api/jobs/${jobId}`, { headers: { cookie } })
+        .then(r => r.json()).catch(() => null)
+      const job = st?.job
+      if (!job) continue
+      if (job.status === 'done') { plan = job.result?.planData; break }
+      if (job.status === 'error') { log(`❌ 4. джоб упал: ${job.error}`); return }
+    }
+    const phases = Array.isArray(plan?.phases) ? plan.phases : []
+    const days = phases.reduce((n, ph) => n + (Array.isArray(ph.daily_plan) ? ph.daily_plan.length : 0), 0)
+    if (phases.length === 0 || days === 0) {
+      log('❌ 4. план пустой или не дособрался за 6 минут')
+      return
+    }
+    log(`✅ 4. план готов за ${((Date.now() - t0) / 1000).toFixed(1)}с: фаз ${phases.length}, дней ${days}`)
+    log('\n🎉 ПУТЬ ЖИВ: мастер прогрева переживает смерть вкладки — джоб доехал без клиента.')
+  } finally {
+    await cleanup()
+  }
+}
+
+// ── ПРОБНИК: живой смоук плана недели (фоновый джоб + серверный персист) ─────
+// Проверяет НОВЫЙ мобильный путь «План недели» контент-плана: POST
+// /api/jobs/week-brief (202+jobId) → поллинг → брифы в job.result, И ГЛАВНОЕ —
+// джоб сам сохранил брифы в warmup_plans.plan_data (клиент мог не вернуться).
+// Один живой Claude-вызов (~$0.05).
+//   node scripts/prod-probe.mjs week-brief-smoke [--run]
+async function weekBriefSmoke() {
+  const APP = 'https://amaproduct.com'
+  const QA = 'ama-qa-bot@gmail.com'
+  log('\n=== Пробник: живой смоук плана недели (джоб + серверный персист) ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) QA-бот: magiclink → verify → сессия')
+    log('  2) временный проект ama-probe-brief-* + warmup_plans с планом 7 дней (REST)')
+    log(`  3) POST ${APP}/api/jobs/week-brief (3 дня, formats=[post]) → 202+jobId`)
+    log('  4) поллинг до done → брифы в result')
+    log('  5) ПРОВЕРКА ПЕРСИСТА: plan_data.…daily_plan[день].briefs.post записан ДЖОБОМ')
+    log('  6) удалить план, джоб и проект')
+    return
+  }
+  const anon = (() => {
+    const txt = readFileSync(join(ROOT, '.env.local'), 'utf8')
+    const m = txt.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY в .env.local'); return }
+
+  const gl = await api('/auth/v1/admin/generate_link', {
+    method: 'POST',
+    body: JSON.stringify({ type: 'magiclink', email: QA }),
+  })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log('❌ generate_link не дал email_otp:', gl.status); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST',
+    headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA, token: otp }),
+  }).then(r => r.json())
+  if (!ver?.access_token) { log('❌ verify не дал сессию'); return }
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+  log('✅ 1. сессия QA-бота получена')
+
+  const qaId = ver.user?.id
+  const projName = `${PROBE_PREFIX}brief-${Date.now()}`
+  const prj = await api('/rest/v1/projects', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ owner_id: qaId, name: projName, niche: 'нутрициология', status: 'active' }),
+  })
+  const projectId = Array.isArray(prj.body) ? prj.body[0]?.id : prj.body?.id
+  if (!projectId) { log('❌ 2. проект не создался:', prj.status, JSON.stringify(prj.body).slice(0, 200)); return }
+
+  // План прогрева с daily_plan на 7 дней — куда джоб будет сохранять брифы
+  const dailyPlan = Array.from({ length: 7 }, (_, i) => ({ day: i + 1, meaning: `Смысл дня ${i + 1} про нутрициологию` }))
+  const wp = await api('/rest/v1/warmup_plans', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({
+      project_id: projectId,
+      name: `${PROBE_PREFIX}план`,
+      duration_days: 7,
+      status: 'approved',
+      plan_data: { warmup_plan: { phases: [{ phase: 'niche', label: 'Прогрев на нишу', daily_plan: dailyPlan }] } },
+    }),
+  })
+  const planId = Array.isArray(wp.body) ? wp.body[0]?.id : wp.body?.id
+  if (!planId) { log('❌ 2. warmup_plans не создался:', wp.status, JSON.stringify(wp.body).slice(0, 200)); return }
+  log(`✅ 2. проект ${projName} + план прогрева (7 дней)`)
+
+  let jobId = null
+  const cleanup = async () => {
+    if (jobId) await api(`/rest/v1/jobs?id=eq.${jobId}`, { method: 'DELETE' }).catch(() => {})
+    await api(`/rest/v1/warmup_plans?id=eq.${planId}`, { method: 'DELETE' }).catch(() => {})
+    await api(`/rest/v1/projects?id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    log('🧹 уборка: план, джоб и проект удалены')
+  }
+
+  try {
+    const t0 = Date.now()
+    const days = [1, 2, 3].map(d => ({
+      day: d, date: `0${d}.09.2026`, phase: 'awareness',
+      meaning: `Смысл дня ${d} про нутрициологию`, formats: ['post'],
+    }))
+    const start = await fetch(`${APP}/api/jobs/week-brief`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ projectId, days, warmupPlanId: planId }),
+    })
+    const startBody = await start.json().catch(() => null)
+    if (start.status !== 202 || !startBody?.jobId) {
+      log(`❌ 3. джоб не создался: HTTP ${start.status}`)
+      log('   тело:', JSON.stringify(startBody).slice(0, 300))
+      return
+    }
+    jobId = startBody.jobId
+    log(`✅ 3. джоб создан (${jobId})`)
+
+    let briefDays = null
+    const deadline = Date.now() + 4 * 60_000
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 4000))
+      const st = await fetch(`${APP}/api/jobs/${jobId}`, { headers: { cookie } })
+        .then(r => r.json()).catch(() => null)
+      const job = st?.job
+      if (!job) continue
+      if (job.status === 'done') { briefDays = job.result?.days; break }
+      if (job.status === 'error') { log(`❌ 4. джоб упал: ${job.error}`); return }
+    }
+    if (!Array.isArray(briefDays) || briefDays.length === 0) {
+      log('❌ 4. брифы не дособрались за 4 минуты')
+      return
+    }
+    log(`✅ 4. брифы готовы за ${((Date.now() - t0) / 1000).toFixed(1)}с: дней ${briefDays.length}`)
+
+    // 5) КЛЮЧЕВАЯ проверка класса: джоб сам сохранил брифы в план
+    const persisted = await api(`/rest/v1/warmup_plans?id=eq.${planId}&select=plan_data`)
+    const pd = Array.isArray(persisted.body) ? persisted.body[0]?.plan_data : null
+    const day1 = pd?.warmup_plan?.phases?.[0]?.daily_plan?.find((d) => d.day === 1)
+    if (!day1?.briefs?.post) {
+      log('❌ 5. ПЕРСИСТ НЕ СРАБОТАЛ: plan_data дня 1 без briefs.post —', JSON.stringify(day1).slice(0, 200))
+      return
+    }
+    log(`✅ 5. джоб сам сохранил брифы в план: день 1 post = «${String(day1.briefs.post).slice(0, 60)}…»`)
+    log('\n🎉 ПУТЬ ЖИВ: план недели переживает смерть вкладки — брифы доехали до базы без клиента.')
+  } finally {
+    await cleanup()
+  }
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))

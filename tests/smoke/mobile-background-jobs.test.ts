@@ -111,3 +111,74 @@ describe('план прогрева переживает мобилу (24.08)', 
     expect(offenders).toEqual([])
   })
 })
+
+// ── 4. План недели: джоб-путь, одно ядро и СЕРВЕРНОЕ сохранение брифов ───────
+describe('план недели переживает мобилу (24.08)', () => {
+  it('ядро одно: sync-роут и джоб используют lib/ai/weekBrief', () => {
+    const core = read('lib/ai/weekBrief.ts')
+    expect(core).toContain("'week_brief'") // форс-тул живёт в ядре
+    const sync = read('app/api/ai/generate-week-brief/route.ts')
+    expect(sync).toContain("from '@/lib/ai/weekBrief'")
+    expect(sync).not.toContain('week_brief,') // не раздваиваем промпт
+    const job = read('lib/jobs/runWeekBriefJob.ts')
+    expect(job).toContain('generateWeekBrief(')
+  })
+  it('джоб сам сохраняет брифы в warmup_plans (клиент может не вернуться)', () => {
+    const job = read('lib/jobs/runWeekBriefJob.ts')
+    expect(job).toContain('mergeBriefsIntoPlanData(')
+    expect(job).toContain("from('warmup_plans')")
+  })
+  it('джоб-роут: 202 + after() + warmupPlanId проверяется на принадлежность проекту', () => {
+    const r = read('app/api/jobs/week-brief/route.ts')
+    expect(r).toContain("type:       'week_brief'")
+    expect(r).toContain('after(() => processWeekBriefJob(')
+    expect(r).toContain('{ status: 202 }')
+    expect(r).toContain('requirePaidAccess')
+    expect(r).toContain('requireProjectAccess')
+    // Чужой warmupPlanId не должен стать целью записи
+    expect(r).toMatch(/eq\('project_id', projectId\)/)
+  })
+  it('клиент: джоб + поллинг, jobId в localStorage сразу, догон при возвращении', () => {
+    const page = read('app/(dashboard)/projects/[id]/content-plan/page.tsx')
+    expect(page).toContain('/api/jobs/week-brief')
+    expect(page).toContain('ama_week_brief_job_')
+    expect(page).toContain('pollWeekBriefJob(saved.jobId') // mount-догон
+    expect(page).not.toContain('/api/ai/generate-week-brief') // клиент больше не на sync
+  })
+})
+
+// ── 5. mergeBriefsIntoPlanData: юнит на правила слияния ─────────────────────
+describe('mergeBriefsIntoPlanData', async () => {
+  const { mergeBriefsIntoPlanData } = await import('../../lib/jobs/runWeekBriefJob')
+  const planData = {
+    warmup_plan: {
+      phases: [
+        { daily_plan: [ { day: 1, meaning: 'смысл 1' }, { day: 2, meaning: 'смысл 2' } ] },
+        { daily_plan: [ { day: 3, meaning: 'смысл 3', formats: ['post'], briefs: { post: 'старый' } } ] },
+      ],
+    },
+  }
+  const requestDays = [
+    { day: 1, date: '01.09.2026', phase: 'awareness', meaning: 'смысл 1', formats: ['post', 'reels'] },
+    { day: 2, date: '02.09.2026', phase: 'awareness', meaning: 'смысл 2' }, // без форматов → дефолт
+  ]
+
+  it('пишет форматы и отфильтрованные брифы только для запрошенных дней', () => {
+    const generated = [
+      { day: 1, brief: { post: 'тема поста', reels: 'тема рилса', stories: 'лишний формат' } },
+      { day: 2, brief: { post: 'п', stories: 'с', reels: 'р' } },
+    ]
+    const next = mergeBriefsIntoPlanData(planData, requestDays, generated) as typeof planData
+    const d1 = next.warmup_plan.phases[0].daily_plan[0] as Record<string, unknown>
+    // stories не в выбранных форматах дня 1 — отфильтрован (правило клиента)
+    expect(d1.formats).toEqual(['post', 'reels'])
+    expect(d1.briefs).toEqual({ post: 'тема поста', reels: 'тема рилса' })
+    const d2 = next.warmup_plan.phases[0].daily_plan[1] as Record<string, unknown>
+    expect(d2.formats).toEqual(['post', 'stories', 'reels']) // дефолт
+    // день 3 не запрашивался — не тронут (другие недели целы)
+    const d3 = next.warmup_plan.phases[1].daily_plan[0] as Record<string, unknown>
+    expect(d3.briefs).toEqual({ post: 'старый' })
+    // исходник не мутирован
+    expect((planData.warmup_plan.phases[0].daily_plan[0] as Record<string, unknown>).briefs).toBeUndefined()
+  })
+})
