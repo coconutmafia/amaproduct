@@ -81,6 +81,17 @@ describe('правка серии не теряет кадры (баг «6 шт�
     const sp = read('components/content/StoriesPanel.tsx')
     expect(sp).toContain('d.stories.length < rendered.length && !deleteIntent')
   })
+  it('пустой элемент на месте ручного кадра не выбрасывается (индексы не съезжают)', () => {
+    const r = read('app/api/ai/edit-stories/route.ts')
+    expect(r).toContain('i < frames.length && !(frames[i]?.headline || frames[i]?.body)')
+    expect(r).not.toMatch(/\.filter\(\(r\) => r\.headline \|\| r\.body\)/)
+  })
+  it('«добавь кадр»: правило N+1 в промпте + ретрай + честная ошибка', () => {
+    const r = read('app/api/ai/edit-stories/route.ts')
+    expect(r).toContain('ДОБАВИТЬ КАДР')
+    expect(r).toContain('addIntent')
+    expect(r).toContain('Не получилось добавить кадр')
+  })
 })
 
 describe('сохранение серии без молчаливых обрезаний (баг «13 → 10»)', () => {
