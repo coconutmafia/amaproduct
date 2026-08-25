@@ -32,12 +32,16 @@ export interface MicroGateResult {
 // Одно мелкое AI-действие. Вызывать ПОСЛЕ requirePaidAccess. Возвращает
 // blocked=true только при живом BILLING_ENFORCED и полностью исчерпанном
 // лимите — вызывающий отвечает 402 { code: 'limit_reached' }.
-export async function gateMicroAction(userId: string, route: string): Promise<MicroGateResult> {
+export async function gateMicroAction(
+  userId: string,
+  route: string,
+  batch: number = UNIT_COSTS.micro_batch,
+): Promise<MicroGateResult> {
   setUsageUser(userId) // журнал расходов узнает, чей это вызов
   try {
     const { data, error } = await createAdminClient().rpc('consume_micro_action', {
       p_user_id: userId,
-      p_batch: UNIT_COSTS.micro_batch,
+      p_batch: batch,
     })
     if (error) {
       // Миграция 039 не применена / временная ошибка БД — не блокируем.

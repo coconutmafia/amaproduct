@@ -6,7 +6,7 @@ import { captureException } from '@/lib/sentry'
 import { embedMaterialChunks } from '@/lib/ai/embed'
 import { fmtDateRu } from '@/lib/dates'
 import { refundGenerations } from '@/lib/generations'
-import { UNIT_COSTS } from '@/lib/generations-config'
+import { transcribeUnits } from '@/lib/generations-config'
 import { setUsageUser } from '@/lib/ai/usageContext'
 
 const CHUNK_SEC = 600     // 10-min windows — matches the client's prior chunking
@@ -20,7 +20,7 @@ interface JobRow {
   user_id: string
   project_id: string | null
   status: string
-  payload: { storagePath: string; ext: string; durationSec?: number | null; saveTranscriptMaterial?: boolean; unitsRefunded?: boolean }
+  payload: { storagePath: string; ext: string; durationSec?: number | null; saveTranscriptMaterial?: boolean; unitsRefunded?: boolean; unitsCharged?: number }
   progress: { doneChunks?: number; totalChunks?: number | null }
   result: { text?: string; materialId?: string | null } | null
 }
@@ -127,7 +127,7 @@ export async function processTranscribeJob(jobId: string): Promise<void> {
         // Непоправимая ошибка (битый файл и т.п.) — расшифровки не будет,
         // вернуть списанные на POST юниты. Маркер в payload защищает от второго
         // возврата (чистка 48ч возвращает только брошенные ретраебельные).
-        await refundGenerations(row.user_id, UNIT_COSTS.transcribe_castdev).catch(() => {})
+        await refundGenerations(row.user_id, row.payload.unitsCharged ?? transcribeUnits(row.payload.durationSec)).catch(() => {})
       }
 
       const parts: string[] = [sanitized.userMessage]

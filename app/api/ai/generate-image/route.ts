@@ -67,9 +67,10 @@ export async function POST(request: Request) {
     const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
-    // Клик генерации = UNIT_COSTS.image_generation юнит (прайс-лист 25.08:
-    // gpt-image-1 — живые $ OpenAI за каждый вариант). Провал ниже возвращает.
-    const gate = await gateContentUnits(user.id, UNIT_COSTS.image_generation)
+    // Цена за КАЖДЫЙ вариант, а не за клик: gpt-image-1 берёт $0.063 с картинки,
+    // и «3 варианта за одну единицу» давали −16% маржи (замер 25.08).
+    const imageUnits = count * UNIT_COSTS.image_per_variant
+    const gate = await gateContentUnits(user.id, imageUnits)
     if (gate.blocked) {
       const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
       return NextResponse.json(
@@ -103,7 +104,7 @@ export async function POST(request: Request) {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       console.error('[generate-image] openai', msg)
-      await refundGenerations(user.id, UNIT_COSTS.image_generation)
+      await refundGenerations(user.id, imageUnits)
       // The most common real-world failure: the org hasn't unlocked gpt-image-1.
       if (/verif|access|must be verified|403|model/i.test(msg)) {
         return NextResponse.json({ error: 'Нет доступа к модели картинок (gpt-image-1). Нужно подтвердить организацию в OpenAI.' }, { status: 502 })
@@ -115,7 +116,7 @@ export async function POST(request: Request) {
     }
 
     if (b64s.length === 0) {
-      await refundGenerations(user.id, UNIT_COSTS.image_generation)
+      await refundGenerations(user.id, imageUnits)
       return NextResponse.json({ error: 'Пустой ответ генерации' }, { status: 502 })
     }
 

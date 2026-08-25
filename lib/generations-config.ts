@@ -130,23 +130,37 @@ export const PAID_PLANS: PaidPlan[] = ['solo', 'pro', 'producer']
 // уточняются по данным ai_usage. МЕНЯЕШЬ ЧИСЛО — проверь тексты на кнопках
 // (страж unit-costs следит, что цены показываются из этого объекта).
 export const UNIT_COSTS = {
-  content: 1,            // пост/рилз/карусель через чат (genFormat), серия сторис
-  video_montage: 5,      // Whisper + минуты CPU на ffmpeg (решение 21 июля)
-  video_overlay: 1,      // наложение текста на видео
-  transcribe_castdev: 3, // расшифровка + разбор кастдева (Whisper + opus-5)
-  research_table: 2,     // сборка общей таблицы кастдевов (флагман по ВСЕМ
-                         // расшифровкам, max_tokens 32000, пересобирается по кнопке)
-  competitor_table: 1,   // сводная таблица конкурентов (флагман по разборам)
-  blog_audit: 3,         // аудит блога в приложении (скрейп + большой анализ)
-  viral_reels: 2,        // разбор виральных рилз (Apify + Whisper + Claude)
-  instagram_scrape: 1,   // запуск скрейпа Instagram (Apify = живые $)
-  image_generation: 1,   // клик генерации картинки в дизайнере (до 3 вариантов, gpt-image-1)
-  micro_batch: 10,       // мелкие AI-действия (сообщение ассистенту, правка,
-                         // подсказки, голосовой ввод): 10 штук = 1 юнит
+  // ── ЗАМЕРЕНО 25.08 на проде, не на глаз ──────────────────────────────────
+  // Выручка solo: $49 / 300 единиц = $0.163 за единицу. Цены поставлены так,
+  // чтобы себестоимость была ≤40-50% выручки даже в тяжёлом случае.
+  content: 2,               // пост/рилз/карусель/сторис: $0.06 (по кэшу) … $0.28 (холодный)
+  video_montage: 5,         // Whisper + минуты CPU на ffmpeg (решение 21 июля)
+  video_overlay: 1,
+  // Расшифровка ЛИНЕЙНА по минутам: медиана 25 мин, но в проде есть файлы по
+  // 8 часов — плоская цена за файл давала −488% маржи на длинных. Whisper
+  // $0.006/мин → 10 минут ≈ $0.06 при выручке $0.163.
+  transcribe_per_10min: 1,
+  research_table: 3,        // флагман по ВСЕМ расшифровкам проекта, до $1.39
+  meanings_map: 4,          // карта смыслов: до 380k символов входа + 32k выхода
+  warmup_plan: 2,           // план прогрева по всем материалам
+  week_brief: 2,            // недельные брифы
+  competitor_table: 1,      // сводная таблица конкурентов
+  blog_audit: 2,            // скрейп + 2 вызова, $0.09
+  viral_reels: 1,           // Apify + Whisper + разбор, $0.06
+  instagram_scrape: 1,      // Apify + анализ, $0.01
+  image_per_variant: 1,     // gpt-image-1 medium $0.063 за КАЖДЫЙ вариант
+  chat_batch: 2,            // сообщение ассистенту: 2 шт = 1 единица (решение Матвея)
+  micro_batch: 10,          // мелкие правки/подсказки/голос: 10 шт = 1 единица
 } as const
 
 // Обратная совместимость: montage-роут и раннер исторически импортируют это имя.
 export const VIDEO_MONTAGE_UNITS = UNIT_COSTS.video_montage
+
+// Расшифровка: цена по длительности (минимум одна единица за файл).
+export function transcribeUnits(durationSec?: number | null): number {
+  const mins = Math.max(1, Math.ceil((Number(durationSec) || 0) / 60))
+  return Math.max(1, Math.ceil(mins / 10)) * UNIT_COSTS.transcribe_per_10min
+}
 
 // Free trial length (kept in one place — also encoded in migration 016).
 export const TRIAL_DAYS = 60

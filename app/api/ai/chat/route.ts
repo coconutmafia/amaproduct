@@ -5,7 +5,8 @@ import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt } from '@/lib/ai/prompts/system'
 import { AI_TELLS_TO_AVOID, resolveContentLanguage } from '@/lib/ai/prompts/content-brain'
-import { gateContentUnit, refundGeneration } from '@/lib/generations'
+import { gateContentUnits, refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
 import { gateMicroAction } from '@/lib/ai/usage'
 import { requirePaidAccess } from '@/lib/billing/access'
 import type { Message } from '@/types'
@@ -210,17 +211,17 @@ export async function POST(request: Request) {
     // the stream produces nothing.
     const meterGeneration = async (): Promise<Response | null> => {
       if (!genFormat) {
-        // Свободный чат = мелкое AI-действие (прайс-лист 25.08): 10 сообщений
-        // = 1 юнит через consume_micro_action. Блокирует только полностью
-        // исчерпанный месячный лимит — клиент увидит тот же диалог «Лимит
-        // исчерпан», что и на генерации.
-        const micro = await gateMicroAction(user.id, 'chat')
+        // Свободный чат: UNIT_COSTS.chat_batch сообщений = 1 единица (решение
+        // Матвея 25.08 после замера: ход с контекстом проекта стоит $0.03-0.24).
+        // Блокирует только полностью исчерпанный месячный лимит — клиент увидит
+        // тот же диалог «Лимит исчерпан», что и на генерации.
+        const micro = await gateMicroAction(user.id, 'chat', UNIT_COSTS.chat_batch)
         if (micro.blocked) {
           return NextResponse.json({ error: 'limit_reached', code: 'limit_reached' }, { status: 402 })
         }
         return null
       }
-      const gate = await gateContentUnit(user.id)
+      const gate = await gateContentUnits(user.id, UNIT_COSTS.content)
       if (gate.blocked) {
         // Report WHY: an unpaid user must not be told «лимит исчерпан» (he has
         // used 0) — he needs «подключи тариф».
@@ -232,7 +233,7 @@ export async function POST(request: Request) {
       }
       return null
     }
-    const refundIfMetered = genFormat ? () => refundGeneration(user.id) : undefined
+    const refundIfMetered = genFormat ? () => refundGenerations(user.id, UNIT_COSTS.content) : undefined
 
     // ── Standalone mode (no projectId): a content assistant powered by the
     // methodology/knowledge base, for bloggers without a project yet —

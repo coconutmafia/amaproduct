@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { UNIT_COSTS, VIDEO_MONTAGE_UNITS, PLAN_CONFIG } from '@/lib/generations-config'
+import { UNIT_COSTS, VIDEO_MONTAGE_UNITS, PLAN_CONFIG, transcribeUnits } from '@/lib/generations-config'
 
 // Прайс-лист единиц (решение Матвея 25.08 «математика должна быть плюсовой»):
 // каждая дорогая операция стоит юниты из одного месячного лимита. Стражи здесь
@@ -33,14 +33,45 @@ describe('прайс-лист единиц', () => {
     expect(max).toBeLessThan(PLAN_CONFIG.solo.generations)
   })
 
-  it('честный онбординг влезает в лимит solo: 20 кастдевов + аудит + 5 скрейпов + 30 постов', () => {
+  it('честный онбординг влезает в лимит solo: 20 кастдевов по 30 мин + аудит + 5 скрейпов + 30 постов', () => {
     const onboarding =
-      20 * UNIT_COSTS.transcribe_castdev +
+      20 * transcribeUnits(30 * 60) +
       UNIT_COSTS.blog_audit +
       5 * UNIT_COSTS.instagram_scrape +
       30 * UNIT_COSTS.content
     expect(onboarding, `онбординг стоит ${onboarding} из ${PLAN_CONFIG.solo.generations}`)
       .toBeLessThan(PLAN_CONFIG.solo.generations)
+  })
+
+  // Плоская цена за файл давала −488% маржи на 8-часовой записи (замер 25.08):
+  // Whisper берёт деньги за минуты, значит и цена обязана расти с минутами.
+  it('расшифровка дорожает с длительностью, а не берёт плоскую цену', () => {
+    expect(transcribeUnits(10 * 60)).toBe(1)
+    expect(transcribeUnits(25 * 60)).toBe(3)
+    expect(transcribeUnits(60 * 60)).toBe(6)
+    expect(transcribeUnits(8 * 3600)).toBe(48)
+    expect(transcribeUnits(0), 'минимум одна единица за файл').toBe(1)
+    expect(transcribeUnits(undefined)).toBe(1)
+  })
+
+  // Маржа: единица solo = $49/300 = $0.163 выручки. Себестоимость операции
+  // обязана оставаться заметно ниже — иначе лимит не защищает экономику.
+  it('цены покрывают замеренную себестоимость с запасом', () => {
+    const REV = 49 / 300
+    const measured: Array<[string, number, number]> = [
+      // операция, единиц, замеренная себестоимость ($, тяжёлый случай)
+      ['расшифровка 10 мин', UNIT_COSTS.transcribe_per_10min, 0.06],
+      ['аудит блога',        UNIT_COSTS.blog_audit,           0.089],
+      ['виральный рилз',     UNIT_COSTS.viral_reels,          0.057],
+      ['скрейп Instagram',   UNIT_COSTS.instagram_scrape,     0.010],
+      ['картинка',           UNIT_COSTS.image_per_variant,    0.063],
+      ['таблица кастдевов',  UNIT_COSTS.research_table,       0.142],
+      ['карта смыслов',      UNIT_COSTS.meanings_map,         0.280],
+    ]
+    for (const [name, units, cost] of measured) {
+      const margin = (units * REV - cost) / (units * REV)
+      expect(margin, `${name}: маржа ${(margin * 100).toFixed(0)}%`).toBeGreaterThan(0.4)
+    }
   })
 })
 
@@ -58,6 +89,9 @@ const METERED_ROUTES: Array<{ file: string; gate: RegExp }> = [
   { file: 'app/api/ai/generate-image/route.ts',  gate: /gateContentUnits\(/ },
   { file: 'app/api/jobs/research-table/route.ts', gate: /gateContentUnits\(/ },
   { file: 'app/api/ai/analyze-competitors/route.ts', gate: /gateContentUnits\(/ },
+  { file: 'app/api/jobs/warmup-plan/route.ts',   gate: /gateContentUnits\(/ },
+  { file: 'app/api/jobs/week-brief/route.ts',    gate: /gateContentUnits\(/ },
+  { file: 'app/api/ai/research-analyze/route.ts', gate: /gateContentUnits\(/ },
   { file: 'app/api/ai/suggest-trends/route.ts',  gate: /gateMicroAction\(/ },
   { file: 'app/api/brand-kit/analyze/route.ts',  gate: /gateMicroAction\(/ },
   { file: 'app/api/ai/edit/route.ts',            gate: /gateMicroAction\(/ },
@@ -94,6 +128,11 @@ describe('свип: списание юнитов имеет парный воз
     'app/api/jobs/research-table/route.ts',
     'lib/jobs/runResearchTableJob.ts',
     'app/api/ai/analyze-competitors/route.ts',
+    'app/api/jobs/warmup-plan/route.ts',
+    'app/api/jobs/week-brief/route.ts',
+    'lib/jobs/runWarmupPlanJob.ts',
+    'lib/jobs/runWeekBriefJob.ts',
+    'app/api/ai/research-analyze/route.ts',
   ]
   for (const f of REFUNDING) {
     it(f, () => {
@@ -119,14 +158,14 @@ describe('свип: списание юнитов имеет парный воз
 describe('UI не хардкодит цены', () => {
   it('подписи у кнопок собираются из UNIT_COSTS', () => {
     const hints = read('components/billing/UnitCostHint.tsx')
-    for (const key of ['transcribe_castdev', 'blog_audit', 'viral_reels', 'instagram_scrape', 'image_generation']) {
+    for (const key of ['transcribe_per_10min', 'blog_audit', 'viral_reels', 'instagram_scrape', 'image_per_variant']) {
       expect(hints, `UNIT_HINTS не использует UNIT_COSTS.${key}`).toMatch(new RegExp(`UNIT_COSTS\\.${key}`))
     }
   })
 
   it('страница тарифов показывает прайс-лист из UNIT_COSTS', () => {
     const pricing = read('components/pricing/PricingClient.tsx')
-    expect(pricing).toMatch(/UNIT_COSTS\.transcribe_castdev/)
+    expect(pricing).toMatch(/UNIT_COSTS\.transcribe_per_10min/)
     expect(pricing).toMatch(/UNIT_COSTS\.micro_batch/)
   })
 

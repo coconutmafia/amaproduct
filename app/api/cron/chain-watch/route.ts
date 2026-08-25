@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ALWAYS_INCLUDE, BLOCKED_STATUS } from '@/lib/ai/rag'
 import { BILLING_ENFORCED, refundGenerations } from '@/lib/generations'
-import { UNIT_COSTS } from '@/lib/generations-config'
+import { UNIT_COSTS, transcribeUnits } from '@/lib/generations-config'
 import { emailConfigured, sendEmail, trialEndingEmail, trialEndedEmail } from '@/lib/email'
 import { captureMessage } from '@/lib/sentry'
 import { settleStuckJob, stuckJobMessage } from '@/lib/jobs/failStuckJob'
@@ -138,7 +138,8 @@ async function handle(request: Request) {
         if (p.storagePath) {
           const needsRefund = !p.unitsRefunded && typeof (j as { user_id?: string }).user_id === 'string'
           if (needsRefund) {
-            await refundGenerations((j as { user_id: string }).user_id, UNIT_COSTS.transcribe_castdev).catch(() => {})
+            const charged = Number(p.unitsCharged) || transcribeUnits(Number(p.durationSec) || 0)
+            await refundGenerations((j as { user_id: string }).user_id, charged).catch(() => {})
           }
           await admin.from('jobs').update({ payload: { ...p, storagePath: null, unitsRefunded: true } }).eq('id', j.id)
         }

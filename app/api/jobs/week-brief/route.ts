@@ -4,6 +4,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { captureException } from '@/lib/sentry'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
+import { gateContentUnits, refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { processWeekBriefJob } from '@/lib/jobs/runWeekBriefJob'
 import type { BriefDay } from '@/lib/ai/weekBrief'
@@ -26,6 +28,18 @@ export async function POST(request: Request) {
 
   const denied = await requirePaidAccess(user.id)
   if (denied) return denied
+
+  // Недельные брифы = UNIT_COSTS.week_brief единиц (прайс-лист 25.08: замеренная
+  // себестоимость $0.09-0.20). Операция входит в подписку — просто расходует
+  // единицы из общего месячного лимита, как и всё остальное.
+  const gate = await gateContentUnits(user.id, UNIT_COSTS.week_brief)
+  if (gate.blocked) {
+    const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
+    return NextResponse.json(
+      { error: code, code, monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit },
+      { status: 402 },
+    )
+  }
 
   let body: { projectId?: string; days?: BriefDay[]; warmupPlanId?: string }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad JSON' }, { status: 400 }) }
@@ -62,6 +76,7 @@ export async function POST(request: Request) {
   }).select('id').single()
   if (error || !job) {
     await captureException(new Error(error?.message || 'job insert failed'), { where: 'week-brief job POST' })
+    await refundGenerations(user.id, UNIT_COSTS.week_brief)
     return NextResponse.json({ error: 'Не удалось запустить генерацию — попробуй ещё раз' }, { status: 500 })
   }
 

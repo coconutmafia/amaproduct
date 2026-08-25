@@ -8,6 +8,15 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { captureException } from '@/lib/sentry'
 import { generateWarmupPlan, type WarmupPlanInput } from '@/lib/ai/warmupPlan'
+import { refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
+
+
+// Провал = работа не состоялась → вернуть списанные на POST единицы
+// (прайс-лист 25.08: операция входит в подписку, но расходует лимит).
+async function refundJobUnits(job: { user_id?: string | null }) {
+  if (job?.user_id) await refundGenerations(job.user_id, UNIT_COSTS.warmup_plan).catch(() => {})
+}
 
 export async function processWarmupPlanJob(jobId: string): Promise<void> {
   const admin = createAdminClient()
@@ -18,6 +27,7 @@ export async function processWarmupPlanJob(jobId: string): Promise<void> {
   const input = job.payload as unknown as WarmupPlanInput
   if (!input?.projectId || !input?.duration) {
     await admin.from('jobs').update({ status: 'error', error: 'Данные мастера не дошли до сервера — заполни шаги и нажми «Создать план» ещё раз.' }).eq('id', jobId)
+    await refundJobUnits(job)
     return
   }
 
@@ -39,6 +49,7 @@ export async function processWarmupPlanJob(jobId: string): Promise<void> {
     const r = await generateWarmupPlan(admin, input, onProgress)
     if (!r.ok) {
       await admin.from('jobs').update({ status: 'error', error: r.error }).eq('id', jobId)
+    await refundJobUnits(job)
       return
     }
     await admin.from('jobs').update({
@@ -53,5 +64,6 @@ export async function processWarmupPlanJob(jobId: string): Promise<void> {
       status: 'error',
       error: 'Генерация прервалась на нашей стороне. Нажми «Создать план» ещё раз — введённые данные не потерялись.',
     }).eq('id', jobId)
+      await refundJobUnits(job)
   }
 }

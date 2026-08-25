@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
+import { gateContentUnits, refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
 import { fmtDateRu } from '@/lib/dates'
 import { upsertProjectMaterial } from '@/lib/supabase/upsertMaterial'
 import { embedMaterialChunks } from '@/lib/ai/embed'
@@ -579,6 +581,18 @@ export async function POST(request: Request) {
   const MEANINGS_TITLE = 'Карта смыслов (исследование аудитории)'
 
   if (step === 'generate_meanings') {
+    // Карта смыслов = UNIT_COSTS.meanings_map единиц. Самая тяжёлая операция
+    // продукта: до 380k символов входа и 32k выхода (замер 25.08: до $1.39 за
+    // пересборку), а кнопка «Обновить» нажимается повторно. Входит в подписку,
+    // но расходует общий лимит — как и всё остальное.
+    const gateM = await gateContentUnits(user.id, UNIT_COSTS.meanings_map)
+    if (gateM.blocked) {
+      const code = gateM.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
+      return NextResponse.json(
+        { error: code, code, monthlyUsed: gateM.monthlyUsed, monthlyLimit: gateM.monthlyLimit },
+        { status: 402 },
+      )
+    }
     let materials: { title: string; raw_content: string }[] = []
 
     const research = await supabase
@@ -667,6 +681,8 @@ export async function POST(request: Request) {
                 processing_status: 'error',
               })
             } catch { /* swallow */ }
+            // Карта не собралась — работа не состоялась, единицы вернуть.
+            await refundGenerations(user.id, UNIT_COSTS.meanings_map).catch(() => {})
             return
           }
 
@@ -695,6 +711,7 @@ export async function POST(request: Request) {
                 processing_status: 'error',
               })
             } catch { /* swallow */ }
+            await refundGenerations(user.id, UNIT_COSTS.meanings_map).catch(() => {})
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'AI недоступен'
@@ -711,6 +728,7 @@ export async function POST(request: Request) {
               processing_status: 'error',
             })
           } catch { /* swallow */ }
+          await refundGenerations(user.id, UNIT_COSTS.meanings_map).catch(() => {})
         }
     })
 

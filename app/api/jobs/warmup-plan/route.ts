@@ -4,6 +4,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { captureException } from '@/lib/sentry'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
+import { gateContentUnits, refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { processWarmupPlanJob } from '@/lib/jobs/runWarmupPlanJob'
 import type { WarmupPlanInput } from '@/lib/ai/warmupPlan'
@@ -27,6 +29,18 @@ export async function POST(request: Request) {
   const denied = await requirePaidAccess(user.id)
   if (denied) return denied
 
+  // План прогрева = UNIT_COSTS.warmup_plan единиц (прайс-лист 25.08: замеренная
+  // себестоимость $0.10-0.20). Операция входит в подписку — просто расходует
+  // единицы из общего месячного лимита, как и всё остальное.
+  const gate = await gateContentUnits(user.id, UNIT_COSTS.warmup_plan)
+  if (gate.blocked) {
+    const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
+    return NextResponse.json(
+      { error: code, code, monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit },
+      { status: 402 },
+    )
+  }
+
   let body: WarmupPlanInput
   try { body = await request.json() as WarmupPlanInput } catch { return NextResponse.json({ error: 'Bad JSON' }, { status: 400 }) }
   if (!body?.projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
@@ -48,6 +62,7 @@ export async function POST(request: Request) {
   }).select('id').single()
   if (error || !job) {
     await captureException(new Error(error?.message || 'job insert failed'), { where: 'warmup-plan job POST' })
+    await refundGenerations(user.id, UNIT_COSTS.warmup_plan)
     return NextResponse.json({ error: 'Не удалось запустить генерацию — попробуй ещё раз' }, { status: 500 })
   }
 

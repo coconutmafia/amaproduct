@@ -128,18 +128,24 @@ export function PricingClient({
             </summary>
             <ul className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
               <li>Пост / рилз / карусель / серия сторис — {UNIT_COSTS.content}</li>
-              <li>Видео-монтаж — {UNIT_COSTS.video_montage}</li>
-              <li>Расшифровка и разбор кастдева — {UNIT_COSTS.transcribe_castdev}</li>
-              <li>Аудит блога — {UNIT_COSTS.blog_audit}</li>
+              <li>Сообщение ассистенту — {UNIT_COSTS.chat_batch} шт. = 1</li>
+              <li>Расшифровка интервью — {UNIT_COSTS.transcribe_per_10min} за каждые 10 минут</li>
               <li>Общая таблица кастдевов — {UNIT_COSTS.research_table}</li>
+              <li>Карта смыслов — {UNIT_COSTS.meanings_map}</li>
+              <li>План прогрева — {UNIT_COSTS.warmup_plan}</li>
+              <li>Недельные брифы — {UNIT_COSTS.week_brief}</li>
+              <li>Аудит блога — {UNIT_COSTS.blog_audit}</li>
+              <li>Анализ Instagram-аккаунта — {UNIT_COSTS.instagram_scrape}</li>
               <li>Сводная таблица конкурентов — {UNIT_COSTS.competitor_table}</li>
               <li>Разбор вирального рилза — {UNIT_COSTS.viral_reels}</li>
-              <li>Анализ Instagram-аккаунта — {UNIT_COSTS.instagram_scrape}</li>
-              <li>Картинка в дизайнере (до 3 вариантов) — {UNIT_COSTS.image_generation}</li>
-              <li>Сообщения ассистенту, правки, подсказки — {UNIT_COSTS.micro_batch} шт. = 1</li>
+              <li>Картинка в дизайнере — {UNIT_COSTS.image_per_variant} за вариант</li>
+              <li>Видео-монтаж — {UNIT_COSTS.video_montage}</li>
+              <li>Правки, подсказки, голосовой ввод — {UNIT_COSTS.micro_batch} шт. = 1</li>
             </ul>
             <p className="mt-1.5 text-[11px] text-muted-foreground/80">
-              План прогрева, недельные брифы, карта смыслов и настройка голоса — без списаний.
+              Всё это входит в подписку — единицы просто показывают, сколько
+              ресурса тратит каждое действие. Настройка голоса и автозаполнение
+              проекта не списываются.
             </p>
           </details>
         </CardContent>

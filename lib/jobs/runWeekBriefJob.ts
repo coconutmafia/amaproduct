@@ -7,6 +7,8 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { captureException } from '@/lib/sentry'
 import { generateWeekBrief, weekBriefDayFormats, type BriefDay, type WeekBriefDayResult } from '@/lib/ai/weekBrief'
+import { refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
 
 interface WeekBriefPayload {
   projectId?: string
@@ -43,6 +45,13 @@ export function mergeBriefsIntoPlanData(
   return next as Record<string, unknown>
 }
 
+
+// Провал = работа не состоялась → вернуть списанные на POST единицы
+// (прайс-лист 25.08: операция входит в подписку, но расходует лимит).
+async function refundJobUnits(job: { user_id?: string | null }) {
+  if (job?.user_id) await refundGenerations(job.user_id, UNIT_COSTS.week_brief).catch(() => {})
+}
+
 export async function processWeekBriefJob(jobId: string): Promise<void> {
   const admin = createAdminClient()
   const { data: job, error } = await admin.from('jobs').select('*').eq('id', jobId).single()
@@ -54,6 +63,7 @@ export async function processWeekBriefJob(jobId: string): Promise<void> {
   const days = Array.isArray(payload?.days) ? payload.days : []
   if (!projectId || days.length === 0) {
     await admin.from('jobs').update({ status: 'error', error: 'Нет данных плана прогрева для этой недели.' }).eq('id', jobId)
+    await refundJobUnits(job)
     return
   }
 
@@ -63,6 +73,7 @@ export async function processWeekBriefJob(jobId: string): Promise<void> {
     const r = await generateWeekBrief(admin, projectId, days)
     if (!r.ok) {
       await admin.from('jobs').update({ status: 'error', error: r.error }).eq('id', jobId)
+    await refundJobUnits(job)
       return
     }
 
@@ -97,5 +108,6 @@ export async function processWeekBriefJob(jobId: string): Promise<void> {
       status: 'error',
       error: 'Генерация прервалась на нашей стороне. Нажми «План недели» ещё раз.',
     }).eq('id', jobId)
+      await refundJobUnits(job)
   }
 }

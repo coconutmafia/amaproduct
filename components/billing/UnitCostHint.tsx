@@ -21,9 +21,11 @@ export function UnitCostHint({ cost, per, className }: { cost: number; per?: str
 
 // Готовые подписи для конкретных мест — чтобы не разъезжались формулировки.
 export const UNIT_HINTS = {
-  transcribe: `Списывается ${UNIT_COSTS.transcribe_castdev} ${unitsWord(UNIT_COSTS.transcribe_castdev)} контента за файл`,
+  // Расшифровка считается по минутам — так честнее и для клиента понятнее,
+  // чем плоская цена, при которой часовое интервью стоило как десятиминутное.
+  transcribe: `Списывается ${UNIT_COSTS.transcribe_per_10min} ${unitsWord(UNIT_COSTS.transcribe_per_10min)} контента за каждые 10 минут записи`,
   blogAudit:  `Списывается ${UNIT_COSTS.blog_audit} ${unitsWord(UNIT_COSTS.blog_audit)} контента за разбор`,
   viralReel:  `Списывается ${UNIT_COSTS.viral_reels} ${unitsWord(UNIT_COSTS.viral_reels)} контента за рилз`,
   scrape:     `Списывается ${UNIT_COSTS.instagram_scrape} ${unitsWord(UNIT_COSTS.instagram_scrape)} контента за аккаунт`,
-  image:      `Списывается ${UNIT_COSTS.image_generation} ${unitsWord(UNIT_COSTS.image_generation)} контента за генерацию`,
+  image:      `Списывается ${UNIT_COSTS.image_per_variant} ${unitsWord(UNIT_COSTS.image_per_variant)} контента за каждый вариант картинки`,
 } as const
