@@ -1,5 +1,6 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { splitIntoChunks } from '@/lib/ai/rag'
+import { captureException } from '@/lib/sentry'
 
 // Embed a project material's FULL text into project_chunks so nothing is lost
 // even when the ALWAYS_INCLUDE raw layer truncates a very long material
@@ -20,7 +21,14 @@ export async function embedMaterialChunks(
     const chunks = splitIntoChunks(content, 512, 50)
     if (chunks.length === 0) return
 
-    const supabase = await createClient()
+    // СЕРВИС-РОЛЬ, а не сессионный клиент. Замерено 25.08: project_chunks на
+    // проде был ПУСТ — эмбеддинги зовутся в основном из фоновых джобов
+    // (runTranscribeJob), где сессии нет, и RLS резала вставку молча (результат
+    // insert никто не проверял). Из-за этого семантический поиск не работал
+    // НИКОГДА: в генерацию всегда шли только первые 15k символов каждого файла,
+    // а не релевантные куски. Владение здесь проверять не нужно — вызывающий
+    // уже проверил доступ к проекту.
+    const supabase = createAdminClient()
 
     // Idempotent: drop any prior chunks for this material before re-inserting
     // (research re-runs / edits shouldn't pile up duplicates).
@@ -50,7 +58,15 @@ export async function embedMaterialChunks(
         embedding:   data.data[j].embedding,
         metadata:    { chunk_index: i + j, total_chunks: chunks.length },
       }))
-      await supabase.from('project_chunks').insert(rows)
+      // Ошибку вставки ОБЯЗАТЕЛЬНО проверяем — молчаливый провал этого insert
+      // и был причиной пустой таблицы.
+      const { error: insErr } = await supabase.from('project_chunks').insert(rows)
+      if (insErr) {
+        await captureException(new Error(`project_chunks insert: ${insErr.message}`), {
+          where: 'embedMaterialChunks', materialId, projectId, batch: i,
+        })
+        return
+      }
     }
   } catch (e) {
     console.warn('[embedMaterialChunks] failed (non-fatal):', e instanceof Error ? e.message : e)

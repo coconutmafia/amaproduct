@@ -2603,9 +2603,107 @@ async function usageReport() {
   log('   (lib/generations-config.ts) или лимит тарифа. Числа отсюда — факт, не оценка.')
 }
 
+// ── ИНСТРУМЕНТ: выдать бонусные единицы клиенту ─────────────────────────────
+// Бонусы тратятся ПЕРВЫМИ и не сгорают при месячном сбросе (миграция 003).
+// Нужно на переходный месяц: цены единиц меняются, и тяжёлый клиент не должен
+// упереться в лимит посреди работы (решение Матвея 25.08 по Галине).
+//   node scripts/prod-probe.mjs grant-bonus --email x@y.com --amount 300 [--run]
+async function grantBonus() {
+  const email = (arg('email') || '').trim().toLowerCase()
+  const amount = Math.floor(Number(arg('amount') || 0))
+  log('\n=== Инструмент: бонусные единицы ===')
+  if (!email.includes('@')) { log('❌ укажи --email'); return }
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 5000) { log('❌ --amount 1..5000'); return }
+
+  const prof = await api(`/rest/v1/profiles?select=id,email,subscription_tier,generations_used,bonus_generations,generations_reset_at&email=eq.${email}`)
+  const p = Array.isArray(prof.body) ? prof.body[0] : null
+  if (!p) { log(`❌ не найден: ${email}`); return }
+  log(`${p.email}: тариф ${p.subscription_tier}, использовано ${p.generations_used}, бонусов сейчас ${p.bonus_generations}, сброс ${String(p.generations_reset_at).slice(0,10)}`)
+  log(`план: +${amount} бонусных единиц → станет ${p.bonus_generations + amount}`)
+  if (!RUN) { log('\n[DRY-RUN] ничего не записано, добавь --run'); return }
+
+  // Через ту же RPC, что и возвраты — атомарно, с аудитом.
+  const r = await api('/rest/v1/rpc/add_bonus_generations', {
+    method: 'POST', body: JSON.stringify({ p_user_id: p.id, p_amount: amount }),
+  })
+  if (r.status >= 300) { log(`❌ RPC отбила: ${r.status} ${JSON.stringify(r.body).slice(0,150)}`); return }
+  const after = await api(`/rest/v1/profiles?select=bonus_generations&id=eq.${p.id}`)
+  const now = Array.isArray(after.body) ? after.body[0]?.bonus_generations : null
+  log(now === p.bonus_generations + amount
+    ? `✅ выдано: бонусов ${p.bonus_generations} → ${now}`
+    : `❌ сверка не сошлась: ${now}`)
+}
+
+// ── ИНСТРУМЕНТ: наполнить эмбеддинги проектов (project_chunks) ──────────────
+// Замер 25.08: из 310 материалов, созданных с 1 августа, проиндексировано 5.
+// Причина — писатель эмбеддингов ходил СЕССИОННЫМ клиентом, а зовут его в
+// основном из фонового джоба расшифровки, где сессии нет: RLS резала вставку,
+// и результат insert никто не проверял. Без индекса семантический поиск не
+// находит ничего, и в генерацию идут только первые 15k символов каждого файла.
+//
+// Гоняем БОЕВОЙ путь (/api/admin/context-backfill, тот же embedMaterialChunks),
+// а не копию чанкера — иначе индекс разъедется с тем, что строит продукт.
+//   node scripts/prod-probe.mjs embed-backfill [--project <id>] [--run]
+async function embedBackfill() {
+  const APP = 'https://amaproduct.com'
+  const only = arg('project')
+  log('\n=== Инструмент: бэкфилл эмбеддингов (боевой роут) ===')
+
+  const adminEmail = (() => {
+    const m = readFileSync(join(ROOT, '.env.local'), 'utf8').match(/^ADMIN_EMAIL=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!adminEmail) { log('❌ нет ADMIN_EMAIL в .env.local'); return }
+
+  // Какие проекты вообще нуждаются в индексации
+  const TYPES = ['interview_transcript', 'audience_research', 'meanings_map', 'audience_survey']
+  const mats = []
+  for (let page = 0; page < 12; page++) {
+    const r = await api(`/rest/v1/project_materials?select=id,project_id,material_type,processing_status&material_type=in.(${TYPES.map(t => `"${t}"`).join(',')})&limit=100&offset=${page*100}`)
+    if (!Array.isArray(r.body) || !r.body.length) break
+    mats.push(...r.body)
+  }
+  const chunks = await api('/rest/v1/project_chunks?select=material_id&limit=5000')
+  const indexed = new Set((Array.isArray(chunks.body) ? chunks.body : []).map(c => c.material_id))
+  const pending = mats.filter(m => !indexed.has(m.id) && !['processing','error','failed','pending'].includes(m.processing_status))
+  const projects = [...new Set(pending.map(m => m.project_id))].filter(p => !only || p === only)
+
+  log(`материалов без индекса: ${pending.length} в ${projects.length} проектах`)
+  log(`покрытие сейчас: ${mats.length - pending.length}/${mats.length} (${Math.round((mats.length-pending.length)/Math.max(1,mats.length)*100)}%)`)
+  if (!RUN) { log('\n[DRY-RUN] добавь --run — прогоню context-backfill по каждому проекту'); return }
+  if (!projects.length) { log('нечего индексировать'); return }
+
+  const anon = (() => {
+    const m = readFileSync(join(ROOT, '.env.local'), 'utf8').match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  const gl = await api('/auth/v1/admin/generate_link', { method: 'POST', body: JSON.stringify({ type: 'magiclink', email: adminEmail }) })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log(`❌ сессия админа: generate_link ${gl.status}`); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST', headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: adminEmail, token: otp }),
+  }).then(r => r.json())
+  if (!ver?.access_token) { log('❌ сессия админа не получена'); return }
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+  log('✅ сессия админа получена')
+
+  let embedded = 0, made = 0, failed = 0
+  for (const [i, pid] of projects.entries()) {
+    const r = await fetch(`${APP}/api/admin/context-backfill?projectId=${pid}`, { method: 'POST', headers: { cookie } })
+    const b = await r.json().catch(() => ({}))
+    if (!r.ok) { failed++; log(`  ❌ ${pid.slice(0,8)}: ${r.status} ${JSON.stringify(b).slice(0,120)}`); continue }
+    embedded += b.materialsEmbedded ?? 0
+    made += (b.chunksAfter ?? 0) - (b.chunksBefore ?? 0)
+    log(`  ${String(i+1).padStart(2)}/${projects.length} ${pid.slice(0,8)}: материалов ${b.materialsEmbedded}, чанков +${(b.chunksAfter ?? 0) - (b.chunksBefore ?? 0)}`)
+  }
+  log(`\n✅ проиндексировано материалов: ${embedded}, чанков создано: ${made}${failed ? `, проектов с ошибкой: ${failed}` : ''}`)
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'meter-smoke': meterSmoke }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'meter-smoke': meterSmoke }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
