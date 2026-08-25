@@ -2122,9 +2122,208 @@ async function generateUnitFate() {
   }
 }
 
+// ── ИНСТРУМЕНТ: массовая смена тарифа профилей (решение Августы 25.08) ───────
+// Меняет ТОЛЬКО profiles.subscription_tier. Статусы, trialing/trial_ends_at,
+// платёжки Stripe/Продамус НЕ трогаются (инцидент 16-17 июля — не повторять).
+// Защиты: отказ по admin-роли, отказ по QA-боту (нужен смоукам), список только
+// явными --emails (никаких «всех разом» по фильтру). После записи — повторное
+// чтение и сверка: тариф сменился, остальные биллинг-поля побайтно те же.
+//
+//   node scripts/prod-probe.mjs set-tier --to solo --emails "a@b.com,c@d.com" [--run]
+const QA_EMAIL = 'ama-qa-bot@gmail.com'
+async function setTier() {
+  const to = (arg('to') || '').trim()
+  const emails = (arg('emails') || '').split(',').map(e => e.trim().toLowerCase().normalize('NFC')).filter(Boolean)
+  log('\n=== Инструмент: смена тарифа (только subscription_tier) ===')
+  const VALID = ['trial', 'solo', 'pro', 'producer']
+  if (!VALID.includes(to)) { log(`❌ --to обязателен и один из: ${VALID.join(', ')}`); return }
+  if (!emails.length) { log('❌ укажи --emails "a@b.com,c@d.com" (явный список, не фильтр)'); return }
+  log(`цель: ${to} | адресов: ${emails.length}`)
+
+  // Снимок ДО — по нему же после записи сверяем, что лишнего не тронули.
+  const FIELDS = 'id,email,role,subscription_tier,subscription_status,trial_ends_at,current_period_end,payment_provider,provider_subscription_id,generations_used,bonus_generations,generations_reset_at'
+  const inList = emails.map(e => `"${e}"`).join(',')
+  const before = await api(`/rest/v1/profiles?select=${FIELDS}&email=in.(${inList})`)
+  if (!Array.isArray(before.body)) { log(`❌ чтение профилей: ${before.status} ${JSON.stringify(before.body).slice(0, 200)}`); return }
+  const byEmail = new Map(before.body.map(p => [String(p.email).toLowerCase().normalize('NFC'), p]))
+
+  const plan = []
+  let refused = 0
+  for (const e of emails) {
+    const p = byEmail.get(e)
+    if (!p) { log(`  ❌ НЕ НАЙДЕН: ${e} — пропускаю`); refused++; continue }
+    if (p.role === 'admin') { log(`  🛑 ОТКАЗ (admin): ${e} — админов не переводим`); refused++; continue }
+    if (e === QA_EMAIL) { log(`  🛑 ОТКАЗ (QA-бот): ${e} — нужен смоукам`); refused++; continue }
+    if (p.subscription_tier === to) { log(`  ・ уже ${to}: ${e} — нечего менять`); continue }
+    plan.push(p)
+  }
+
+  log(`\nПлан записи (${plan.length} шт.):`)
+  for (const p of plan) {
+    log(`  ${p.email}: ${p.subscription_tier} → ${to} | статус ${p.subscription_status} (не трогаем) | юниты ${p.generations_used} | платёжка ${p.payment_provider ?? 'нет'}`)
+  }
+  if (!plan.length) { log('Менять нечего.'); return }
+
+  if (!RUN) {
+    log('\n[DRY-RUN] ничего не записано. Добавь --run чтобы выполнить.')
+    return
+  }
+
+  let ok = 0
+  for (const p of plan) {
+    const upd = await api(`/rest/v1/profiles?id=eq.${p.id}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ subscription_tier: to }),
+    })
+    const row = Array.isArray(upd.body) ? upd.body[0] : null
+    if (row?.subscription_tier === to) { ok++; log(`  ✅ ${p.email}: ${p.subscription_tier} → ${row.subscription_tier}`) }
+    else log(`  ❌ ${p.email}: запись не прошла (${upd.status}) ${JSON.stringify(upd.body).slice(0, 150)}`)
+  }
+
+  // Сверка ПОСЛЕ: тариф целевой, остальные биллинг-поля не изменились.
+  const after = await api(`/rest/v1/profiles?select=${FIELDS}&email=in.(${inList})`)
+  const afterBy = new Map((after.body || []).map(p => [p.id, p]))
+  const UNTOUCHED = ['subscription_status', 'trial_ends_at', 'current_period_end', 'payment_provider', 'provider_subscription_id', 'generations_used', 'bonus_generations', 'generations_reset_at']
+  let clean = true
+  for (const p of plan) {
+    const a = afterBy.get(p.id)
+    if (!a) { log(`  ⚠️ сверка: ${p.email} не читается`); clean = false; continue }
+    if (a.subscription_tier !== to) { log(`  ❌ сверка: ${p.email} тариф ${a.subscription_tier}, ждали ${to}`); clean = false }
+    for (const f of UNTOUCHED) {
+      if (JSON.stringify(a[f] ?? null) !== JSON.stringify(p[f] ?? null)) {
+        log(`  ❌ сверка: ${p.email} поле ${f} ИЗМЕНИЛОСЬ: ${JSON.stringify(p[f])} → ${JSON.stringify(a[f])}`)
+        clean = false
+      }
+    }
+  }
+  log(`\n── ИТОГ ── записано ${ok}/${plan.length}${refused ? `, отказов ${refused}` : ''}; сверка нетронутых полей: ${clean ? '✅ чисто' : '❌ РАСХОЖДЕНИЯ (см. выше)'}`)
+}
+
+// ── ПРОБНИК: лимит юнитов глазами клиента (живьём, боевой путь чата) ─────────
+// Проверяет РЕАЛЬНЫЙ путь «клиент упёрся в месячный лимит»: QA-боту счётчик
+// ставится в потолок тарифа, затем тем же роутом/кукой/телом, что жмёт клиент
+// в ассистенте, запрашивается метереная генерация. Ожидание: 402 с
+// code=limit_reached («лимит исчерпан»), НЕ payment_required («подключи тариф»)
+// — путать их нельзя (у гейта две причины, см. gateContentUnit). Контроль:
+// свободный чат (без genFormat) при выбитом лимите обязан работать — fair use
+// не метерится. Счётчики возвращаются в исходное в finally при любом исходе.
+//
+//   node scripts/prod-probe.mjs limit-smoke [--run]
+async function limitSmoke() {
+  const APP = 'https://amaproduct.com'
+  // Потолки тарифов — зеркало lib/generations-config.ts (страж tier-limits-sync
+  // держит их в синхроне с БД-функцией generation_limit из миграции 016).
+  const LIMITS = { trial: 300, solo: 300, pro: 2000, producer: 8000 }
+  log('\n=== Пробник: месячный лимит юнитов глазами клиента ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) QA-бот: снять текущие generations_used/bonus; сессия как у клиента')
+    log('  2) выставить счётчик В ПОТОЛОК тарифа (bonus временно 0)')
+    log('  3) POST /api/ai/chat genFormat=post → ждём 402 code=limit_reached (не payment_required!)')
+    log('  4) контроль: свободный чат без genFormat → обязан отвечать (fair use)')
+    log('  5) finally: вернуть счётчики, сверить')
+    return
+  }
+
+  const prof = await api(`/rest/v1/profiles?select=id,role,subscription_tier,generations_used,bonus_generations,generations_reset_at&email=eq.${QA_EMAIL}`)
+  const qa = Array.isArray(prof.body) ? prof.body[0] : null
+  if (!qa) { log('❌ QA-бот не найден'); return }
+  if (qa.role === 'admin') { log('❌ QA-бот стал admin — смоук бессмысленен (админам лимит не считается)'); return }
+  const limit = LIMITS[qa.subscription_tier]
+  if (!limit) { log(`❌ неизвестный тариф QA: ${qa.subscription_tier}`); return }
+  if (new Date(qa.generations_reset_at).getTime() <= Date.now()) {
+    log(`❌ generations_reset_at (${qa.generations_reset_at}) в прошлом — первый же consume сбросит счётчик и смоук соврёт. Прогони позже.`)
+    return
+  }
+  log(`QA: тариф ${qa.subscription_tier} (потолок ${limit}), юниты ${qa.generations_used}, бонусы ${qa.bonus_generations}`)
+
+  const anon = (() => {
+    const m = readFileSync(join(ROOT, '.env.local'), 'utf8').match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY'); return }
+  const gl = await api('/auth/v1/admin/generate_link', {
+    method: 'POST',
+    body: JSON.stringify({ type: 'magiclink', email: QA_EMAIL }),
+  })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log(`❌ generate_link не дал email_otp: ${gl.status}`); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST',
+    headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA_EMAIL, token: otp }),
+  }).then(r => r.json())
+  if (!ver?.access_token) { log('❌ verify не дал сессию'); return }
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+  log('✅ 1. сессия QA как у клиента')
+
+  const used0 = qa.generations_used, bonus0 = qa.bonus_generations
+  let verdictBlocked = false, verdictFree = false
+  try {
+    const cap = await api(`/rest/v1/profiles?id=eq.${qa.id}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ generations_used: limit, bonus_generations: 0 }),
+    })
+    const capped = Array.isArray(cap.body) ? cap.body[0] : null
+    if (capped?.generations_used !== limit) { log(`❌ не выставился потолок: ${cap.status}`); return }
+    log(`✅ 2. счётчик в потолке: ${limit}/${limit}, бонусы 0`)
+
+    // 3. Метереная генерация — боевой путь клиента (чат-ассистент, genFormat)
+    const genRes = await fetch(`${APP}/api/ai/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({
+        genFormat: 'post',
+        messages: [{ role: 'user', content: 'Напиши короткий пост про утренние привычки.' }],
+      }),
+    })
+    const genBody = await genRes.json().catch(() => ({}))
+    if (genRes.status === 402 && genBody.code === 'limit_reached') {
+      verdictBlocked = true
+      log(`✅ 3. генерация отбита: 402 code=limit_reached, счёт ${genBody.monthlyUsed}/${genBody.monthlyLimit}`)
+      log('   → клиент увидит диалог «Лимит на этот месяц исчерпан» (не «подключи тариф»)')
+    } else {
+      log(`❌ 3. ждали 402 limit_reached, получили ${genRes.status} ${JSON.stringify(genBody).slice(0, 200)}`)
+    }
+
+    // 4. Контроль: свободный чат при выбитом лимите обязан работать (fair use)
+    const ctrl = new AbortController()
+    const freeRes = await fetch(`${APP}/api/ai/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ messages: [{ role: 'user', content: 'Привет! Одним словом: как дела?' }] }),
+      signal: ctrl.signal,
+    })
+    if (freeRes.ok && freeRes.body) {
+      const reader = freeRes.body.getReader()
+      const { value } = await reader.read().catch(() => ({ value: null }))
+      verdictFree = true
+      ctrl.abort() // первый чанк получен — стрим жив, дальше не читаем
+      log(`✅ 4. свободный чат жив при выбитом лимите (200, стрим пошёл${value ? `, ${value.length} байт` : ''})`)
+    } else {
+      log(`❌ 4. свободный чат отбит: ${freeRes.status} ${(await freeRes.text().catch(() => '')).slice(0, 150)} — fair use сломан!`)
+    }
+  } finally {
+    const back = await api(`/rest/v1/profiles?id=eq.${qa.id}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ generations_used: used0, bonus_generations: bonus0 }),
+    })
+    const row = Array.isArray(back.body) ? back.body[0] : null
+    const restored = row?.generations_used === used0 && row?.bonus_generations === bonus0
+    log(restored
+      ? `🧹 уборка: счётчики возвращены (${used0} юн., ${bonus0} бонусов)`
+      : `❌ УБОРКА НЕ ПРОШЛА: почини руками profiles.generations_used=${used0}, bonus_generations=${bonus0} у ${QA_EMAIL}`)
+  }
+  log(`\n── ВЕРДИКТ ── лимит блокирует генерацию: ${verdictBlocked ? '✅' : '❌'}; fair-use чат жив: ${verdictFree ? '✅' : '❌'}`)
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
