@@ -20,6 +20,28 @@ export function setStudioHandoff(projectId: string, data: StudioHandoff): void {
   try { localStorage.setItem(key(projectId), JSON.stringify(data)) } catch { /* ignore */ }
 }
 
+// ── Авто-сохранение сценария при «Оформить» (Марина, 25.08) ──────────────────
+// Хендофф жил только в localStorage: вышла из оформления — утверждённый в чате
+// сценарий пропадал («создала серию, нажала выйти — весь результат пропал»),
+// а команда советовала неочевидный обход «сначала В Готовое, потом Оформить».
+// Теперь «Оформить» САМ кладёт сценарий в «Готовое» (сервер) — потерять его,
+// выйдя со страницы, больше нельзя. Сет — защита от дублей при повторных
+// кликах в рамках сессии; упавший сейв не блокирует навигацию.
+const autoSavedScripts = new Set<string>()
+
+export function autoSaveScriptToLibrary(projectId: string, format: string, text: string): void {
+  const sig = `${projectId}:${format}:${text.length}:${text.slice(0, 100)}`
+  if (autoSavedScripts.has(sig)) return
+  autoSavedScripts.add(sig)
+  import('@/lib/saveContent')
+    .then(({ saveToLibrary }) => saveToLibrary({ body: text, content_type: format, project_id: projectId }))
+    .then(() => {
+      void import('sonner').then(({ toast }) =>
+        toast.success('Сценарий сохранён в «Готовое» — не потеряется, даже если выйдешь из оформления'))
+    })
+    .catch(() => { autoSavedScripts.delete(sig) /* повторный клик попробует снова */ })
+}
+
 /** Read once and clear — a refresh must not resurrect a stale draft. */
 export function takeStudioHandoff(projectId: string): StudioHandoff | null {
   try {

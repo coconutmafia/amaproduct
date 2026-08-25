@@ -7,7 +7,7 @@ import { ArrowLeft, Sparkles, Loader2, Copy, Check, User, CalendarPlus, Wand2 } 
 import { toast } from 'sonner'
 import { ChatComposer } from '@/components/ui/ChatComposer'
 import { SaveButton } from '@/components/content/SaveButton'
-import { setStudioHandoff } from '@/lib/studioHandoff'
+import { setStudioHandoff, autoSaveScriptToLibrary } from '@/lib/studioHandoff'
 import { VoiceRuleButton, maybeSuggestRule } from '@/components/chat/VoiceRuleButton'
 import { AssistantMessageBody } from '@/components/chat/AssistantMessageBody'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
@@ -371,6 +371,10 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
                     return (
                       <button type="button"
                         onClick={() => {
+                          // Сценарий — в «Готовое» СРАЗУ (сервер): выход из
+                          // оформления больше не теряет утверждённый текст
+                          // (жалоба Марины 25.08).
+                          autoSaveScriptToLibrary(id, fmt, text)
                           setStudioHandoff(id, { format: fmt, text, day: genContext?.day, phase: genContext?.phase })
                           router.push(`/projects/${id}/create?format=${fmt}`)
                         }}

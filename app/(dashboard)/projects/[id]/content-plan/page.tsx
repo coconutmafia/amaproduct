@@ -241,14 +241,15 @@ export default function ContentPlanPage() {
   }, [week, applyWeekBrief, loadPlanData, weekBriefJobKey])
 
   const handleGenerateWeekBrief = useCallback(async () => {
-    const briefDays = days.filter(d => d.phase).map(d => ({
+    // Дни без форматов (выходные из AI-правки или осознанно опустошённые) в
+    // генерацию НЕ отправляем — раньше пустой день получал дефолтные
+    // пост/сторис/рилз и брифы на «выходной».
+    const briefDays = days.filter(d => d.phase && d.plannedTypes && d.plannedTypes.length > 0).map(d => ({
       day: d.day,
       date: d.date,
       phase: d.phase,
       meaning: d.theme || '',
-      // pass the formats the user actually chose — the AI generates briefs
-      // only for these, not the post/stories/reels default
-      formats: (d.plannedTypes && d.plannedTypes.length > 0) ? d.plannedTypes : ['post', 'stories', 'reels'],
+      formats: d.plannedTypes!,
     }))
     if (!briefDays.length) {
       toast.error('Нет данных плана прогрева для этой недели')
@@ -412,12 +413,22 @@ export default function ContentPlanPage() {
           </Link>
         )}
         {hasPlan && warmupPlanId && (
+          // «Изменить план», не «AI-правка» (Марина, 25.08: «должна быть
+          // понятная кнопка вроде „Редактировать контент-план"») — название
+          // говорит ЧТО правится, а подсказка ниже — КАК.
           <button onClick={() => setEditorOpen(true)}
             className="shrink-0 flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-xs font-semibold text-white gradient-accent active:opacity-90 transition-opacity whitespace-nowrap">
-            <Sparkles className="h-3.5 w-3.5" /> AI-правка
+            <Sparkles className="h-3.5 w-3.5" /> Изменить план
           </button>
         )}
       </div>
+
+      {hasPlan && warmupPlanId && (
+        <p className="text-[11px] text-muted-foreground -mt-2">
+          План правится словами — жми <span className="text-foreground font-medium">«Изменить план»</span> и пиши:
+          «поменяй тему вторника», «сделай субботу и воскресенье выходными», «перенеси тему со среды на четверг».
+        </p>
+      )}
 
       {/* Collapsible help — how to work with the content plan */}
       <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -437,7 +448,8 @@ export default function ContentPlanPage() {
             <p>• <span className="text-foreground font-medium">Шаг 1.</span> Выбери форматы для каждого дня (× убрать, + добавить Email/Лонгрид и т.д.), затем нажми <span className="text-foreground font-medium">«Сгенерировать план»</span> — AI распишет тему под каждый формат.</p>
             <p>• <span className="text-foreground font-medium">Шаг 2.</span> Нажми на формат (Пост / Сторис / Рилз) — AI сгенерирует готовый текст под его тему.</p>
             <p>• Сгенерированный контент помечается галочкой ✓ — нажми, чтобы открыть и отредактировать.</p>
-            <p>• <span className="text-foreground font-medium">«AI-правка»</span> внизу — попроси AI поменять темы или структуру плана словами.</p>
+            <p>• <span className="text-foreground font-medium">«Изменить план»</span> вверху — правь план словами: поменять тему дня, перенести тему на другой день, сделать день выходным («публикуюсь 5 дней в неделю — сб и вс выходные»).</p>
+            <p>• Убрать формат у дня — крестиком на чипе; выходной день удобнее сделать через «Изменить план» — темы не потеряются, AI перенесёт их на соседние дни.</p>
             <p>• Переключай недели стрелками ‹ › вверху.</p>
           </div>
         )}

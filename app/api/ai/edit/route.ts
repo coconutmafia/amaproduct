@@ -291,6 +291,8 @@ ${weekViewBlock}
    - "meaning" — общая тема дня (опционально, меняй если просят про весь день).
    - "briefs" — новые темы под КОНКРЕТНЫЕ форматы (post/stories/reels/carousel/email). Если пользователь просит изменить тему конкретного формата (например «другую тему для сторис на вторник») — меняй ИМЕННО его бриф в "briefs" (ключ — формат на латинице), а не общий meaning.
    - Можно вернуть только "briefs" без "meaning", или наоборот.
+   - "rest": true — сделать день ВЫХОДНЫМ (без публикаций): «сделай субботу выходной», «хочу публиковаться 5 дней в неделю» и т.п. У выходного дня ставь meaning: "Выходной" и НЕ возвращай briefs. Если тему выходного дня просят перенести (или это следует из смысла — тема важная и пропадёт) — верни ТАКЖЕ день-получатель с этой темой в его "meaning"/"briefs" (объедини с его текущей темой, если она есть). "rest": false — вернуть день в работу (придумай ему тему по фазе).
+   - "formats": ["post","stories"] — оставить дню только эти форматы публикаций (полный список: post/carousel/reels/stories/live/webinar/email).
 8. Если пользователь просто спрашивает или обсуждает — отвечай без блока <changes>.`
 
           chatMessages = [
@@ -383,11 +385,12 @@ ${currentContent}
           if (changesMatch) {
             try {
               const changes = JSON.parse(changesMatch[1].trim()) as {
-                days?: Array<{ day: number; meaning?: string; briefs?: Record<string, string> }>
+                days?: Array<{ day: number; meaning?: string; briefs?: Record<string, string>; rest?: boolean; formats?: string[] }>
               }
               const planData = contextData.plan_data as WarmupPlanData
               const phases = getPlanPhases(planData)
               const changeDays = Array.isArray(changes.days) ? changes.days : []
+              const VALID_FORMATS = ['post', 'carousel', 'reels', 'stories', 'live', 'webinar', 'email']
 
               for (const change of changeDays) {
                 for (const phase of phases) {
@@ -399,6 +402,16 @@ ${currentContent}
                     if (change.briefs && typeof change.briefs === 'object') {
                       const cur = (d.briefs as Record<string, string> | undefined) ?? {}
                       d.briefs = { ...cur, ...change.briefs }
+                    }
+                    // Выходной (Марина, 25.08: «публиковаться 5 дней в неделю»):
+                    // rest: true снимает у дня форматы и брифы; false — возвращает
+                    // день в работу (форматы вернутся дефолтом при рендере).
+                    if (change.rest === true) { d.rest = true; d.formats = []; delete d.briefs }
+                    else if (change.rest === false) { delete d.rest }
+                    // Явный набор форматов дня («оставь субботе только пост»)
+                    if (Array.isArray(change.formats)) {
+                      d.formats = change.formats.map(String).filter((f) => VALID_FORMATS.includes(f))
+                      if ((d.formats as string[]).length > 0) delete d.rest
                     }
                     break
                   }

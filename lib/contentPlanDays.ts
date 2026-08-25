@@ -57,17 +57,22 @@ export function buildDaysFromWarmupPlan(planData: WarmupPlanData, weekNumber: nu
     for (const dayPlan of phaseData.daily_plan) {
       // Support both old format (format+theme) and new format (meaning)
       const dayData = dayPlan as unknown as Record<string, unknown>
+      // Выходной день (ставится AI-правкой: «сделай субботу выходной» —
+      // Марина, 25.08): без форматов и генераций, с честной подписью.
+      const rest = dayData.rest === true
       // `formats` = user's saved format choice; `format` = legacy plan field
       const savedFmt = (dayData.formats as ContentType[]) || (dayData.format as ContentType[]) || []
       const briefs = dayData.briefs as Record<string, string> | undefined
-      if (briefs && Object.keys(briefs).length > 0) savedBriefs[dayPlan.day] = briefs
+      if (!rest && briefs && Object.keys(briefs).length > 0) savedBriefs[dayPlan.day] = briefs
       allDays.push({
         day: dayPlan.day,
         phase: phaseData.phase as WarmupPhase,
         // An empty saved `formats` is a deliberate "user removed all" only if
         // briefs exist for that day; otherwise fall back to defaults.
-        format: savedFmt.length > 0 ? savedFmt : (briefs ? [] : DEFAULT_FORMATS),
-        theme: (dayData.meaning as string) || (dayData.theme as string) || '',
+        format: rest ? [] : (savedFmt.length > 0 ? savedFmt : (briefs ? [] : DEFAULT_FORMATS)),
+        theme: rest
+          ? ((dayData.meaning as string) || 'Выходной — без публикаций')
+          : ((dayData.meaning as string) || (dayData.theme as string) || ''),
       })
     }
   }

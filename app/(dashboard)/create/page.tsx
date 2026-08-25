@@ -8,7 +8,7 @@ import { Sparkles, Loader2, Copy, Check, User, FolderOpen, ChevronDown, Wand2, C
 import { toast } from 'sonner'
 import { ChatComposer } from '@/components/ui/ChatComposer'
 import { SaveButton } from '@/components/content/SaveButton'
-import { setStudioHandoff } from '@/lib/studioHandoff'
+import { setStudioHandoff, autoSaveScriptToLibrary } from '@/lib/studioHandoff'
 import { VoiceRuleButton, maybeSuggestRule } from '@/components/chat/VoiceRuleButton'
 import { AssistantMessageBody } from '@/components/chat/AssistantMessageBody'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
@@ -309,6 +309,9 @@ export default function CreatePage() {
                       <button type="button"
                         onClick={() => {
                           if (!projectId) { toast.error('Сначала выбери проект'); return }
+                          // Сценарий — в «Готовое» СРАЗУ (сервер): выход из
+                          // оформления больше не теряет текст (Марина, 25.08).
+                          autoSaveScriptToLibrary(projectId, fmt, text)
                           setStudioHandoff(projectId, { format: fmt, text })
                           router.push(`/projects/${projectId}/create?format=${fmt}`)
                         }}
