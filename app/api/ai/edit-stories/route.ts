@@ -86,8 +86,14 @@ ${getAiTells(detectTextLanguage(valuesOnly))}
       },
     }
 
+    // «добавь кадр/сторис» — модель обязана вернуть length+1: иначе клиент
+    // видел «ничего не добавляет» (вторая половина жалобы Станислава).
+    const addIntent = /добав|доба́в|add\b|ещё один|еще один/i.test(instruction)
     let raw: Array<Record<string, unknown>> = []
-    for (let attempt = 0; attempt < 3 && raw.length === 0; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const reminder = attempt > 0 && addIntent
+        ? `\n\n⚠️ ПОВТОР: блогер попросил ДОБАВИТЬ кадр. Верни РОВНО ${frames.length + 1} кадров: все ${frames.length} прежних ДОСЛОВНО без изменений + один новый в конце (или на месте, названном блогером).`
+        : ''
       const res = await anthropic.messages.create({
         // 12000, не 2500 (Станислав, 25.08): серия из 13 кадров НЕ ВЛЕЗАЛА в
         // потолок — модель, сжимаясь под лимит, возвращала валидный JSON с
@@ -95,12 +101,17 @@ ${getAiTells(detectTextLanguage(valuesOnly))}
         // выпавших кадров удалялись из хранилища («он 6 штук удалил»).
         model: MODEL, max_tokens: 12000, tools: [tool],
         tool_choice: { type: 'tool' as const, name: 'edit_stories' },
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: 'user', content: prompt + reminder }],
       })
       // Обрезанный по потолку ответ = неполный список кадров: не принимаем.
       if (res.stop_reason === 'max_tokens') continue
       const block = res.content.find((b) => b.type === 'tool_use')
-      if (block && block.type === 'tool_use') raw = toArray((block.input as { stories?: unknown }).stories) as Array<Record<string, unknown>>
+      const got = (block && block.type === 'tool_use') ? toArray((block.input as { stories?: unknown }).stories) as Array<Record<string, unknown>> : []
+      if (got.length === 0) continue
+      // Просили добавить, а кадров не прибавилось — пробуем ещё раз с напоминанием.
+      if (addIntent && got.length <= frames.length && attempt < 2) { raw = []; continue }
+      raw = got
+      break
     }
 
     const s = (v: unknown) => String(v ?? '').trim()
@@ -126,6 +137,11 @@ ${getAiTells(detectTextLanguage(valuesOnly))}
     if (out.length < frames.length && !deleteIntent) {
       await captureException(new Error(`edit-stories вернул ${out.length} кадров вместо ${frames.length}`), { where: 'edit-stories count-guard', projectId })
       return NextResponse.json({ error: `Правка вернула ${out.length} кадров вместо ${frames.length} — ничего не меняю, чтобы не потерять кадры. Попробуй сформулировать точнее.` }, { status: 502 })
+    }
+    // Просили добавить кадр, а после ретраев его так и нет — честно говорим,
+    // вместо тихой правки без добавления («ничего не добавляет»).
+    if (addIntent && out.length <= frames.length) {
+      return NextResponse.json({ error: 'Не получилось добавить кадр — попробуй ещё раз или напиши, ЧТО должно быть в новом кадре (например: «добавь кадр с призывом записаться»).' }, { status: 502 })
     }
 
     return NextResponse.json({ stories: out })
