@@ -40,13 +40,6 @@ export async function POST(request: Request) {
     const denied = await requirePaidAccess(user.id)
     if (denied) return denied
 
-    // Мелкое AI-действие (прайс-лист 25.08): 10 шт. = 1 юнит. Гейт после
-    // requirePaidAccess — not_entitled уже отсечён, здесь только quota.
-    const micro = await gateMicroAction(user.id, 'suggest-angles')
-    if (micro.blocked) {
-      return NextResponse.json({ error: 'limit_reached', code: 'limit_reached' }, { status: 402 })
-    }
-
     const { projectId, type = 'post', brief = '', phase = '' } = (await request.json()) as
       { projectId?: string; type?: string; brief?: string; phase?: string; day?: number }
     if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
@@ -58,6 +51,15 @@ export async function POST(request: Request) {
     // явный select ронял роут 404 для всех (пойман doubt-check живьём на проде).
     const { data: project } = await supabase.from('projects').select('*').eq('id', projectId).single()
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+
+    // Мелкое AI-действие (прайс-лист 25.08): 10 шт. = 1 юнит.
+    // СТОИТ ПОСЛЕ валидации намеренно: за отбитый 400 «нет текста»/«нет
+    // проекта» считать нельзя — работа не делалась (у Иры 17.08 таких
+    // отбитых попыток было 9 подряд).
+    const micro = await gateMicroAction(user.id, 'suggest-angles')
+    if (micro.blocked) {
+      return NextResponse.json({ error: 'limit_reached', code: 'limit_reached' }, { status: 402 })
+    }
     // Хук — это контент (фраза в кадре/в тексте): для блога на другом языке он
     // обязан быть на языке блога, даже если разговор и «почему зайдёт» русские.
     const contentLang = resolveContentLanguage(project as { content_language?: string | null })

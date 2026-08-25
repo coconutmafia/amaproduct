@@ -25,19 +25,21 @@ export async function POST(request: Request) {
   const denied = await requirePaidAccess(user.id)
   if (denied) return denied
 
-  // Мелкое AI-действие (прайс-лист 25.08): 10 шт. = 1 юнит. Гейт после
-  // requirePaidAccess — not_entitled уже отсечён, здесь только quota.
-  const micro = await gateMicroAction(user.id, 'transcribe-voice')
-  if (micro.blocked) {
-    return NextResponse.json({ error: 'limit_reached', code: 'limit_reached' }, { status: 402 })
-  }
-
   let form: FormData
   try { form = await request.formData() } catch { return NextResponse.json({ error: 'Bad form data' }, { status: 400 }) }
 
   const file = form.get('audio') as File | null
   if (!file || file.size === 0) return NextResponse.json({ error: 'Пустая запись' }, { status: 400 })
   if (file.size > 20 * 1024 * 1024) return NextResponse.json({ error: 'Запись слишком длинная' }, { status: 400 })
+
+  // Мелкое AI-действие (прайс-лист 25.08): 10 шт. = 1 юнит.
+  // СТОИТ ПОСЛЕ валидации намеренно: за отбитый 400 «нет текста»/«нет
+  // проекта» считать нельзя — работа не делалась (у Иры 17.08 таких
+  // отбитых попыток было 9 подряд).
+  const micro = await gateMicroAction(user.id, 'transcribe-voice')
+  if (micro.blocked) {
+    return NextResponse.json({ error: 'limit_reached', code: 'limit_reached' }, { status: 402 })
+  }
 
   try {
     const { default: OpenAI } = await import('openai')

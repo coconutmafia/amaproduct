@@ -34,13 +34,6 @@ export async function POST(request: Request) {
     const denied = await requirePaidAccess(user.id)
     if (denied) return denied
 
-    // Мелкое AI-действие (прайс-лист 25.08): 10 шт. = 1 юнит. Гейт после
-    // requirePaidAccess — not_entitled уже отсечён, здесь только quota.
-    const micro = await gateMicroAction(user.id, 'edit-stories')
-    if (micro.blocked) {
-      return NextResponse.json({ error: 'limit_reached', code: 'limit_reached' }, { status: 402 })
-    }
-
     const { projectId, frames, instruction } = (await request.json()) as { projectId?: string; frames?: Frame[]; instruction?: string }
     if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
     if (!frames || frames.length === 0) return NextResponse.json({ error: 'Нет кадров для правки' }, { status: 400 })
@@ -50,6 +43,15 @@ export async function POST(request: Request) {
     // editor+ explicitly.
     const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
+
+    // Мелкое AI-действие (прайс-лист 25.08): 10 шт. = 1 юнит.
+    // СТОИТ ПОСЛЕ валидации намеренно: за отбитый 400 «нет текста»/«нет
+    // проекта» считать нельзя — работа не делалась (у Иры 17.08 таких
+    // отбитых попыток было 9 подряд).
+    const micro = await gateMicroAction(user.id, 'edit-stories')
+    if (micro.blocked) {
+      return NextResponse.json({ error: 'limit_reached', code: 'limit_reached' }, { status: 402 })
+    }
 
     const current = frames.map((f, i) =>
       `Кадр ${i + 1} (position: ${f.position || 'auto'}, подложка: ${f.plate === false ? 'без' : 'с подложкой'}):\n  headline: ${f.headline || ''}\n  body: ${f.body || ''}\n  cta: ${f.cta || ''}`

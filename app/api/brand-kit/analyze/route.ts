@@ -31,12 +31,6 @@ export async function POST(request: Request) {
     const denied = await requirePaidAccess(user.id)
     if (denied) return denied
 
-    // Мелкое AI-действие (прайс-лист 25.08): 10 шт. = 1 юнит.
-    const micro = await gateMicroAction(user.id, 'brand-kit')
-    if (micro.blocked) {
-      return NextResponse.json({ error: 'limit_reached', code: 'limit_reached' }, { status: 402 })
-    }
-
     const { projectId, sampleUrls, target } = (await request.json()) as { projectId?: string; sampleUrls?: string[]; target?: string }
     if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
     const forStory = target === 'story' // story style is stored separately (brand_kit.story)
@@ -47,6 +41,15 @@ export async function POST(request: Request) {
     // boundary, not a redundant one.
     const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
+
+    // Мелкое AI-действие (прайс-лист 25.08): 10 шт. = 1 юнит.
+    // СТОИТ ПОСЛЕ валидации намеренно: за отбитый 400 «нет текста»/«нет
+    // проекта» считать нельзя — работа не делалась (у Иры 17.08 таких
+    // отбитых попыток было 9 подряд).
+    const micro = await gateMicroAction(user.id, 'brand-kit')
+    if (micro.blocked) {
+      return NextResponse.json({ error: 'limit_reached', code: 'limit_reached' }, { status: 402 })
+    }
 
     // Fetch + downscale each sample → base64 (keeps the vision payload small).
     const images: { type: 'image'; source: { type: 'base64'; media_type: 'image/jpeg'; data: string } }[] = []

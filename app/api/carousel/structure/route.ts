@@ -30,15 +30,17 @@ export async function POST(request: Request) {
     const denied = await requirePaidAccess(user.id)
     if (denied) return denied
 
-    // Мелкое AI-действие (прайс-лист 25.08): 10 шт. = 1 юнит. Гейт после
-    // requirePaidAccess — not_entitled уже отсечён, здесь только quota.
+    const { text, styleNotes } = (await request.json()) as { text?: string; type?: string; styleNotes?: string }
+    if (!text || !text.trim()) return NextResponse.json({ error: 'Нет текста' }, { status: 400 })
+
+    // Мелкое AI-действие (прайс-лист 25.08): 10 шт. = 1 юнит.
+    // СТОИТ ПОСЛЕ валидации намеренно: за отбитый 400 «нет текста»/«нет
+    // проекта» считать нельзя — работа не делалась (у Иры 17.08 таких
+    // отбитых попыток было 9 подряд).
     const micro = await gateMicroAction(user.id, 'carousel-structure')
     if (micro.blocked) {
       return NextResponse.json({ error: 'limit_reached', code: 'limit_reached' }, { status: 402 })
     }
-
-    const { text, styleNotes } = (await request.json()) as { text?: string; type?: string; styleNotes?: string }
-    if (!text || !text.trim()) return NextResponse.json({ error: 'Нет текста' }, { status: 400 })
     const notes = (styleNotes || '').trim().slice(0, 600)
 
     const tool = {
