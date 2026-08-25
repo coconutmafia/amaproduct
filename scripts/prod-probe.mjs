@@ -2472,8 +2472,8 @@ async function meterSmoke() {
       const rows = Array.isArray(usage.body) ? usage.body : []
       const cl = rows.filter(r => r.provider === 'anthropic')
       const wh = rows.filter(r => r.provider === 'openai_whisper')
-      const ok6 = cl.length > 0 && (cl[0].input_tokens ?? 0) > 0
-      log(`${ok6 ? '✅' : '❌'} 7а. токены Claude в ai_usage: ${cl.length ? `${cl[0].route} ${cl[0].model} in ${cl[0].input_tokens}/out ${cl[0].output_tokens}` : 'СТРОК НЕТ — обёртка не логирует'}`)
+      const ok6 = cl.length > 0 && (cl[0].input_tokens ?? 0) > 0 && cl[0].route && cl[0].route !== 'unknown'
+      log(`${ok6 ? '✅' : '❌'} 7а. токены Claude в ai_usage: ${cl.length ? `${cl[0].route} ${cl[0].model} in ${cl[0].input_tokens}/out ${cl[0].output_tokens}${cl[0].route === 'unknown' ? '  ← роут не определился, отчёт «по фичам» бесполезен' : ''}` : 'СТРОК НЕТ — обёртка не логирует'}`)
       // Канарейка: расшифровка выше писала строку Whisper ИЗ ФОНОВОГО ДЖОБА.
       // Если она пропала — значит after() внутри джоба молча не выполняется,
       // и «починка» одного пути сломала другой.

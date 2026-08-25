@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { headers } from 'next/headers'
 import { logAiUsage } from '@/lib/ai/usageLog'
 
 const raw = new Anthropic({
@@ -12,6 +13,20 @@ const raw = new Anthropic({
 // Fire-and-forget + fail-open: лог не добавляет латентности и не ломает вызов.
 // user_id на этом уровне неизвестен — по-юзерные факты дают строки метеринга
 // (jobs, gateContentUnit/gateMicroAction); джоин делает usage-report.
+// Имя фичи для журнала. В СОБРАННОМ бандле стек не содержит путей вида
+// app/api/... (всё в общих чанках) — замерено: роут писался как 'unknown', и
+// отчёт «по фичам» терял смысл. Поэтому сначала спрашиваем платформу: Vercel
+// кладёт совпавший путь в заголовок x-matched-path. Стек остаётся запасным
+// вариантом (dev + фоновые джобы, где заголовков нет).
+async function resolveRoute(): Promise<string> {
+  try {
+    const h = await headers()
+    const p = h.get('x-matched-path') || h.get('x-invoke-path')
+    if (p) return p.replace(/^\//, '').replace(/\/route$/, '').slice(0, 120)
+  } catch { /* вне request-контекста — идём в стек */ }
+  return callerRoute()
+}
+
 function callerRoute(): string {
   const stack = new Error().stack || ''
   for (const line of stack.split('\n').slice(1)) {
@@ -44,7 +59,7 @@ type UsageOut = { input_tokens?: number; output_tokens?: number }
 export function wrapAnthropicForUsage<T extends object>(
   target: T,
   logUsage: (route: string, model: string, usage?: UsageOut | null) => void,
-  routeOf: () => string = callerRoute,
+  routeOf: () => string | Promise<string> = resolveRoute,
 ): T {
   return new Proxy(target, {
     get(t, prop, receiver) {
@@ -62,7 +77,7 @@ export function wrapAnthropicForUsage<T extends object>(
               // проекте не вызывают (стримим через .stream()), не логируем.
               if (!body.stream) {
                 Promise.resolve(res)
-                  .then((msg) => logUsage(route, String(body.model), (msg as { usage?: UsageOut }).usage))
+                  .then(async (msg) => logUsage(await route, String(body.model), (msg as { usage?: UsageOut }).usage))
                   .catch(() => { /* ошибка вызова — логировать нечего */ })
               }
               return res
@@ -73,7 +88,7 @@ export function wrapAnthropicForUsage<T extends object>(
               const route = routeOf()
               const stream = (mTarget.stream as (b: unknown, o?: unknown) => { finalMessage: () => Promise<{ usage?: UsageOut }> })(body, options)
               stream.finalMessage()
-                .then((msg) => logUsage(route, String(body.model), msg.usage))
+                .then(async (msg) => logUsage(await route, String(body.model), msg.usage))
                 .catch(() => { /* оборванный/упавший стрим — логировать нечего */ })
               return stream
             }
