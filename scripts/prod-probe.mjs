@@ -2529,7 +2529,7 @@ async function usageReport() {
   const since = new Date(Date.now() - days * 864e5).toISOString()
   log(`\n=== Отчёт: куда уходят деньги (последние ${days} дн.) ===`)
 
-  const rows = await api(`/rest/v1/ai_usage?select=created_at,user_id,route,provider,model,input_tokens,output_tokens&created_at=gte.${since}&limit=100000`)
+  const rows = await api(`/rest/v1/ai_usage?select=created_at,user_id,route,provider,model,input_tokens,output_tokens,meta&created_at=gte.${since}&limit=100000`)
   if (!Array.isArray(rows.body)) {
     log(`❌ ai_usage не читается (${rows.status}) — применена ли миграция 039?`)
     log(`   ${JSON.stringify(rows.body).slice(0, 200)}`)
@@ -2540,10 +2540,14 @@ async function usageReport() {
     return
   }
 
+  // Кэш промпта меняет цену в разы: чтение ~10% ставки, запись ~1.25×.
+  // input_tokens у Anthropic — это ТОЛЬКО некэшированный вход, поэтому
+  // кэшевые токены считаем отдельными ставками, а не как обычный вход.
   const cost = (r) => {
     const p = PRICES[r.model]
-    if (p) return ((r.input_tokens ?? 0) * p.in + (r.output_tokens ?? 0) * p.out) / 1e6
-    return FLAT[r.model] ?? 0
+    if (!p) return FLAT[r.model] ?? 0
+    const cr = Number(r.meta?.cacheRead ?? 0), cw = Number(r.meta?.cacheWrite ?? 0)
+    return ((r.input_tokens ?? 0) * p.in + cr * p.in * 0.1 + cw * p.in * 1.25 + (r.output_tokens ?? 0) * p.out) / 1e6
   }
 
   const byRoute = {}, byUser = {}, byProvider = {}
@@ -2557,7 +2561,12 @@ async function usageReport() {
   }
 
   const usd = (n) => `$${n.toFixed(2)}`
+  const cacheRead = rows.body.reduce((a, r) => a + Number(r.meta?.cacheRead ?? 0), 0)
+  const rawIn = rows.body.reduce((a, r) => a + (r.input_tokens ?? 0), 0)
   log(`\nВСЕГО: ${usd(total)} за ${days} дн. (${rows.body.length} вызовов) ≈ ${usd(total / days * 30)} в месяц`)
+  if (rawIn + cacheRead > 0) {
+    log(`Кэш промпта: ${Math.round(cacheRead / (rawIn + cacheRead) * 100)}% входных токенов пришло из кэша (чем выше, тем дешевле вызов)`)
+  }
 
   log('\nПО ПРОВАЙДЕРАМ:')
   for (const [k, v] of Object.entries(byProvider).sort((a, b) => b[1] - a[1])) {

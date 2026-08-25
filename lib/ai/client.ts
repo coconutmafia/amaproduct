@@ -38,7 +38,7 @@ function callerRoute(): string {
   return 'unknown'
 }
 
-function logTokens(route: string, model: string, usage?: { input_tokens?: number; output_tokens?: number } | null) {
+function logTokens(route: string, model: string, usage?: UsageOut | null) {
   if (!usage) return
   // Импорт СТАТИЧЕСКИЙ и в отдельный модуль без лишних зависимостей: первая
   // версия звала usage.ts динамическим import() и глушила ошибку в .catch —
@@ -47,6 +47,10 @@ function logTokens(route: string, model: string, usage?: { input_tokens?: number
     route, provider: 'anthropic', model,
     inputTokens: usage.input_tokens ?? null,
     outputTokens: usage.output_tokens ?? null,
+    meta: {
+      cacheRead: usage.cache_read_input_tokens ?? 0,
+      cacheWrite: usage.cache_creation_input_tokens ?? 0,
+    },
   })
 }
 
@@ -55,7 +59,15 @@ function logTokens(route: string, model: string, usage?: { input_tokens?: number
 // чтобы сам механизм перехвата проверялся юнит-тестом с подставным SDK, а не
 // «по факту наличия строк в проде» (первая версия обёртки молчала, и увидеть
 // это можно было только в пустой таблице).
-type UsageOut = { input_tokens?: number; output_tokens?: number }
+type UsageOut = {
+  input_tokens?: number
+  output_tokens?: number
+  // Кэш промпта — ГЛАВНЫЙ фактор реальной цены: чтение из кэша стоит ~10%
+  // от обычного входа. Без этих чисел «цена вызова» — фантазия: у одного и
+  // того же запроса холодный и кэшированный прогон отличаются в 5-10 раз.
+  cache_read_input_tokens?: number
+  cache_creation_input_tokens?: number
+}
 export function wrapAnthropicForUsage<T extends object>(
   target: T,
   logUsage: (route: string, model: string, usage?: UsageOut | null) => void,
