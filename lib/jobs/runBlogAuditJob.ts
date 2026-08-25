@@ -3,6 +3,7 @@ import { captureException } from '@/lib/sentry'
 import { runBlogAudit } from '@/lib/blogAudit/runBlogAudit'
 import { refundGenerations } from '@/lib/generations'
 import { UNIT_COSTS } from '@/lib/generations-config'
+import { setUsageUser } from '@/lib/ai/usageContext'
 
 interface JobRow {
   id: string
@@ -25,6 +26,7 @@ export async function processBlogAuditJob(jobId: string): Promise<void> {
   const row = job as unknown as JobRow
   if (row.status === 'done' || row.status === 'error') return // уже завершён
 
+  setUsageUser(row.user_id ?? undefined) // чей расход — для журнала ai_usage
   await admin.from('jobs').update({ status: 'processing' }).eq('id', jobId)
 
   const { projectId, materialId } = row.payload

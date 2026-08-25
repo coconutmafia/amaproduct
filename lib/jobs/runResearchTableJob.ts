@@ -11,6 +11,7 @@ import { captureException } from '@/lib/sentry'
 import { loadKnownQuestions, runTable1Batch, type Respondent } from '@/lib/research/table1'
 import { refundGenerations } from '@/lib/generations'
 import { UNIT_COSTS } from '@/lib/generations-config'
+import { setUsageUser } from '@/lib/ai/usageContext'
 
 const TIME_BUDGET_MS = 220_000 // на один заход; остальное — самопродолжение
 const BATCH = 3                // расшифровок на один вызов Claude (как в старом клиенте)
@@ -48,6 +49,7 @@ export async function processResearchTableJob(jobId: string): Promise<void> {
     return
   }
 
+  setUsageUser(row.user_id ?? undefined) // чей расход — для журнала ai_usage
   await admin.from('jobs').update({ status: 'processing' }).eq('id', jobId)
 
   const batches: Part[][] = []

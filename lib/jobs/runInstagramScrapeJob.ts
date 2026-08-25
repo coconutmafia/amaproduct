@@ -5,6 +5,7 @@ import { fmtDateTimeRu } from '@/lib/dates'
 import { scrapeInstagram, buildAccountText, extractImageUrls, IMAGE_URLS_HEADER, ANALYSIS_SYSTEM, buildAnalysisPrompt } from '@/lib/instagram/scrapeAccount'
 import { refundGenerations } from '@/lib/generations'
 import { UNIT_COSTS } from '@/lib/generations-config'
+import { setUsageUser } from '@/lib/ai/usageContext'
 
 interface JobRow {
   id: string
@@ -34,6 +35,7 @@ export async function processInstagramScrapeJob(jobId: string): Promise<void> {
     return
   }
 
+  setUsageUser(row.user_id ?? undefined) // чей расход — для журнала ai_usage
   await admin.from('jobs').update({ status: 'processing' }).eq('id', jobId)
 
   const { projectId, username, accountType } = row.payload

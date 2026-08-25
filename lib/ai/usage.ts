@@ -13,6 +13,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { BILLING_ENFORCED } from '@/lib/generations'
 import { UNIT_COSTS } from '@/lib/generations-config'
+import { setUsageUser } from '@/lib/ai/usageContext'
 
 // Журнал расходов живёт в отдельном модуле без лишних зависимостей (его
 // статически импортирует обёртка Anthropic) — здесь только ре-экспорт, чтобы
@@ -32,6 +33,7 @@ export interface MicroGateResult {
 // blocked=true только при живом BILLING_ENFORCED и полностью исчерпанном
 // лимите — вызывающий отвечает 402 { code: 'limit_reached' }.
 export async function gateMicroAction(userId: string, route: string): Promise<MicroGateResult> {
+  setUsageUser(userId) // журнал расходов узнает, чей это вызов
   try {
     const { data, error } = await createAdminClient().rpc('consume_micro_action', {
       p_user_id: userId,

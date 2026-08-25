@@ -2468,7 +2468,7 @@ async function meterSmoke() {
       // обёртка молча не логировала (первая версия глушила падение импорта
       // в .catch): строки Whisper шли, строк Claude не было вообще.
       const fresh = new Date(Date.now() - 10 * 60_000).toISOString()
-      const usage = await api(`/rest/v1/ai_usage?select=route,provider,model,input_tokens,output_tokens,created_at&created_at=gte.${fresh}&order=created_at.desc&limit=20`)
+      const usage = await api(`/rest/v1/ai_usage?select=route,provider,model,user_id,input_tokens,output_tokens,created_at&created_at=gte.${fresh}&order=created_at.desc&limit=20`)
       const rows = Array.isArray(usage.body) ? usage.body : []
       const cl = rows.filter(r => r.provider === 'anthropic')
       const wh = rows.filter(r => r.provider === 'openai_whisper')
@@ -2478,6 +2478,9 @@ async function meterSmoke() {
       // Если она пропала — значит after() внутри джоба молча не выполняется,
       // и «починка» одного пути сломала другой.
       log(`${wh.length ? '✅' : '❌'} 7б. канарейка Whisper (запись из фонового джоба): ${wh.length} строк`)
+      // Без user_id отчёт «по клиентам с маржой» пустой — а он и есть цель.
+      const attributed = rows.filter(r => r.user_id === qa.id).length
+      log(`${attributed > 0 ? '✅' : '❌'} 7в. расход привязан к клиенту: ${attributed} из ${rows.length} строк с user_id QA`)
     } else {
       log('・ 5-6. микро-часть пропущена (нет миграции 039)')
     }

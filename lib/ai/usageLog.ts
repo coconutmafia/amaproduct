@@ -8,6 +8,7 @@
 // строках Whisper. Здесь зависимость ровно одна: админский клиент Supabase.
 import { after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { currentUsageUser } from '@/lib/ai/usageContext'
 
 export type AiProvider = 'anthropic' | 'openai_whisper' | 'openai_image' | 'apify'
 
@@ -46,7 +47,7 @@ export async function logAiUsage(row: AiUsageRow): Promise<void> {
 async function insertUsage(row: AiUsageRow): Promise<void> {
   try {
     const { error } = await createAdminClient().from('ai_usage').insert({
-      user_id: row.userId ?? null,
+      user_id: row.userId ?? currentUsageUser(),
       route: row.route.slice(0, 120),
       provider: row.provider,
       model: row.model ?? null,

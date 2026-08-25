@@ -14,11 +14,15 @@
 // keeps out people without a plan.
 import { NextResponse } from 'next/server'
 import { BILLING_ENFORCED, isEntitled } from '@/lib/generations'
+import { setUsageUser } from '@/lib/ai/usageContext'
 
 // Returns a 402 Response to return early, or null when the user may proceed.
 // Inert while BILLING_ENFORCED is off, and fail-OPEN inside isEntitled — an
 // infra hiccup must never lock out a paying customer.
 export async function requirePaidAccess(userId: string): Promise<NextResponse | null> {
+  // Помечаем контекст запроса: журнал ai_usage подхватит user_id сам, без
+  // протягивания его через все места вызова Claude (см. lib/ai/usageContext).
+  setUsageUser(userId)
   if (!BILLING_ENFORCED) return null
   if (await isEntitled(userId)) return null
   // Same code the client already maps to «Выбери тариф, чтобы начать».

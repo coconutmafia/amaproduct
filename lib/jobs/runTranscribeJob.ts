@@ -7,6 +7,7 @@ import { embedMaterialChunks } from '@/lib/ai/embed'
 import { fmtDateRu } from '@/lib/dates'
 import { refundGenerations } from '@/lib/generations'
 import { UNIT_COSTS } from '@/lib/generations-config'
+import { setUsageUser } from '@/lib/ai/usageContext'
 
 const CHUNK_SEC = 600     // 10-min windows — matches the client's prior chunking
 const MAX_CHUNKS = 48     // safety cap ≈ 8h, same as before
@@ -55,6 +56,7 @@ export async function processTranscribeJob(jobId: string): Promise<void> {
     return
   }
 
+  setUsageUser(row.user_id ?? undefined) // чей расход — для журнала ai_usage
   await admin.from('jobs').update({ status: 'processing' }).eq('id', jobId)
 
   const { storagePath, ext, durationSec } = row.payload

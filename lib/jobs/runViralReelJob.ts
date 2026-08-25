@@ -4,6 +4,7 @@ import { captureException } from '@/lib/sentry'
 import { scrapeReel, transcribeVideo } from '@/lib/reels/scrapeReel'
 import { refundGenerations } from '@/lib/generations'
 import { UNIT_COSTS } from '@/lib/generations-config'
+import { setUsageUser } from '@/lib/ai/usageContext'
 
 interface JobRow {
   id: string
@@ -37,6 +38,7 @@ export async function processViralReelJob(jobId: string): Promise<void> {
     return
   }
 
+  setUsageUser(row.user_id ?? undefined) // чей расход — для журнала ai_usage
   await admin.from('jobs').update({ status: 'processing' }).eq('id', jobId)
 
   const { url, scope, projectId, niches, createdBy } = row.payload

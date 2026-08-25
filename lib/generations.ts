@@ -6,6 +6,7 @@ export { PLAN_CONFIG, REFERRAL_REWARDS } from '@/lib/generations-config'
 export type { SubscriptionPlan } from '@/lib/generations-config'
 import { PLAN_CONFIG, PAID_PLANS } from '@/lib/generations-config'
 import type { SubscriptionPlan } from '@/lib/generations-config'
+import { setUsageUser } from '@/lib/ai/usageContext'
 
 // ──────────────────────────────────────────────────────
 // Check + consume one generation (server-side)
@@ -119,6 +120,7 @@ export async function isEntitled(userId: string): Promise<boolean> {
 // Refinement/edits, slide/image rendering of already-counted content, and brand
 // setup are NOT metered (fair-use) — don't call this there.
 export async function gateContentUnit(userId: string): Promise<GateResult> {
+  setUsageUser(userId) // журнал расходов узнает, чей это вызов
   // Check entitlement BEFORE consuming so an un-entitled user (expired trial /
   // lapsed subscription) isn't charged a unit just to be blocked. Only enforced
   // when BILLING_ENFORCED is live — pre-launch this is inert and metering runs.
@@ -137,6 +139,7 @@ export async function gateContentUnit(userId: string): Promise<GateResult> {
 // fails mid-way (race with another tab), the consumed part is refunded — the
 // caller either gets the whole price charged or nothing.
 export async function gateContentUnits(userId: string, count: number): Promise<GateResult> {
+  setUsageUser(userId)
   if (count <= 1) return gateContentUnit(userId)
   if (BILLING_ENFORCED && !(await isEntitled(userId))) {
     const stats = await getGenerationStats(userId)
