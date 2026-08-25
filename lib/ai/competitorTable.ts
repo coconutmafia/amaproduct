@@ -102,7 +102,7 @@ ${mineBlock ? `НАШ АККАУНТ (для вывода):\n${mineBlock}\n\n` :
     for (let attempt = 0; attempt < 4; attempt++) {
       const res = await anthropic.messages.create({
         model: MODEL,
-        max_tokens: 4000,
+        max_tokens: 10000,
         tools: [tool],
         tool_choice: { type: 'tool' as const, name: 'competitor_analysis' },
         messages: [{ role: 'user', content: prompt }],

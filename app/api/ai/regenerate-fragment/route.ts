@@ -90,7 +90,7 @@ ${instruction && instruction.trim() ? `\nПОЖЕЛАНИЕ ПОЛЬЗОВАТЕ
 
     const response = await anthropic.messages.create({
       model: MODEL,
-      max_tokens: 1500,
+      max_tokens: 4000,
       system: buildCachedSystem(systemPrompt),
       messages: [{ role: 'user', content: 'Перепиши выделенный фрагмент.' }],
     })

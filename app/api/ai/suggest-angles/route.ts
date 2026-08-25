@@ -121,7 +121,7 @@ ${trendsBlock ? `\nАКТУАЛЬНЫЕ ТРЕНДЫ (для рилза можн
     let reelTrend = ''
     for (let attempt = 0; attempt < 3 && angles.length === 0; attempt++) {
       const res = await anthropic.messages.create({
-        model: MODEL, max_tokens: 1500, tools: [tool],
+        model: MODEL, max_tokens: 4000, tools: [tool],
         tool_choice: { type: 'tool' as const, name: 'propose_angles' },
         messages: [{ role: 'user', content: prompt }],
       })

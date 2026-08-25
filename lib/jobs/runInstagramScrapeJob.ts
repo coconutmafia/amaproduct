@@ -55,7 +55,7 @@ export async function processInstagramScrapeJob(jobId: string): Promise<void> {
     try {
       const resp = await anthropic.messages.create({
         model:      MODEL,
-        max_tokens: 3000,
+        max_tokens: 8000,
         system:     ANALYSIS_SYSTEM,
         messages:   [{ role: 'user', content: buildAnalysisPrompt(accountText, accountType === 'my_instagram') }],
       })

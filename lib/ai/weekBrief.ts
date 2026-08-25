@@ -275,7 +275,7 @@ ${daysText}
 
     const response = await anthropic.messages.create({
       model: MODEL,
-      max_tokens: 8000,
+      max_tokens: 12000,
       tools: [toolDef],
       tool_choice: { type: 'tool' as const, name: 'week_brief' },
       system: buildCachedSystem(systemBlock),

@@ -153,7 +153,7 @@ export async function POST(request: Request) {
     try {
       const aiStream = anthropic.messages.stream({
         model:      MODEL,
-        max_tokens: 4000,
+        max_tokens: 10000,
         system:     TOV_SYSTEM,
         messages:   [{ role: 'user', content: buildPrompt(clean, tovLang) }],
       })

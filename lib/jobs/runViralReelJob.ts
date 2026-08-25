@@ -69,7 +69,7 @@ ${transcript ? `Расшифровка речи в рилз:\n${transcript.slice
 - niches: 1-3 ниши, для которых этот рилз релевантен (напр. «продюсирование», «нутрициология», «фитнес»). Если универсально — оставь пустым [].`
 
     const resp = await anthropic.messages.create({
-      model: MODEL, max_tokens: 1500,
+      model: MODEL, max_tokens: 6000,
       messages: [{ role: 'user', content: prompt }],
     })
     const raw = resp.content.map(b => (b.type === 'text' ? b.text : '')).join('\n')

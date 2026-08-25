@@ -64,7 +64,7 @@ ${text.slice(0, 6000)}
     for (let attempt = 0; attempt < 3 && !carousel; attempt++) {
       const res = await anthropic.messages.create({
         model: MODEL_SONNET, // structuring (not flagship creative) → fast/cheap is fine
-        max_tokens: 3000,
+        max_tokens: 6000,
         tools: [tool],
         tool_choice: { type: 'tool' as const, name: 'structure_carousel' },
         messages: [{ role: 'user', content: prompt }],

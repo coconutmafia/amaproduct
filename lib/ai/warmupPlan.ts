@@ -475,7 +475,7 @@ ${isEvergreen ? `
     // retries and «Начать заново» re-runs read it at ~10% input price.
     const claudeStream = anthropic.messages.stream({
       model: MODEL,
-      max_tokens: 8000,
+      max_tokens: 16000,
       tools: [toolDef],
       tool_choice: { type: 'tool' as const, name: 'create_warmup_plan' },
       system: buildCachedSystem(prompt),

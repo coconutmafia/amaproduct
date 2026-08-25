@@ -362,7 +362,7 @@ ${currentContent}
 
         const response = await anthropic.messages.create({
           model: MODEL,
-          max_tokens: 2048,
+          max_tokens: 6000,
           system: buildCachedSystem(systemPrompt),
           messages: chatMessages,
           stream: true,

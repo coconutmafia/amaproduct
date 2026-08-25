@@ -88,7 +88,7 @@ ${getAiTells(detectTextLanguage(valuesOnly))}
     let out: Dict | null = null
     for (let attempt = 0; attempt < 3 && !out; attempt++) {
       const res = await anthropic.messages.create({
-        model: MODEL, max_tokens: 3000, tools: [tool],
+        model: MODEL, max_tokens: 8000, tools: [tool],
         tool_choice: { type: 'tool' as const, name: 'edit_carousel' },
         messages: [{ role: 'user', content: prompt }],
       })
@@ -102,6 +102,16 @@ ${getAiTells(detectTextLanguage(valuesOnly))}
       }
     }
     if (!out) return NextResponse.json({ error: 'Не удалось применить правку — попробуй сформулировать иначе' }, { status: 502 })
+
+    // СТРАЖ ПОТЕРИ СЛАЙДОВ (класс edit-stories, Станислав 25.08): усечённый
+    // ответ с меньшим числом слайдов без явной просьбы удалить — не отдаём,
+    // иначе клиент перерендерит карусель урезанной.
+    const deleteIntent = /удали|убер|сотри|remove|delete/i.test(instruction)
+    const outSlides = toArray((out as Dict).slides)
+    if (outSlides.length < slides.length && !deleteIntent) {
+      await captureException(new Error(`edit-carousel вернул ${outSlides.length} слайдов вместо ${slides.length}`), { where: 'edit-carousel count-guard' })
+      return NextResponse.json({ error: `Правка вернула ${outSlides.length} слайдов вместо ${slides.length} — ничего не меняю, чтобы не потерять слайды. Попробуй сформулировать точнее.` }, { status: 502 })
+    }
 
     return NextResponse.json({ carousel: out })
   } catch (e) {

@@ -123,7 +123,7 @@ ${groundBlocks || '(Дополнительных данных нет — опи�
   for (let attempt = 0; attempt < 4; attempt++) {
     const response = await anthropic.messages.create({
       model: MODEL,
-      max_tokens: 4000,
+      max_tokens: 8000,
       tools: [toolDef],
       tool_choice: { type: 'tool' as const, name: 'propose_trends' },
       messages: [{ role: 'user', content: prompt }],

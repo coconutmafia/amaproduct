@@ -765,7 +765,7 @@ export async function POST(request: Request) {
 
     const resp = await anthropic.messages.create({
       model:      MODEL,
-      max_tokens: 8000,
+      max_tokens: 12000,
       system:     TABLE2_SYSTEM,
       messages:   [{ role: 'user', content: buildMeaningsFromMaterialsPrompt(batch) }],
     })
@@ -786,7 +786,7 @@ export async function POST(request: Request) {
     if (partial.length > 8) {
       const mergeResp = await anthropic.messages.create({
         model:      MODEL,
-        max_tokens: 8000,
+        max_tokens: 12000,
         system:     TABLE2_SYSTEM,
         messages:   [{ role: 'user', content: buildMergeMeaningsPrompt(partial) }],
       })

@@ -94,7 +94,7 @@ ${ragBlock || '(мало материалов)'}
     let raw: Array<Record<string, unknown>> = []
     for (let attempt = 0; attempt < 3 && raw.length === 0; attempt++) {
       const res = await anthropic.messages.create({
-        model: MODEL, max_tokens: 2000, tools: [tool],
+        model: MODEL, max_tokens: 8000, tools: [tool],
         tool_choice: { type: 'tool' as const, name: 'plan_stories' },
         messages: [{ role: 'user', content: prompt }],
       })
