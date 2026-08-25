@@ -2467,11 +2467,17 @@ async function meterSmoke() {
       // ai_usage обязана появиться строка provider=anthropic. Без этой проверки
       // обёртка молча не логировала (первая версия глушила падение импорта
       // в .catch): строки Whisper шли, строк Claude не было вообще.
-      const fresh = new Date(Date.now() - 5 * 60_000).toISOString()
-      const usage = await api(`/rest/v1/ai_usage?select=route,model,input_tokens,output_tokens,created_at&provider=eq.anthropic&created_at=gte.${fresh}&order=created_at.desc&limit=3`)
+      const fresh = new Date(Date.now() - 10 * 60_000).toISOString()
+      const usage = await api(`/rest/v1/ai_usage?select=route,provider,model,input_tokens,output_tokens,created_at&created_at=gte.${fresh}&order=created_at.desc&limit=20`)
       const rows = Array.isArray(usage.body) ? usage.body : []
-      const ok6 = rows.length > 0 && (rows[0].input_tokens ?? 0) > 0
-      log(`${ok6 ? '✅' : '❌'} 7. токены Claude в журнале ai_usage: ${rows.length ? `${rows[0].route} ${rows[0].model} in ${rows[0].input_tokens}/out ${rows[0].output_tokens}` : 'СТРОК НЕТ — обёртка не логирует'}`)
+      const cl = rows.filter(r => r.provider === 'anthropic')
+      const wh = rows.filter(r => r.provider === 'openai_whisper')
+      const ok6 = cl.length > 0 && (cl[0].input_tokens ?? 0) > 0
+      log(`${ok6 ? '✅' : '❌'} 7а. токены Claude в ai_usage: ${cl.length ? `${cl[0].route} ${cl[0].model} in ${cl[0].input_tokens}/out ${cl[0].output_tokens}` : 'СТРОК НЕТ — обёртка не логирует'}`)
+      // Канарейка: расшифровка выше писала строку Whisper ИЗ ФОНОВОГО ДЖОБА.
+      // Если она пропала — значит after() внутри джоба молча не выполняется,
+      // и «починка» одного пути сломала другой.
+      log(`${wh.length ? '✅' : '❌'} 7б. канарейка Whisper (запись из фонового джоба): ${wh.length} строк`)
     } else {
       log('・ 5-6. микро-часть пропущена (нет миграции 039)')
     }
