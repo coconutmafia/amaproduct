@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
+import { gateMicroAction } from '@/lib/ai/usage'
 import { suggestTrends } from '@/lib/ai/suggestTrends'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { NextResponse } from 'next/server'
@@ -19,6 +20,12 @@ export async function POST(request: Request) {
 
   const denied = await requirePaidAccess(user.id)
   if (denied) return denied
+
+  // Мелкое AI-действие (прайс-лист 25.08): 10 шт. = 1 юнит.
+  const micro = await gateMicroAction(user.id, 'suggest-trends')
+  if (micro.blocked) {
+    return NextResponse.json({ error: 'limit_reached', code: 'limit_reached' }, { status: 402 })
+  }
 
   const body = await request.json() as { projectId?: string; scope?: 'project' | 'system'; niche?: string; mode?: 'niche' | 'popular' }
   const scope = body.scope === 'system' ? 'system' : 'project'

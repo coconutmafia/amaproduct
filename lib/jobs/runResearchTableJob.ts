@@ -9,6 +9,8 @@ import { after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { captureException } from '@/lib/sentry'
 import { loadKnownQuestions, runTable1Batch, type Respondent } from '@/lib/research/table1'
+import { refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
 
 const TIME_BUDGET_MS = 220_000 // на один заход; остальное — самопродолжение
 const BATCH = 3                // расшифровок на один вызов Claude (как в старом клиенте)
@@ -42,6 +44,7 @@ export async function processResearchTableJob(jobId: string): Promise<void> {
   const parts = Array.isArray(row.payload?.parts) ? row.payload.parts.filter(p => p && typeof p.text === 'string' && p.text.trim()) : []
   if (!projectId || parts.length === 0) {
     await admin.from('jobs').update({ status: 'error', error: 'Нет расшифровок для анализа — загрузи интервью ещё раз.' }).eq('id', jobId)
+    if (row.user_id) await refundGenerations(row.user_id, UNIT_COSTS.research_table).catch(() => {})
     return
   }
 
@@ -93,6 +96,9 @@ export async function processResearchTableJob(jobId: string): Promise<void> {
           error: r.error,
           progress: { doneBatches: bi, totalBatches, respondents },
         }).eq('id', jobId)
+        // Таблица оплачена на POST, а повтор заводит НОВЫЙ джоб (и новое
+        // списание) — значит этот провал обязан вернуть юниты.
+        if (row.user_id) await refundGenerations(row.user_id, UNIT_COSTS.research_table).catch(() => {})
         return
       }
       respondents.push(...r.table.respondents)
@@ -111,7 +117,8 @@ export async function processResearchTableJob(jobId: string): Promise<void> {
     await captureException(e, { where: 'runResearchTableJob', jobId, projectId })
     await admin.from('jobs').update({
       status: 'error',
-      error: 'Анализ прервался на нашей стороне. Нажми «Создать таблицу» ещё раз — расшифровка не потерялась.',
+      error: 'Анализ прервался на нашей стороне. Нажми «Создать таблицу» ещё раз — расшифровка не потерялась. Единицы контента возвращены.',
     }).eq('id', jobId)
+    if (row.user_id) await refundGenerations(row.user_id, UNIT_COSTS.research_table).catch(() => {})
   }
 }

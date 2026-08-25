@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
+import { gateContentUnits, refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { analyzeCompetitors } from '@/lib/ai/competitorTable'
 
@@ -33,8 +35,20 @@ export async function POST(request: Request) {
   const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
+  // Сводная таблица конкурентов = UNIT_COSTS.competitor_table юнит (флагман по
+  // всем разборам; кнопка повторяемая). Провал возвращает юнит сразу.
+  const gate = await gateContentUnits(user.id, UNIT_COSTS.competitor_table)
+  if (gate.blocked) {
+    const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
+    return NextResponse.json(
+      { error: code, code, monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit },
+      { status: 402 },
+    )
+  }
+
   const r = await analyzeCompetitors(supabase, projectId)
   if (!r.ok) {
+    await refundGenerations(user.id, UNIT_COSTS.competitor_table)
     const status = r.error.startsWith('Сначала добавь конкурентов') ? 400 : 503
     return NextResponse.json({ error: r.error }, { status })
   }

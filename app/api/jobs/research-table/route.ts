@@ -4,6 +4,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { captureException } from '@/lib/sentry'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
+import { gateContentUnits, refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { processResearchTableJob } from '@/lib/jobs/runResearchTableJob'
 
@@ -38,6 +40,18 @@ export async function POST(request: Request) {
   const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
+  // Сборка общей таблицы кастдевов = UNIT_COSTS.research_table юнита: флагман
+  // по ВСЕМ расшифровкам проекта (max_tokens 32000), кнопка нажимается повторно
+  // (Даша 25.08 перегенерировала 6 раз). Провал джоба возвращает юниты.
+  const gate = await gateContentUnits(user.id, UNIT_COSTS.research_table)
+  if (gate.blocked) {
+    const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
+    return NextResponse.json(
+      { error: code, code, monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit },
+      { status: 402 },
+    )
+  }
+
   const admin = createAdminClient()
   const { data: job, error } = await admin.from('jobs').insert({
     user_id:    user.id,
@@ -48,6 +62,7 @@ export async function POST(request: Request) {
   }).select('id').single()
   if (error || !job) {
     await captureException(new Error(error?.message || 'job insert failed'), { where: 'research-table POST' })
+    await refundGenerations(user.id, UNIT_COSTS.research_table)
     return NextResponse.json({ error: 'Не удалось запустить анализ — попробуй ещё раз' }, { status: 500 })
   }
 

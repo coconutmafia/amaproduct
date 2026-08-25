@@ -134,6 +134,9 @@ export const UNIT_COSTS = {
   video_montage: 5,      // Whisper + минуты CPU на ffmpeg (решение 21 июля)
   video_overlay: 1,      // наложение текста на видео
   transcribe_castdev: 3, // расшифровка + разбор кастдева (Whisper + opus-5)
+  research_table: 2,     // сборка общей таблицы кастдевов (флагман по ВСЕМ
+                         // расшифровкам, max_tokens 32000, пересобирается по кнопке)
+  competitor_table: 1,   // сводная таблица конкурентов (флагман по разборам)
   blog_audit: 3,         // аудит блога в приложении (скрейп + большой анализ)
   viral_reels: 2,        // разбор виральных рилз (Apify + Whisper + Claude)
   instagram_scrape: 1,   // запуск скрейпа Instagram (Apify = живые $)

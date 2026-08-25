@@ -56,6 +56,10 @@ const METERED_ROUTES: Array<{ file: string; gate: RegExp }> = [
   { file: 'app/api/viral-reels/route.ts',        gate: /gateContentUnits\(/ },
   { file: 'app/api/instagram/scrape/route.ts',   gate: /gateContentUnits\(/ },
   { file: 'app/api/ai/generate-image/route.ts',  gate: /gateContentUnits\(/ },
+  { file: 'app/api/jobs/research-table/route.ts', gate: /gateContentUnits\(/ },
+  { file: 'app/api/ai/analyze-competitors/route.ts', gate: /gateContentUnits\(/ },
+  { file: 'app/api/ai/suggest-trends/route.ts',  gate: /gateMicroAction\(/ },
+  { file: 'app/api/brand-kit/analyze/route.ts',  gate: /gateMicroAction\(/ },
   { file: 'app/api/ai/edit/route.ts',            gate: /gateMicroAction\(/ },
   { file: 'app/api/ai/edit-carousel/route.ts',   gate: /gateMicroAction\(/ },
   { file: 'app/api/ai/edit-stories/route.ts',    gate: /gateMicroAction\(/ },
@@ -87,6 +91,9 @@ describe('свип: списание юнитов имеет парный воз
     'lib/jobs/runBlogAuditJob.ts',
     'lib/jobs/runViralReelJob.ts',
     'lib/jobs/runInstagramScrapeJob.ts',
+    'app/api/jobs/research-table/route.ts',
+    'lib/jobs/runResearchTableJob.ts',
+    'app/api/ai/analyze-competitors/route.ts',
   ]
   for (const f of REFUNDING) {
     it(f, () => {

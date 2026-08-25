@@ -131,6 +131,8 @@ export function PricingClient({
               <li>Видео-монтаж — {UNIT_COSTS.video_montage}</li>
               <li>Расшифровка и разбор кастдева — {UNIT_COSTS.transcribe_castdev}</li>
               <li>Аудит блога — {UNIT_COSTS.blog_audit}</li>
+              <li>Общая таблица кастдевов — {UNIT_COSTS.research_table}</li>
+              <li>Сводная таблица конкурентов — {UNIT_COSTS.competitor_table}</li>
               <li>Разбор вирального рилза — {UNIT_COSTS.viral_reels}</li>
               <li>Анализ Instagram-аккаунта — {UNIT_COSTS.instagram_scrape}</li>
               <li>Картинка в дизайнере (до 3 вариантов) — {UNIT_COSTS.image_generation}</li>

@@ -2350,12 +2350,16 @@ async function meterSmoke() {
   })()
   if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY'); return }
 
-  const prof = await api(`/rest/v1/profiles?select=id,role,subscription_tier,generations_used,bonus_generations,micro_actions_count&email=eq.${QA_EMAIL}`)
+  // ВАЖНО: micro_actions_count запрашиваем ОТДЕЛЬНО. Явный select с колонкой,
+  // которой ещё нет (039 не применена), — это PostgREST 42703 на ВЕСЬ запрос;
+  // ровно так 13.08 упал suggest-angles у всех клиентов.
+  const prof = await api(`/rest/v1/profiles?select=id,role,subscription_tier,generations_used,bonus_generations&email=eq.${QA_EMAIL}`)
   const qa = Array.isArray(prof.body) ? prof.body[0] : null
-  if (!qa) { log('❌ QA-бот не найден'); return }
+  if (!qa) { log(`❌ QA-бот не найден (${prof.status}): ${JSON.stringify(prof.body).slice(0, 200)}`); return }
   if (qa.role === 'admin') { log('❌ QA стал admin — метеринг его не считает'); return }
   const used0 = qa.generations_used, bonus0 = qa.bonus_generations
-  const micro0 = qa.micro_actions_count
+  const microProbe = await api(`/rest/v1/profiles?select=micro_actions_count&id=eq.${qa.id}`)
+  const micro0 = Array.isArray(microProbe.body) ? microProbe.body[0]?.micro_actions_count : undefined
   if (micro0 === undefined) log('⚠️ колонки micro_actions_count нет — миграция 039 не применена (микро-часть пропущу)')
   log(`QA: тариф ${qa.subscription_tier}, юниты ${used0}, бонусы ${bonus0}, микро ${micro0 ?? '—'}`)
 
@@ -2373,7 +2377,8 @@ async function meterSmoke() {
 
   // Эффективный расход = списанные юниты минус потраченные бонусы (бонус тратится первым)
   const readSpend = async () => {
-    const r = await api(`/rest/v1/profiles?select=generations_used,bonus_generations,micro_actions_count&id=eq.${qa.id}`)
+    const cols = micro0 === undefined ? 'generations_used,bonus_generations' : 'generations_used,bonus_generations,micro_actions_count'
+    const r = await api(`/rest/v1/profiles?select=${cols}&id=eq.${qa.id}`)
     const p = Array.isArray(r.body) ? r.body[0] : {}
     return { spend: (p.generations_used - used0) + (bonus0 - p.bonus_generations), micro: p.micro_actions_count }
   }

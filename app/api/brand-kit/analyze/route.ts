@@ -3,6 +3,7 @@ import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
+import { gateMicroAction } from '@/lib/ai/usage'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { assertPublicUrl } from '@/lib/security/ssrf'
@@ -29,6 +30,12 @@ export async function POST(request: Request) {
 
     const denied = await requirePaidAccess(user.id)
     if (denied) return denied
+
+    // Мелкое AI-действие (прайс-лист 25.08): 10 шт. = 1 юнит.
+    const micro = await gateMicroAction(user.id, 'brand-kit')
+    if (micro.blocked) {
+      return NextResponse.json({ error: 'limit_reached', code: 'limit_reached' }, { status: 402 })
+    }
 
     const { projectId, sampleUrls, target } = (await request.json()) as { projectId?: string; sampleUrls?: string[]; target?: string }
     if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
