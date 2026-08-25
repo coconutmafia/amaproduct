@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { anthropic, MODEL } from '@/lib/ai/client'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
 import { assertPublicUrl } from '@/lib/security/ssrf'
@@ -101,11 +101,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Страница не содержит текстового контента' }, { status: 422 })
     }
 
-    // Analyze with Claude
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
+    // Analyze with Claude. Общий MODEL, не хардкод (25.08, тот же класс, что
+    // autofill): описание продукта — часть онбординга, семя генераций.
     const aiResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
+      model: MODEL,
       max_tokens: 800,
       messages: [{
         role: 'user',
@@ -128,7 +127,9 @@ ${pageText.slice(0, 5000)}
       }],
     })
 
-    const rawText = aiResponse.content[0].type === 'text' ? aiResponse.content[0].text : ''
+    // find, не content[0]: у opus-5 первым блоком идёт thinking
+    const textBlock = aiResponse.content.find(b => b.type === 'text')
+    const rawText = textBlock && textBlock.type === 'text' ? textBlock.text : ''
     const jsonMatch = rawText.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
       return NextResponse.json({ error: 'Не удалось проанализировать страницу' }, { status: 500 })

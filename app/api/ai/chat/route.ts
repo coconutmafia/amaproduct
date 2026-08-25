@@ -77,8 +77,20 @@ function streamingChatResponse(
       let acc = ''
       try {
         for (let round = 0; round < 4; round++) {
-          const convo = round === 0 ? cachedMessages : [...cachedMessages, { role: 'assistant' as const, content: acc }]
-          const stream = anthropic.messages.stream({ model: MODEL, max_tokens: 8000, system: buildCachedSystem(system), messages: convo })
+          // Продолжение через ЗАВЕРШАЮЩИЙ user-ход, а не хвостовой assistant:
+          // замерено 25.08 — модели 4.8/5 отвечают 400 «does not support
+          // assistant message prefill» на диалог, кончающийся assistant'ом
+          // (то есть раунды 2+ были МОЛЧА сломаны: длинный ответ обрезался с
+          // пометкой «прервался»). Шов проверен живьём: обе модели продолжают
+          // с той же буквы без повторов. Потолок 16000 (было 8000): у opus-5
+          // размышление тратит часть бюджета, «5 рилзов» должны влезать в
+          // один раунд.
+          const convo = round === 0 ? cachedMessages : [
+            ...cachedMessages,
+            { role: 'assistant' as const, content: acc },
+            { role: 'user' as const, content: 'Продолжи свой ответ ТОЧНО с места обрыва: начни с той самой буквы, на которой оборвался текст, без повторов уже написанного, без вступлений и пояснений.' },
+          ]
+          const stream = anthropic.messages.stream({ model: MODEL, max_tokens: 16000, system: buildCachedSystem(system), messages: convo })
           for await (const chunk of stream) {
             if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
               acc += chunk.delta.text

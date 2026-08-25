@@ -2,7 +2,7 @@
 // профиля Claude. Вынесено из app/api/projects/autofill 24.08, чтобы фоновый
 // джоб (lib/jobs/runAutofillJob.ts) использовал РОВНО ту же логику, что и
 // sync-роут (паттерн lib/ai/warmupPlan.ts). Поведение и тексты — байт-в-байт.
-import Anthropic from '@anthropic-ai/sdk'
+import { anthropic, MODEL } from '@/lib/ai/client'
 import { captureException } from '@/lib/sentry'
 
 function decodeHtml(s: string): string {
@@ -342,11 +342,12 @@ export async function runAutofill({ instagramRaw, telegramRaw }: AutofillInput):
       posts.length > 0 ? `Примеры постов:\n\n${samplePosts}` : '',
     ].filter(Boolean).join('\n\n')
 
-    // Analyze with Claude
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
+    // Analyze with Claude. Общий MODEL, а не хардкод (25.08): поля профиля —
+    // первое AI-впечатление онбординга и семя всех генераций проекта; хардкод
+    // старой модели игнорировал общую настройку и однажды сломался бы при её
+    // отключении провайдером.
     const aiResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
+      model: MODEL,
       max_tokens: 1024,
       messages: [{
         role: 'user',
@@ -368,7 +369,10 @@ ${content}
       }],
     })
 
-    const rawText = aiResponse.content[0].type === 'text' ? aiResponse.content[0].text : ''
+    // find, не content[0]: у opus-5 первым блоком идёт thinking — content[0]
+    // молча давал бы пустоту (класс content-first-block, страж в тестах)
+    const textBlock = aiResponse.content.find(b => b.type === 'text')
+    const rawText = textBlock && textBlock.type === 'text' ? textBlock.text : ''
     const jsonMatch = rawText.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
       return { ok: false, status: 500, error: 'Не удалось проанализировать профиль' }

@@ -11,8 +11,12 @@ export const anthropic = new Anthropic({
 // Set via env so we can move to a new frontier model the day it ships WITHOUT a
 // code change — flip ANTHROPIC_CONTENT_MODEL and redeploy (do a quick quality
 // pass first: voice + forced-tool JSON can shift between models).
-export const MODEL = process.env.ANTHROPIC_CONTENT_MODEL || 'claude-opus-4-8'
-export const MODEL_OPUS = 'claude-opus-4-8'
+// 25.08.2026: opus-4-8 → opus-5 (решение Матвея). Цена та же ($5/$25 за 1М),
+// стилевой A/B перед переходом: 0 нарушений анти-AI-правил из 12 генераций у
+// opus-5 против 1 у 4.8, JSON-валидность 100% у обеих; из-за встроенного
+// размышления ответ ~1.8× дороже по out-токенам и ~1.6× медленнее — принято
+// осознанно (качество = продукт). Замер: scratchpad style-eval, 25.08.
+export const MODEL = process.env.ANTHROPIC_CONTENT_MODEL || 'claude-opus-5'
 // Balanced model — available for drafts / high-volume secondary tasks if we ever
 // need to trade a bit of quality for margin on a specific path.
 export const MODEL_SONNET = 'claude-sonnet-4-6'

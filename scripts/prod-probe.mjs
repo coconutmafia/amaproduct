@@ -960,7 +960,7 @@ ${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`
     method: 'POST',
     headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'claude-opus-4-8',
+      model: 'claude-opus-5',
       max_tokens: 8000,
       tools: [tool],
       tool_choice: { type: 'tool', name: 'question_groups' },

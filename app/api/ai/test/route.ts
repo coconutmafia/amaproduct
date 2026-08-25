@@ -17,14 +17,16 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: 'ANTHROPIC_API_KEY не задан в переменных окружения', keyPrefix })
     }
 
-    // Minimal API call — 1 token
+    // Minimal API call. 200 токенов, не 10: у opus-5 размышление включено —
+    // крошечный потолок съедался им целиком и text выходил пустым.
     const response = await anthropic.messages.create({
       model: MODEL,
-      max_tokens: 10,
+      max_tokens: 200,
       messages: [{ role: 'user', content: 'Say: ok' }],
     })
 
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : ''
+    const tb = response.content.find(b => b.type === 'text')
+    const text = tb && tb.type === 'text' ? tb.text : ''
     return NextResponse.json({ ok: true, model: MODEL, response: text, keyPrefix })
   } catch (error) {
     const raw = error instanceof Error ? error.message : String(error)

@@ -769,7 +769,9 @@ export async function POST(request: Request) {
       system:     TABLE2_SYSTEM,
       messages:   [{ role: 'user', content: buildMeaningsFromMaterialsPrompt(batch) }],
     })
-    const raw = resp.content[0].type === 'text' ? resp.content[0].text : ''
+    // find, не content[0]: у opus-5 первым блоком идёт thinking
+    const t2b = resp.content.find(b => b.type === 'text')
+    const raw = t2b && t2b.type === 'text' ? t2b.text : ''
     return NextResponse.json({ categories: parseMap(raw), totalBatches })
   }
 
@@ -788,7 +790,8 @@ export async function POST(request: Request) {
         system:     TABLE2_SYSTEM,
         messages:   [{ role: 'user', content: buildMergeMeaningsPrompt(partial) }],
       })
-      const mergedRaw = mergeResp.content[0].type === 'text' ? mergeResp.content[0].text : ''
+      const mtb = mergeResp.content.find(b => b.type === 'text')
+      const mergedRaw = mtb && mtb.type === 'text' ? mtb.text : ''
       const merged    = parseMap(mergedRaw)
       if (merged.length > 0) data = { categories: merged }
     }
