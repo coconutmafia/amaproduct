@@ -14,44 +14,11 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { BILLING_ENFORCED } from '@/lib/generations'
 import { UNIT_COSTS } from '@/lib/generations-config'
 
-export type AiProvider = 'anthropic' | 'openai_whisper' | 'openai_image' | 'apify'
-
-export interface AiUsageRow {
-  userId?: string | null
-  route: string
-  provider: AiProvider
-  model?: string | null
-  inputTokens?: number | null
-  outputTokens?: number | null
-  meta?: Record<string, unknown>
-}
-
-let usageWarned = false
-
-// Не await'ится вызывающими — сознательно (лог не должен добавлять латентность
-// и тем более ронять запрос). void logAiUsage({...}) в местах вызова.
-export async function logAiUsage(row: AiUsageRow): Promise<void> {
-  try {
-    const { error } = await createAdminClient().from('ai_usage').insert({
-      user_id: row.userId ?? null,
-      route: row.route.slice(0, 120),
-      provider: row.provider,
-      model: row.model ?? null,
-      input_tokens: row.inputTokens ?? null,
-      output_tokens: row.outputTokens ?? null,
-      meta: row.meta ?? null,
-    })
-    if (error && !usageWarned) {
-      usageWarned = true // не спамим: до миграции 039 каждый вызов падал бы
-      console.warn('[ai_usage] insert failed (fail-open):', error.message)
-    }
-  } catch (e) {
-    if (!usageWarned) {
-      usageWarned = true
-      console.warn('[ai_usage] failed (fail-open):', e instanceof Error ? e.message : e)
-    }
-  }
-}
+// Журнал расходов живёт в отдельном модуле без лишних зависимостей (его
+// статически импортирует обёртка Anthropic) — здесь только ре-экспорт, чтобы
+// прежние импорты из '@/lib/ai/usage' продолжали работать.
+export { logAiUsage } from '@/lib/ai/usageLog'
+export type { AiProvider, AiUsageRow } from '@/lib/ai/usageLog'
 
 export interface MicroGateResult {
   blocked: boolean

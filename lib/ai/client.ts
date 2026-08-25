@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { logAiUsage } from '@/lib/ai/usageLog'
 
 const raw = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -24,15 +25,14 @@ function callerRoute(): string {
 
 function logTokens(route: string, model: string, usage?: { input_tokens?: number; output_tokens?: number } | null) {
   if (!usage) return
-  // Динамический импорт рвёт цикл client ⇆ usage (usage → admin → env и т.д.)
-  // и гарантированно не тащит серверные модули в клиентские бандлы.
-  import('@/lib/ai/usage')
-    .then(({ logAiUsage }) => logAiUsage({
-      route, provider: 'anthropic', model,
-      inputTokens: usage.input_tokens ?? null,
-      outputTokens: usage.output_tokens ?? null,
-    }))
-    .catch(() => { /* учёт не должен ломать вызов */ })
+  // Импорт СТАТИЧЕСКИЙ и в отдельный модуль без лишних зависимостей: первая
+  // версия звала usage.ts динамическим import() и глушила ошибку в .catch —
+  // в проде это дало ноль строк от Claude при живых строках Whisper.
+  void logAiUsage({
+    route, provider: 'anthropic', model,
+    inputTokens: usage.input_tokens ?? null,
+    outputTokens: usage.output_tokens ?? null,
+  })
 }
 
 // Тонкая обёртка: create() и stream() ведут себя ровно как у SDK, плюс

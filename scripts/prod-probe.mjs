@@ -2442,15 +2442,36 @@ async function meterSmoke() {
       const ok3 = delta === 1 && afterMicro.micro === beforeMicro.micro + COSTS.micro_batch
       log(`${ok3 ? '✅' : '❌'} 5. ${COSTS.micro_batch} микро-действий = ${delta} юнит (счётчик ${beforeMicro.micro}→${afterMicro.micro})`)
 
-      // Проводка: боевой микро-роут обязан двигать счётчик
-      const wired = await fetch(`${APP}/api/ai/suggest-angles`, {
+      // 6а) ОТБИТЫЙ запрос считаться НЕ должен: работы не было, денег не
+      // потратили. Гейт стоит ниже валидации именно ради этого.
+      const bad = await fetch(`${APP}/api/ai/suggest-angles`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
-        body: JSON.stringify({ topic: 'утренние привычки' }),
+        body: JSON.stringify({ topic: 'утренние привычки' }), // без projectId → 400
       })
-      await wired.text().catch(() => '')
-      const afterWire = await readSpend()
-      const ok4 = afterWire.micro > afterMicro.micro
-      log(`${ok4 ? '✅' : '❌'} 6. живой микро-роут считается: ${afterMicro.micro}→${afterWire.micro} (ответ ${wired.status})`)
+      await bad.text().catch(() => '')
+      const afterBad = await readSpend()
+      const ok4 = bad.status === 400 && afterBad.micro === afterMicro.micro
+      log(`${ok4 ? '✅' : '❌'} 6а. отбитый запрос (${bad.status}) НЕ считается: счётчик ${afterMicro.micro}→${afterBad.micro}`)
+
+      // 6б) ВАЛИДНЫЙ запрос считаться обязан — иначе проводки нет вовсе.
+      const good = await fetch(`${APP}/api/ai/suggest-angles`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+        body: JSON.stringify({ projectId, type: 'post', brief: 'утренние привычки' }),
+      })
+      await good.text().catch(() => '')
+      const afterGood = await readSpend()
+      const ok5 = afterGood.micro === afterBad.micro + 1
+      log(`${ok5 ? '✅' : '❌'} 6б. валидный запрос (${good.status}) считается: счётчик ${afterBad.micro}→${afterGood.micro}`)
+
+      // 7) УЧЁТ ТОКЕНОВ: валидный запрос выше звал Claude — значит в журнале
+      // ai_usage обязана появиться строка provider=anthropic. Без этой проверки
+      // обёртка молча не логировала (первая версия глушила падение импорта
+      // в .catch): строки Whisper шли, строк Claude не было вообще.
+      const fresh = new Date(Date.now() - 5 * 60_000).toISOString()
+      const usage = await api(`/rest/v1/ai_usage?select=route,model,input_tokens,output_tokens,created_at&provider=eq.anthropic&created_at=gte.${fresh}&order=created_at.desc&limit=3`)
+      const rows = Array.isArray(usage.body) ? usage.body : []
+      const ok6 = rows.length > 0 && (rows[0].input_tokens ?? 0) > 0
+      log(`${ok6 ? '✅' : '❌'} 7. токены Claude в журнале ai_usage: ${rows.length ? `${rows[0].route} ${rows[0].model} in ${rows[0].input_tokens}/out ${rows[0].output_tokens}` : 'СТРОК НЕТ — обёртка не логирует'}`)
     } else {
       log('・ 5-6. микро-часть пропущена (нет миграции 039)')
     }
