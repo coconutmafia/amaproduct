@@ -2,6 +2,7 @@
 // used by the background job runner (lib/jobs/runViralReelJob.ts). Extracted
 // from app/api/viral-reels/route.ts when its POST handler moved to the jobs
 // pattern (roadmap #8 style).
+import { logAiUsage } from '@/lib/ai/usage'
 
 // Apify actor that accepts a direct reel/post URL
 export const APIFY_ACTOR = 'apify~instagram-scraper'
@@ -23,6 +24,7 @@ export async function scrapeReel(url: string, token: string): Promise<ScrapedRee
       signal: AbortSignal.timeout(80000),
     })
     if (!res.ok) return { ...empty, error: `Apify ${res.status}` }
+    void logAiUsage({ route: 'viral-reels/scrape', provider: 'apify', model: APIFY_ACTOR })
     const data = await res.json() as unknown
     if (!Array.isArray(data) || data.length === 0) return { ...empty, error: 'Рилз не найден или приватный' }
     const r = data[0] as Record<string, unknown>
@@ -66,6 +68,7 @@ export async function transcribeVideo(videoUrl: string, apiKey: string, language
     const text = await openai.audio.transcriptions.create({
       file: audio, model: 'whisper-1', language, response_format: 'text',
     })
+    void logAiUsage({ route: 'viral-reels/transcribe', provider: 'openai_whisper', model: 'whisper-1' })
     return (text as unknown as string).trim()
   } catch { return '' }
 }

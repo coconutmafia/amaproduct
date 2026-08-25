@@ -1,10 +1,13 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { captureException } from '@/lib/sentry'
 import { runBlogAudit } from '@/lib/blogAudit/runBlogAudit'
+import { refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
 
 interface JobRow {
   id: string
   status: string
+  user_id?: string | null
   payload: { projectId: string; materialId: string }
 }
 
@@ -50,6 +53,8 @@ export async function processBlogAuditJob(jobId: string): Promise<void> {
     const msg = err instanceof Error ? err.message : 'Ошибка диагностики'
     console.error('[runBlogAuditJob] error:', msg)
     await admin.from('jobs').update({ status: 'error', error: msg }).eq('id', jobId)
+    // Аудит оплачен юнитами на POST — провал возвращает их полностью.
+    if (row.user_id) await refundGenerations(row.user_id, UNIT_COSTS.blog_audit).catch(() => {})
     await captureException(err, { where: 'runBlogAuditJob', jobId, projectId })
   }
 }

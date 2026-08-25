@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { captureException } from '@/lib/sentry'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
+import { gateMicroAction } from '@/lib/ai/usage'
 import { anthropic, MODEL, buildCachedSystem, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt } from '@/lib/ai/prompts/system'
@@ -61,6 +62,13 @@ export async function POST(request: Request) {
 
   const denied = await requirePaidAccess(user.id)
   if (denied) return denied
+
+  // Мелкое AI-действие (прайс-лист 25.08): 10 шт. = 1 юнит. Гейт после
+  // requirePaidAccess — not_entitled уже отсечён, здесь только quota.
+  const micro = await gateMicroAction(user.id, 'edit')
+  if (micro.blocked) {
+    return NextResponse.json({ error: 'limit_reached', code: 'limit_reached' }, { status: 402 })
+  }
 
   const body = await request.json()
   const { projectId, contextType, contextId, messages = [], instruction, draftPlanData, weekContext } = body

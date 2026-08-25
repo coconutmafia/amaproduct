@@ -5,6 +5,8 @@ import { sanitizeTranscribeError } from '@/lib/jobs/transcribeErrors'
 import { captureException } from '@/lib/sentry'
 import { embedMaterialChunks } from '@/lib/ai/embed'
 import { fmtDateRu } from '@/lib/dates'
+import { refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
 
 const CHUNK_SEC = 600     // 10-min windows — matches the client's prior chunking
 const MAX_CHUNKS = 48     // safety cap ≈ 8h, same as before
@@ -17,7 +19,7 @@ interface JobRow {
   user_id: string
   project_id: string | null
   status: string
-  payload: { storagePath: string; ext: string; durationSec?: number | null; saveTranscriptMaterial?: boolean }
+  payload: { storagePath: string; ext: string; durationSec?: number | null; saveTranscriptMaterial?: boolean; unitsRefunded?: boolean }
   progress: { doneChunks?: number; totalChunks?: number | null }
   result: { text?: string; materialId?: string | null } | null
 }
@@ -120,15 +122,21 @@ export async function processTranscribeJob(jobId: string): Promise<void> {
 
       if (!sanitized.retryable) {
         await admin.storage.from('audio-temp').remove([storagePath]).catch(() => {})
+        // Непоправимая ошибка (битый файл и т.п.) — расшифровки не будет,
+        // вернуть списанные на POST юниты. Маркер в payload защищает от второго
+        // возврата (чистка 48ч возвращает только брошенные ретраебельные).
+        await refundGenerations(row.user_id, UNIT_COSTS.transcribe_castdev).catch(() => {})
       }
 
       const parts: string[] = [sanitized.userMessage]
       if (partialMaterialId) parts.push('Расшифрованная часть уже сохранена в материалы проекта — она не потеряется.')
       if (sanitized.retryable) parts.push('Нажми «Повторить» — продолжу с места обрыва, заново загружать файл не нужно.')
+      if (!sanitized.retryable) parts.push('Единицы контента за эту расшифровку возвращены.')
 
       await admin.from('jobs').update({
         status: 'error',
         error: parts.join(' '),
+        payload: { ...row.payload, ...(sanitized.retryable ? {} : { unitsRefunded: true }) },
         result: { text, materialId: partialMaterialId, retryable: sanitized.retryable },
       }).eq('id', jobId)
       await captureException(new Error(res.error), { where: 'runTranscribeJob', jobId, storagePath, doneChunks: ci })

@@ -5,7 +5,8 @@ import { NextResponse } from 'next/server'
 import { after } from 'next/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
-import { PLAN_CONFIG, type SubscriptionTier } from '@/lib/generations-config'
+import { PLAN_CONFIG, UNIT_COSTS, type SubscriptionTier } from '@/lib/generations-config'
+import { gateContentUnits, refundGenerations } from '@/lib/generations'
 import { parseUsername } from '@/lib/instagram/scrapeAccount'
 import { processInstagramScrapeJob } from '@/lib/jobs/runInstagramScrapeJob'
 import { requireProjectAccess } from '@/lib/projects/access'
@@ -97,6 +98,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `@${username} уже добавлен в этот проект.` }, { status: 400 })
   }
 
+  // Запуск скрейпа = UNIT_COSTS.instagram_scrape юнит (Apify = живые $;
+  // прайс-лист 25.08). Квота «до 5/10 конкурентов на проект» выше — отдельный
+  // потолок, юнит платится за сам запуск. Провал джоба возвращает юнит.
+  const gate = await gateContentUnits(user.id, UNIT_COSTS.instagram_scrape)
+  if (gate.blocked) {
+    const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
+    return NextResponse.json(
+      { error: code, code, monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit },
+      { status: 402 },
+    )
+  }
+
   const admin = createAdminClient()
   const { data: job, error } = await admin.from('jobs').insert({
     user_id:    user.id,
@@ -107,6 +120,7 @@ export async function POST(request: Request) {
   }).select('id').single()
   if (error || !job) {
     await captureException(new Error(error?.message || 'job insert failed'), { where: 'instagram scrape POST' })
+    await refundGenerations(user.id, UNIT_COSTS.instagram_scrape)
     return NextResponse.json({ error: 'Не удалось создать задачу — попробуй ещё раз' }, { status: 500 })
   }
 

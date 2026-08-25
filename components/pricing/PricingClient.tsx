@@ -9,7 +9,7 @@ import { Progress } from '@/components/ui/progress'
 import { toast } from 'sonner'
 import { CheckCircle2, Zap, Star, Building2, Gift, AlertTriangle } from 'lucide-react'
 import type { SubscriptionTier, PaidPlan } from '@/lib/generations-config'
-import { PLAN_CONFIG, PAID_PLANS } from '@/lib/generations-config'
+import { PLAN_CONFIG, PAID_PLANS, UNIT_COSTS } from '@/lib/generations-config'
 import { LocalDate } from '@/components/ui/LocalDate'
 
 const PLAN_ICONS: Record<PaidPlan, React.ReactNode> = {
@@ -120,6 +120,26 @@ export function PricingClient({
               <p className="text-xs text-muted-foreground">Сброс {resetDate}</p>
             </div>
           )}
+          {/* Прайс-лист единиц (25.08) — что сколько стоит. Числа ТОЛЬКО из
+              UNIT_COSTS (страж unit-costs), чтобы кнопки/тариф/гейты не разъехались. */}
+          <details className="mt-3">
+            <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
+              Что сколько стоит (в единицах контента)
+            </summary>
+            <ul className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+              <li>Пост / рилз / карусель / серия сторис — {UNIT_COSTS.content}</li>
+              <li>Видео-монтаж — {UNIT_COSTS.video_montage}</li>
+              <li>Расшифровка и разбор кастдева — {UNIT_COSTS.transcribe_castdev}</li>
+              <li>Аудит блога — {UNIT_COSTS.blog_audit}</li>
+              <li>Разбор вирального рилза — {UNIT_COSTS.viral_reels}</li>
+              <li>Анализ Instagram-аккаунта — {UNIT_COSTS.instagram_scrape}</li>
+              <li>Картинка в дизайнере (до 3 вариантов) — {UNIT_COSTS.image_generation}</li>
+              <li>Сообщения ассистенту, правки, подсказки — {UNIT_COSTS.micro_batch} шт. = 1</li>
+            </ul>
+            <p className="mt-1.5 text-[11px] text-muted-foreground/80">
+              План прогрева, недельные брифы, карта смыслов и настройка голоса — без списаний.
+            </p>
+          </details>
         </CardContent>
       </Card>
 

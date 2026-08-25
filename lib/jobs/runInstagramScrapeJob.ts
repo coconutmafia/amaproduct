@@ -3,10 +3,13 @@ import { anthropic, MODEL } from '@/lib/ai/client'
 import { captureException } from '@/lib/sentry'
 import { fmtDateTimeRu } from '@/lib/dates'
 import { scrapeInstagram, buildAccountText, extractImageUrls, IMAGE_URLS_HEADER, ANALYSIS_SYSTEM, buildAnalysisPrompt } from '@/lib/instagram/scrapeAccount'
+import { refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
 
 interface JobRow {
   id: string
   status: string
+  user_id?: string | null
   payload: { projectId: string; username: string; accountType: 'my_instagram' | 'competitors' }
 }
 
@@ -27,6 +30,7 @@ export async function processInstagramScrapeJob(jobId: string): Promise<void> {
   const apifyToken = process.env.APIFY_TOKEN
   if (!apifyToken) {
     await admin.from('jobs').update({ status: 'error', error: 'APIFY_TOKEN не настроен в окружении' }).eq('id', jobId)
+    if (row.user_id) await refundGenerations(row.user_id, UNIT_COSTS.instagram_scrape).catch(() => {})
     return
   }
 
@@ -87,6 +91,8 @@ export async function processInstagramScrapeJob(jobId: string): Promise<void> {
     const msg = err instanceof Error ? err.message : 'Ошибка скрейпинга'
     console.error('[runInstagramScrapeJob] error:', msg)
     await admin.from('jobs').update({ status: 'error', error: msg }).eq('id', jobId)
+    // Скрейп оплачен юнитом на POST — провал возвращает его.
+    if (row.user_id) await refundGenerations(row.user_id, UNIT_COSTS.instagram_scrape).catch(() => {})
     await captureException(err, { where: 'runInstagramScrapeJob', jobId, username })
   }
 }

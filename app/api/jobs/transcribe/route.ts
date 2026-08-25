@@ -8,6 +8,8 @@ import { requirePaidAccess } from '@/lib/billing/access'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { processTranscribeJob } from '@/lib/jobs/runTranscribeJob'
 import { isDefinitelyNotMedia, NOT_MEDIA_MESSAGE } from '@/lib/media/notMedia'
+import { gateContentUnits, refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
 
 // ffmpeg needs the Node runtime + the traced binary (see next.config).
 export const runtime = 'nodejs'
@@ -55,6 +57,20 @@ export async function POST(request: Request) {
   const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).single()
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
+  // Расшифровка + разбор кастдева = UNIT_COSTS.transcribe_castdev юнитов
+  // (прайс-лист 25.08: Whisper + opus-5 — главный немереный расход августа).
+  // Один джоб = один файл; «Повторить» продолжает ТОТ ЖЕ джоб и повторно не
+  // списывает. Возвраты: непоправимая ошибка — в раннере; брошенный на 48ч —
+  // в chain-watch (маркер unitsRefunded защищает от двойного возврата).
+  const gate = await gateContentUnits(user.id, UNIT_COSTS.transcribe_castdev)
+  if (gate.blocked) {
+    const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
+    return NextResponse.json(
+      { error: code, code, monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit },
+      { status: 402 },
+    )
+  }
+
   const admin = createAdminClient()
   const { data: job, error } = await admin.from('jobs').insert({
     user_id: user.id,
@@ -66,6 +82,8 @@ export async function POST(request: Request) {
   }).select('id').single()
   if (error || !job) {
     await captureException(new Error(error?.message || 'job insert failed'), { where: 'transcribe POST' })
+    // Юниты списаны, а джоб не создался — вернуть сразу.
+    await refundGenerations(user.id, UNIT_COSTS.transcribe_castdev)
     return NextResponse.json({ error: 'Не удалось создать задачу — попробуй ещё раз' }, { status: 500 })
   }
 

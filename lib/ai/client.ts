@@ -1,7 +1,79 @@
 import Anthropic from '@anthropic-ai/sdk'
 
-export const anthropic = new Anthropic({
+const raw = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
+})
+
+// ── Учёт токенов (ai_usage, 25.08) ───────────────────────────────────────────
+// ВСЕ вызовы Claude в проекте идут через этот экземпляр (страж model-upgrade),
+// поэтому токены логируются здесь один раз, а не в 29 местах. Роут вычисляется
+// из стека вызова (короткий путь файла) — без ручной протяжки контекста.
+// Fire-and-forget + fail-open: лог не добавляет латентности и не ломает вызов.
+// user_id на этом уровне неизвестен — по-юзерные факты дают строки метеринга
+// (jobs, gateContentUnit/gateMicroAction); джоин делает usage-report.
+function callerRoute(): string {
+  const stack = new Error().stack || ''
+  for (const line of stack.split('\n').slice(1)) {
+    const m = line.match(/(?:app|lib)[/\\][^)\s:]+/)
+    if (m && !m[0].includes('lib/ai/client') && !m[0].includes('lib\\ai\\client')) {
+      return m[0].replace(/\\/g, '/').replace(/\.(ts|js|mjs)$/, '').slice(0, 120)
+    }
+  }
+  return 'unknown'
+}
+
+function logTokens(route: string, model: string, usage?: { input_tokens?: number; output_tokens?: number } | null) {
+  if (!usage) return
+  // Динамический импорт рвёт цикл client ⇆ usage (usage → admin → env и т.д.)
+  // и гарантированно не тащит серверные модули в клиентские бандлы.
+  import('@/lib/ai/usage')
+    .then(({ logAiUsage }) => logAiUsage({
+      route, provider: 'anthropic', model,
+      inputTokens: usage.input_tokens ?? null,
+      outputTokens: usage.output_tokens ?? null,
+    }))
+    .catch(() => { /* учёт не должен ломать вызов */ })
+}
+
+// Тонкая обёртка: create() и stream() ведут себя ровно как у SDK, плюс
+// после завершения пишут usage. Остальные поля SDK доступны как раньше.
+export const anthropic = new Proxy(raw, {
+  get(target, prop, receiver) {
+    if (prop !== 'messages') return Reflect.get(target, prop, receiver)
+    const messages = target.messages
+    return new Proxy(messages, {
+      get(mTarget, mProp, mReceiver) {
+        // Внутри обёртки типы либеральные (create у SDK перегружен по stream);
+        // СНАРУЖИ типизация не меняется — Proxy сохраняет тип Anthropic.
+        if (mProp === 'create') {
+          return (body: { model: string; stream?: boolean }, options?: unknown) => {
+            const route = callerRoute()
+            const res = (mTarget.create as (b: unknown, o?: unknown) => Promise<unknown>)(body, options)
+            // stream:true у create() отдаёт Stream без итогового usage — такие
+            // вызовы в проекте не используются (стримим через .stream()), не логируем.
+            if (!body.stream) {
+              Promise.resolve(res)
+                .then((msg) => logTokens(route, String(body.model), (msg as { usage?: { input_tokens?: number; output_tokens?: number } }).usage))
+                .catch(() => { /* ошибка вызова — логировать нечего */ })
+            }
+            return res
+          }
+        }
+        if (mProp === 'stream') {
+          return (body: { model: string }, options?: unknown) => {
+            const route = callerRoute()
+            const stream = (mTarget.stream as (b: unknown, o?: unknown) => ReturnType<typeof messages.stream>)(body, options)
+            stream.finalMessage()
+              .then((msg: { usage?: { input_tokens?: number; output_tokens?: number } }) =>
+                logTokens(route, String(body.model), msg.usage))
+              .catch(() => { /* оборванный/упавший стрим — логировать нечего */ })
+            return stream
+          }
+        }
+        return Reflect.get(mTarget, mProp, mReceiver)
+      },
+    })
+  },
 })
 
 // Primary content model = the strongest available. Quality of the published

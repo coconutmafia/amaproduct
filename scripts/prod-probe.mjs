@@ -2321,9 +2321,247 @@ async function limitSmoke() {
   log(`\n── ВЕРДИКТ ── лимит блокирует генерацию: ${verdictBlocked ? '✅' : '❌'}; fair-use чат жив: ${verdictFree ? '✅' : '❌'}`)
 }
 
+// ── ПРОБНИК: списывается ровно столько, сколько обещано кнопкой (25.08) ──────
+// Прайс-лист UNIT_COSTS теперь берёт юниты за тяжёлые операции. Проверяем на
+// БОЕВОМ пути (POST /api/jobs/transcribe под сессией клиента), что:
+//   • списывается РОВНО цена типа (не 1 и не дважды);
+//   • «Повторить» НЕ списывает второй раз (джоб уже оплачен);
+//   • микро-метеринг считает 10 действий = 1 юнит (RPC 039) и роут его зовёт.
+// Всё за собой убирает: джоб, материал, проект, файл, счётчики.
+//   node scripts/prod-probe.mjs meter-smoke [--run]
+async function meterSmoke() {
+  const APP = 'https://amaproduct.com'
+  const COSTS = { transcribe_castdev: 3, micro_batch: 10 } // зеркало UNIT_COSTS (страж unit-costs)
+  log('\n=== Пробник: метеринг тяжёлых операций и микро-действий ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) QA-сессия; временный проект; тишина 1с через ffmpeg → audio-temp')
+    log(`  2) POST /api/jobs/transcribe → ждём списание РОВНО ${COSTS.transcribe_castdev}`)
+    log('  3) POST /api/jobs/transcribe/retry на тот же джоб → повторного списания НЕТ')
+    log(`  4) RPC consume_micro_action ×${COSTS.micro_batch} → ровно 1 юнит за пачку`)
+    log('  5) один живой вызов микро-роута → micro_actions_count вырос (проводка есть)')
+    log('  6) уборка: джоб, материал, проект, файл, счётчики на место')
+    return
+  }
+
+  const anon = (() => {
+    const m = readFileSync(join(ROOT, '.env.local'), 'utf8').match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY'); return }
+
+  const prof = await api(`/rest/v1/profiles?select=id,role,subscription_tier,generations_used,bonus_generations,micro_actions_count&email=eq.${QA_EMAIL}`)
+  const qa = Array.isArray(prof.body) ? prof.body[0] : null
+  if (!qa) { log('❌ QA-бот не найден'); return }
+  if (qa.role === 'admin') { log('❌ QA стал admin — метеринг его не считает'); return }
+  const used0 = qa.generations_used, bonus0 = qa.bonus_generations
+  const micro0 = qa.micro_actions_count
+  if (micro0 === undefined) log('⚠️ колонки micro_actions_count нет — миграция 039 не применена (микро-часть пропущу)')
+  log(`QA: тариф ${qa.subscription_tier}, юниты ${used0}, бонусы ${bonus0}, микро ${micro0 ?? '—'}`)
+
+  const gl = await api('/auth/v1/admin/generate_link', { method: 'POST', body: JSON.stringify({ type: 'magiclink', email: QA_EMAIL }) })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log(`❌ generate_link: ${gl.status}`); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST', headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA_EMAIL, token: otp }),
+  }).then(r => r.json())
+  if (!ver?.access_token) { log('❌ сессия не получена'); return }
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+  log('✅ 1. сессия QA как у клиента')
+
+  // Эффективный расход = списанные юниты минус потраченные бонусы (бонус тратится первым)
+  const readSpend = async () => {
+    const r = await api(`/rest/v1/profiles?select=generations_used,bonus_generations,micro_actions_count&id=eq.${qa.id}`)
+    const p = Array.isArray(r.body) ? r.body[0] : {}
+    return { spend: (p.generations_used - used0) + (bonus0 - p.bonus_generations), micro: p.micro_actions_count }
+  }
+
+  let projectId = null, jobId = null, storagePath = null, materialId = null
+  const { execFileSync } = await import('node:child_process')
+  const { tmpdir } = await import('node:os')
+  const { writeFileSync, readFileSync: rf, unlinkSync } = await import('node:fs')
+  const tmpFile = join(tmpdir(), `${PROBE_PREFIX}silence.mp3`)
+
+  try {
+    const proj = await api('/rest/v1/projects', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ name: `${PROBE_PREFIX}meter`, owner_id: qa.id }),
+    })
+    projectId = Array.isArray(proj.body) ? proj.body[0]?.id : null
+    if (!projectId) { log(`❌ проект не создался: ${proj.status} ${JSON.stringify(proj.body).slice(0, 150)}`); return }
+
+    // 1 секунда тишины — Whisper стоит доли цента, зато путь боевой целиком
+    execFileSync('ffmpeg', ['-y', '-f', 'lavfi', '-i', 'anullsrc=r=16000:cl=mono', '-t', '1', '-q:a', '9', tmpFile], { stdio: 'ignore' })
+    storagePath = `${qa.id}/${PROBE_PREFIX}${Date.now()}.mp3`
+    const up = await fetch(`${U}/storage/v1/object/audio-temp/${storagePath}`, {
+      method: 'POST', headers: { apikey: K, Authorization: `Bearer ${K}`, 'Content-Type': 'audio/mpeg' },
+      body: rf(tmpFile),
+    })
+    if (!up.ok) { log(`❌ файл не залился: ${up.status} ${(await up.text()).slice(0, 150)}`); return }
+    log('✅ 2. временный проект и файл (1с тишины) готовы')
+
+    const res = await fetch(`${APP}/api/jobs/transcribe`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ projectId, storagePath, ext: 'mp3', durationSec: 1, saveTranscriptMaterial: true }),
+    })
+    const body = await res.json().catch(() => ({}))
+    jobId = body.jobId ?? null
+    if (!res.ok || !jobId) { log(`❌ 3. транскрибация отбита: ${res.status} ${JSON.stringify(body).slice(0, 200)}`); return }
+
+    await new Promise(r => setTimeout(r, 3000)) // дать списанию долететь
+    const afterPost = await readSpend()
+    const ok1 = afterPost.spend === COSTS.transcribe_castdev
+    log(`${ok1 ? '✅' : '❌'} 3. списано за расшифровку: ${afterPost.spend} (ждали ровно ${COSTS.transcribe_castdev})`)
+
+    // Повтор оплаченного джоба не должен списывать снова
+    const retry = await fetch(`${APP}/api/jobs/transcribe/retry`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ jobId }),
+    })
+    await retry.text().catch(() => '')
+    await new Promise(r => setTimeout(r, 2000))
+    const afterRetry = await readSpend()
+    const ok2 = afterRetry.spend === afterPost.spend
+    log(`${ok2 ? '✅' : '❌'} 4. «Повторить» повторно НЕ списывает: расход ${afterRetry.spend} (был ${afterPost.spend})`)
+
+    // Микро-метеринг: математика пачки + факт проводки в роуте
+    if (micro0 !== undefined) {
+      const beforeMicro = await readSpend()
+      for (let i = 0; i < COSTS.micro_batch; i++) {
+        await api('/rest/v1/rpc/consume_micro_action', { method: 'POST', body: JSON.stringify({ p_user_id: qa.id, p_batch: COSTS.micro_batch }) })
+      }
+      const afterMicro = await readSpend()
+      const delta = afterMicro.spend - beforeMicro.spend
+      const ok3 = delta === 1 && afterMicro.micro === beforeMicro.micro + COSTS.micro_batch
+      log(`${ok3 ? '✅' : '❌'} 5. ${COSTS.micro_batch} микро-действий = ${delta} юнит (счётчик ${beforeMicro.micro}→${afterMicro.micro})`)
+
+      // Проводка: боевой микро-роут обязан двигать счётчик
+      const wired = await fetch(`${APP}/api/ai/suggest-angles`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+        body: JSON.stringify({ topic: 'утренние привычки' }),
+      })
+      await wired.text().catch(() => '')
+      const afterWire = await readSpend()
+      const ok4 = afterWire.micro > afterMicro.micro
+      log(`${ok4 ? '✅' : '❌'} 6. живой микро-роут считается: ${afterMicro.micro}→${afterWire.micro} (ответ ${wired.status})`)
+    } else {
+      log('・ 5-6. микро-часть пропущена (нет миграции 039)')
+    }
+  } finally {
+    if (jobId) {
+      const j = await api(`/rest/v1/jobs?select=result&id=eq.${jobId}`)
+      materialId = Array.isArray(j.body) ? j.body[0]?.result?.materialId : null
+      await api(`/rest/v1/jobs?id=eq.${jobId}`, { method: 'DELETE' }).catch(() => {})
+    }
+    if (materialId) await api(`/rest/v1/project_materials?id=eq.${materialId}`, { method: 'DELETE' }).catch(() => {})
+    if (projectId) await api(`/rest/v1/projects?id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    if (storagePath) {
+      await fetch(`${U}/storage/v1/object/audio-temp/${storagePath}`, { method: 'DELETE', headers: { apikey: K, Authorization: `Bearer ${K}` } }).catch(() => {})
+    }
+    try { unlinkSync(tmpFile) } catch { /* уже нет */ }
+    const back = await api(`/rest/v1/profiles?id=eq.${qa.id}`, {
+      method: 'PATCH', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ generations_used: used0, bonus_generations: bonus0, ...(micro0 !== undefined ? { micro_actions_count: micro0 } : {}) }),
+    })
+    const row = Array.isArray(back.body) ? back.body[0] : null
+    log(row?.generations_used === used0
+      ? `🧹 уборка: счётчики на месте (${used0} юн., ${bonus0} бон.), временные объекты удалены`
+      : `❌ УБОРКА: почини руками generations_used=${used0} у ${QA_EMAIL}`)
+  }
+}
+
+// ── ОТЧЁТ: куда уходят деньги (ai_usage + метеринг) ─────────────────────────
+// Читает журнал ai_usage (миграция 039) и считает РЕАЛЬНУЮ себестоимость по
+// фичам и юзерам, чтобы цены прайс-листа (UNIT_COSTS) держались на фактах, а
+// не на оценках. Read-only.
+//   node scripts/prod-probe.mjs usage-report [--days 14]
+//
+// Цены провайдеров ($ за 1М токенов / за единицу) — ставка на 25.08.2026.
+// Меняются у провайдера — поправить здесь.
+const PRICES = {
+  'claude-opus-5':     { in: 5,    out: 25 },
+  'claude-opus-4-8':   { in: 5,    out: 25 },
+  'claude-sonnet-4-6': { in: 3,    out: 15 },
+  'claude-sonnet-4-5': { in: 3,    out: 15 },
+  'claude-haiku-4-5':  { in: 0.8,  out: 4 },
+}
+const FLAT = { 'whisper-1': 0.06, 'gpt-image-1': 0.19, 'apify~instagram-scraper': 0.005, 'apify~instagram-profile-scraper': 0.005 }
+
+async function usageReport() {
+  const days = Number(arg('days') || 14)
+  const since = new Date(Date.now() - days * 864e5).toISOString()
+  log(`\n=== Отчёт: куда уходят деньги (последние ${days} дн.) ===`)
+
+  const rows = await api(`/rest/v1/ai_usage?select=created_at,user_id,route,provider,model,input_tokens,output_tokens&created_at=gte.${since}&limit=100000`)
+  if (!Array.isArray(rows.body)) {
+    log(`❌ ai_usage не читается (${rows.status}) — применена ли миграция 039?`)
+    log(`   ${JSON.stringify(rows.body).slice(0, 200)}`)
+    return
+  }
+  if (rows.body.length === 0) {
+    log('Журнал пуст: миграция 039 применена только что / деплой ещё не собрал данные.')
+    return
+  }
+
+  const cost = (r) => {
+    const p = PRICES[r.model]
+    if (p) return ((r.input_tokens ?? 0) * p.in + (r.output_tokens ?? 0) * p.out) / 1e6
+    return FLAT[r.model] ?? 0
+  }
+
+  const byRoute = {}, byUser = {}, byProvider = {}
+  let total = 0
+  for (const r of rows.body) {
+    const c = cost(r)
+    total += c
+    byRoute[r.route] = (byRoute[r.route] ?? 0) + c
+    byProvider[r.provider] = (byProvider[r.provider] ?? 0) + c
+    if (r.user_id) byUser[r.user_id] = (byUser[r.user_id] ?? 0) + c
+  }
+
+  const usd = (n) => `$${n.toFixed(2)}`
+  log(`\nВСЕГО: ${usd(total)} за ${days} дн. (${rows.body.length} вызовов) ≈ ${usd(total / days * 30)} в месяц`)
+
+  log('\nПО ПРОВАЙДЕРАМ:')
+  for (const [k, v] of Object.entries(byProvider).sort((a, b) => b[1] - a[1])) {
+    log(`  ${k.padEnd(16)} ${usd(v).padStart(9)}  ${Math.round(v / total * 100)}%`)
+  }
+
+  log('\nПО ФИЧАМ (топ-15):')
+  for (const [k, v] of Object.entries(byRoute).sort((a, b) => b[1] - a[1]).slice(0, 15)) {
+    log(`  ${k.padEnd(42)} ${usd(v).padStart(9)}`)
+  }
+
+  // Себестоимость на клиента против его выручки — это и есть «плюсовая математика».
+  const ids = Object.keys(byUser)
+  if (ids.length) {
+    const prof = await api(`/rest/v1/profiles?select=id,email,subscription_tier,generations_used&id=in.(${ids.map(i => `"${i}"`).join(',')})`)
+    const pmap = new Map((prof.body || []).map(p => [p.id, p]))
+    // Выручка = цена тарифа за месяц (модель «2 месяца бесплатно» — считаем
+    // ПОТЕНЦИАЛЬНУЮ выручку, деньги пойдут после демо-периода).
+    const REVENUE = { trial: 0, solo: 49, pro: 149, producer: 299 }
+    log('\nПО КЛИЕНТАМ (топ-15 по расходу; ставка месяца = расход×30/дней):')
+    log('  ' + 'email'.padEnd(34) + 'тариф'.padEnd(10) + 'расход'.padStart(9) + '/мес'.padStart(10) + '  выручка   маржа')
+    for (const [id, v] of Object.entries(byUser).sort((a, b) => b[1] - a[1]).slice(0, 15)) {
+      const p = pmap.get(id)
+      const tier = p?.subscription_tier ?? '?'
+      const monthly = v / days * 30
+      const rev = REVENUE[tier] ?? 0
+      const margin = rev - monthly
+      const flag = rev > 0 && margin < 0 ? '  🔴 В МИНУС' : ''
+      log(`  ${(p?.email ?? id).padEnd(34)}${String(tier).padEnd(10)}${usd(v).padStart(9)}${usd(monthly).padStart(10)}  ${usd(rev).padStart(7)} ${usd(margin).padStart(8)}${flag}`)
+    }
+  }
+
+  log('\n💡 Если у кого-то маржа в минусе — поднять цену операции в UNIT_COSTS')
+  log('   (lib/generations-config.ts) или лимит тарифа. Числа отсюда — факт, не оценка.')
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'meter-smoke': meterSmoke }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))

@@ -21,6 +21,7 @@ import { downscaleImage } from '@/lib/downscaleImage'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { ArrowSvg, Badge, SHAPE_ASPECT, type FreeShape } from '@/lib/carousel/shapes'
 import { fontFamilyOf, FONT_HAS_ITALIC, type FontKey } from '@/lib/fonts'
+import { UNIT_HINTS } from '@/components/billing/UnitCostHint'
 
 let _idc = 0
 const newId = () => `b${++_idc}`
@@ -464,7 +465,7 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
               {aiBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
               {aiBusy ? 'Рисую… (до ~30 сек)' : 'Сгенерировать'}
             </button>
-            <span className="text-[11px] text-muted-foreground">без текста на картинке — текст добавишь сверху сам</span>
+            <span className="text-[11px] text-muted-foreground">без текста на картинке — текст добавишь сверху сам · {UNIT_HINTS.image}</span>
           </div>
           {aiVariants.length > 0 && (
             <div className="space-y-1.5">

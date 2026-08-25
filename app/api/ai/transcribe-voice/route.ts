@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
+import { gateMicroAction } from '@/lib/ai/usage'
 import { NextResponse } from 'next/server'
 
 export const dynamic     = 'force-dynamic'
@@ -23,6 +24,13 @@ export async function POST(request: Request) {
 
   const denied = await requirePaidAccess(user.id)
   if (denied) return denied
+
+  // Мелкое AI-действие (прайс-лист 25.08): 10 шт. = 1 юнит. Гейт после
+  // requirePaidAccess — not_entitled уже отсечён, здесь только quota.
+  const micro = await gateMicroAction(user.id, 'transcribe-voice')
+  if (micro.blocked) {
+    return NextResponse.json({ error: 'limit_reached', code: 'limit_reached' }, { status: 402 })
+  }
 
   let form: FormData
   try { form = await request.formData() } catch { return NextResponse.json({ error: 'Bad form data' }, { status: 400 }) }

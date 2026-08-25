@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { refundGeneration, refundGenerations } from '@/lib/generations'
-import { VIDEO_MONTAGE_UNITS } from '@/lib/generations-config'
+import { VIDEO_MONTAGE_UNITS, UNIT_COSTS } from '@/lib/generations-config'
 
 // Финальное закрытие ЗАСТРЯВШЕГО джоба (инвокация потерялась, рестарты не
 // помогли) — с учётом типа:
@@ -51,5 +51,18 @@ export async function settleStuckJob(admin: SupabaseClient, job: StuckJobRow): P
     // вернуть (инвокация умерла, продолжить диалоговый стрим нечем).
     await refundGeneration(job.user_id).catch(() => {})
   }
-  // transcribe: файл нарочно остаётся (окно «Повторить»); чистка — chain-watch 48ч.
+  // Метереные one-shot джобы прайс-листа 25.08: юниты списаны на POST, джоб
+  // застрял навсегда → вернуть цену типа целиком.
+  if (job.type === 'blog_audit' && job.user_id) {
+    await refundGenerations(job.user_id, UNIT_COSTS.blog_audit).catch(() => {})
+  }
+  if (job.type === 'viral_reel' && job.user_id) {
+    await refundGenerations(job.user_id, UNIT_COSTS.viral_reels).catch(() => {})
+  }
+  if (job.type === 'instagram_scrape' && job.user_id) {
+    await refundGenerations(job.user_id, UNIT_COSTS.instagram_scrape).catch(() => {})
+  }
+  // transcribe: файл нарочно остаётся (окно «Повторить»); юниты вернёт чистка
+  // 48ч в chain-watch (или раннер при непоправимой ошибке) — здесь НЕ возвращаем,
+  // иначе успешный «Повторить» после застревания дал бы расшифровку бесплатно.
 }

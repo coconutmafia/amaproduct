@@ -6,6 +6,7 @@ import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt } from '@/lib/ai/prompts/system'
 import { AI_TELLS_TO_AVOID, resolveContentLanguage } from '@/lib/ai/prompts/content-brain'
 import { gateContentUnit, refundGeneration } from '@/lib/generations'
+import { gateMicroAction } from '@/lib/ai/usage'
 import { requirePaidAccess } from '@/lib/billing/access'
 import type { Message } from '@/types'
 import { rateLimit } from '@/lib/rateLimit'
@@ -208,7 +209,17 @@ export async function POST(request: Request) {
     // spent (off pre-launch — see BILLING_ENFORCED). Refund handled per-branch if
     // the stream produces nothing.
     const meterGeneration = async (): Promise<Response | null> => {
-      if (!genFormat) return null
+      if (!genFormat) {
+        // Свободный чат = мелкое AI-действие (прайс-лист 25.08): 10 сообщений
+        // = 1 юнит через consume_micro_action. Блокирует только полностью
+        // исчерпанный месячный лимит — клиент увидит тот же диалог «Лимит
+        // исчерпан», что и на генерации.
+        const micro = await gateMicroAction(user.id, 'chat')
+        if (micro.blocked) {
+          return NextResponse.json({ error: 'limit_reached', code: 'limit_reached' }, { status: 402 })
+        }
+        return null
+      }
       const gate = await gateContentUnit(user.id)
       if (gate.blocked) {
         // Report WHY: an unpaid user must not be told «лимит исчерпан» (he has

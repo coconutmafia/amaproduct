@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import type { InterviewTable, Respondent } from '@/app/api/ai/research-analyze/route'
 import { downloadTextViaServer } from '@/lib/utils/saveFile'
+import { UNIT_HINTS } from '@/components/billing/UnitCostHint'
 
 // Максимальный размер аудиофайла (МБ). Должен совпадать с лимитом загрузки
 // Supabase (Free = 50 МБ жёстко; Pro — сколько выставишь в Project Settings →
@@ -922,6 +923,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                   <span className="text-amber-400">·</span>
                   <span>Большие файлы разбиваются автоматически</span>
                 </div>
+                <p className="text-[11px] text-muted-foreground">{UNIT_HINTS.transcribe}</p>
                 <button
                   type="button"
                   onClick={openPicker}

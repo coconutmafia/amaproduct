@@ -7,6 +7,8 @@ import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
 import { processViralReelJob } from '@/lib/jobs/runViralReelJob'
 import { requireProjectAccess } from '@/lib/projects/access'
+import { gateContentUnits, refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 300
@@ -86,6 +88,18 @@ export async function POST(request: Request) {
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
   }
 
+  // Разбор рилза = UNIT_COSTS.viral_reels юнитов (Apify + Whisper + Claude —
+  // прайс-лист 25.08). Админский scope=system не страдает: у админов юниты не
+  // считаются внутри gateContentUnits. Провал джоба возвращает юниты.
+  const gate = await gateContentUnits(user.id, UNIT_COSTS.viral_reels)
+  if (gate.blocked) {
+    const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
+    return NextResponse.json(
+      { error: code, code, monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit },
+      { status: 402 },
+    )
+  }
+
   const admin = createAdminClient()
   const { data: job, error } = await admin.from('jobs').insert({
     user_id:    user.id,
@@ -96,6 +110,7 @@ export async function POST(request: Request) {
   }).select('id').single()
   if (error || !job) {
     await captureException(new Error(error?.message || 'job insert failed'), { where: 'viral-reels POST' })
+    await refundGenerations(user.id, UNIT_COSTS.viral_reels)
     return NextResponse.json({ error: 'Не удалось создать задачу — попробуй ещё раз' }, { status: 500 })
   }
 

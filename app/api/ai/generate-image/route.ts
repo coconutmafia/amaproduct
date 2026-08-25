@@ -4,6 +4,9 @@ import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { rateLimit } from '@/lib/rateLimit'
+import { gateContentUnits, refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
+import { logAiUsage } from '@/lib/ai/usage'
 import { requirePaidAccess } from '@/lib/billing/access'
 import { requireProjectAccess } from '@/lib/projects/access'
 
@@ -64,6 +67,17 @@ export async function POST(request: Request) {
     const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
+    // Клик генерации = UNIT_COSTS.image_generation юнит (прайс-лист 25.08:
+    // gpt-image-1 — живые $ OpenAI за каждый вариант). Провал ниже возвращает.
+    const gate = await gateContentUnits(user.id, UNIT_COSTS.image_generation)
+    if (gate.blocked) {
+      const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
+      return NextResponse.json(
+        { error: code, code, monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit },
+        { status: 402 },
+      )
+    }
+
     const size = mode === 'background' ? '1024x1536' : '1024x1024'
     const aspect = mode === 'background' ? 1024 / 1536 : 1
 
@@ -82,9 +96,14 @@ export async function POST(request: Request) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
       b64s = (result.data ?? []).map((d: { b64_json?: string }) => d.b64_json).filter((x: string | undefined): x is string => !!x)
+      void logAiUsage({
+        userId: user.id, route: 'ai/generate-image', provider: 'openai_image',
+        model: 'gpt-image-1', meta: { count, mode, size },
+      })
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       console.error('[generate-image] openai', msg)
+      await refundGenerations(user.id, UNIT_COSTS.image_generation)
       // The most common real-world failure: the org hasn't unlocked gpt-image-1.
       if (/verif|access|must be verified|403|model/i.test(msg)) {
         return NextResponse.json({ error: 'Нет доступа к модели картинок (gpt-image-1). Нужно подтвердить организацию в OpenAI.' }, { status: 502 })
@@ -95,7 +114,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Не удалось сгенерировать картинку — попробуй ещё раз.' }, { status: 502 })
     }
 
-    if (b64s.length === 0) return NextResponse.json({ error: 'Пустой ответ генерации' }, { status: 502 })
+    if (b64s.length === 0) {
+      await refundGenerations(user.id, UNIT_COSTS.image_generation)
+      return NextResponse.json({ error: 'Пустой ответ генерации' }, { status: 502 })
+    }
 
     const admin = createAdminClient()
     const stamp = Date.now()

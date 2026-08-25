@@ -9,6 +9,7 @@ import { cleanMarkdown } from '@/lib/cleanText'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
+import { gateMicroAction } from '@/lib/ai/usage'
 
 export const maxDuration = 120
 
@@ -27,6 +28,13 @@ export async function POST(request: Request) {
 
     const denied = await requirePaidAccess(user.id)
     if (denied) return denied
+
+    // Мелкое AI-действие (прайс-лист 25.08): 10 шт. = 1 юнит. Гейт после
+    // requirePaidAccess — not_entitled уже отсечён, здесь только quota.
+    const micro = await gateMicroAction(user.id, 'regenerate-fragment')
+    if (micro.blocked) {
+      return NextResponse.json({ error: 'limit_reached', code: 'limit_reached' }, { status: 402 })
+    }
 
     const { projectId, fullText, fragment, instruction } = (await request.json()) as {
       projectId?: string

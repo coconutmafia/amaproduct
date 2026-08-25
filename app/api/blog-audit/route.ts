@@ -5,6 +5,8 @@ import { NextResponse, after } from 'next/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { processBlogAuditJob } from '@/lib/jobs/runBlogAuditJob'
+import { gateContentUnits, refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 300
@@ -47,6 +49,18 @@ export async function POST(request: Request) {
     )
   }
 
+  // Аудит блога = UNIT_COSTS.blog_audit юнитов (прайс-лист 25.08). Гейт заодно
+  // закрывает дыру: у роута не было requirePaidAccess вовсе — gateContentUnits
+  // проверяет entitlement внутри. Провал джоба возвращает юниты (раннер/страж).
+  const gate = await gateContentUnits(user.id, UNIT_COSTS.blog_audit)
+  if (gate.blocked) {
+    const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
+    return NextResponse.json(
+      { error: code, code, monthlyUsed: gate.monthlyUsed, monthlyLimit: gate.monthlyLimit },
+      { status: 402 },
+    )
+  }
+
   const admin = createAdminClient()
   const { data: job, error } = await admin.from('jobs').insert({
     user_id:    user.id,
@@ -57,6 +71,7 @@ export async function POST(request: Request) {
   }).select('id').single()
   if (error || !job) {
     await captureException(new Error(error?.message || 'job insert failed'), { where: 'blog-audit POST' })
+    await refundGenerations(user.id, UNIT_COSTS.blog_audit)
     return NextResponse.json({ error: 'Не удалось создать задачу — попробуй ещё раз' }, { status: 500 })
   }
 

@@ -3,6 +3,7 @@
 // Extracted from app/api/instagram/scrape/route.ts when that route moved to the
 // jobs pattern (roadmap #8 style — client no longer holds an SSE connection open).
 import { fmtDateRu } from '@/lib/dates'
+import { logAiUsage } from '@/lib/ai/usage'
 
 // Apify actor — official, paid-per-call ($0.003-0.005 per profile + 25 posts)
 export const APIFY_ACTOR = 'apify~instagram-profile-scraper'
@@ -92,6 +93,7 @@ export async function scrapeInstagram(username: string, token: string): Promise<
     const text = await res.text().catch(() => '')
     throw new Error(`Apify ${res.status}: ${text.slice(0, 200)}`)
   }
+  void logAiUsage({ route: 'instagram/scrape', provider: 'apify', model: APIFY_ACTOR })
   const data = await res.json() as unknown
   if (!Array.isArray(data) || data.length === 0) {
     throw new Error('Apify вернул пустой результат — возможно профиль приватный или такого пользователя нет.')

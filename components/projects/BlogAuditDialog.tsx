@@ -11,6 +11,7 @@ import type { AuditResult, AuditBlockResult } from '@/lib/blogAudit/runBlogAudit
 import { MAX_SCORE } from '@/lib/blogAudit/checklist'
 import { auditToText, zoneBreakdown } from '@/lib/blogAudit/auditToText'
 import { fmtDateLocalRu } from '@/lib/dates'
+import { UNIT_HINTS } from '@/components/billing/UnitCostHint'
 
 // Куда ведёт CTA «бесплатная консультация с маркетологом». Настраивается через
 // env (можно сменить без деплоя кода); дефолт — телеграм Августы.
@@ -317,6 +318,7 @@ export function BlogAuditPanel({ projectId }: { projectId: string }) {
         <p className="text-xs text-muted-foreground text-center">
           Нужен подключённый Instagram — подключить можно в разделе «Материалы».
         </p>
+        <p className="text-[11px] text-muted-foreground text-center">{UNIT_HINTS.blogAudit}.</p>
       </div>
     )
   }

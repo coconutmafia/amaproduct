@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Loader2, Plus, Trash2, Film, Eye, Heart, MessageCircle, Sparkles } from 'lucide-react'
 import { pollJob } from '@/lib/jobs/pollJob'
 import { friendlyError } from '@/lib/friendlyError'
+import { UNIT_HINTS } from '@/components/billing/UnitCostHint'
 
 interface Reel {
   id: string
@@ -106,7 +107,7 @@ export function ViralReelsManager({ scope, projectId }: Props) {
         <Button onClick={add} disabled={adding || !url.trim()} className="w-full gradient-accent text-white">
           {adding ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Разбираю рилз…</> : <><Plus className="h-4 w-4 mr-2" /> Добавить и разобрать</>}
         </Button>
-        <p className="text-[11px] text-muted-foreground">Анализ занимает ~30-60 секунд (загрузка + расшифровка + разбор).</p>
+        <p className="text-[11px] text-muted-foreground">Анализ занимает ~30-60 секунд (загрузка + расшифровка + разбор). {UNIT_HINTS.viralReel}.</p>
       </div>
 
       {/* List */}

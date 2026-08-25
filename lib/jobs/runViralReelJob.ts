@@ -2,10 +2,13 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { captureException } from '@/lib/sentry'
 import { scrapeReel, transcribeVideo } from '@/lib/reels/scrapeReel'
+import { refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
 
 interface JobRow {
   id: string
   status: string
+  user_id?: string | null
   payload: {
     url: string
     scope: 'system' | 'project'
@@ -30,6 +33,7 @@ export async function processViralReelJob(jobId: string): Promise<void> {
   const openaiKey  = process.env.OPENAI_API_KEY
   if (!apifyToken) {
     await admin.from('jobs').update({ status: 'error', error: 'APIFY_TOKEN не настроен' }).eq('id', jobId)
+    if (row.user_id) await refundGenerations(row.user_id, UNIT_COSTS.viral_reels).catch(() => {})
     return
   }
 
@@ -106,6 +110,8 @@ ${transcript ? `Расшифровка речи в рилз:\n${transcript.slice
     const msg = err instanceof Error ? err.message : 'Ошибка'
     console.error('[runViralReelJob] error:', msg)
     await admin.from('jobs').update({ status: 'error', error: msg }).eq('id', jobId)
+    // Разбор оплачен юнитами на POST — провал возвращает их полностью.
+    if (row.user_id) await refundGenerations(row.user_id, UNIT_COSTS.viral_reels).catch(() => {})
     await captureException(err, { where: 'runViralReelJob', jobId, url })
   }
 }

@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ALWAYS_INCLUDE, BLOCKED_STATUS } from '@/lib/ai/rag'
-import { BILLING_ENFORCED } from '@/lib/generations'
+import { BILLING_ENFORCED, refundGenerations } from '@/lib/generations'
+import { UNIT_COSTS } from '@/lib/generations-config'
 import { emailConfigured, sendEmail, trialEndingEmail, trialEndedEmail } from '@/lib/email'
 import { captureMessage } from '@/lib/sentry'
 import { settleStuckJob, stuckJobMessage } from '@/lib/jobs/failStuckJob'
@@ -117,7 +118,7 @@ async function handle(request: Request) {
     const twoDaysAgo = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
     const { data: oldErrored } = await admin
       .from('jobs')
-      .select('id, payload')
+      .select('id, user_id, payload')
       .eq('type', 'transcribe')
       .eq('status', 'error')
       .lt('updated_at', twoDaysAgo)
@@ -127,11 +128,19 @@ async function handle(request: Request) {
       .filter((p): p is string => typeof p === 'string' && p.length > 0)
     if (paths.length > 0) {
       await admin.storage.from('audio-temp').remove(paths).catch(() => {})
-      // storagePath из payload убираем, чтобы не удалять повторно каждый день
+      // storagePath из payload убираем, чтобы не удалять повторно каждый день.
+      // Заодно ФИНАЛЬНО закрываем экономику: расшифровка была оплачена на POST
+      // (UNIT_COSTS.transcribe_castdev), клиент бросил ретраи — юниты вернуть.
+      // unitsRefunded защищает от второго возврата (непоправимые ошибки уже
+      // вернули юниты в раннере и стоят с этим маркером).
       for (const j of (oldErrored ?? [])) {
         const p = (j.payload ?? {}) as Record<string, unknown>
         if (p.storagePath) {
-          await admin.from('jobs').update({ payload: { ...p, storagePath: null } }).eq('id', j.id)
+          const needsRefund = !p.unitsRefunded && typeof (j as { user_id?: string }).user_id === 'string'
+          if (needsRefund) {
+            await refundGenerations((j as { user_id: string }).user_id, UNIT_COSTS.transcribe_castdev).catch(() => {})
+          }
+          await admin.from('jobs').update({ payload: { ...p, storagePath: null, unitsRefunded: true } }).eq('id', j.id)
         }
       }
     }

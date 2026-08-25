@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { writeFile, readFile, unlink } from 'node:fs/promises'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { logAiUsage } from '@/lib/ai/usage'
 
 // Shared ffmpeg-cut + Whisper-call logic, used by BOTH the legacy per-chunk
 // /api/ai/transcribe route (client-orchestrated, kept for compatibility) and
@@ -80,6 +81,7 @@ export async function transcribeWindow(opts: {
     const transcription = await openai.audio.transcriptions.create({
       file: audio, model: 'whisper-1', language: 'ru', response_format: 'text',
     })
+    void logAiUsage({ route: 'jobs/transcribe', provider: 'openai_whisper', model: 'whisper-1', meta: { chunk: true } })
     return { text: transcription as unknown as string }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Transcription failed'

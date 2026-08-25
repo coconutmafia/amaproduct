@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Sparkles, Loader2, Info, AtSign } from 'lucide-react'
 import { toast } from 'sonner'
 import { pollJob } from '@/lib/jobs/pollJob'
+import { UNIT_HINTS } from '@/components/billing/UnitCostHint'
 
 interface Props {
   projectId:      string
@@ -114,6 +115,7 @@ export function InstagramAccountDialog({ projectId, accountType, remainingSlots,
               </div>
             ))}
             <p className="text-[11px] text-muted-foreground/70">Подойдёт любой формат: полная ссылка, instagram.com/username, или просто @username.</p>
+            <p className="text-[11px] text-muted-foreground">{UNIT_HINTS.scrape}.</p>
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
