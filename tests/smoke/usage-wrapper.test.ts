@@ -54,7 +54,7 @@ describe('обёртка учёта токенов', () => {
 
   it('падение вызова не роняет обёртку и ничего не логирует', async () => {
     const logged: Logged[] = []
-    const failing = { messages: { create: async () => { throw new Error('502 от провайдера') } } }
+    const failing = { messages: { create: async (_body: unknown) => { throw new Error('502 от провайдера') } } }
     const wrapped = wrapAnthropicForUsage(failing, (r, m, u) => { logged.push({ route: r, model: m, usage: u }) }, () => 'r')
     await expect(wrapped.messages.create({ model: 'm' } as never)).rejects.toThrow('502 от провайдера')
     await Promise.resolve()
