@@ -1127,15 +1127,24 @@ async function englishSmoke() {
       headers: { 'Content-Type': 'application/json', cookie },
       body: JSON.stringify({ projectId, units }),
     })
-    if (!tovRes.ok || !tovRes.body) {
+    if (!tovRes.ok) {
       log(`❌ 3. extract-tone-of-voice HTTP ${tovRes.status}:`, (await tovRes.text().catch(() => '')).slice(0, 300))
       return
     }
-    const tovStream = await readSSE(tovRes)
-    if (tovStream.errMsg) { log(`❌ 3. ToV-стрим вернул ошибку: ${tovStream.errMsg}`); return }
-    const tovMat = await api(`/rest/v1/project_materials?select=raw_content,processing_status&project_id=eq.${projectId}&material_type=eq.tone_of_voice`)
-    const tov = Array.isArray(tovMat.body) ? tovMat.body[0] : null
-    if (!tov || tov.processing_status !== 'ready') { log('❌ 3. ToV-материал не ready:', JSON.stringify(tovMat.body).slice(0, 200)); return }
+    // С 24.08 роут отвечает 202 сразу, извлечение идёт в after() — поллим
+    // материал, как клиент поллит /api/materials/tov-status (а не читаем SSE).
+    let tov = null
+    {
+      const deadline = Date.now() + 4 * 60_000
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 4000))
+        const tovMat = await api(`/rest/v1/project_materials?select=raw_content,processing_status&project_id=eq.${projectId}&material_type=eq.tone_of_voice`)
+        const m = Array.isArray(tovMat.body) ? tovMat.body[0] : null
+        if (m?.processing_status === 'ready') { tov = m; break }
+        if (m?.processing_status === 'error') { log('❌ 3. ToV упал:', String(m.raw_content).slice(0, 200)); return }
+      }
+    }
+    if (!tov) { log('❌ 3. ToV не готов за 4 минуты'); return }
     const tovLatin = latinShare(tov.raw_content)
     const tovQuotes = /["“”'‘’«»]/.test(tov.raw_content)
     log(`✅ 3. ToV за ${((Date.now() - t0) / 1000).toFixed(1)}с: ${tov.raw_content.length} симв, латиницы ${(tovLatin * 100).toFixed(0)}%, цитаты: ${tovQuotes ? 'есть' : 'НЕТ'}`)
