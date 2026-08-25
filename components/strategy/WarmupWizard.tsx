@@ -642,7 +642,15 @@ export function WarmupWizard({ projectId, products, funnels, onComplete }: Warmu
             status: 'approved',
             plan_data: {
               warmup_plan: { phases: planPhases },
-              meta: { start_date: startDate || null },
+              // У вечнозелёного нет даты старта в мастере — фиксируем ДЕНЬ
+              // ОДОБРЕНИЯ (локальная дата юзера): без якоря контент-план ехал
+              // на день вперёд каждые сутки (жалоба Даши 25.08). Именно
+              // локальные компоненты даты, не toISOString() — UTC-срез около
+              // полуночи даёт вчера/завтра (класс ssr-hydration-tz-dates).
+              meta: { start_date: startDate || (() => {
+                const d = new Date()
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+              })() },
             },
           },
         }),

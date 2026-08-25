@@ -14,107 +14,11 @@ import { AiEditChat } from '@/components/ai/AiEditChat'
 import { toast } from 'sonner'
 import type { ContentItem, ContentType, WarmupPhase, WarmupPlanData, WarmupPhaseData } from '@/types'
 import { downloadTextViaServer } from '@/lib/utils/saveFile'
+import { buildDaysFromWarmupPlan, buildFallbackDays, planAnchorDate, type DayData } from '@/lib/contentPlanDays'
 
-const DAYS_OF_WEEK = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС']
-
-interface DayData {
-  day: number
-  date: string
-  dayOfWeek: string
-  items: ContentItem[]
-  plannedTypes: ContentType[]
-  phase: WarmupPhase
-  theme?: string
-  dayBriefs?: Record<string, string>
-}
-
-function buildDaysFromWarmupPlan(planData: WarmupPlanData, weekNumber: number, startDay: number, baseDate?: Date): DayData[] {
-  // Flatten all daily_plan entries from all phases
-  const allDays: Array<{ day: number; phase: WarmupPhase; format: ContentType[]; theme: string }> = []
-
-  // Seed defaults at construction time when the warmup plan doesn't specify
-  // formats for a day. Empty plannedTypes from the plan would otherwise be
-  // indistinguishable from "user deliberately removed everything" — and the
-  // UI now respects an empty array as truly empty (no defaults at render).
-  const DEFAULT_FORMATS: ContentType[] = ['post', 'stories', 'reels']
-
-  // Per-day saved briefs (themes per content format), populated below.
-  const savedBriefs: Record<number, Record<string, string>> = {}
-
-  for (const phaseData of planData.warmup_plan.phases) {
-    for (const dayPlan of phaseData.daily_plan) {
-      // Support both old format (format+theme) and new format (meaning)
-      const dayData = dayPlan as unknown as Record<string, unknown>
-      // `formats` = user's saved format choice; `format` = legacy plan field
-      const savedFmt = (dayData.formats as ContentType[]) || (dayData.format as ContentType[]) || []
-      const briefs = dayData.briefs as Record<string, string> | undefined
-      if (briefs && Object.keys(briefs).length > 0) savedBriefs[dayPlan.day] = briefs
-      allDays.push({
-        day: dayPlan.day,
-        phase: phaseData.phase as WarmupPhase,
-        // An empty saved `formats` is a deliberate "user removed all" only if
-        // briefs exist for that day; otherwise fall back to defaults.
-        format: savedFmt.length > 0 ? savedFmt : (briefs ? [] : DEFAULT_FORMATS),
-        theme: (dayData.meaning as string) || (dayData.theme as string) || '',
-      })
-    }
-  }
-
-  allDays.sort((a, b) => a.day - b.day)
-
-  // Get the 7-day window for this week
-  const weekStart = (weekNumber - 1) * 7 + 1
-  const weekDays = allDays.filter((d) => d.day >= weekStart && d.day < weekStart + 7)
-
-  return weekDays.map((d, i) => {
-    const absDay = startDay + d.day - 1
-    const base = baseDate ? new Date(baseDate) : new Date()
-    base.setDate(base.getDate() + d.day - 1)
-    const date = base
-    const dd = String(date.getDate()).padStart(2, '0')
-    const mm = String(date.getMonth() + 1).padStart(2, '0')
-    const yyyy = date.getFullYear()
-
-    return {
-      day: d.day,
-      date: `${dd}.${mm}.${yyyy}`,
-      dayOfWeek: DAYS_OF_WEEK[(absDay - 1) % 7],
-      items: [],
-      plannedTypes: d.format,
-      phase: d.phase,
-      theme: d.theme,
-      dayBriefs: savedBriefs[d.day],
-    }
-  })
-}
-
-function buildFallbackDays(weekNumber: number, totalDays: number, baseDate?: Date): DayData[] {
-  const phases: WarmupPhase[] = ['awareness', 'trust', 'desire', 'close']
-  const types: ContentType[][] = [
-    ['reels', 'stories'], ['post'], ['carousel', 'stories'],
-    ['stories'], ['carousel'], ['post'], [],
-  ]
-
-  const weekStart = (weekNumber - 1) * 7 + 1
-  return Array.from({ length: 7 }, (_, i) => {
-    const dayNum = weekStart + i
-    if (dayNum > totalDays) return null
-    const phaseIndex = Math.floor(((dayNum - 1) / totalDays) * 4)
-    const d = baseDate ? new Date(baseDate) : new Date()
-    d.setDate(d.getDate() + dayNum - 1)
-    const dd = String(d.getDate()).padStart(2, '0')
-    const mm = String(d.getMonth() + 1).padStart(2, '0')
-    const yyyy = d.getFullYear()
-    return {
-      day: dayNum,
-      date: `${dd}.${mm}.${yyyy}`,
-      dayOfWeek: DAYS_OF_WEEK[i],
-      items: [],
-      plannedTypes: types[i % 7] as ContentType[],
-      phase: phases[Math.min(phaseIndex, 3)],
-    }
-  }).filter(Boolean) as DayData[]
-}
+// Сетка дней (постройка дат + дней недели) — в lib/contentPlanDays.ts
+// (25.08, жалоба Даши «даты поехали»: метки дней недели теперь из РЕАЛЬНОЙ
+// даты, якорь плана стабильный — start_date или день создания плана).
 
 export default function ContentPlanPage() {
   const params = useParams()
@@ -162,7 +66,10 @@ export default function ContentPlanPage() {
         const startDateStr = metaStartDate?.start_date
           || warmupPlan.name?.match(/старт (\d{4}-\d{2}-\d{2})/)?.[1]
           || null
-        const planBaseDate = startDateStr ? new Date(startDateStr + 'T00:00:00') : undefined
+        // Без start_date (вечнозелёные планы) якорь — ДЕНЬ СОЗДАНИЯ плана, а не
+        // «сегодня»: иначе весь план ехал на день вперёд каждые сутки (жалоба
+        // Даши 25.08 «у тебя даты поехали»).
+        const planBaseDate = planAnchorDate(startDateStr, warmupPlan.created_at as string)
 
         if (warmupPlan.plan_data) {
           const planData = warmupPlan.plan_data as WarmupPlanData
