@@ -35,46 +35,57 @@ function logTokens(route: string, model: string, usage?: { input_tokens?: number
   })
 }
 
-// Тонкая обёртка: create() и stream() ведут себя ровно как у SDK, плюс
-// после завершения пишут usage. Остальные поля SDK доступны как раньше.
-export const anthropic = new Proxy(raw, {
-  get(target, prop, receiver) {
-    if (prop !== 'messages') return Reflect.get(target, prop, receiver)
-    const messages = target.messages
-    return new Proxy(messages, {
-      get(mTarget, mProp, mReceiver) {
-        // Внутри обёртки типы либеральные (create у SDK перегружен по stream);
-        // СНАРУЖИ типизация не меняется — Proxy сохраняет тип Anthropic.
-        if (mProp === 'create') {
-          return (body: { model: string; stream?: boolean }, options?: unknown) => {
-            const route = callerRoute()
-            const res = (mTarget.create as (b: unknown, o?: unknown) => Promise<unknown>)(body, options)
-            // stream:true у create() отдаёт Stream без итогового usage — такие
-            // вызовы в проекте не используются (стримим через .stream()), не логируем.
-            if (!body.stream) {
-              Promise.resolve(res)
-                .then((msg) => logTokens(route, String(body.model), (msg as { usage?: { input_tokens?: number; output_tokens?: number } }).usage))
-                .catch(() => { /* ошибка вызова — логировать нечего */ })
+// Тонкая обёртка: create() и stream() ведут себя ровно как у SDK, плюс после
+// завершения отдают usage в logUsage. ВЫНЕСЕНА ОТДЕЛЬНОЙ ФУНКЦИЕЙ намеренно —
+// чтобы сам механизм перехвата проверялся юнит-тестом с подставным SDK, а не
+// «по факту наличия строк в проде» (первая версия обёртки молчала, и увидеть
+// это можно было только в пустой таблице).
+type UsageOut = { input_tokens?: number; output_tokens?: number }
+export function wrapAnthropicForUsage<T extends object>(
+  target: T,
+  logUsage: (route: string, model: string, usage?: UsageOut | null) => void,
+  routeOf: () => string = callerRoute,
+): T {
+  return new Proxy(target, {
+    get(t, prop, receiver) {
+      if (prop !== 'messages') return Reflect.get(t, prop, receiver)
+      const messages = (t as { messages: Record<string, unknown> }).messages
+      return new Proxy(messages, {
+        get(mTarget, mProp, mReceiver) {
+          // Внутри обёртки типы либеральные (create у SDK перегружен по stream);
+          // СНАРУЖИ типизация не меняется — Proxy сохраняет тип клиента.
+          if (mProp === 'create') {
+            return (body: { model: string; stream?: boolean }, options?: unknown) => {
+              const route = routeOf()
+              const res = (mTarget.create as (b: unknown, o?: unknown) => Promise<unknown>)(body, options)
+              // stream:true у create() отдаёт Stream без итогового usage — так в
+              // проекте не вызывают (стримим через .stream()), не логируем.
+              if (!body.stream) {
+                Promise.resolve(res)
+                  .then((msg) => logUsage(route, String(body.model), (msg as { usage?: UsageOut }).usage))
+                  .catch(() => { /* ошибка вызова — логировать нечего */ })
+              }
+              return res
             }
-            return res
           }
-        }
-        if (mProp === 'stream') {
-          return (body: { model: string }, options?: unknown) => {
-            const route = callerRoute()
-            const stream = (mTarget.stream as (b: unknown, o?: unknown) => ReturnType<typeof messages.stream>)(body, options)
-            stream.finalMessage()
-              .then((msg: { usage?: { input_tokens?: number; output_tokens?: number } }) =>
-                logTokens(route, String(body.model), msg.usage))
-              .catch(() => { /* оборванный/упавший стрим — логировать нечего */ })
-            return stream
+          if (mProp === 'stream') {
+            return (body: { model: string }, options?: unknown) => {
+              const route = routeOf()
+              const stream = (mTarget.stream as (b: unknown, o?: unknown) => { finalMessage: () => Promise<{ usage?: UsageOut }> })(body, options)
+              stream.finalMessage()
+                .then((msg) => logUsage(route, String(body.model), msg.usage))
+                .catch(() => { /* оборванный/упавший стрим — логировать нечего */ })
+              return stream
+            }
           }
-        }
-        return Reflect.get(mTarget, mProp, mReceiver)
-      },
-    })
-  },
-})
+          return Reflect.get(mTarget, mProp, mReceiver)
+        },
+      })
+    },
+  }) as T
+}
+
+export const anthropic = wrapAnthropicForUsage(raw, logTokens)
 
 // Primary content model = the strongest available. Quality of the published
 // content IS the product's value, so flagship generation runs on the frontier
