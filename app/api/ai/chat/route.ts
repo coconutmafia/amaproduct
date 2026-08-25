@@ -288,9 +288,21 @@ ${sysKnowledge ? `═══ МЕТОДОЛОГИЯ (опирайся на неё
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
     const lastMessage = messages[messages.length - 1]?.content || ''
+    // Контекст делится надвое РАДИ КЭША, без потери содержания (замер 25.08:
+    // каждый ход писал кэш заново и читал ноль — системный промпт менялся,
+    // потому что собирался от последнего сообщения):
+    //   • стабильная часть (материалы проекта, голос, примеры стиля) не зависит
+    //     от вопроса → идёт в системный блок под cache_control и переиспользуется
+    //     всеми ходами диалога;
+    //   • найденные под КОНКРЕТНЫЙ вопрос фрагменты идут в сообщение пользователя,
+    //     вне кэшируемого префикса — релевантность каждого хода сохраняется.
     let ragContext: RAGContext = { systemKnowledge: [], projectContext: [], styleExamples: [] }
+    let queryMatches: RAGContext = { systemKnowledge: [], projectContext: [], styleExamples: [] }
     try {
-      ragContext = await buildRAGContext(lastMessage, projectId)
+      ;[ragContext, queryMatches] = await Promise.all([
+        buildRAGContext('', projectId, undefined, { stableOnly: true }),
+        buildRAGContext(lastMessage, projectId, undefined, { matchesOnly: true }),
+      ])
     } catch {
       // RAG unavailable
     }
@@ -335,7 +347,21 @@ ${baseSystem}${savedBlock}`
     const blocked = await meterGeneration()
     if (blocked) return blocked
     const genJobId = genFormat ? await createGenMailbox(user.id) : null
-    return streamingChatResponse(systemPrompt, messages.map((m) => ({ role: m.role, content: m.content })), refundIfMetered, genJobId)
+
+    // Найденные под ЭТОТ вопрос фрагменты прикладываем к последнему сообщению,
+    // а не в системный промпт: система остаётся байт-в-байт одинаковой весь
+    // диалог (кэш читается), а релевантность хода не теряется. Для модели набор
+    // токенов тот же — меняется только их место в запросе.
+    const matchesBlock = [
+      ...queryMatches.systemKnowledge.map(c => c.chunk_text),
+      ...queryMatches.projectContext.map(c => c.chunk_text),
+    ].filter(Boolean).join('\n\n').slice(0, 12000)
+    const outMessages = messages.map((m, i) =>
+      i === messages.length - 1 && matchesBlock
+        ? { role: m.role, content: `${m.content}\n\n[СПРАВОЧНЫЕ ФРАГМЕНТЫ ПО ЭТОМУ ВОПРОСУ — материалы проекта и методология, используй если уместно]\n${matchesBlock}` }
+        : { role: m.role, content: m.content }
+    )
+    return streamingChatResponse(systemPrompt, outMessages, refundIfMetered, genJobId)
   } catch (error) {
     console.error('Chat error:', error)
     // Сырец — в телеметрию (диагностика), клиенту — честный русский текст:

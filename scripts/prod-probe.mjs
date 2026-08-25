@@ -2701,9 +2701,114 @@ async function embedBackfill() {
   log(`\n✅ проиндексировано материалов: ${embedded}, чанков создано: ${made}${failed ? `, проектов с ошибкой: ${failed}` : ''}`)
 }
 
+// ── ПРОБНИК: работает ли кэш промпта в многоходовом чате ────────────────────
+// От этого зависит цена чата: холодный вызов с контекстом проекта стоит в
+// 5-10 раз дороже кэшированного. Ставим временный проект с материалами
+// реального размера, шлём 3 сообщения ОДНИМ диалогом и смотрим в ai_usage,
+// сколько входных токенов пришло из кэша. Всё убираем за собой.
+//   node scripts/prod-probe.mjs cache-probe [--run]
+async function cacheProbe() {
+  const APP = 'https://amaproduct.com'
+  log('\n=== Пробник: кэш промпта в чате ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) временный проект QA + 3 материала реального размера (~15k символов)')
+    log('  2) 3 сообщения ОДНИМ диалогом через боевой /api/ai/chat')
+    log('  3) читаем ai_usage: доля cacheRead по ходам 1/2/3')
+    log('  4) уборка: проект, материалы, счётчики')
+    return
+  }
+  const anon = (() => {
+    const m = readFileSync(join(ROOT, '.env.local'), 'utf8').match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  const prof = await api(`/rest/v1/profiles?select=id,generations_used,bonus_generations&email=eq.${QA_EMAIL}`)
+  const qa = Array.isArray(prof.body) ? prof.body[0] : null
+  if (!qa) { log('❌ QA не найден'); return }
+  const used0 = qa.generations_used, bonus0 = qa.bonus_generations
+
+  const gl = await api('/auth/v1/admin/generate_link', { method: 'POST', body: JSON.stringify({ type: 'magiclink', email: QA_EMAIL }) })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log('❌ сессия'); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST', headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA_EMAIL, token: otp }),
+  }).then(r => r.json())
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+
+  let projectId = null
+  const t0 = new Date().toISOString()
+  try {
+    const proj = await api('/rest/v1/projects', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ name: `${PROBE_PREFIX}cache`, owner_id: qa.id }),
+    })
+    projectId = Array.isArray(proj.body) ? proj.body[0]?.id : null
+    if (!projectId) { log(`❌ проект: ${proj.status}`); return }
+
+    // Материалы реального размера: без них контекст пустой и замер бессмысленный
+    const filler = (label) => `${label}. ` + 'Клиентка говорит своими словами о том, что мешает ей начать вести блог регулярно и почему прошлые попытки не сработали. '.repeat(120)
+    const mats = [
+      { material_type: 'interview_transcript', title: `${PROBE_PREFIX}интервью 1`, raw_content: filler('Интервью 1') },
+      { material_type: 'tone_of_voice',        title: `${PROBE_PREFIX}голос`,      raw_content: filler('Голос бренда') },
+      { material_type: 'my_instagram',         title: `${PROBE_PREFIX}профиль`,    raw_content: filler('Профиль') },
+    ].map(m => ({ ...m, project_id: projectId, processing_status: 'ready' }))
+    const ins = await api('/rest/v1/project_materials', { method: 'POST', body: JSON.stringify(mats) })
+    if (ins.status >= 300) { log(`❌ материалы: ${ins.status}`); return }
+    log(`✅ 1. временный проект и ${mats.length} материала (~${Math.round(mats[0].raw_content.length/1000)}k символов каждый)`)
+
+    const convo = []
+    const asks = ['Привет! Одним предложением: с чего начать?', 'А что из этого важнее всего?', 'Спасибо. Резюмируй одной фразой.']
+    for (const [i, q] of asks.entries()) {
+      convo.push({ role: 'user', content: q })
+      const res = await fetch(`${APP}/api/ai/chat`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+        body: JSON.stringify({ projectId, conversationType: 'assistant', messages: convo }),
+      })
+      if (!res.ok || !res.body) { log(`❌ ход ${i+1}: ${res.status}`); break }
+      let text = ''
+      const reader = res.body.getReader(); const dec = new TextDecoder()
+      while (true) { const { value, done } = await reader.read(); if (done) break; text += dec.decode(value, { stream: true }) }
+      convo.push({ role: 'assistant', content: text.slice(0, 4000) })
+      log(`   ход ${i+1}: ответ ${text.length} символов`)
+    }
+
+    await new Promise(r => setTimeout(r, 6000)) // дать after() дописать журнал
+    const rows = await api(`/rest/v1/ai_usage?select=created_at,route,input_tokens,output_tokens,meta&provider=eq.anthropic&created_at=gte.${t0}&order=created_at.asc&limit=20`)
+    const list = (Array.isArray(rows.body) ? rows.body : []).filter(r => (r.route || '').includes('chat'))
+    log(`\n── ФАКТ ПО ХОДАМ ──`)
+    for (const [i, r] of list.entries()) {
+      const cr = Number(r.meta?.cacheRead ?? 0), cw = Number(r.meta?.cacheWrite ?? 0)
+      const inp = r.input_tokens ?? 0
+      const share = cr + inp > 0 ? Math.round(cr / (cr + inp) * 100) : 0
+      const cost = (inp * 5 + cr * 0.5 + cw * 6.25 + (r.output_tokens ?? 0) * 25) / 1e6
+      log(`   ход ${i+1}: вход ${inp}, из кэша ${cr} (${share}%), запись кэша ${cw}, выход ${r.output_tokens} → $${cost.toFixed(4)}`)
+    }
+    if (list.length >= 2) {
+      const later = list.slice(1)
+      const cached = later.filter(r => Number(r.meta?.cacheRead ?? 0) > 0).length
+      log(cached === later.length
+        ? `\n✅ КЭШ РАБОТАЕТ: все ходы после первого читают из кэша → цена чата падает в разы`
+        : `\n❌ КЭШ НЕ РАБОТАЕТ: ${cached}/${later.length} последующих ходов с кэшем — чат стоит полную цену каждый раз`)
+    } else {
+      log('\n⚠️ строк чата в журнале < 2 — замер не состоялся')
+    }
+  } finally {
+    if (projectId) {
+      await api(`/rest/v1/project_materials?project_id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+      await api(`/rest/v1/projects?id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    }
+    await api(`/rest/v1/profiles?id=eq.${qa.id}`, {
+      method: 'PATCH', body: JSON.stringify({ generations_used: used0, bonus_generations: bonus0 }),
+    }).catch(() => {})
+    log('🧹 уборка: временный проект удалён, счётчики возвращены')
+  }
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'meter-smoke': meterSmoke }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'meter-smoke': meterSmoke }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))

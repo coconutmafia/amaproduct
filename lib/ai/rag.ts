@@ -93,10 +93,26 @@ async function tryCreateEmbedding(text: string): Promise<number[] | null> {
   }
 }
 
+// Разделение контекста на СТАБИЛЬНУЮ и ЗАПРОСНУЮ части — ради кэша промпта.
+// Замерено 25.08 живым пробником: в чате КАЖДЫЙ ход записывал кэш заново
+// (36 813 / 37 243 / 22 704 токена) и читал из него НОЛЬ — потому что контекст
+// пересобирался от последнего сообщения, и системный промпт каждый раз был
+// другим. То есть мы платили надбавку за запись кэша (1.25×) и не получали
+// скидку за чтение (0.1×). Контент при этом не меняется: 'stable' — то, что не
+// зависит от вопроса (материалы проекта, голос, примеры стиля), 'matches' —
+// найденные под конкретный вопрос фрагменты, которые кладутся ВНЕ кэша.
+export interface RagOptions {
+  /** только независимая от вопроса часть (для кэшируемого системного блока) */
+  stableOnly?: boolean
+  /** только найденные под вопрос фрагменты (кладутся в сообщение, вне кэша) */
+  matchesOnly?: boolean
+}
+
 export async function buildRAGContext(
   query: string,
   projectId: string,
-  contentType?: string
+  contentType?: string,
+  opts?: RagOptions
 ): Promise<RAGContext> {
   const supabase = await createClient()
   // Системная методология — актив компании, общий для всех, а НЕ данные юзера.
@@ -111,7 +127,8 @@ export async function buildRAGContext(
   const sys = createAdminClient()
 
   // ── Try embedding-based search first ─────────────────────────────────────
-  const embedding = await tryCreateEmbedding(query)
+  // В stableOnly поиск не делаем вовсе: он зависит от вопроса и ломал бы кэш.
+  const embedding = opts?.stableOnly ? null : await tryCreateEmbedding(query)
 
   let systemChunks: Array<{ chunk_text: string; metadata: Record<string, unknown> }> = []
   let projectChunks: Array<{ chunk_text: string; material_type: string; metadata: Record<string, unknown> }> = []
@@ -138,7 +155,7 @@ export async function buildRAGContext(
     ])
     systemChunks = (sysResult.data as typeof systemChunks) || []
     projectChunks = (projResult.data as typeof projectChunks) || []
-  } else {
+  } else if (!opts?.stableOnly) {
     // ── Fallback: direct queries without embeddings ───────────────────────
     // Load system knowledge vault chunks (all ready chunks, most recent first)
     const { data: sysRaw } = await sys
@@ -215,7 +232,7 @@ export async function buildRAGContext(
   // the embedding match (unreliable), so the AI often said "у меня нет кейсов".
   // ALWAYS_INCLUDE is now a module-level export (source of truth, shared with
   // the context inspector).
-  const { data: alwaysMats } = await supabase
+  const { data: alwaysMats } = opts?.matchesOnly ? { data: null } : await supabase
     .from('project_materials')
     .select('title, material_type, raw_content, processing_status')
     .eq('project_id', projectId)
@@ -224,7 +241,7 @@ export async function buildRAGContext(
     // в контекст генерации не берём (иначе каждое интервью попадёт дважды).
     .neq('title', MASTER_RESEARCH_TITLE)
 
-  if (alwaysMats && alwaysMats.length > 0) {
+  if (!opts?.matchesOnly && alwaysMats && alwaysMats.length > 0) {
     // De-dup key must NOT collapse two distinct long materials that share a
     // title prefix (e.g. two customer interviews saved the same day). Key on
     // material_type + full title + length + a wider content sample.
@@ -256,7 +273,8 @@ export async function buildRAGContext(
   let styleExamples: StyleExample[] = []
 
   // 1. Explicit style bank (style_examples) — highest priority
-  try {
+  // matchesOnly: примеры стиля не зависят от вопроса → живут в кэшируемой части
+  if (!opts?.matchesOnly) try {
     const personalQuery = supabase
       .from('style_examples')
       .select('*')
