@@ -89,10 +89,16 @@ ${getAiTells(detectTextLanguage(valuesOnly))}
     let raw: Array<Record<string, unknown>> = []
     for (let attempt = 0; attempt < 3 && raw.length === 0; attempt++) {
       const res = await anthropic.messages.create({
-        model: MODEL, max_tokens: 2500, tools: [tool],
+        // 12000, не 2500 (Станислав, 25.08): серия из 13 кадров НЕ ВЛЕЗАЛА в
+        // потолок — модель, сжимаясь под лимит, возвращала валидный JSON с
+        // МЕНЬШИМ числом кадров, серия перезаписывалась урезанной, а файлы
+        // выпавших кадров удалялись из хранилища («он 6 штук удалил»).
+        model: MODEL, max_tokens: 12000, tools: [tool],
         tool_choice: { type: 'tool' as const, name: 'edit_stories' },
         messages: [{ role: 'user', content: prompt }],
       })
+      // Обрезанный по потолку ответ = неполный список кадров: не принимаем.
+      if (res.stop_reason === 'max_tokens') continue
       const block = res.content.find((b) => b.type === 'tool_use')
       if (block && block.type === 'tool_use') raw = toArray((block.input as { stories?: unknown }).stories) as Array<Record<string, unknown>>
     }
@@ -112,6 +118,15 @@ ${getAiTells(detectTextLanguage(valuesOnly))}
       })
       .filter((r) => r.headline || r.body)
     if (out.length === 0) return NextResponse.json({ error: 'Не удалось применить правку — попробуй сформулировать иначе' }, { status: 502 })
+
+    // СЕРВЕРНЫЙ СТРАЖ ПОТЕРИ КАДРОВ: меньше кадров, чем прислали, без явной
+    // просьбы удалить — не отдаём (клиент пересохранил бы серию урезанной и
+    // хранилище удалило бы файлы выпавших кадров безвозвратно).
+    const deleteIntent = /удали|убер|сотри|remove|delete/i.test(instruction)
+    if (out.length < frames.length && !deleteIntent) {
+      await captureException(new Error(`edit-stories вернул ${out.length} кадров вместо ${frames.length}`), { where: 'edit-stories count-guard', projectId })
+      return NextResponse.json({ error: `Правка вернула ${out.length} кадров вместо ${frames.length} — ничего не меняю, чтобы не потерять кадры. Попробуй сформулировать точнее.` }, { status: 502 })
+    }
 
     return NextResponse.json({ stories: out })
   } catch (e) {

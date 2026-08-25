@@ -1016,8 +1016,8 @@ async function englishSmoke() {
     log('  1) QA-бот: magiclink → verify → сессия')
     log('  2) временный проект ama-probe-english-* с content_language=en (упадёт, если 038 не применена)')
     log(`  3) POST ${APP}/api/ai/extract-tone-of-voice с 4 английскими текстами → ToV должен выйти английским`)
-    log(`  4) POST ${APP}/api/ai/generate post → английский, без «—», без "it's not just"/"here's the thing"`)
-    log(`  5) POST ${APP}/api/ai/generate reels → английские реплики сцен`)
+    log(`  4) POST ${APP}/api/ai/chat genFormat=post (боевой путь) → английский, без «—», без "it's not just"`)
+    log(`  5) POST ${APP}/api/ai/chat genFormat=reels → английская раскадровка (Scene 1…)`)
     log(`  6) POST ${APP}/api/carousel/structure с английским текстом → слайды не переведены`)
     log('  7) удалить контент, style_examples, материалы и проект')
     return
@@ -1070,12 +1070,21 @@ async function englishSmoke() {
   }
   log(`✅ 2. проект ${projName} (content_language=en)`)
 
+  // genFormat-чат метерит юниты и заводит ящики chat_gen — вернуть/убрать в уборке
+  const genJobs = []
+  const usedRow = await api(`/rest/v1/profiles?select=generations_used&id=eq.${qaId}`)
+  const usedBefore = Array.isArray(usedRow.body) ? usedRow.body[0]?.generations_used : null
+
   const cleanup = async () => {
     await api(`/rest/v1/content_items?project_id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
     await api(`/rest/v1/style_examples?project_id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
     await api(`/rest/v1/project_materials?project_id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
     await api(`/rest/v1/projects?id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
-    log('🧹 уборка: контент, примеры стиля, материалы и проект удалены')
+    for (const j of genJobs) await api(`/rest/v1/jobs?id=eq.${j}`, { method: 'DELETE' }).catch(() => {})
+    if (typeof usedBefore === 'number') {
+      await api(`/rest/v1/profiles?id=eq.${qaId}`, { method: 'PATCH', body: JSON.stringify({ generations_used: usedBefore }) }).catch(() => {})
+    }
+    log('🧹 уборка: контент, примеры стиля, материалы, проект, ящики чата удалены; юниты QA возвращены')
   }
 
   // Метрики языка/GPT-измов
@@ -1151,44 +1160,50 @@ async function englishSmoke() {
     log('   превью:', tov.raw_content.slice(0, 180).replace(/\n/g, ' | '))
     if (tovLatin < 0.7) { log('❌ ToV НЕ английский (ожидали ≥70% латиницы) — описание уехало в русский'); return }
 
-    // ── 4. Пост на английском ────────────────────────────────────────────────
+    // ── 4-5. Пост и рилз ЧЕРЕЗ ЧАТ (genFormat) — боевой путь клиентов ────────
+    // 25.08: сиротский /api/ai/generate удалён; юзеры генерят юниты чатом с
+    // 02.06 — смоук обязан ходить тем же путём (правило Матвея: «проверки
+    // всегда на актуальных адресах, которые используют юзеры»). genFormat
+    // метерится: юниты QA возвращаем в уборке, ящики chat_gen удаляем.
+    const chatGen = async (genFormat, ask) => {
+      const res = await fetch(`${APP}/api/ai/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', cookie },
+        body: JSON.stringify({ projectId, genFormat, messages: [{ role: 'user', content: ask }] }),
+      })
+      if (!res.ok || !res.body) return { err: `HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}` }
+      const genJob = res.headers.get('x-gen-job')
+      const reader = res.body.getReader()
+      const dec = new TextDecoder()
+      let text = ''
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        text += dec.decode(value, { stream: true })
+      }
+      return { text, genJob }
+    }
+
     t0 = Date.now()
-    const postRes = await fetch(`${APP}/api/ai/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', cookie },
-      body: JSON.stringify({ projectId, contentType: 'post', dayNumber: 1, totalDays: 7, phase: 'awareness' }),
-    })
-    if (!postRes.ok || !postRes.body) { log(`❌ 4. generate post HTTP ${postRes.status}`); return }
-    const postStream = await readSSE(postRes)
-    if (postStream.errMsg) { log(`❌ 4. generate post ошибка: ${postStream.errMsg}`); return }
-    const postItems = await api(`/rest/v1/content_items?select=body_text,title&project_id=eq.${projectId}&content_type=eq.post&order=created_at.desc&limit=1`)
-    const post = Array.isArray(postItems.body) ? postItems.body[0] : null
-    if (!post?.body_text) { log('❌ 4. пост не сохранился'); return }
-    const postLatin = latinShare(post.body_text)
-    const postTells = enTells(post.body_text)
-    log(`✅ 4. пост за ${((Date.now() - t0) / 1000).toFixed(1)}с: ${post.body_text.length} симв, латиницы ${(postLatin * 100).toFixed(0)}%${postTells.length ? `, ⚠️ GPT-измы: ${postTells.join(', ')}` : ', GPT-измов нет'}`)
-    log('   превью:', post.body_text.slice(0, 180).replace(/\n/g, ' | '))
+    const post = await chatGen('post', 'Напиши пост для блога про то, почему я перестала писать картины «как продаётся» и что из этого вышло.')
+    if (post.err) { log(`❌ 4. чат-пост: ${post.err}`); return }
+    if (post.genJob) genJobs.push(post.genJob)
+    const postLatin = latinShare(post.text)
+    const postTells = enTells(post.text)
+    log(`✅ 4. пост (чат) за ${((Date.now() - t0) / 1000).toFixed(1)}с: ${post.text.length} симв, латиницы ${(postLatin * 100).toFixed(0)}%${postTells.length ? `, ⚠️ GPT-измы: ${postTells.join(', ')}` : ', GPT-измов нет'}`)
+    log('   превью:', post.text.slice(0, 180).replace(/\n/g, ' | '))
     if (postLatin < 0.7) { log('❌ ПОСТ НЕ АНГЛИЙСКИЙ — язык контента не прокинулся'); return }
 
-    // ── 5. Рилз на английском ────────────────────────────────────────────────
     t0 = Date.now()
-    const reelsRes = await fetch(`${APP}/api/ai/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', cookie },
-      body: JSON.stringify({ projectId, contentType: 'reels', dayNumber: 2, totalDays: 7, phase: 'awareness' }),
-    })
-    if (!reelsRes.ok || !reelsRes.body) { log(`❌ 5. generate reels HTTP ${reelsRes.status}`); return }
-    const reelsStream = await readSSE(reelsRes)
-    if (reelsStream.errMsg) { log(`❌ 5. generate reels ошибка: ${reelsStream.errMsg}`); return }
-    const reelsItems = await api(`/rest/v1/content_items?select=structured_data,body_text&project_id=eq.${projectId}&content_type=eq.reels&order=created_at.desc&limit=1`)
-    const reelsItem = Array.isArray(reelsItems.body) ? reelsItems.body[0] : null
-    const reels = reelsItem?.structured_data?.reels
-    if (!reels?.scenes?.length) { log('❌ 5. рилз без сцен:', JSON.stringify(reelsItem || {}).slice(0, 200)); return }
-    const speech = reels.scenes.map(s => `${s?.audio?.speech || ''} ${s?.text_overlay || ''}`).join(' ')
-    const speechLatin = latinShare(speech)
-    const speechTells = enTells(speech)
-    log(`✅ 5. рилз за ${((Date.now() - t0) / 1000).toFixed(1)}с: сцен ${reels.scenes.length}, латиницы в репликах ${(speechLatin * 100).toFixed(0)}%${speechTells.length ? `, ⚠️ GPT-измы: ${speechTells.join(', ')}` : ', GPT-измов нет'}`)
-    if (speechLatin < 0.7) { log('❌ РЕПЛИКИ РИЛЗА НЕ АНГЛИЙСКИЕ'); return }
+    const reels = await chatGen('reels', 'Сделай сценарий рилса про мастерскую: как рождается одна большая картина, от пустого холста до выставки.')
+    if (reels.err) { log(`❌ 5. чат-рилз: ${reels.err}`); return }
+    if (reels.genJob) genJobs.push(reels.genJob)
+    const sceneCount = (reels.text.match(/scene\s+\d+|escena\s+\d+|szene\s+\d+|сцена\s+\d+/gi) || []).length
+    const reelsLatin = latinShare(reels.text)
+    const reelsTells = enTells(reels.text)
+    log(`✅ 5. рилз (чат) за ${((Date.now() - t0) / 1000).toFixed(1)}с: сцен ${sceneCount}, латиницы ${(reelsLatin * 100).toFixed(0)}%${reelsTells.length ? `, ⚠️ GPT-измы: ${reelsTells.join(', ')}` : ', GPT-измов нет'}`)
+    if (sceneCount < 3) { log('❌ 5. рилз без раскадровки (сцен < 3):', reels.text.slice(0, 160)); return }
+    if (reelsLatin < 0.7) { log('❌ РИЛЗ НЕ АНГЛИЙСКИЙ (метки сцен должны быть Scene, не Сцена)'); return }
 
     // ── 6. Карусель-структура не переводит английский текст ─────────────────
     t0 = Date.now()

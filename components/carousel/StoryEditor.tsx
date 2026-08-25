@@ -25,7 +25,10 @@ export function StoryEditor({
   projectId: string
   photos?: string[]
   loadReq?: EditorLoadRequest | null
-  onAddToSeries?: (args: { blob: Blob; index: number }) => Promise<void> | void
+  // slide = раскладка, из которой собрана картинка (снимок на момент экспорта).
+  // Серия хранит её вместе с кадром — повторное «Редактировать вручную»
+  // открывает НАСТОЯЩИЕ блоки, а не пустой чёрный холст (Станислав, 25.08).
+  onAddToSeries?: (args: { blob: Blob; index: number; slide: SlideValue }) => Promise<void> | void
   seriesLen?: number
   /** engine FormatKey — 'story' | 'carousel' | 'post' | 'post45' | 'postWide' | 'carouselWide' */
   renderFormat?: string
@@ -40,6 +43,9 @@ export function StoryEditor({
   const [exporting, setExporting] = useState(false)
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [resultBlob, setResultBlob] = useState<Blob | null>(null)
+  // Слайд, из которого собран resultBlob (юзер мог продолжить править после
+  // экспорта — в серию уходит именно та раскладка, что на картинке).
+  const [resultSlide, setResultSlide] = useState<SlideValue | null>(null)
   // Where «Добавить в серию» will put the export: an existing slot index, or
   // 'append' for a new frame at the end.
   const [target, setTarget] = useState<number | 'append'>('append')
@@ -52,7 +58,7 @@ export function StoryEditor({
     if (!loadReq) return
     setSlide(loadReq.slide)
     setTarget(loadReq.index)
-    setResultUrl(null); setResultBlob(null)
+    setResultUrl(null); setResultBlob(null); setResultSlide(null)
     sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadReq?.token])
@@ -86,6 +92,7 @@ export function StoryEditor({
       if (!res.ok) throw new Error('Не удалось собрать картинку — попробуй ещё раз')
       const blob = await res.blob()
       setResultBlob(blob)
+      setResultSlide(JSON.parse(JSON.stringify(slide)) as SlideValue)
       setResultUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob) })
     } catch (e) { toast.error(friendlyError(e, 'Ошибка')) }
     finally { setExporting(false) }
@@ -96,7 +103,7 @@ export function StoryEditor({
     setAddingToSeries(true)
     try {
       const index = target === 'append' ? seriesLen : target
-      await onAddToSeries({ blob: resultBlob, index })
+      await onAddToSeries({ blob: resultBlob, index, slide: resultSlide ?? slide })
     } finally { setAddingToSeries(false) }
   }
 

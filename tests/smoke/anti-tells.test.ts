@@ -126,11 +126,12 @@ describe('запрет AI-маркеров подключён во всех ге
       .toMatch(/AI_TELLS_TO_AVOID|getAiTells/)
   })
 
-  // generate идёт через buildSystemPrompt (system.ts), который включает запрет
-  // через языковой селектор getAiTells (ru или en ветка по настройке проекта) —
+  // Генерация юнитов идёт через ЧАТ (genFormat) с 02.06 и получает запрет
+  // через buildSystemPrompt (system.ts) с языковым селектором getAiTells —
   // проверяем оба звена цепочки, чтобы она не порвалась ни в одном месте.
-  it('generate получает запрет через buildSystemPrompt', () => {
-    const route = readFileSync(join(process.cwd(), 'app/api/ai/generate/route.ts'), 'utf8')
+  // (Сиротский /api/ai/generate удалён 25.08 — решение Матвея.)
+  it('чат-генерация получает запрет через buildSystemPrompt', () => {
+    const route = readFileSync(join(process.cwd(), 'app/api/ai/chat/route.ts'), 'utf8')
     expect(route).toContain('buildSystemPrompt')
     const system = readFileSync(join(process.cwd(), 'lib/ai/prompts/system.ts'), 'utf8')
     expect(system).toContain('getAiTells')

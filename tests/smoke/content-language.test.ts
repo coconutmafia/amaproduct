@@ -163,14 +163,15 @@ describe('система промптов: цепочка языка не рвё
     // Старая захардкоженная строка не должна вернуться в обход директивы
     expect(src).not.toContain('Язык ответа: тот, на котором написан TOV')
   })
-  it('generate: примеры-значения в JSON-шаблонах ветвятся по языку (en/es/de)', () => {
-    const src = readFileSync(join(process.cwd(), 'app/api/ai/generate/route.ts'), 'utf8')
-    expect(src).toContain("'30-60 sec'")
-    expect(src).toContain("'30-60 seg'")
-    expect(src).toContain("'30-60 Sek'")
-    expect(src).toContain('"Option A"')
-    expect(src).toContain('"Opción A"')
-    expect(src).toMatch(/JEX \? JEX\.day : 'День'/)
+  it('chat genFormat: метки блоков ветвятся по языку блога (en/es/de)', () => {
+    // 25.08: сиротский /api/ai/generate удалён (решение Матвея) — генерация
+    // юнитов идёт через чат (genFormat) с 02.06. Языковая гарантия живёт там:
+    // метки «Slide/Scene» для en/es/de, чтобы в контент не просачивался русский.
+    const src = readFileSync(join(process.cwd(), 'app/api/ai/chat/route.ts'), 'utf8')
+    expect(src).toContain('Scene 1 (0-3 sec)')
+    expect(src).toContain('Escena 1 (0-3 seg)')
+    expect(src).toContain('Szene 1 (0-3 Sek)')
+    expect(src).toContain('resolveContentLanguage(project)')
   })
   it('extract-tone-of-voice: язык описания не прибит к русскому + цитаты дословно', () => {
     const src = readFileSync(join(process.cwd(), 'app/api/ai/extract-tone-of-voice/route.ts'), 'utf8')

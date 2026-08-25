@@ -41,6 +41,11 @@ interface Frame {
   // manual design). manualUrl holds the ready image for save/reopen.
   manual?: boolean
   manualUrl?: string
+  // Раскладка редактора (фон + блоки) ручного кадра. Без неё повторное
+  // «Редактировать вручную» открывало ПУСТОЙ ЧЁРНЫЙ холст — у manual-кадра
+  // headline/body пустые и фото нет (Станислав, 25.08: «он вообще чёрный,
+  // я с этим сторис больше ничего не могу делать»).
+  design?: SlideValue
   // Видео-кадр серии: mp4 с уже нажжённым текстом. Ведёт себя как manual —
   // не перерендеривается ни правками, ни переоткрытием (пересборка = build).
   video?: string
@@ -49,7 +54,7 @@ interface Frame {
   // сохранённых до этого поля, исходника нет — позицию не поменять.
   source?: string
 }
-interface SetFrame { url: string; headline?: string; body?: string; cta?: string; position?: string; photo?: string; manual?: boolean; video?: boolean; source?: string }
+interface SetFrame { url: string; headline?: string; body?: string; cta?: string; position?: string; photo?: string; manual?: boolean; video?: boolean; source?: string; design?: SlideValue }
 
 // Текст, который жжётся на видео-кадр. ОДНА формула для сборки серии и для
 // пересборки позиции — разойдутся, и «переставленный» кадр получит другой текст.
@@ -207,15 +212,36 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
     if (!frame) return
     if (frame.video) { toast.message('У видео-кадра расположение текста меняется кнопками ↑ • ↓ под ним; свободный редактор для видео пока не поддерживается'); return }
     editTokenRef.current += 1
+    if (frame.manual) {
+      // Ручной кадр: открываем ЕГО раскладку (фон + блоки), а не пустой холст.
+      if (frame.design) {
+        setEditReq({ token: editTokenRef.current, slide: JSON.parse(JSON.stringify(frame.design)) as SlideValue, index: i })
+        toast.message('Кадр открыт в редакторе ниже — блоки на месте, правь и жми «Добавить в серию»')
+        return
+      }
+      // Серия сохранена до появления design: раскладки нет — открываем кадр
+      // его же картинкой-фоном, поверх можно добавлять элементы.
+      const bgUrl = frame.manualUrl ?? frame.photo ?? null
+      setEditReq({ token: editTokenRef.current, slide: { bgMode: 'photo', photoUrl: bgUrl, photoTop: null, photoBottom: null, blocks: [] }, index: i })
+      toast.message(bgUrl
+        ? 'У этого кадра не сохранилась раскладка (сделан до обновления) — открыл его картинкой-фоном, элементы добавляй поверх'
+        : 'У этого кадра не сохранилась раскладка — выбери фон и собери кадр заново')
+      return
+    }
     setEditReq({ token: editTokenRef.current, slide: frameToSlide(frame), index: i })
     toast.message('Кадр открыт в редакторе ниже — меняй и жми «Добавить в серию»')
   }
 
   // A free-editor export goes into the series: replace an existing slot or
-  // append a new frame. The frame is marked manual so it's never re-rendered.
-  async function addManualToSeries({ blob, index }: { blob: Blob; index: number }) {
+  // append a new frame. The frame is marked manual so it's never re-rendered;
+  // its editor layout (design) rides along so re-editing reopens real blocks.
+  async function addManualToSeries({ blob, index, slide }: { blob: Blob; index: number; slide: SlideValue }) {
     const url = URL.createObjectURL(blob)
-    const frame: Frame = { headline: '', body: '', cta: '', manual: true }
+    const frame: Frame = {
+      headline: '', body: '', cta: '', manual: true,
+      design: JSON.parse(JSON.stringify(slide)) as SlideValue,
+      photo: slide.bgMode === 'photo' ? slide.photoUrl ?? undefined : undefined,
+    }
     const arr = [...rendered]
     if (index >= 0 && index < arr.length) {
       URL.revokeObjectURL(arr[index].url)
@@ -326,7 +352,13 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           projectId, setId: existingSetId || undefined, script,
-          frames: frames.map((f, i) => ({ url: urls[i], headline: f.headline, body: f.body, cta: f.cta, position: f.position, photo: f.photo, manual: f.manual || undefined, video: f.video ? true : undefined, source: f.source || undefined })).filter((f) => f.url),
+          // design ручного кадра едет с серией (повторная правка = реальные
+          // блоки), но только компактный (иначе раздует brand_kit).
+          frames: frames.map((f, i) => ({
+            url: urls[i], headline: f.headline, body: f.body, cta: f.cta, position: f.position, photo: f.photo,
+            manual: f.manual || undefined, video: f.video ? true : undefined, source: f.source || undefined,
+            design: (f.manual && f.design && JSON.stringify(f.design).length <= 6000) ? f.design : undefined,
+          })).filter((f) => f.url),
         }),
       })
       const d = await res.json().catch(() => ({} as { set?: StorySet; sets?: StorySet[]; error?: string }))
@@ -352,6 +384,14 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
       })
       const d = await res.json().catch(() => ({} as { stories?: Frame[]; error?: string }))
       if (!res.ok || !d.stories?.length) throw new Error(d.error || 'Не удалось применить правку')
+      // СТРАЖ ПОТЕРИ КАДРОВ (Станислав, 25.08: «просил добавить 14-й — он 6
+      // штук удалил»): усечённый ответ AI возвращал МЕНЬШЕ кадров, серия
+      // перезаписывалась урезанной, а файлы выпавших кадров удалялись из
+      // хранилища. Меньше кадров без явной просьбы удалить — не применяем.
+      const deleteIntent = /удали|убер|сотри|remove|delete/i.test(editText)
+      if (d.stories.length < rendered.length && !deleteIntent) {
+        throw new Error(`Правка вернула ${d.stories.length} кадров вместо ${rendered.length} — ничего не меняю, чтобы не потерять кадры. Попробуй сформулировать точнее.`)
+      }
       // Merge with the previous frames: anything the edit explicitly CHANGED
       // (position / plate) becomes locked so photo-analysis won't override it.
       const old = rendered.map((r) => r.frame)
@@ -395,6 +435,10 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
         posLocked: sf.position ? true : undefined,
         photo: sf.photo,
         manual: sf.manual || undefined,
+        // manualUrl: сохранённая картинка ручного кадра — фолбэк-фон для
+        // повторной правки серий, сохранённых до появления design.
+        manualUrl: sf.manual ? sf.url : undefined,
+        design: sf.design,
         video: sf.video ? sf.url : undefined,
         source: sf.source,
       }))
@@ -405,7 +449,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
       // «видео постоянно исчезают из загруженных материалов» (Лана, 31 июля).
       // У старых серий source не сохранён — их видео не восстановить.
       const uniqueMats = [...new Set(frames.map((f) => f.photo || f.source).filter((p): p is string => !!p))]
-      if (uniqueMats.length) setPhotos(uniqueMats.slice(0, 8))
+      if (uniqueMats.length) setPhotos(uniqueMats.slice(0, 13))
       // Manual frames are stored as finished images — fetch them back instead of
       // re-rendering (re-rendering would wipe the hand-made design).
       const blobs = await Promise.all(frames.map(async (f, i) => {
@@ -666,7 +710,10 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
       {/* 1. Загрузка материалов — фото И видео одним блоком (просьба Ланы:
           «чтобы видео не жило изолированно, а было частью общего сценария»).
           Видео-материал становится видео-кадром серии на своей позиции. */}
-      <PhotoUploader projectId={projectId} photos={photos} kind="story" max={8} allowVideo
+      {/* max 13 = потолок кадров серии: Станислав (25.08) — «фото только 8, а
+          сторис 12-15, фотографии по кругу идут»; теперь фото хватает на
+          каждый кадр без повторов. */}
+      <PhotoUploader projectId={projectId} photos={photos} kind="story" max={13} allowVideo
         title="Загрузка материалов (фото и видео)"
         onChange={(p) => setPhotos(p)} persistKey={persistKey} />
       <p className="-mt-2 text-[11px] text-muted-foreground">

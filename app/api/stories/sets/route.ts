@@ -14,7 +14,7 @@ export const runtime = 'nodejs'
 
 const MAX_SETS = 12
 
-interface StoryFrameMeta { url: string; headline?: string; body?: string; cta?: string; position?: string; photo?: string; manual?: boolean; video?: boolean; source?: string }
+interface StoryFrameMeta { url: string; headline?: string; body?: string; cta?: string; position?: string; photo?: string; manual?: boolean; video?: boolean; source?: string; design?: unknown }
 interface StorySet { id: string; created_at: string; script: string; frames: StoryFrameMeta[] }
 
 function pathFromUrl(url: string): string | null {
@@ -80,7 +80,10 @@ export async function POST(request: Request) {
       id: setId,
       created_at: existing?.created_at || new Date().toISOString(),
       script: String(body.script || '').slice(0, 600),
-      frames: frames.slice(0, 10).map((f) => ({
+      // 16, не 10 (Станислав, 25.08): серия из 13 кадров МОЛЧА резалась до 10
+      // при сохранении — «сделал 13, в сохранённых 10». 16 = потолок серии
+      // (13) с запасом; молчаливых обрезаний у сохранения быть не должно.
+      frames: frames.slice(0, 16).map((f) => ({
         url: f.url,
         headline: String(f.headline || '').slice(0, 200),
         body: String(f.body || '').slice(0, 300),
@@ -90,6 +93,10 @@ export async function POST(request: Request) {
         photo: typeof f.photo === 'string' && f.photo.includes('/project-brand/') ? f.photo : undefined,
         // Hand-designed frame — reopen reuses its stored image, never re-renders.
         manual: f.manual ? true : undefined,
+        // Раскладка редактора ручного кадра (фон + блоки) — повторное
+        // «Редактировать вручную» открывает реальные блоки, а не чёрный холст.
+        // Компактный объект; крупные не храним, чтобы не раздувать brand_kit.
+        design: (f.manual && f.design && typeof f.design === 'object' && JSON.stringify(f.design).length <= 8000) ? f.design : undefined,
         // Видео-кадр серии: url = готовый mp4; галерея показывает <video>,
         // правки/пересборка его не перерендеривают (как manual).
         video: f.video ? true : undefined,

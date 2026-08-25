@@ -232,8 +232,10 @@ function CarouselPanel({ projectId, brand, text, onTextChange, persistKey }: { p
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [carousel, setCarousel] = useState<Dict | null>(null)
-  // `manual` slides were designed by hand — AI re-renders must not overwrite them.
-  const [slides, setSlides] = useState<{ url: string; blob: Blob; manual?: boolean }[]>([])
+  // `manual` slides were designed by hand — AI re-renders must not overwrite
+  // them. design = раскладка редактора: повторное «Редактировать вручную»
+  // открывает реальные блоки, а не пересборку из текста карусели.
+  const [slides, setSlides] = useState<{ url: string; blob: Blob; manual?: boolean; design?: SlideValue }[]>([])
   const [zipping, setZipping] = useState(false)
   const [editText, setEditText] = useState('')
   const [editing, setEditing] = useState(false)
@@ -305,23 +307,31 @@ function CarouselPanel({ projectId, brand, text, onTextChange, persistKey }: { p
     finally { setEditing(false) }
   }
 
-  // Открыть слайд в свободном редакторе (фото + его текст блоками).
+  // Открыть слайд в свободном редакторе (фото + его текст блоками). Ручной
+  // слайд открывается СВОЕЙ раскладкой — пересборка из текста карусели
+  // стирала ручной дизайн (класс «чёрного экрана» сторис, Станислав 25.08).
   function editSlideManually(i: number) {
     if (!carousel) return
     tokenRef.current += 1
-    setEditReq({ token: tokenRef.current, slide: carouselSlideToSlide(carousel, i, photos[i]), index: i })
+    const saved = slides[i]?.manual ? slides[i]?.design : undefined
+    setEditReq({
+      token: tokenRef.current,
+      slide: saved ? (JSON.parse(JSON.stringify(saved)) as SlideValue) : carouselSlideToSlide(carousel, i, photos[i]),
+      index: i,
+    })
     toast.message('Слайд открыт в редакторе ниже — меняй и жми «Добавить в серию»')
   }
 
   // Экспорт из свободного редактора → в конкретный слайд серии (или новый).
-  function addManualToSeries({ blob, index }: { blob: Blob; index: number }) {
+  function addManualToSeries({ blob, index, slide }: { blob: Blob; index: number; slide: SlideValue }) {
     const url = URL.createObjectURL(blob)
+    const design = JSON.parse(JSON.stringify(slide)) as SlideValue
     const arr = [...slides]
     if (index >= 0 && index < arr.length) {
       URL.revokeObjectURL(arr[index].url)
-      arr[index] = { url, blob, manual: true }
+      arr[index] = { url, blob, manual: true, design }
     } else {
-      arr.push({ url, blob, manual: true })
+      arr.push({ url, blob, manual: true, design })
     }
     setSlides(arr)
     toast.success('Слайд добавлен в серию')

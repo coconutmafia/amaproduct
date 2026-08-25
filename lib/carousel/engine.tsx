@@ -205,8 +205,8 @@ function headlineGrad(theme: CarouselTheme): RichOpts['accentGrad'] {
     : { from: theme.gradFrom, mid: theme.gradMid, to: theme.gradTo }
 }
 
-function tokenize(text: string): { word: string; em: boolean; br?: boolean }[] {
-  const out: { word: string; em: boolean; br?: boolean }[] = []
+export function tokenize(text: string): { word: string; em: boolean; br?: boolean; blank?: boolean }[] {
+  const out: { word: string; em: boolean; br?: boolean; blank?: boolean }[] = []
   // [[...]] are plate-span markers (handled by StoryText); strip them here so
   // they never render literally on any other surface (RichText, carousels).
   const segs = text.replace(/\[\[|\]\]/g, '').split(/(\*\*[^*]+\*\*)/g).filter(Boolean)
@@ -214,7 +214,10 @@ function tokenize(text: string): { word: string; em: boolean; br?: boolean }[] {
     const em = seg.startsWith('**') && seg.endsWith('**')
     const raw = em ? seg.slice(2, -2) : seg
     raw.split('\n').forEach((line, li) => {
-      if (li > 0) out.push({ word: '', em: false, br: true })
+      // blank: ПУСТАЯ строка (абзацный отступ). Редактор показывает её как
+      // зазор (whiteSpace: pre-wrap), а экспорт раньше схлопывал в ноль —
+      // «разбил текст на абзацы, сохранил — обратно сжало» (Станислав, 25.08).
+      if (li > 0) out.push({ word: '', em: false, br: true, blank: line.trim() === '' })
       for (const w of line.split(/\s+/)) {
         if (w) out.push({ word: w, em })
       }
@@ -242,7 +245,9 @@ export function RichText({ text, o }: { text: string; o: RichOpts }): ReactEleme
       }}
     >
       {items.map((it, i) => {
-        if (it.br) return <div key={i} style={{ display: 'flex', width: '100%', height: 0 }} />
+        // Пустая строка (blank) занимает высоту строки, как в редакторе
+        // (pre-wrap, lineHeight 1.18) — иначе абзацы слипаются при экспорте.
+        if (it.br) return <div key={i} style={{ display: 'flex', width: '100%', height: it.blank ? Math.round(o.size * 1.18) : 0 }} />
         const punct = /^[.,!?;:»)]+$/.test(it.word)
         return (
           <div
@@ -275,21 +280,40 @@ export function RichText({ text, o }: { text: string; o: RichOpts }): ReactEleme
 // одного слова на новую строчку — чтоб такого не было»).
 type WrapTok = { word: string; em: boolean }
 
+// Пустой массив в результате = ПУСТАЯ СТРОКА из текста (абзацный отступ):
+// редактор её показывает, значит и экспорт обязан (Станислав, 25.08 — «разбил
+// на абзацы, сохранил — сжало обратно»). Автоперенос пустых строк не создаёт;
+// крайние пустые обрезаются, подряд идущие схлопываются до одной.
 function wrapOnce(tokens: ReturnType<typeof tokenize>, maxChars: number): WrapTok[][] {
   const lines: WrapTok[][] = [[]]
+  const blankAt = new Set<number>()
   let cur = 0
   for (const t of tokens) {
-    if (t.br) { lines.push([]); cur = 0; continue }
+    if (t.br) {
+      if (t.blank) blankAt.add(lines.length) // метим строку-зазор
+      lines.push([]); cur = 0; continue
+    }
     if (!t.word) continue
     const wlen = t.word.length + 1
     if (cur > 0 && cur + wlen > maxChars) { lines.push([]); cur = 0 }
     lines[lines.length - 1].push({ word: t.word, em: t.em })
     cur += wlen
   }
-  return lines.filter((l) => l.length > 0)
+  // Оставляем пустые строки ТОЛЬКО там, где в тексте была пустая строка
+  // (переносы-обёртки пустых строк не порождают), без краевых и без дублей.
+  const kept: WrapTok[][] = []
+  lines.forEach((l, i) => {
+    if (l.length > 0) { kept.push(l); return }
+    if (blankAt.has(i) && kept.length > 0 && kept[kept.length - 1].length > 0) kept.push([])
+  })
+  while (kept.length && kept[kept.length - 1].length === 0) kept.pop()
+  return kept
 }
 
-const hasWidow = (lines: WrapTok[][]) => lines.length > 1 && lines[lines.length - 1].length === 1
+const hasWidow = (lines: WrapTok[][]) => {
+  const last = lines[lines.length - 1]
+  return lines.length > 1 && !!last && last.length === 1
+}
 
 function wrapWords(text: string, size: number, maxWidth: number): WrapTok[][] {
   const tokens = tokenize(text.trim())
@@ -361,6 +385,11 @@ function StoryText({ text, size, accent, plateBg, platedColor, plainColor, defau
             marginTop: si === 0 ? 0 : Math.round(size * 0.22),
           }}>
             {lines.map((line, li) => (
+              // Пустая строка = абзацный зазор (фото просвечивает, плашка
+              // рвётся) — как в редакторе; раньше экспорт её схлопывал.
+              line.length === 0 ? (
+                <div key={li} style={{ display: 'flex', width: '100%', height: Math.round(size * 1.15) }} />
+              ) : (
               <div key={li} style={{
                 display: 'flex', flexWrap: 'wrap', maxWidth: '100%',
                 backgroundColor: plated ? plateBg : 'transparent',
@@ -381,6 +410,7 @@ function StoryText({ text, size, accent, plateBg, platedColor, plainColor, defau
                   }}>{t.word}</div>
                 ))}
               </div>
+              )
             ))}
           </div>
         )
