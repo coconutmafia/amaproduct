@@ -2899,19 +2899,19 @@ async function reelsContext() {
 
 // ── ПРОБНИК: ассистент ВИДИТ прикреплённое фото ─────────────────────────────
 // Просьба клиента 26.08 «нет кнопки добавить фото в чат». Проверяем боевой
-// путь целиком: генерим картинку с крупным словом, шлём её тем же телом, что
-// шлёт композер, и смотрим, назовёт ли ассистент это слово. Если назовёт —
-// картинка реально дошла до модели, а не потерялась по дороге.
+// путь целиком: рисуем картинку с тремя цветными полосами, шлём её тем же
+// телом, что шлёт композер, и просим назвать цвета сверху вниз. Совпали —
+// значит картинка реально дошла до модели, а не потерялась по дороге.
+// (Цвета, а не текст: drawtext собран не во всякой ffmpeg.)
 //   node scripts/prod-probe.mjs chat-image [--run]
 async function chatImage() {
   const APP = 'https://amaproduct.com'
-  const WORD = 'ЧЕРЕПАХА'
   log('\n=== Пробник: фото в чате доходит до модели ===')
   if (!RUN) {
     log('\n[DRY-RUN] план (добавь --run):')
-    log(`  1) ffmpeg рисует картинку со словом «${WORD}»`)
+    log('  1) ffmpeg рисует три полосы: красная / зелёная / синяя')
     log('  2) POST /api/ai/chat с images:[data:image/jpeg;base64,…] как у композера')
-    log('  3) ответ обязан содержать это слово — значит модель картинку увидела')
+    log('  3) ответ обязан назвать все три цвета в этом порядке')
     log('  4) уборка: счётчики QA')
     return
   }
@@ -2937,11 +2937,13 @@ async function chatImage() {
   const { execFileSync } = await import('node:child_process')
   const { tmpdir } = await import('node:os')
   const { readFileSync: rf, unlinkSync } = await import('node:fs')
-  const img = join(tmpdir(), `${PROBE_PREFIX}word.jpg`)
+  const img = join(tmpdir(), `${PROBE_PREFIX}stripes.jpg`)
   try {
-    execFileSync('ffmpeg', ['-y', '-f', 'lavfi', '-i', 'color=c=white:s=640x360',
-      '-vf', `drawtext=text='${WORD}':fontcolor=black:fontsize=96:x=(w-text_w)/2:y=(h-text_h)/2`,
-      '-frames:v', '1', img], { stdio: 'ignore' })
+    execFileSync('ffmpeg', ['-y',
+      '-f', 'lavfi', '-i', 'color=c=red:s=300x100',
+      '-f', 'lavfi', '-i', 'color=c=green:s=300x100',
+      '-f', 'lavfi', '-i', 'color=c=blue:s=300x100',
+      '-filter_complex', 'vstack=inputs=3', '-frames:v', '1', img], { stdio: 'pipe' })
     const dataUrl = 'data:image/jpeg;base64,' + rf(img).toString('base64')
     log(`✅ 1. картинка готова (${Math.round(dataUrl.length / 1024)} КБ в base64)`)
 
@@ -2949,7 +2951,7 @@ async function chatImage() {
       method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
       body: JSON.stringify({
         conversationType: 'assistant',
-        messages: [{ role: 'user', content: 'Что написано на картинке? Ответь одним словом.' }],
+        messages: [{ role: 'user', content: 'Назови цвета полос на картинке сверху вниз. Только три слова через запятую.' }],
         images: [dataUrl],
       }),
     })
@@ -2957,9 +2959,12 @@ async function chatImage() {
     let text = ''
     const reader = res.body.getReader(); const dec = new TextDecoder()
     while (true) { const { value, done } = await reader.read(); if (done) break; text += dec.decode(value, { stream: true }) }
-    const sees = text.toUpperCase().includes(WORD)
+    const low = text.toLowerCase()
+    const r = low.indexOf('красн'), g = low.indexOf('зел'), b = low.indexOf('син')
+    const allSeen = r >= 0 && g >= 0 && b >= 0
+    const rightOrder = allSeen && r < g && g < b
     log(`   ответ: «${text.trim().slice(0, 120)}»`)
-    log(`${sees ? '✅' : '❌'} 2. модель ${sees ? 'ПРОЧИТАЛА слово с картинки' : 'картинку НЕ увидела'}`)
+    log(`${allSeen ? '✅' : '❌'} 2. модель ${allSeen ? 'УВИДЕЛА картинку' : 'картинку НЕ получила'}${allSeen && !rightOrder ? ' (но порядок цветов перепутан)' : ''}`)
   } finally {
     try { unlinkSync(img) } catch { /* уже нет */ }
     await api(`/rest/v1/profiles?id=eq.${qa.id}`, {
