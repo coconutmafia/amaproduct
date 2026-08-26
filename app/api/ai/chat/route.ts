@@ -54,9 +54,26 @@ async function createGenMailbox(userId: string): Promise<string | null> {
 // mid-answer (stop_reason === 'max_tokens') — likely on "5 рилзов"-style
 // requests — automatically continue from where it stopped (a trailing assistant
 // turn makes Claude resume the same text) so nothing is ever cut off.
+type ChatMsg = { role: 'user' | 'assistant'; content: string; images?: string[] }
+
+// Картинки → блоки контента для модели. Принимаем только data:image/...;base64
+// от нашего же композера (он ужимает фото до 1568px и jpeg) — чужой URL сюда
+// не пролезет, значит нельзя заставить сервер ходить по произвольным адресам.
+type ImageMedia = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
+function imageBlocks(images?: string[]) {
+  const out: Array<{ type: 'image'; source: { type: 'base64'; media_type: ImageMedia; data: string } }> = []
+  for (const src of (images ?? []).slice(0, 3)) {
+    const m = /^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(src ?? '')
+    if (!m) continue
+    if (m[2].length > 7_000_000) continue // ~5 МБ после декодирования — потолок модели
+    out.push({ type: 'image', source: { type: 'base64', media_type: m[1] as ImageMedia, data: m[2] } })
+  }
+  return out
+}
+
 function streamingChatResponse(
   system: string,
-  messages: { role: 'user' | 'assistant'; content: string }[],
+  messages: ChatMsg[],
   onEmptyError?: () => void | Promise<void>,
   genJobId?: string | null,
 ) {
@@ -65,11 +82,17 @@ function streamingChatResponse(
   // авто-продолжения читают систему+историю из кэша за ~10% цены вместо полной
   // (брейкпоинт на system покрывает только его, история шла по полной).
   // На выход не влияет — модель видит те же токены байт-в-байт.
-  const cachedMessages = messages.map((m, i) =>
-    i === messages.length - 1
-      ? { role: m.role, content: [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' as const } }] }
-      : m
-  )
+  const cachedMessages = messages.map((m, i) => {
+    const imgs = i === messages.length - 1 ? imageBlocks(m.images) : []
+    if (i !== messages.length - 1) return { role: m.role, content: m.content }
+    return {
+      role: m.role,
+      content: [
+        ...imgs,
+        { type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' as const } },
+      ],
+    }
+  })
   const mailbox = async (patch: Record<string, unknown>) => {
     if (!genJobId) return
     try { await createAdminClient().from('jobs').update(patch).eq('id', genJobId) } catch { /* страховка */ }
@@ -195,13 +218,17 @@ export async function POST(request: Request) {
     const denied = await requirePaidAccess(user.id)
     if (denied) return denied
 
-    const { messages, projectId, genFormat }: {
+    const { messages, projectId, genFormat, images }: {
       messages: Message[]
       projectId?: string
       conversationType?: string
       // Set when generating a content-plan unit — makes the AI return ONLY the
       // clean content (no «Окей, вот пост:» lead-in that would get saved with it).
       genFormat?: string
+      // Фото к последнему сообщению (просьба клиента 26.08). Только data-URL от
+      // нашего композера; видео модель не принимает — для него в продукте есть
+      // «Тренды» (залетевшие рилзы) и «Монтаж».
+      images?: string[]
     } = await request.json()
 
     // A finished content unit (genFormat set = «Сгенерировать пост/рилз/…») costs
@@ -272,7 +299,11 @@ ${sysKnowledge ? `═══ МЕТОДОЛОГИЯ (опирайся на неё
       const blocked = await meterGeneration()
       if (blocked) return blocked
       const genJobId = genFormat ? await createGenMailbox(user.id) : null
-      return streamingChatResponse(standaloneSystem, messages.map((m) => ({ role: m.role, content: m.content })), refundIfMetered, genJobId)
+      return streamingChatResponse(
+        standaloneSystem,
+        messages.map((m, i) => ({ role: m.role, content: m.content, ...(i === messages.length - 1 ? { images } : {}) })),
+        refundIfMetered, genJobId,
+      )
     }
 
     // AI generation costs real money and no RLS-gated table write happens in
@@ -361,11 +392,13 @@ ${baseSystem}${savedBlock}`
       ...queryMatches.systemKnowledge.map(c => c.chunk_text),
       ...queryMatches.projectContext.map(c => c.chunk_text),
     ].filter(Boolean).join('\n\n').slice(0, 12000)
-    const outMessages = messages.map((m, i) =>
-      i === messages.length - 1 && matchesBlock
-        ? { role: m.role, content: `${m.content}\n\n[СПРАВОЧНЫЕ ФРАГМЕНТЫ ПО ЭТОМУ ВОПРОСУ — материалы проекта и методология, используй если уместно]\n${matchesBlock}` }
-        : { role: m.role, content: m.content }
-    )
+    const outMessages: ChatMsg[] = messages.map((m, i) => {
+      const isLast = i === messages.length - 1
+      const content = isLast && matchesBlock
+        ? `${m.content}\n\n[СПРАВОЧНЫЕ ФРАГМЕНТЫ ПО ЭТОМУ ВОПРОСУ — материалы проекта и методология, используй если уместно]\n${matchesBlock}`
+        : m.content
+      return { role: m.role, content, ...(isLast ? { images } : {}) }
+    })
     return streamingChatResponse(systemPrompt, outMessages, refundIfMetered, genJobId)
   } catch (error) {
     console.error('Chat error:', error)

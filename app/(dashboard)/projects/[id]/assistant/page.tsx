@@ -81,6 +81,8 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
   const router = useRouter()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
+  // Фото, прикреплённые к следующему сообщению (data:image/jpeg;base64,…)
+  const [images, setImages] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [streaming, setStreaming] = useState('')
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
@@ -143,9 +145,14 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
 
   const send = useCallback(async (text: string) => {
     const content = text.trim()
-    if (!content || loading) return
+    // Фото можно прислать и без текста («что тут не так?») — тогда сообщение
+    // состоит только из вложения.
+    if ((!content && images.length === 0) || loading) return
     setInput('')
-    const next = [...messages, { role: 'user' as const, content }]
+    const sentImages = images
+    setImages([])
+    const shown = content || (sentImages.length === 1 ? '📷 фото' : `📷 фото · ${sentImages.length}`)
+    const next = [...messages, { role: 'user' as const, content: shown }]
     setMessages(next)
     // Durable style instruction? Offer one-tap save as a project rule.
     maybeSuggestRule(content, id)
@@ -160,7 +167,11 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: id, conversationType: 'assistant', messages: next, ...(genContext ? { genFormat: genContext.type } : {}) }),
+        body: JSON.stringify({
+          projectId: id, conversationType: 'assistant', messages: next,
+          ...(sentImages.length ? { images: sentImages } : {}),
+          ...(genContext ? { genFormat: genContext.type } : {}),
+        }),
         signal: controller.signal,
       })
       if (res.status === 402) {
@@ -223,7 +234,7 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
       abortRef.current = null
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, messages, loading, genContext])
+  }, [id, messages, loading, images, genContext])
 
   // On mount: if opened with ?prompt=… (e.g. from the content plan), set the
   // back link and auto-send the seeded prompt so the chat starts on that theme.
@@ -425,6 +436,7 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
       </div>
 
       <ChatComposer value={input} onChange={setInput} onSend={() => send(input)}
+        images={images} onImagesChange={setImages}
         loading={loading} onStop={stop}
         placeholder={genContext ? 'Напиши детали или просто «давай»…' : 'Спроси или попроси написать…'} />
     </div>

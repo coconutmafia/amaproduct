@@ -2806,9 +2806,100 @@ async function cacheProbe() {
   }
 }
 
+// ── ПРОБНИК: видит ли ассистент загруженные залетевшие рилзы ────────────────
+// Жалоба клиента 26.08: «загрузила рилзы в Тренды — ассистент говорит, что не
+// видит их». Связки действительно не было (viral_reels читали план прогрева и
+// брифы, но не buildRAGContext). Здесь проверяем БОЕВОЙ путь: временный проект
+// QA + два рилза → вопрос ассистенту «перечисли загруженные рилзы» → в ответе
+// обязаны оказаться оба формата. Всё убираем за собой.
+//   node scripts/prod-probe.mjs reels-context [--run]
+async function reelsContext() {
+  const APP = 'https://amaproduct.com'
+  log('\n=== Пробник: ассистент видит залетевшие рилзы ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) временный проект QA + 2 рилза с узнаваемыми формулировками')
+    log('  2) вопрос ассистенту: «перечисли залетевшие рилзы, которые я загрузила»')
+    log('  3) в ответе должны быть ОБА формата (иначе связки нет)')
+    log('  4) уборка: рилзы, проект, счётчики')
+    return
+  }
+  const anon = (() => {
+    const m = readFileSync(join(ROOT, '.env.local'), 'utf8').match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  const prof = await api(`/rest/v1/profiles?select=id,generations_used,bonus_generations&email=eq.${QA_EMAIL}`)
+  const qa = Array.isArray(prof.body) ? prof.body[0] : null
+  if (!qa) { log('❌ QA не найден'); return }
+  const used0 = qa.generations_used, bonus0 = qa.bonus_generations
+
+  const gl = await api('/auth/v1/admin/generate_link', { method: 'POST', body: JSON.stringify({ type: 'magiclink', email: QA_EMAIL }) })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log('❌ сессия'); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST', headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA_EMAIL, token: otp }),
+  }).then(r => r.json())
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+
+  let projectId = null
+  const MARK_A = 'разоблачение мифа про утренние тренировки'
+  const MARK_B = 'закулисье съёмки с провальным дублем'
+  try {
+    const proj = await api('/rest/v1/projects', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ name: `${PROBE_PREFIX}reels`, owner_id: qa.id }),
+    })
+    projectId = Array.isArray(proj.body) ? proj.body[0]?.id : null
+    if (!projectId) { log(`❌ проект: ${proj.status} ${JSON.stringify(proj.body).slice(0,150)}`); return }
+
+    const ins = await api('/rest/v1/viral_reels', {
+      method: 'POST',
+      body: JSON.stringify([
+        { scope: 'project', project_id: projectId, created_by: qa.id, source_url: 'https://instagram.com/reel/probeA',
+          username: 'probe_a', reel_type: MARK_A, analysis: 'Хук в первые 2 секунды: прямое опровержение привычного совета. Дальше личный опыт и цифра.', views: 120000, is_active: true },
+        { scope: 'project', project_id: projectId, created_by: qa.id, source_url: 'https://instagram.com/reel/probeB',
+          username: 'probe_b', reel_type: MARK_B, analysis: 'Формат «как это снималось»: показывает неудачу, потом результат. Держит на любопытстве.', views: 87000, is_active: true },
+      ]),
+    })
+    if (ins.status >= 300) { log(`❌ рилзы не создались: ${ins.status} ${JSON.stringify(ins.body).slice(0,200)}`); return }
+    log('✅ 1. временный проект и 2 рилза созданы')
+
+    const res = await fetch(`${APP}/api/ai/chat`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({
+        projectId, conversationType: 'assistant',
+        messages: [{ role: 'user', content: 'Перечисли залетевшие рилзы, которые я загрузила в тренды. Просто список форматов, без вступления.' }],
+      }),
+    })
+    if (!res.ok || !res.body) { log(`❌ 2. чат ответил ${res.status}`); return }
+    let text = ''
+    const reader = res.body.getReader(); const dec = new TextDecoder()
+    while (true) { const { value, done } = await reader.read(); if (done) break; text += dec.decode(value, { stream: true }) }
+    const low = text.toLowerCase()
+    const seesA = low.includes('утренн') || low.includes('разоблач')
+    const seesB = low.includes('закулис') || low.includes('дубл')
+    const denies = /не вижу|нет доступа|не могу.*(увидеть|найти)|не загруж/i.test(text)
+    log(`\n── ОТВЕТ АССИСТЕНТА (${text.length} симв.) ──`)
+    log('   ' + text.slice(0, 400).replace(/\n/g, '\n   '))
+    log(`\n${seesA && seesB ? '✅' : '❌'} 2. ассистент назвал оба рилза (A: ${seesA ? 'да' : 'НЕТ'}, B: ${seesB ? 'да' : 'НЕТ'})`)
+    if (denies) log('   ⚠️ в ответе всё ещё есть отрицание («не вижу / нет доступа»)')
+  } finally {
+    if (projectId) {
+      await api(`/rest/v1/viral_reels?project_id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+      await api(`/rest/v1/projects?id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    }
+    await api(`/rest/v1/profiles?id=eq.${qa.id}`, {
+      method: 'PATCH', body: JSON.stringify({ generations_used: used0, bonus_generations: bonus0 }),
+    }).catch(() => {})
+    log('🧹 уборка: временный проект и рилзы удалены, счётчики возвращены')
+  }
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'meter-smoke': meterSmoke }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'meter-smoke': meterSmoke }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
