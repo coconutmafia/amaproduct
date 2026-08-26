@@ -2897,9 +2897,81 @@ async function reelsContext() {
   }
 }
 
+// ── ПРОБНИК: ассистент ВИДИТ прикреплённое фото ─────────────────────────────
+// Просьба клиента 26.08 «нет кнопки добавить фото в чат». Проверяем боевой
+// путь целиком: генерим картинку с крупным словом, шлём её тем же телом, что
+// шлёт композер, и смотрим, назовёт ли ассистент это слово. Если назовёт —
+// картинка реально дошла до модели, а не потерялась по дороге.
+//   node scripts/prod-probe.mjs chat-image [--run]
+async function chatImage() {
+  const APP = 'https://amaproduct.com'
+  const WORD = 'ЧЕРЕПАХА'
+  log('\n=== Пробник: фото в чате доходит до модели ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log(`  1) ffmpeg рисует картинку со словом «${WORD}»`)
+    log('  2) POST /api/ai/chat с images:[data:image/jpeg;base64,…] как у композера')
+    log('  3) ответ обязан содержать это слово — значит модель картинку увидела')
+    log('  4) уборка: счётчики QA')
+    return
+  }
+  const anon = (() => {
+    const m = readFileSync(join(ROOT, '.env.local'), 'utf8').match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  const prof = await api(`/rest/v1/profiles?select=id,generations_used,bonus_generations&email=eq.${QA_EMAIL}`)
+  const qa = Array.isArray(prof.body) ? prof.body[0] : null
+  if (!qa) { log('❌ QA не найден'); return }
+  const used0 = qa.generations_used, bonus0 = qa.bonus_generations
+
+  const gl = await api('/auth/v1/admin/generate_link', { method: 'POST', body: JSON.stringify({ type: 'magiclink', email: QA_EMAIL }) })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log('❌ сессия'); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST', headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA_EMAIL, token: otp }),
+  }).then(r => r.json())
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+
+  const { execFileSync } = await import('node:child_process')
+  const { tmpdir } = await import('node:os')
+  const { readFileSync: rf, unlinkSync } = await import('node:fs')
+  const img = join(tmpdir(), `${PROBE_PREFIX}word.jpg`)
+  try {
+    execFileSync('ffmpeg', ['-y', '-f', 'lavfi', '-i', 'color=c=white:s=640x360',
+      '-vf', `drawtext=text='${WORD}':fontcolor=black:fontsize=96:x=(w-text_w)/2:y=(h-text_h)/2`,
+      '-frames:v', '1', img], { stdio: 'ignore' })
+    const dataUrl = 'data:image/jpeg;base64,' + rf(img).toString('base64')
+    log(`✅ 1. картинка готова (${Math.round(dataUrl.length / 1024)} КБ в base64)`)
+
+    const res = await fetch(`${APP}/api/ai/chat`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({
+        conversationType: 'assistant',
+        messages: [{ role: 'user', content: 'Что написано на картинке? Ответь одним словом.' }],
+        images: [dataUrl],
+      }),
+    })
+    if (!res.ok || !res.body) { log(`❌ 2. чат ответил ${res.status}: ${(await res.text()).slice(0, 200)}`); return }
+    let text = ''
+    const reader = res.body.getReader(); const dec = new TextDecoder()
+    while (true) { const { value, done } = await reader.read(); if (done) break; text += dec.decode(value, { stream: true }) }
+    const sees = text.toUpperCase().includes(WORD)
+    log(`   ответ: «${text.trim().slice(0, 120)}»`)
+    log(`${sees ? '✅' : '❌'} 2. модель ${sees ? 'ПРОЧИТАЛА слово с картинки' : 'картинку НЕ увидела'}`)
+  } finally {
+    try { unlinkSync(img) } catch { /* уже нет */ }
+    await api(`/rest/v1/profiles?id=eq.${qa.id}`, {
+      method: 'PATCH', body: JSON.stringify({ generations_used: used0, bonus_generations: bonus0 }),
+    }).catch(() => {})
+    log('🧹 уборка: счётчики возвращены')
+  }
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'meter-smoke': meterSmoke }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
