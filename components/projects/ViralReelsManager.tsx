@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Loader2, Plus, Trash2, Film, Eye, Heart, MessageCircle, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronRight, Loader2, Plus, Trash2, Film, Eye, Heart, MessageCircle, Sparkles } from 'lucide-react'
 import { pollJob } from '@/lib/jobs/pollJob'
 import { friendlyError } from '@/lib/friendlyError'
 import { UNIT_HINTS } from '@/components/billing/UnitCostHint'
@@ -34,6 +34,11 @@ export function ViralReelsManager({ scope, projectId }: Props) {
   const [nichesInput, setNichesInput] = useState('')
   const [adding, setAdding] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
+  // Жалоба клиента 26.08: «загружено 76 рилзов — каждый раз пролистывать весь
+  // список». Свёрнуто по умолчанию, когда référencesов много; счётчик виден
+  // всегда, поиск фильтрует по формату, автору и тексту разбора.
+  const [collapsed, setCollapsed] = useState(false)
+  const [q, setQ] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -83,6 +88,12 @@ export function ViralReelsManager({ scope, projectId }: Props) {
     finally { setBusyId(null) }
   }
 
+  const needle = q.trim().toLowerCase()
+  const visible = needle
+    ? reels.filter(r => [r.reel_type, r.username, r.analysis, ...(r.niches ?? [])]
+        .filter(Boolean).join(' ').toLowerCase().includes(needle))
+    : reels
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
@@ -117,7 +128,34 @@ export function ViralReelsManager({ scope, projectId }: Props) {
         <p className="text-sm text-muted-foreground text-center py-6">Рилз-референсов пока нет. Добавь первый выше.</p>
       ) : (
         <div className="space-y-2">
-          {reels.map(r => (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCollapsed(v => !v)}
+              className="flex items-center gap-1.5 text-sm font-semibold text-foreground hover:text-primary"
+              aria-expanded={!collapsed}
+            >
+              {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              Загружено: {reels.length}
+            </button>
+            {!collapsed && reels.length > 3 && (
+              <Input
+                value={q}
+                onChange={e => setQ(e.target.value)}
+                placeholder="Поиск по формату, автору, разбору"
+                className="h-8 text-xs flex-1 min-w-0"
+              />
+            )}
+          </div>
+          {collapsed && (
+            <p className="text-[11px] text-muted-foreground">
+              Ассистент видит эти рилзы: попроси в чате «покажи загруженные рилзы» или «подбери рилз под тему дня».
+            </p>
+          )}
+          {!collapsed && visible.length === 0 && (
+            <p className="text-xs text-muted-foreground py-2">Ничего не найдено по запросу «{q}».</p>
+          )}
+          {!collapsed && visible.map(r => (
             <div key={r.id} className="rounded-xl border border-border bg-card p-3.5 space-y-2">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">

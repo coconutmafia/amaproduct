@@ -7,6 +7,13 @@ export interface RAGContext {
   systemKnowledge: Array<{ chunk_text: string; metadata: Record<string, unknown> }>
   projectContext: Array<{ chunk_text: string; material_type: string; metadata: Record<string, unknown> }>
   styleExamples: StyleExample[]
+  // Залетевшие рилзы, которые блогер сам загрузил в «Тренды» (viral_reels).
+  // Жалоба клиента 26.08: «загрузила рилзы — ассистент говорит, что их не
+  // видит». И правда: их читали план прогрева, брифы и тренды, а чат и
+  // AI-правка контент-плана (обе ходят через buildRAGContext) — нет.
+  // Лежат в СТАБИЛЬНОЙ части контекста: от вопроса не зависят → попадают в
+  // кэшируемый префикс и почти ничего не стоят.
+  viralReels?: Array<{ id: string; reel_type: string; analysis: string; url: string | null; username: string | null; views: number | null }>
   // Standing per-project rules the blogger dictated («не пиши…», «всегда…») —
   // injected prominently into the system prompt, top priority.
   voiceRules?: string
@@ -266,6 +273,29 @@ export async function buildRAGContext(
     }
   }
 
+  // ── Залетевшие рилзы проекта (раздел «Тренды») ───────────────────────────
+  // Читаем ПОД RLS сессионным клиентом: viral_reels проектные, чужие не отдаст.
+  let viralReels: RAGContext['viralReels'] = []
+  if (!opts?.matchesOnly) {
+    try {
+      const { data: vr } = await supabase
+        .from('viral_reels')
+        .select('id, reel_type, analysis, source_url, username, views')
+        .eq('project_id', projectId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(20)
+      viralReels = (vr ?? []).map((r) => ({
+        id: String(r.id),
+        reel_type: String(r.reel_type ?? 'рилз'),
+        analysis: String(r.analysis ?? '').slice(0, 700),
+        url: (r.source_url as string | null) ?? null,
+        username: (r.username as string | null) ?? null,
+        views: (r.views as number | null) ?? null,
+      }))
+    } catch { /* таблицы может не быть до миграции 014 — не роняем генерацию */ }
+  }
+
   // ── Style examples (approved content for few-shot learning) ──────────────
   // Priority: explicit style bank → the project's saved "Готовое" library →
   // system examples. Each source is in its own try so one failing table never
@@ -388,7 +418,7 @@ export async function buildRAGContext(
     if (raw) voiceRules = raw.slice(0, 3000)
   } catch { /* unavailable */ }
 
-  return { systemKnowledge: systemChunks, projectContext: projectChunks, styleExamples, voiceRules }
+  return { systemKnowledge: systemChunks, projectContext: projectChunks, styleExamples, voiceRules, viralReels }
 }
 
 export function splitIntoChunks(text: string, chunkSize = 512, overlap = 50): string[] {
