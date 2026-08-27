@@ -90,7 +90,12 @@ export async function processWeekBriefJob(jobId: string): Promise<void> {
           .maybeSingle()
         if (plan?.plan_data) {
           const next = mergeBriefsIntoPlanData(plan.plan_data as Record<string, unknown>, days, r.days)
-          await admin.from('warmup_plans').update({ plan_data: next }).eq('id', plan.id)
+          // Ошибку проверяем ЯВНО: молчаливая запись работы клиента — это тот
+          // самый класс, что дважды прятал потерю результата (эмбеддинги, ToV).
+          const { error: persistErr } = await admin.from('warmup_plans').update({ plan_data: next }).eq('id', plan.id)
+          if (persistErr) {
+            await captureException(new Error(`week-brief persist: ${persistErr.message}`), { where: 'runWeekBriefJob persist', jobId, projectId })
+          }
         }
       } catch (e) {
         // Персист — страховка, не условие успеха: брифы есть в job.result.

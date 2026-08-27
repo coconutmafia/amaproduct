@@ -66,6 +66,23 @@ describe('фоновая запись идёт сервис-ролью, а не 
     expect(offenders).toEqual([])
   })
 
+  // Вторая половина класса — МОЛЧАНИЕ. Клиента ломает не только неверный
+  // клиент, но и отброшенная ошибка: результат не сохранился, а никто не узнал.
+  // Проверяем только таблицы с РАБОТОЙ клиента: у jobs.update(status) провал
+  // виден по застрявшему джобу и лечится самовосстановлением.
+  it('фоновая запись работы клиента проверяет ошибку, а не отбрасывает её', () => {
+    const CONTENT = ['project_materials', 'project_chunks', 'warmup_plans', 'viral_reels',
+                     'saved_content', 'content_plans', 'content_items', 'style_examples']
+    const re = new RegExp(`^\\s*await\\s+\\w+\\s*\\.\\s*from\\('(${CONTENT.join('|')})'\\)\\s*\\.\\s*(insert|update|upsert)\\s*\\(`)
+    const offenders: string[] = []
+    for (const f of [...walk(join(ROOT, 'lib', 'jobs')), ...walk(join(ROOT, 'app', 'api', 'cron'))]) {
+      readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+        if (re.test(line)) offenders.push(`${f.replace(ROOT + '/', '')}:${i + 1}`)
+      })
+    }
+    expect(offenders, 'результат записи отброшен — потеря пройдёт незаметно').toEqual([])
+  })
+
   it('эмбеддинги материалов пишутся сервис-ролью (починено 26.08)', () => {
     const src = readFileSync(join(ROOT, 'lib', 'ai', 'embed.ts'), 'utf8')
     expect(src).toMatch(/createAdminClient\(\)/)
