@@ -16,7 +16,19 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const form = await request.formData()
+    // Тело может не доехать (мобильная сеть оборвала загрузку) или превысить
+    // лимит платформы — это НЕ «наша ошибка», и человеку нужно другое действие.
+    // Прод 27.08: два таких провала подряд выглядели как загадочная 500.
+    let form: FormData
+    try {
+      form = await request.formData()
+    } catch (e) {
+      await captureException(e, { where: 'brand-kit upload formdata' })
+      return NextResponse.json({
+        error: 'Файл не доехал целиком — скорее всего он слишком большой или прервалась связь. Попробуй фото поменьше или пересохрани его как JPEG.',
+        code: 'body_too_large',
+      }, { status: 413 })
+    }
     const projectId = String(form.get('projectId') || '')
     const rawKind = String(form.get('kind') || 'sample')
     const kind = rawKind === 'logo' ? 'logo' : rawKind === 'story' ? 'story' : rawKind === 'post' ? 'post' : rawKind === 'story-out' ? 'story-out' : 'sample'

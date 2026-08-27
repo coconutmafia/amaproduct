@@ -93,7 +93,7 @@ export async function buildAuditDocx(
       text(`  ${desc}`, { color: MUTED, size: 18 }),
     ])
 
-  const blockCard = (b: AuditBlockResult) => {
+  const blockCardContent = (b: AuditBlockResult) => {
     const head = b.assessableMax > 0 ? `${b.scored}/${b.assessableMax}` : 'на консультации'
     const headColor = b.assessableMax > 0
       ? (b.scored / b.assessableMax >= 0.5 ? GREEN : AMBER)
@@ -113,7 +113,35 @@ export async function buildAuditDocx(
       ], { spacing: 40 }))
       if (it.note) lines.push(p([text(it.note, { color: MUTED, size: 18 })], { spacing: 100, indent: 240 }))
     }
-    return card(lines)
+    return lines
+  }
+
+  // Блоки идут В ДВЕ КОЛОНКИ, как на экране (просьба владельца 27.08): одна
+  // таблица на пару блоков, каждая ячейка — карточка с рамкой. Нечётный
+  // последний блок занимает свою колонку, соседняя остаётся пустой без рамки —
+  // иначе Word рисует «пустую карточку».
+  const cellCard = (b: AuditBlockResult | null) => new TableCell({
+    children: b ? blockCardContent(b) : [new Paragraph({ children: [] })],
+    width: { size: 50, type: WidthType.PERCENTAGE },
+    margins: { top: 160, bottom: 160, left: 200, right: 200 },
+    borders: b ? cardBorder('E5E7EB') : noBorders,
+  })
+
+  const blocksGrid = () => {
+    const rows: InstanceType<typeof TableRow>[] = []
+    for (let i = 0; i < result.blocks.length; i += 2) {
+      rows.push(new TableRow({
+        children: [cellCard(result.blocks[i]), cellCard(result.blocks[i + 1] ?? null)],
+      }))
+    }
+    return new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      // Рамки рисуют сами ячейки; у таблицы-сетки своих быть не должно,
+      // иначе колонки склеятся в один общий прямоугольник.
+      borders: noBorders,
+      columnWidths: [4680, 4680],
+      rows,
+    })
   }
 
   const children: Array<InstanceType<typeof Paragraph> | InstanceType<typeof Table>> = []
@@ -176,10 +204,8 @@ export async function buildAuditDocx(
 
   // ── Разбор по блокам ──────────────────────────────────────────────────────
   children.push(p([text('Разбор по блокам', { bold: true, size: 26 })], { spacing: 160 }))
-  for (const b of result.blocks) {
-    children.push(blockCard(b))
-    children.push(gap())
-  }
+  children.push(blocksGrid())
+  children.push(gap())
 
   if (result.notAssessableCount > 0) {
     const locked = result.blocks.filter(b => b.items.some(it => !it.assessable)).map(b => b.title)

@@ -5,6 +5,7 @@ import { requirePaidAccess } from '@/lib/billing/access'
 import { upsertProjectMaterial } from '@/lib/supabase/upsertMaterial'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { requireProjectAccess } from '@/lib/projects/access'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { resolveContentLanguage, type ContentLanguage } from '@/lib/ai/prompts/content-brain'
 import { NextResponse, after } from 'next/server'
 
@@ -149,6 +150,14 @@ export async function POST(request: Request) {
   // телефона. Ответ 202 сразу; клиент поллит статус материала tone_of_voice
   // (processing → ready/error) — статус живёт в самом материале, поэтому
   // даже закрытая вкладка ничего не теряет.
+  // ЗАПИСЬ ИЗ ФОНОВОЙ ЧАСТИ — СЕРВИС-РОЛЬЮ, а не сессионным клиентом.
+  // Прод 25.08: «ToV собран, но не сохранился: new row violates row-level
+  // security policy» — внутри after() сессии уже нет, RLS режет запись, и
+  // готовая работа клиента (минута ожидания + оплаченная генерация) пропадает.
+  // Доступ к проекту проверен ВЫШЕ, в самом запросе, поэтому сервис-роль здесь
+  // не расширяет права — она лишь переживает конец запроса.
+  const bg = createAdminClient()
+
   after(async () => {
     try {
       const aiStream = anthropic.messages.stream({
@@ -180,7 +189,7 @@ export async function POST(request: Request) {
           text.slice(0, 4000) || '(пусто)',
         ].join('\n')
         try {
-          await upsertProjectMaterial(supabase, {
+          await upsertProjectMaterial(bg, {
             project_id:        projectId,
             title:             TOV_TITLE,
             material_type:     'tone_of_voice',
@@ -191,7 +200,7 @@ export async function POST(request: Request) {
         return
       }
 
-      const { error: saveErr } = await upsertProjectMaterial(supabase, {
+      const { error: saveErr } = await upsertProjectMaterial(bg, {
         project_id:        projectId,
         title:             TOV_TITLE,
         material_type:     'tone_of_voice',
@@ -202,7 +211,7 @@ export async function POST(request: Request) {
         console.error('[extract-tone-of-voice] save error:', saveErr)
         await captureException(new Error(`ToV собран, но не сохранился: ${saveErr.message}`), { where: 'extract-tone-of-voice save' })
         try {
-          await upsertProjectMaterial(supabase, {
+          await upsertProjectMaterial(bg, {
             project_id:        projectId,
             title:             TOV_TITLE,
             material_type:     'tone_of_voice',
@@ -216,7 +225,7 @@ export async function POST(request: Request) {
       // Сырец — в телеметрию; в материал — честный текст без хвостов провайдера
       await captureException(err, { where: 'extract-tone-of-voice' })
       try {
-        await upsertProjectMaterial(supabase, {
+        await upsertProjectMaterial(bg, {
           project_id:        projectId,
           title:             TOV_TITLE,
           material_type:     'tone_of_voice',

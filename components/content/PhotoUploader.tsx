@@ -96,7 +96,7 @@ export function PhotoUploader({ projectId, photos, onChange, kind = 'post', max 
         fd.append('files', small)
         const res = await fetch('/api/brand-kit/upload', { method: 'POST', body: fd })
         const d = await res.json().catch(() => ({} as { urls?: string[]; error?: string }))
-        if (!res.ok) throw new Error(d.error || (res.status === 413 ? 'Фото слишком большое' : `Не удалось загрузить (${res.status})`))
+        if (!res.ok) throw new Error(d.error || (res.status === 413 ? 'Фото слишком большое — пересохрани его как JPEG и попробуй снова' : `Не удалось загрузить (${res.status})`))
         added.push(...(d.urls || []))
       }
       onChange([...photos, ...added].slice(0, max))

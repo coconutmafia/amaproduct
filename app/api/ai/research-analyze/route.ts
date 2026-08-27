@@ -16,6 +16,7 @@ const AI_BUSY =
   'Генерация сейчас перегружена или временно недоступна. Подожди 1-2 минуты и нажми ещё раз — расшифровка не потеряется.'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { requireProjectAccess } from '@/lib/projects/access'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse, after } from 'next/server'
 import { MASTER_RESEARCH_TITLE } from '@/lib/researchMaster'
 import { loadKnownQuestions, runTable1Batch } from '@/lib/research/table1'
@@ -638,6 +639,14 @@ export async function POST(request: Request) {
     // сборка обрывалась без следа (тот же класс, что вылечили у транскрибации
     // джобами). after() доживает после ответа независимо от клиента; клиент
     // поллит step=meanings_status до ready/error.
+    // ЗАПИСЬ ИЗ ФОНОВОЙ ЧАСТИ — СЕРВИС-РОЛЬЮ, а не сессионным клиентом.
+    // Прод 25.08: «ToV собран, но не сохранился: new row violates row-level
+    // security policy» — внутри after() сессии уже нет, RLS режет запись, и
+    // готовая работа клиента (минута ожидания + оплаченная генерация) пропадает.
+    // Доступ к проекту проверен ВЫШЕ, в самом запросе, поэтому сервис-роль здесь
+    // не расширяет права — она лишь переживает конец запроса.
+    const bg = createAdminClient()
+
     after(async () => {
         try {
           // 32k выхода (как у table1): карта по уроку — строка на КАЖДУЮ
@@ -673,7 +682,7 @@ export async function POST(request: Request) {
               { where: 'generate_meanings no-rows', projectId, materials: materials.length },
             )
             try {
-              await upsertProjectMaterial(supabase, {
+              await upsertProjectMaterial(bg, {
                 project_id:        projectId,
                 title:             MEANINGS_TITLE,
                 material_type:     'meanings_map',
@@ -688,7 +697,7 @@ export async function POST(request: Request) {
 
           const meaningsText = meaningRowsToText(rows)
 
-          const { error: saveErr } = await upsertProjectMaterial(supabase, {
+          const { error: saveErr } = await upsertProjectMaterial(bg, {
             project_id:        projectId,
             title:             MEANINGS_TITLE,
             material_type:     'meanings_map',
@@ -703,7 +712,7 @@ export async function POST(request: Request) {
               { where: 'generate_meanings save', projectId },
             )
             try {
-              await upsertProjectMaterial(supabase, {
+              await upsertProjectMaterial(bg, {
                 project_id:        projectId,
                 title:             MEANINGS_TITLE,
                 material_type:     'meanings_map',
@@ -720,7 +729,7 @@ export async function POST(request: Request) {
           // Persist the error too, so it stays visible in materials. Текст —
           // человеческий, без сырого msg/стека (их читает клиент в материале).
           try {
-            await upsertProjectMaterial(supabase, {
+            await upsertProjectMaterial(bg, {
               project_id:        projectId,
               title:             MEANINGS_TITLE,
               material_type:     'meanings_map',

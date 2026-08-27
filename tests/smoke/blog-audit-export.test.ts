@@ -59,6 +59,15 @@ describe('выгрузка разбора в документ', () => {
     expect((xml.match(/<w:tbl>/g) ?? []).length).toBeGreaterThan(4)
   })
 
+  it('блоки идут В ДВЕ КОЛОНКИ, как на экране', async () => {
+    const { xml } = await docxParts()
+    // Сетка блоков: строка таблицы с ДВУМЯ ячейками по 50%.
+    const twoCellRows = (xml.match(/<w:tr\b[\s\S]*?<\/w:tr>/g) ?? [])
+      .filter(r => (r.match(/<w:tc>/g) ?? []).length === 2)
+    expect(twoCellRows.length, 'нет ни одной строки из двух карточек').toBeGreaterThan(0)
+    expect(xml, 'колонки должны быть равными').toContain('50')
+  })
+
   it('содержит хендл, дату и диагноз', async () => {
     const { text } = await docxParts()
     expect(text).toContain('@anette_eyn')
