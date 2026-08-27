@@ -9,7 +9,7 @@ import { pollJob } from '@/lib/jobs/pollJob'
 import { friendlyError } from '@/lib/friendlyError'
 import type { AuditResult, AuditBlockResult } from '@/lib/blogAudit/runBlogAudit'
 import { MAX_SCORE } from '@/lib/blogAudit/checklist'
-import { auditToText, zoneBreakdown } from '@/lib/blogAudit/auditToText'
+import { zoneBreakdown } from '@/lib/blogAudit/auditToText'
 import { fmtDateLocalRu } from '@/lib/dates'
 import { UNIT_HINTS } from '@/components/billing/UnitCostHint'
 
@@ -114,12 +114,10 @@ export function BlogAuditScorecard({ result, onRerun, rerunning }: {
     setDownloading(true)
     try {
       const date = fmtDateLocalRu(Date.now(), { day: 'numeric', month: 'long', year: 'numeric' })
-      const { downloadDocx } = await import('@/lib/utils/docxText')
-      await downloadDocx(
-        `Диагностика блога @${result.handle}`,
-        `Экспресс-диагностика блога @${result.handle}`,
-        auditToText(result, date),
-      )
+      // Оформленный документ, а не простыня текста: то же, что на экране —
+      // зоны, карточки блоков, цветные маркеры (просьба владельца 27.08).
+      const { downloadAuditDocx } = await import('@/lib/blogAudit/auditToDocx')
+      await downloadAuditDocx(result, date, `Диагностика блога @${result.handle}`, CONSULT_URL)
     } catch (e) {
       toast.error(friendlyError(e, 'Не удалось скачать разбор'))
     } finally {
