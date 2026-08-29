@@ -3389,9 +3389,80 @@ async function budgetCapProbe() {
   }
 }
 
+// ── ИНСТРУМЕНТ: доступ только за деньги (мандат Матвея 30.08) ────────────────
+// Две операции одним заходом, dry-run по умолчанию:
+//   1) ВЕЧНЫЕ БЕЗ ПЛАТЁЖКИ (active, provider=null, period_end в будущем) и НЕ
+//      из списка KEEP → view_only + current_period_end=now. Вернёт только
+//      реальная оплата через /pricing.
+//   2) ИСЧЕРПАВШИЕ КАП МЕСЯЦА (расход августа по НОВЫМ расценкам ≥ 40% цены
+//      тарифа) → view_only. Платёжку и period_end НЕ трогаем: рекуррент
+//      (~14.09) спишет реальные деньги, вебхук успешного платежа сам вернёт
+//      active + продлит период. Провал списания — остаются закрытыми.
+// KEEP (список Матвея): Августа, Марина, куратор, mariaonl08; плюс служебные
+// админы и QA-бот. Данные клиентов не трогаются — только статус.
+async function enforcePaidAccess() {
+  const KEEP = ['avavasilik@gmail.com', 'unshikova_kris@mail.ru', 'juliadagis@gmail.com', 'mariaonl08@gmail.com', QA_EMAIL]
+  const CAPS = { trial: 20, starter: 10, solo: 20, pro: 60, producer: 120 } // зеркало tierBudgetUsd
+  log('\n=== Инструмент: доступ только за деньги ===')
+  const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0)
+
+  const profs = await api(`/rest/v1/profiles?select=id,email,role,subscription_tier,subscription_status,payment_provider,current_period_end,created_at&subscription_status=eq.active&limit=200`)
+  const clients = (profs.body || []).filter((p) => p.role !== 'admin' && !KEEP.includes((p.email || '').toLowerCase()))
+
+  // (1) вечные без платёжки
+  const eternal = clients.filter((p) => !p.payment_provider && p.current_period_end && new Date(p.current_period_end) > new Date())
+  log(`\n1) Вечные active БЕЗ платёжки (закрыть): ${eternal.length}`)
+  for (const p of eternal) log(`   ${p.email}  tier=${p.subscription_tier}  period_end=${p.current_period_end.slice(0, 10)}`)
+
+  // (2) расход месяца по новым расценкам (та же формула, что usage-report/кап)
+  const PRICES = { 'claude-opus-5': { i: 5, o: 25 }, 'claude-sonnet-4-6': { i: 3, o: 15 }, 'claude-haiku-4-5': { i: 1, o: 5 } }
+  const rowUsd = (r) => {
+    if (r.provider === 'openai_whisper') return 0.06
+    if (r.provider === 'apify') return 0.01
+    if (r.provider === 'openai_image') return (Number(r.meta?.count ?? 1) || 1) * 0.063
+    const p = PRICES[r.model]; if (!p) return 0
+    const cr = +(r.meta?.cacheRead ?? 0), cw5 = +(r.meta?.cacheWrite5m ?? 0), cw1 = +(r.meta?.cacheWrite1h ?? 0), cwL = +(r.meta?.cacheWrite ?? 0)
+    const wr = (cw5 + cw1 > 0) ? cw5 * p.i * 1.25 + cw1 * p.i * 2 : cwL * p.i * 1.25
+    return ((r.input_tokens ?? 0) * p.i + cr * p.i * 0.1 + wr + (r.output_tokens ?? 0) * p.o) / 1e6
+  }
+  let rows = [], from = 0
+  while (true) {
+    const r = await fetch(`${U}/rest/v1/ai_usage?select=user_id,provider,model,input_tokens,output_tokens,meta&created_at=gte.${monthStart.toISOString()}`, { headers: { ...H, Range: `${from}-${from + 999}`, Prefer: 'count=exact' } })
+    const page = await r.json(); if (!Array.isArray(page)) break
+    rows = rows.concat(page)
+    const total = Number(r.headers.get('content-range')?.split('/')[1] ?? 0)
+    from += 1000; if (rows.length >= total) break
+  }
+  const spend = {}
+  for (const r of rows) { if (r.user_id) spend[r.user_id] = (spend[r.user_id] ?? 0) + rowUsd(r) }
+  const over = clients.filter((p) => (spend[p.id] ?? 0) >= (CAPS[p.subscription_tier] ?? 20) && !eternal.includes(p))
+  log(`\n2) Исчерпали кап месяца (закрыть до реального платежа): ${over.length}`)
+  for (const p of over) log(`   ${p.email}  расход $${(spend[p.id] ?? 0).toFixed(2)} ≥ кап $${CAPS[p.subscription_tier] ?? 20}  провайдер=${p.payment_provider ?? 'нет'}  period_end=${p.current_period_end?.slice(0, 10) ?? '—'}`)
+  // близкие к капу — предупреждение владельцу
+  const near = clients.filter((p) => !over.includes(p) && (spend[p.id] ?? 0) >= 0.7 * (CAPS[p.subscription_tier] ?? 20))
+  if (near.length) { log(`\n   ⚠️ Близки к капу (≥70%, НЕ трогаем):`); for (const p of near) log(`   ${p.email} $${(spend[p.id] ?? 0).toFixed(2)}`) }
+
+  if (!RUN) { log('\n[DRY-RUN] ничего не записано. Добавь --run.'); return }
+
+  const nowIso = new Date().toISOString()
+  for (const p of eternal) {
+    const r = await api(`/rest/v1/profiles?id=eq.${p.id}`, {
+      method: 'PATCH', body: JSON.stringify({ subscription_status: 'view_only', current_period_end: nowIso }),
+    })
+    log(`   ${r.status < 300 ? '✅' : '❌'} вечный закрыт: ${p.email}`)
+  }
+  for (const p of over) {
+    const r = await api(`/rest/v1/profiles?id=eq.${p.id}`, {
+      method: 'PATCH', body: JSON.stringify({ subscription_status: 'view_only' }),
+    })
+    log(`   ${r.status < 300 ? '✅' : '❌'} кап-закрыт (платёжка/период не тронуты): ${p.email}`)
+  }
+  log('\n── ИТОГ ── закрыто вечных: ' + eternal.length + ', по капу: ' + over.length)
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe, 'budget-cap-probe': budgetCapProbe }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe, 'budget-cap-probe': budgetCapProbe, 'enforce-paid-access': enforcePaidAccess }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
