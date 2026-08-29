@@ -74,11 +74,36 @@ describe('контракт бесплатной диагностики (лид-�
   })
   it('CTA записи к Августе живёт в скоркарде и настраивается env', () => {
     const d = read('components/projects/BlogAuditDialog.tsx')
-    expect(d).toContain('NEXT_PUBLIC_CONSULT_TELEGRAM')
+    expect(d).toContain("import { CONSULT_URL } from '@/lib/consult'")
     expect(d).toContain('Записаться на бесплатную консультацию')
   })
   it('standalone-экран показывает тот же скоркард (с CTA)', () => {
     const s = read('components/blogAudit/StandaloneBlogAudit.tsx')
     expect(s).toContain('BlogAuditScorecard')
+  })
+})
+
+describe('правки Марины по лендингу и финальному экрану (29.08)', () => {
+  it('лендинг: оффер диагностики + CTA «Пройти диагностику» → /blog-audit', () => {
+    const l = read('components/landing/LandingPage.tsx')
+    expect(l).toContain('бесплатную диагностику')
+    expect(l).toContain('Пройти диагностику')
+    expect(l).toContain('href="/blog-audit"')
+    expect(l).toContain('DiagnosticPathSection')
+  })
+  it('после свежего отчёта — отдельное окно записи на консультацию', () => {
+    const s = read('components/blogAudit/StandaloneBlogAudit.tsx')
+    expect(s).toContain('Хочешь разобрать аккаунт глубже?')
+    expect(s).toContain('Записаться на консультацию')
+    expect(s).toContain('setConsultOpen(true)')
+    // Восстановленный старый отчёт окно не открывает (человек его уже видел)
+    expect(s).not.toMatch(/setRestoredFrom\([^n][^)]*\)[\s\S]{0,80}setConsultOpen\(true\)/)
+  })
+  it('адрес записи один на всю воронку и переключается env (календарь/форма/бот)', () => {
+    const c = read('lib/consult.ts')
+    expect(c).toContain('NEXT_PUBLIC_CONSULT_URL')
+    expect(c).toContain('NEXT_PUBLIC_CONSULT_TELEGRAM')
+    expect(read('components/blogAudit/StandaloneBlogAudit.tsx')).toContain("from '@/lib/consult'")
+    expect(read('components/projects/BlogAuditDialog.tsx')).toContain("from '@/lib/consult'")
   })
 })

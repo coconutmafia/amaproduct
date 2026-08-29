@@ -13,10 +13,10 @@ import { zoneBreakdown } from '@/lib/blogAudit/auditToText'
 import { fmtDateLocalRu } from '@/lib/dates'
 import { UNIT_HINTS } from '@/components/billing/UnitCostHint'
 
-// Куда ведёт CTA «бесплатная консультация с маркетологом». Настраивается через
-// env (можно сменить без деплоя кода); дефолт — телеграм Августы.
-const CONSULT_TG = (process.env.NEXT_PUBLIC_CONSULT_TELEGRAM || 'avavasilik').replace(/^@/, '')
-const CONSULT_URL = `https://t.me/${CONSULT_TG}`
+// Куда ведёт CTA «бесплатная консультация с маркетологом» — общий адрес
+// воронки (lib/consult): NEXT_PUBLIC_CONSULT_URL (календарь/форма/бот) либо
+// телеграм Августы по умолчанию.
+import { CONSULT_URL } from '@/lib/consult'
 
 interface Props {
   projectId: string

@@ -3,10 +3,12 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Loader2, Sparkles, AtSign } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { Loader2, Sparkles, AtSign, CalendarCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { pollJob } from '@/lib/jobs/pollJob'
 import { friendlyError } from '@/lib/friendlyError'
+import { CONSULT_URL } from '@/lib/consult'
 import { BlogAuditScorecard } from '@/components/projects/BlogAuditDialog'
 import type { AuditResult } from '@/lib/blogAudit/runBlogAudit'
 
@@ -19,6 +21,11 @@ export function StandaloneBlogAudit() {
   // Метка «это прошлый разбор» при восстановлении после выгрузки вкладки.
   const [restoredFrom, setRestoredFrom] = useState<string | null>(null)
   const restoredRef = useRef(false)
+  // Финальный экран воронки (список Марины, 29.08): после СВЕЖЕГО отчёта —
+  // отдельное окно «разобрать глубже → запись на консультацию». Показывается
+  // один раз на разбор; для восстановленного старого отчёта не всплывает
+  // (человек его уже видел) — там остаётся CTA внутри скоркарда.
+  const [consultOpen, setConsultOpen] = useState(false)
 
   // Разбор идёт ~1 минуту — телефон успевает выгрузить вкладку. Джоб
   // доделывается на сервере; при открытии страницы догоняем его: живой —
@@ -71,6 +78,7 @@ export function StandaloneBlogAudit() {
       const audit = await pollJob<AuditResult>(body.jobId)
       if (!audit || typeof audit.score100 !== 'number') throw new Error('Пустой результат разбора')
       setResult(audit)
+      setConsultOpen(true)
     } catch (e) {
       toast.error(friendlyError(e, 'Не удалось сделать разбор'))
     } finally {
@@ -102,6 +110,32 @@ export function StandaloneBlogAudit() {
         <Button variant="ghost" className="w-full text-muted-foreground" onClick={() => { setResult(null); setHandle(''); setRestoredFrom(null) }}>
           Проверить другой аккаунт
         </Button>
+
+        {/* Финальный экран воронки: отчёт получен → запись на консультацию */}
+        <Dialog open={consultOpen} onOpenChange={setConsultOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-black leading-snug">
+                Хочешь разобрать аккаунт глубже?
+              </DialogTitle>
+              <DialogDescription className="text-sm leading-relaxed">
+                Отчёт показывает, что видно с поверхности профиля. На бесплатной консультации
+                маркетолог разберёт актуальные, визуал и воронку — и покажет, как довести блог до продаж.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 pt-1">
+              <a href={CONSULT_URL} target="_blank" rel="noopener noreferrer" className="block">
+                <Button className="w-full gradient-accent text-white border-0 hover:opacity-90">
+                  <CalendarCheck className="h-4 w-4 mr-2" />
+                  Записаться на консультацию
+                </Button>
+              </a>
+              <Button variant="ghost" className="w-full text-muted-foreground" onClick={() => setConsultOpen(false)}>
+                Сначала посмотрю отчёт
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     )
   }

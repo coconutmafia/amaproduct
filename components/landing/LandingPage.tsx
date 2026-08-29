@@ -410,6 +410,30 @@ function HeroSection() {
           <span className="font-bold text-[#1A1A1A]">8 минут</span>.
         </motion.p>
 
+        {/* Основной оффер — бесплатная диагностика (воронка Августы, список
+            Марины 29.08: оффер + что получит + понятная CTA). Ссылка ведёт на
+            /blog-audit; незарегистрированного middleware проведёт через
+            регистрацию и ВЕРНЁТ на диагностику (?next=). */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.25, duration: 0.6 }}
+          className="mx-auto max-w-xl rounded-3xl border-2 border-[#3A9A50]/25 bg-white/85 backdrop-blur-sm shadow-lg shadow-[#3A9A50]/10 px-6 py-6 sm:px-8 space-y-3"
+        >
+          <p className="text-lg sm:text-2xl font-black uppercase leading-tight text-[#1A1A1A]">
+            Пройди <span className="gradient-text">бесплатную диагностику</span> своего Instagram-аккаунта
+          </p>
+          <p className="text-sm sm:text-base text-[#555] leading-relaxed">
+            Получишь подробный отчёт: балл из 100, разбор по чек-листу «блог к продажам»
+            и конкретный список, что усилить, — за пару минут.
+          </p>
+          <div className="pt-1">
+            <GradientButton href="/blog-audit" large>
+              Пройти диагностику
+            </GradientButton>
+          </div>
+        </motion.div>
+
         {/* CTAs */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -417,14 +441,19 @@ function HeroSection() {
           transition={{ delay: 1.3, duration: 0.6 }}
           className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2 w-full sm:w-auto px-2 sm:px-0"
         >
-          <GradientButton href="/register" large>
-            Начать
-          </GradientButton>
+          <motion.a
+            href="/register"
+            whileHover={{ scale: 1.03, borderColor: '#C5CBA5' }}
+            whileTap={{ scale: 0.97 }}
+            className="h-14 px-9 w-full sm:w-auto justify-center rounded-[50px] font-bold text-[#444] border-2 border-[#E8E8E8] hover:border-[#C5CBA5] hover:text-[#1A1A1A] transition-colors flex items-center gap-2 text-sm uppercase tracking-wide"
+          >
+            Начать с тарифа
+          </motion.a>
           <motion.a
             href="#features"
             whileHover={{ scale: 1.03, borderColor: '#C5CBA5' }}
             whileTap={{ scale: 0.97 }}
-            className="h-14 sm:h-16 px-9 w-full sm:w-auto justify-center rounded-[50px] font-bold text-[#444] border-2 border-[#E8E8E8] hover:border-[#C5CBA5] hover:text-[#1A1A1A] transition-colors flex items-center gap-2 text-sm uppercase tracking-wide"
+            className="h-14 px-9 w-full sm:w-auto justify-center rounded-[50px] font-bold text-[#444] border-2 border-[#E8E8E8] hover:border-[#C5CBA5] hover:text-[#1A1A1A] transition-colors flex items-center gap-2 text-sm uppercase tracking-wide"
           >
             Смотреть демо
           </motion.a>
@@ -437,13 +466,47 @@ function HeroSection() {
           transition={{ delay: 1.5 }}
           className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-[#888] pt-2"
         >
+          <span className="flex items-center gap-1.5">✓ Диагностика бесплатно</span>
+          <span className="hidden sm:block w-px h-4 bg-[#E0E0E0]" />
           <span className="flex items-center gap-1.5">✓ Первый план за 8 минут</span>
           <span className="hidden sm:block w-px h-4 bg-[#E0E0E0]" />
           <span className="flex items-center gap-1.5">✓ Контент в твоём стиле</span>
-          <span className="hidden sm:block w-px h-4 bg-[#E0E0E0]" />
-          <span className="flex items-center gap-1.5">✓ Голос и методология</span>
         </motion.div>
       </div>
+    </section>
+  )
+}
+
+// ── Как проходит диагностика (путь юзера из списка Марины, 29.08) ────────────
+// Telegram/соцсети → лендинг → диагностика → отчёт → запись на консультацию.
+// Слот под скринкаст: когда команда запишет ролик, он встаёт сюда <video>-блоком.
+function DiagnosticPathSection() {
+  const steps = [
+    { n: '1', title: 'Жми «Пройти диагностику»', desc: 'Регистрация за минуту — почта или Google. После неё вернёшься прямо сюда.' },
+    { n: '2', title: 'Введи свой @аккаунт', desc: 'Профиль должен быть открытым. Анализ занимает около минуты.' },
+    { n: '3', title: 'Получи отчёт', desc: 'Балл из 100, разбор по чек-листу «блог к продажам» и список, что усилить.' },
+    { n: '4', title: 'Запишись на консультацию', desc: 'Маркетолог разберёт аккаунт глубже и покажет, как дожать до продаж.' },
+  ]
+  return (
+    <section className="py-14 sm:py-20 px-5 bg-[#F7F7F7] border-b border-[#C5CBA5]/50">
+      <RevealSection className="max-w-5xl mx-auto">
+        <SectionLabel>Бесплатная диагностика</SectionLabel>
+        <motion.h2 variants={fadeUp} className="text-2xl sm:text-4xl font-black uppercase text-center leading-tight mb-10">
+          Как это <span className="gradient-text">работает</span>
+        </motion.h2>
+        <motion.div variants={stagger} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {steps.map((s) => (
+            <motion.div key={s.n} variants={fadeUp} className="rounded-2xl border border-[#E4E4E4] bg-white p-5 space-y-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full gradient-accent text-white text-sm font-black">{s.n}</div>
+              <p className="font-bold text-[#1A1A1A] leading-snug">{s.title}</p>
+              <p className="text-sm text-[#666] leading-relaxed">{s.desc}</p>
+            </motion.div>
+          ))}
+        </motion.div>
+        <motion.div variants={fadeUp} className="flex justify-center pt-8">
+          <GradientButton href="/blog-audit">Пройти диагностику</GradientButton>
+        </motion.div>
+      </RevealSection>
     </section>
   )
 }
@@ -1027,6 +1090,7 @@ export default function LandingPage() {
       <main>
         <HeroSection />
         <MarqueeBar />
+        <DiagnosticPathSection />
         <StatsSection />
         <ProblemSection />
         <SolutionSection />
