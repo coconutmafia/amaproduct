@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Sparkles, Globe, Loader2, Gift, Mail, CheckCircle2, Bot, Zap, Target } from 'lucide-react'
 import { toast } from 'sonner'
 import { authErrorMessage } from '@/lib/friendlyError'
+import { safeNextPath, withNext, DEFAULT_AFTER_AUTH } from '@/lib/authNext'
 
 // Длину кода подтверждения задаёт Supabase (Auth → Email OTP length): у нас 8, дефолт 6.
 // Поэтому принимаем диапазон, а не фиксированные 6 — иначе на реальном 8-значном коде
@@ -31,6 +32,8 @@ function RegisterForm() {
   const [confirming, setConfirming] = useState(false)
 
   const refCode = searchParams.get('ref')?.toUpperCase() ?? ''
+  // Возврат после регистрации (?next= — воронка Августы: диагностика блога).
+  const nextPath = safeNextPath(searchParams.get('next'))
 
   // Реферальный бонус НЕ обещаем: начисление при регистрации фактически не работает
   // (при подтверждении email сессии ещё нет → /api/referral отдаёт 401; Google-путь
@@ -48,7 +51,7 @@ function RegisterForm() {
       password,
       options: {
         data: { full_name: fullName.trim() },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: `${window.location.origin}${withNext('/auth/callback', nextPath)}`,
       },
     })
 
@@ -89,7 +92,7 @@ function RegisterForm() {
       return
     }
     toast.success('Почта подтверждена!')
-    router.push('/dashboard')
+    router.push(nextPath)
     router.refresh()
   }
 
@@ -100,7 +103,7 @@ function RegisterForm() {
     const { error } = await supabase.auth.resend({
       type: 'signup',
       email,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+      options: { emailRedirectTo: `${window.location.origin}${withNext('/auth/callback', nextPath)}` },
     })
     if (error) toast.error(authErrorMessage(error))
     else toast.success('Письмо отправлено ещё раз — проверь почту (и папку «Спам»)')
@@ -109,13 +112,13 @@ function RegisterForm() {
 
   async function handleGoogle() {
     const base = window.location.origin
-    const cb = refCode
-      ? `${base}/auth/callback?ref=${refCode}`
-      : `${base}/auth/callback`
+    const cb = new URL('/auth/callback', base)
+    if (refCode) cb.searchParams.set('ref', refCode)
+    if (nextPath !== DEFAULT_AFTER_AUTH) cb.searchParams.set('next', nextPath)
     const supabase = createClient()
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: cb },
+      options: { redirectTo: cb.toString() },
     })
     if (error) toast.error(authErrorMessage(error))
   }
@@ -299,7 +302,7 @@ function RegisterForm() {
 
           <p className="text-center text-sm text-[#888888]">
             Уже есть аккаунт?{' '}
-            <Link href="/login" className="text-[#3A8A48] font-medium hover:underline">Войти</Link>
+            <Link href={withNext('/login', nextPath)} className="text-[#3A8A48] font-medium hover:underline">Войти</Link>
           </p>
           </div>
         </div>

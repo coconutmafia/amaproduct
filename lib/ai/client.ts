@@ -50,6 +50,10 @@ function logTokens(route: string, model: string, usage?: UsageOut | null) {
     meta: {
       cacheRead: usage.cache_read_input_tokens ?? 0,
       cacheWrite: usage.cache_creation_input_tokens ?? 0,
+      // Разбивка записей по TTL: 5м пишется по 1.25×, 1ч — по 2×. Без неё
+      // usage-report не может честно оценить цену вызова после перехода на 1h.
+      cacheWrite5m: usage.cache_creation?.ephemeral_5m_input_tokens ?? 0,
+      cacheWrite1h: usage.cache_creation?.ephemeral_1h_input_tokens ?? 0,
     },
   })
 }
@@ -67,6 +71,7 @@ type UsageOut = {
   // того же запроса холодный и кэшированный прогон отличаются в 5-10 раз.
   cache_read_input_tokens?: number
   cache_creation_input_tokens?: number
+  cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number }
 }
 export function wrapAnthropicForUsage<T extends object>(
   target: T,
@@ -140,8 +145,15 @@ export const MODEL_HAIKU = 'claude-haiku-4-5'
 // or repeat requests for the same project). Pure margin win — identical output.
 // Anthropic caching is GA in 2026; passing system as a block with cache_control
 // is all that's needed.
+//
+// TTL '1h' (29.08, замер на 4 днях прода): дефолтные 5 минут короче реальной
+// паузы между сообщениями человека — 79 из 187 вызовов чата были ПОЛНОЙ
+// перезаписью контекста (запись 1.25×), и записи кэша съедали 84% цены чата
+// ($76.94 из $91.74). Часовой TTL: запись 2×, чтение то же (~10%) и бесплатно
+// продлевает таймер; симуляция на реальном логе вызовов — минус 37% на чате.
+// Порядок TTL валиден: система идёт первым блоком (1h раньше любых 5m).
 export function buildCachedSystem(text: string) {
-  return [{ type: 'text' as const, text, cache_control: { type: 'ephemeral' as const } }]
+  return [{ type: 'text' as const, text, cache_control: { type: 'ephemeral' as const, ttl: '1h' as const } }]
 }
 
 // Честный текст для главного catch AI-роутов. Правило (урок 17/31 июля):

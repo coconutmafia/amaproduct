@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { safeNextPath } from '@/lib/authNext'
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/dashboard'
+  // Только внутренние пути (safeNextPath) — ?next= не должен уметь уводить
+  // на чужой домен после обмена кода на сессию.
+  const next = safeNextPath(searchParams.get('next'))
 
   if (code) {
     const cookieStore = await cookies()

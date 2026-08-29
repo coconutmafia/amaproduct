@@ -2540,14 +2540,18 @@ async function usageReport() {
     return
   }
 
-  // Кэш промпта меняет цену в разы: чтение ~10% ставки, запись ~1.25×.
+  // Кэш промпта меняет цену в разы: чтение ~10% ставки, запись 1.25× (TTL 5м)
+  // либо 2× (TTL 1ч — перешли 29.08). Свежие строки несут разбивку записей по
+  // TTL (meta.cacheWrite5m/1h); легаси-строки без неё считаем по 1.25×.
   // input_tokens у Anthropic — это ТОЛЬКО некэшированный вход, поэтому
   // кэшевые токены считаем отдельными ставками, а не как обычный вход.
   const cost = (r) => {
     const p = PRICES[r.model]
     if (!p) return FLAT[r.model] ?? 0
     const cr = Number(r.meta?.cacheRead ?? 0), cw = Number(r.meta?.cacheWrite ?? 0)
-    return ((r.input_tokens ?? 0) * p.in + cr * p.in * 0.1 + cw * p.in * 1.25 + (r.output_tokens ?? 0) * p.out) / 1e6
+    const cw5 = Number(r.meta?.cacheWrite5m ?? 0), cw1 = Number(r.meta?.cacheWrite1h ?? 0)
+    const writeCost = (cw5 + cw1 > 0) ? cw5 * p.in * 1.25 + cw1 * p.in * 2 : cw * p.in * 1.25
+    return ((r.input_tokens ?? 0) * p.in + cr * p.in * 0.1 + writeCost + (r.output_tokens ?? 0) * p.out) / 1e6
   }
 
   const byRoute = {}, byUser = {}, byProvider = {}
@@ -3202,9 +3206,99 @@ async function storyFontBackfill() {
   if (!RUN) log('\n[DRY-RUN] ничего не записано. Добавь --run (и --project <id> для одного проекта).')
 }
 
+// ── ПРОБНИК: воронка бесплатной диагностики (день рождения Августы) ──────────
+// Свежий зарегистрированный БЕЗ подписки должен: попасть на /blog-audit,
+// запустить standalone-разбор и получить результат (score100) — и НЕ иметь
+// доступа ни к чему платному (402 payment_required). Уборка: юзер удаляется.
+async function funnelProbe() {
+  const APP = 'https://amaproduct.com'
+  const HANDLE = process.argv.includes('--handle')
+    ? process.argv[process.argv.indexOf('--handle') + 1]
+    : 'instagram' // публичный стабильный аккаунт
+  log('\n=== Пробник: воронка бесплатной диагностики блога ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) создать временного юзера (email confirmed) + сессия')
+    log('  2) GET /blog-audit → 200 (страница доступна без подписки)')
+    log(`  3) POST /api/blog-audit/standalone {handle:@${HANDLE}} → джоб → score100`)
+    log('  4) платные роуты для него закрыты: /api/ai/chat → 402 payment_required')
+    log('  5) уборка: джобы и юзер удалены')
+    return
+  }
+  const anon = (() => {
+    const m = readFileSync(join(ROOT, '.env.local'), 'utf8').match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY'); return }
+
+  const email = `${PROBE_PREFIX}funnel-${Date.now()}@gmail.com`
+  const created = await api('/auth/v1/admin/users', {
+    method: 'POST',
+    body: JSON.stringify({ email, email_confirm: true, user_metadata: { full_name: 'Funnel Probe' } }),
+  })
+  const uid = created.body?.id
+  if (!uid) { log(`❌ юзер не создался: ${created.status} ${JSON.stringify(created.body).slice(0, 150)}`); return }
+  log(`✅ 1. юзер ${email}`)
+
+  const cleanup = async () => {
+    await api(`/rest/v1/jobs?user_id=eq.${uid}`, { method: 'DELETE' }).catch(() => {})
+    await api(`/auth/v1/admin/users/${uid}`, { method: 'DELETE' }).catch(() => {})
+    log('🧹 уборка: джобы и юзер удалены')
+  }
+  try {
+    const gl = await api('/auth/v1/admin/generate_link', { method: 'POST', body: JSON.stringify({ type: 'magiclink', email }) })
+    const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+    if (!otp) { log(`❌ generate_link: ${gl.status}`); return }
+    const ver = await fetch(`${U}/auth/v1/verify`, {
+      method: 'POST', headers: { apikey: anon, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'magiclink', email, token: otp }),
+    }).then(r => r.json())
+    if (!ver?.access_token) { log('❌ сессия не получена'); return }
+    const ref = new URL(U).hostname.split('.')[0]
+    const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+    log('✅ 1а. сессия свежего юзера')
+
+    // Профиль создаётся триггером; убеждаемся, что он НЕ entitled (trial истёк сразу — модель «плати сразу»)
+    const prof = await api(`/rest/v1/profiles?select=subscription_status,trial_ends_at&id=eq.${uid}`)
+    const p0 = Array.isArray(prof.body) ? prof.body[0] : null
+    log(`   профиль: status=${p0?.subscription_status ?? '—'} trial_ends_at=${p0?.trial_ends_at ?? '—'}`)
+
+    const page = await fetch(`${APP}/blog-audit`, { headers: { cookie }, redirect: 'manual' })
+    log(`${page.status === 200 ? '✅' : '❌'} 2. GET /blog-audit → ${page.status}`)
+
+    const post = await fetch(`${APP}/api/blog-audit/standalone`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ handle: HANDLE }),
+    })
+    const pd = await post.json().catch(() => ({}))
+    if (!post.ok || !pd.jobId) { log(`❌ 3. standalone POST: ${post.status} ${JSON.stringify(pd).slice(0, 150)}`); return }
+    log(`   джоб ${pd.jobId} — жду разбор (~1 мин)…`)
+    let result = null
+    for (let i = 0; i < 40; i++) {
+      await new Promise(r => setTimeout(r, 5000))
+      const j = await fetch(`${APP}/api/jobs/${pd.jobId}`, { headers: { cookie } }).then(r => r.json()).catch(() => null)
+      if (j?.job?.status === 'done') { result = j.job.result; break }
+      if (j?.job?.status === 'error') { log(`❌ 3. джоб упал: ${j.job.error}`); return }
+    }
+    const scored = result && typeof result.score100 === 'number'
+    log(`${scored ? '✅' : '❌'} 3. разбор готов: score100=${result?.score100 ?? '—'} (@${HANDLE})`)
+
+    // Платное закрыто: боевой чат-путь должен ответить 402 payment_required
+    const chat = await fetch(`${APP}/api/ai/chat`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ conversationType: 'assistant', messages: [{ role: 'user', content: 'привет' }] }),
+    })
+    const cd = await chat.json().catch(() => ({}))
+    const gated = chat.status === 402 && cd.code === 'payment_required'
+    log(`${gated ? '✅' : '❌'} 4. /api/ai/chat для него закрыт: ${chat.status} code=${cd.code ?? '—'}`)
+  } finally {
+    await cleanup()
+  }
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))

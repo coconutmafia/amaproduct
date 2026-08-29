@@ -2,7 +2,11 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 // Защищённые маршруты
-const PROTECTED = ['/dashboard', '/projects', '/knowledge-vault', '/settings', '/referral', '/pricing', '/admin', '/library', '/create']
+// /blog-audit здесь же: страница требует входа, а middleware-редирект (в
+// отличие от redirect('/login') в layout) сохраняет ?next= — воронка Августы
+// раздаёт прямую ссылку на диагностику, и после регистрации человек обязан
+// вернуться на неё, а не на дашборд.
+const PROTECTED = ['/dashboard', '/projects', '/knowledge-vault', '/settings', '/referral', '/pricing', '/admin', '/library', '/create', '/blog-audit']
 
 // Публичные маршруты (всегда доступны)
 const PUBLIC = ['/login', '/register', '/auth']
@@ -25,8 +29,10 @@ export function proxy(request: NextRequest) {
   )
 
   if (!hasSession) {
-    // Нет куки сессии → редирект на логин
+    // Нет куки сессии → редирект на логин с возвратом на исходную страницу
+    // (?next=): после входа/регистрации человек продолжает с того же места.
     const loginUrl = new URL('/login', request.url)
+    loginUrl.searchParams.set('next', pathname + request.nextUrl.search)
     return NextResponse.redirect(loginUrl)
   }
 

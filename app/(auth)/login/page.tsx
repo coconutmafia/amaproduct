@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { authErrorMessage } from '@/lib/friendlyError'
+import { safeNextPath, withNext, DEFAULT_AFTER_AUTH } from '@/lib/authNext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,19 +20,25 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [loadingGoogle, setLoadingGoogle] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  // Куда вернуть после входа (?next= от middleware) — воронка Августы:
+  // прямая ссылка на /blog-audit переживает логин/регистрацию любым путём.
+  const [nextPath, setNextPath] = useState(DEFAULT_AFTER_AUTH)
 
   // The auth callback bounces failed email-confirm / OAuth exchanges to
   // /login?error=… (e.g. a link opened on a different device than it was
   // requested on — PKCE can't complete). Surface it instead of a blank form.
   useEffect(() => {
-    const err = new URLSearchParams(window.location.search).get('error')
+    const params = new URLSearchParams(window.location.search)
+    setNextPath(safeNextPath(params.get('next')))
+    const err = params.get('error')
     if (!err) return
     setNotice(
       err === 'auth_error'
         ? 'Не удалось подтвердить ссылку. Открой её в том же браузере, где регистрировался, или запроси новую. Если уже подтвердил — просто войди.'
         : 'Что-то пошло не так со ссылкой. Попробуй войти или запроси новую ссылку.',
     )
-    // Clean the query so a refresh doesn't keep showing the banner.
+    // Clean the query so a refresh doesn't keep showing the banner
+    // (next уже снят в состояние выше — не теряется).
     window.history.replaceState({}, '', '/login')
   }, [])
 
@@ -43,7 +50,7 @@ export default function LoginPage() {
     if (error) {
       toast.error(authErrorMessage(error))
     } else {
-      router.push('/dashboard')
+      router.push(nextPath)
       router.refresh()
     }
     setLoading(false)
@@ -52,9 +59,12 @@ export default function LoginPage() {
   async function handleGoogleLogin() {
     setLoadingGoogle(true)
     const supabase = createClient()
+    const cb = nextPath === DEFAULT_AFTER_AUTH
+      ? `${window.location.origin}/auth/callback`
+      : `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath)}`
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: cb },
     })
     if (error) toast.error(authErrorMessage(error))
     setLoadingGoogle(false)
@@ -155,7 +165,7 @@ export default function LoginPage() {
           </form>
 
           <div className="flex justify-between text-sm">
-            <Link href="/register" className="text-[#3A8A48] hover:underline transition-colors">
+            <Link href={withNext('/register', nextPath)} className="text-[#3A8A48] hover:underline transition-colors">
               Создать аккаунт
             </Link>
             <Link href="/forgot-password" className="text-[#3A8A48] hover:underline transition-colors">

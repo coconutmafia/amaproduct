@@ -82,6 +82,9 @@ function streamingChatResponse(
   // авто-продолжения читают систему+историю из кэша за ~10% цены вместо полной
   // (брейкпоинт на system покрывает только его, история шла по полной).
   // На выход не влияет — модель видит те же токены байт-в-байт.
+  // TTL '1h', как у системного блока (см. buildCachedSystem): пауза человека
+  // между сообщениями обычно длиннее 5 минут, и протухший брейкпоинт заставлял
+  // переписывать систему+историю целиком по 1.25× — 84% цены чата были записи.
   const cachedMessages = messages.map((m, i) => {
     const imgs = i === messages.length - 1 ? imageBlocks(m.images) : []
     if (i !== messages.length - 1) return { role: m.role, content: m.content }
@@ -89,7 +92,7 @@ function streamingChatResponse(
       role: m.role,
       content: [
         ...imgs,
-        { type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' as const } },
+        { type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' as const, ttl: '1h' as const } },
       ],
     }
   })
