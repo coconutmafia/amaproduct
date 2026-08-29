@@ -9,6 +9,8 @@
 // anonymous-crossOrigin image keeps the canvas readable; any failure → null →
 // callers fall back to the AI/alternating layout.
 
+import { contrastRatio } from '@/lib/carousel/contrast'
+
 export interface BandInfo { variance: number; lum: number; skin: number }
 export interface PhotoBands { top: BandInfo; center: BandInfo; bottom: BandInfo }
 export interface Placement { position: 'top' | 'center' | 'bottom'; plate: boolean; textColor: string }
@@ -82,6 +84,10 @@ const UNIFORM = 0.008
 const SKIN_PENALTY = 0.5
 
 export function pickPlacement(bands: PhotoBands, brandDarkText: string): Placement {
+  // «Тёмный брендовый текст» — допущение, а не гарантия: у Илоны кит отдавал
+  // почти белый #F5F1EA, и чистый текст на светлой зоне фото был невидим.
+  // Светлая зона ≈ белый фон — цвет обязан читаться на белом, иначе дефолт.
+  const darkText = contrastRatio('#FFFFFF', brandDarkText) >= 4.5 ? brandDarkText : '#1A1A1A'
   // Prefer bottom, then top; the center usually holds the face/figure, so it
   // pays a penalty and only wins when it's clearly the calmest area. On top of
   // that, any band with a face/skin gets a heavy penalty so text never sits on
@@ -97,6 +103,6 @@ export function pickPlacement(bands: PhotoBands, brandDarkText: string): Placeme
   // close-up leaves no fully skin-free band).
   const plate = best.band.variance > UNIFORM || best.band.skin > 0.08
   // Clean text: dark brand colour on bright areas, white on dark areas.
-  const textColor = best.band.lum > 0.6 ? brandDarkText : '#FFFFFF'
+  const textColor = best.band.lum > 0.6 ? darkText : '#FFFFFF'
   return { position: best.position, plate, textColor }
 }

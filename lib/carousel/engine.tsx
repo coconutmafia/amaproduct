@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import type { ReactElement } from 'react'
 import { ArrowSvg, Badge, SHAPE_ASPECT, type FreeShape } from './shapes'
 import { FONTS, fontFamilyOf } from '@/lib/fonts'
+import { readableTextOn, resolveBrandAccent, resolveBrandText } from './contrast'
 
 // ── Formats ─────────────────────────────────────────────────────────────────────
 export const FORMATS = {
@@ -46,6 +47,7 @@ export interface CarouselTheme {
   swipeHint: boolean
   swipeLabel: string // текст подписи-листалки; язык = язык блога проекта
   onPhotoText: string // text colour used over photos/scrims
+  onAccent: string // text colour on accent-filled chips (CTA pill) — dark for light accents
 }
 
 export const DEFAULT_THEME: CarouselTheme = {
@@ -64,6 +66,7 @@ export const DEFAULT_THEME: CarouselTheme = {
   fontFamily: 'Montserrat',
   handle: '',
   onPhotoText: '#262321',
+  onAccent: '#FFFFFF',
 }
 
 export interface BrandInput {
@@ -115,12 +118,18 @@ export function themeFromBrand(brand?: BrandInput): CarouselTheme {
   const bg = brand?.bg?.trim() || DEFAULT_THEME.bg
   const dark = hexLum(bg) < 0.5 // dark brand → white text + light-on-dark muted
   const accentColor = brand?.accentColor?.trim()
-  const accent = accentColor || DEFAULT_THEME.accent
+  // Читаемость — контракт темы, не свойство кита: AI-экстракция отдавала пары
+  // «текст ≈ фон» (Илона: #F5F1EA на #F2EDE4, плашки с невидимым текстом), и
+  // тема обязана чинить их сама — это ЕДИНСТВЕННАЯ точка, через которую идут
+  // все серверные рендеры (слайды, сторис, видео-оверлей, превью бренда).
+  // Читаемые пары проходят нетронутыми — стиль клиента не переписываем.
+  const accent = resolveBrandAccent(bg, accentColor || DEFAULT_THEME.accent)
   // Emphasis (**word**) gradient follows the brand accent so accent words come
   // out in the creator's own colour — not a fixed warm pink→orange. Owner
   // feedback (25 Jun): a teal-brand post still rendered pink accents («убрать
   // эти розовые»). A subtle light→accent→deep ramp keeps the gradient sheen on
-  // any hue. With no brand accent we keep the curated warm default.
+  // any hue. With no brand accent we keep the curated warm default. Built from
+  // the RESOLVED accent, else a corrected accent still shimmered unreadable.
   const grad = accentColor
     ? { gradFrom: lighten(accent, 0.22), gradMid: accent, gradTo: darken(accent, 0.1) }
     : { gradFrom: DEFAULT_THEME.gradFrom, gradMid: DEFAULT_THEME.gradMid, gradTo: DEFAULT_THEME.gradTo }
@@ -135,8 +144,11 @@ export function themeFromBrand(brand?: BrandInput): CarouselTheme {
     bg,
     bgAlt: brand?.bgAlt?.trim() || (dark ? lighten(bg, 0.14) : DEFAULT_THEME.bgAlt),
     bgStyle: brand?.bgStyle || (dark ? 'solid' : DEFAULT_THEME.bgStyle),
-    text: brand?.text?.trim() || (dark ? '#FFFFFF' : DEFAULT_THEME.text),
+    text: resolveBrandText(bg, brand?.text?.trim() || (dark ? '#FFFFFF' : DEFAULT_THEME.text)),
     textMuted: dark ? 'rgba(255,255,255,0.62)' : DEFAULT_THEME.textMuted,
+    // Текст на акцентной заливке (CTA-пилюля): светлый акцент → тёмный текст
+    // (у Кристины акцент — светло-голубой, белый текст на нём был невидим).
+    onAccent: readableTextOn(accent, '#FFFFFF'),
     handle: (brand?.handle || '').trim(),
     logoUrl: brand?.logoUrl || undefined,
     paperUrl: brand?.paperUrl || undefined,
@@ -724,7 +736,7 @@ function Story({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: S
           <div style={{ display: 'flex' }} />
         )}
         {s.action ? (
-          <div style={{ display: 'flex', marginTop: 34, alignSelf: 'center', backgroundColor: theme.accent, color: '#fff', fontSize: 36, fontWeight: 800, padding: '20px 44px', borderRadius: 60 }}>
+          <div style={{ display: 'flex', marginTop: 34, alignSelf: 'center', backgroundColor: theme.accent, color: theme.onAccent, fontSize: 36, fontWeight: 800, padding: '20px 44px', borderRadius: 60 }}>
             {s.action}
           </div>
         ) : (

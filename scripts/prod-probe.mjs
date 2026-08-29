@@ -2974,9 +2974,237 @@ async function chatImage() {
   }
 }
 
+// ── ПРОБНИК: сторис в фирменном стиле — читаемость пар цветов кита ───────────
+// Жалоба Илоны Залошвили (28.08): серия по фото выходила «мелкими белыми
+// плашками» — кит хранил text #F5F1EA на bg #F2EDE4 (контраст 1.04), рендер
+// клал одно на другое. Пробник живьём проверяет ОБЕ половины фикса:
+//   2а) рендер: текст кадра ВИДЕН на фоне из пары Илоны (пиксельный замер);
+//   2б) рендер: акцентные слова ВИДНЫ на паре Кристины (ось акцента);
+//   3)  кадр с реальным фото Илоны — файл в /tmp на глаз;
+//   4)  экстрактор: временный проект + её пример стиля → analyze target=story →
+//       сохранённая пара читаема И story.font выбран.
+// ДО деплоя фикса шаги 2а/2б ожидаемо ❌ — это и есть воспроизведение бага.
+async function storiesStyleProbe() {
+  const APP = 'https://amaproduct.com'
+  const ILONA = { bg: '#F2EDE4', text: '#F5F1EA', accent: '#B0687F' }
+  const KRISTINA = { bg: '#E9D9C0', accent: '#A6CCEB' }
+  const PHOTO = 'https://bvzqkzwmkyblygzmdnbb.supabase.co/storage/v1/object/public/project-brand/b439e762-87c8-4fe1-9472-176042b933f0/stories/1787924316775-0.jpeg'
+  const SAMPLE = 'https://bvzqkzwmkyblygzmdnbb.supabase.co/storage/v1/object/public/project-brand/b439e762-87c8-4fe1-9472-176042b933f0/samples/1786542946363-0.jpg'
+  log('\n=== Пробник: сторис в фирменном стиле (читаемость пар цветов) ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) QA-сессия')
+    log('  2а) POST /api/carousel/render: пара Илоны на ровном фоне → доля «текстовых» пикселей ≥0.8%')
+    log('  2б) POST /api/carousel/render: акцент Кристины на её фоне → акцентные слова видны')
+    log('  3) кадр с реальным фото Илоны (плашки) → PNG в /tmp, посмотреть глазами')
+    log('  4) временный проект + пример стиля Илоны → analyze target=story → пара читаема, story.font есть')
+    log('  5) уборка: файлы, проект, счётчики')
+    return
+  }
+  const anon = (() => {
+    const m = readFileSync(join(ROOT, '.env.local'), 'utf8').match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY'); return }
+
+  const prof = await api(`/rest/v1/profiles?select=id,generations_used,bonus_generations&email=eq.${QA_EMAIL}`)
+  const qa = Array.isArray(prof.body) ? prof.body[0] : null
+  if (!qa) { log('❌ QA-бот не найден'); return }
+  const microProbe = await api(`/rest/v1/profiles?select=micro_actions_count&id=eq.${qa.id}`)
+  const micro0 = Array.isArray(microProbe.body) ? microProbe.body[0]?.micro_actions_count : undefined
+  const used0 = qa.generations_used, bonus0 = qa.bonus_generations
+
+  const gl = await api('/auth/v1/admin/generate_link', { method: 'POST', body: JSON.stringify({ type: 'magiclink', email: QA_EMAIL }) })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log(`❌ generate_link: ${gl.status}`); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST', headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA_EMAIL, token: otp }),
+  }).then(r => r.json())
+  if (!ver?.access_token) { log('❌ сессия не получена'); return }
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+  log('✅ 1. сессия QA-бота')
+
+  // WCAG-контраст (зеркало lib/carousel/contrast.ts — скрипт не импортирует TS)
+  const relLum = (r, g, b) => {
+    const f = (v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4) }
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+  }
+  const ratioOf = (la, lb) => { const [hi, lo] = la > lb ? [la, lb] : [lb, la]; return (hi + 0.05) / (lo + 0.05) }
+
+  const render = async (brand, slide) => {
+    const res = await fetch(`${APP}/api/carousel/render`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ format: 'story', brand, slide: { kind: 'story', index: 0, total: 1, ...slide } }),
+    })
+    if (!res.ok) throw new Error(`render ${res.status}: ${(await res.text()).slice(0, 120)}`)
+    return Buffer.from(await res.arrayBuffer())
+  }
+  // Доля пикселей, контрастных фону (текст + антиалиасинг). Невидимый текст
+  // на ровном фоне даёт ~0%; видимый заголовок в 2 строки — от ~1%.
+  const visibleShare = async (png, bgHex) => {
+    const sharp = (await import('sharp')).default
+    const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+    const bgLum = relLum(parseInt(bgHex.slice(1, 3), 16), parseInt(bgHex.slice(3, 5), 16), parseInt(bgHex.slice(5, 7), 16))
+    let hit = 0
+    const total = info.width * info.height
+    for (let i = 0; i < data.length; i += info.channels) {
+      if (ratioOf(relLum(data[i], data[i + 1], data[i + 2]), bgLum) >= 2) hit++
+    }
+    return hit / total
+  }
+
+  // 2а. Ось текста: пара Илоны, ровный фон (без бумаги/фото — чистый замер)
+  const pngText = await render(
+    { accentColor: ILONA.accent, bg: ILONA.bg, text: ILONA.text, bgStyle: 'solid', accentStyle: 'flat' },
+    { headline: 'Проверка читаемости текста кадра', position: 'center' },
+  )
+  const shareText = await visibleShare(pngText, ILONA.bg)
+  log(`${shareText >= 0.008 ? '✅' : '❌'} 2а. текст на паре Илоны: ${(shareText * 100).toFixed(2)}% контрастных пикселей (нужно ≥0.8%)`)
+
+  // 2б. Ось акцента: пара Кристины, весь заголовок — **акцент**
+  const pngAcc = await render(
+    { accentColor: KRISTINA.accent, bg: KRISTINA.bg, text: '#262321', bgStyle: 'solid', accentStyle: 'flat' },
+    { headline: '**Ключевые слова в акценте**', position: 'center' },
+  )
+  const shareAcc = await visibleShare(pngAcc, KRISTINA.bg)
+  log(`${shareAcc >= 0.008 ? '✅' : '❌'} 2б. акцент на паре Кристины: ${(shareAcc * 100).toFixed(2)}% (нужно ≥0.8%)`)
+
+  // 3. Реальный кадр Илоны (фото + плашки) — на глаз
+  const { tmpdir } = await import('node:os')
+  const { writeFileSync } = await import('node:fs')
+  const pngPhoto = await render(
+    { accentColor: ILONA.accent, bg: ILONA.bg, text: ILONA.text, bgStyle: 'paper' },
+    { headline: '10 лет.\n10 квартир.\n2 страны.', body: 'Как я вообще тут **оказалась** )', position: 'center', plate: true, photoUrl: PHOTO },
+  )
+  const eyeball = join(tmpdir(), `${PROBE_PREFIX}ilona-frame.png`)
+  writeFileSync(eyeball, pngPhoto)
+  log(`👁  3. кадр с фото Илоны: ${eyeball} — посмотреть глазами`)
+
+  // 4. Экстрактор живьём: проект + её пример → analyze target=story
+  const projName = `${PROBE_PREFIX}storystyle-${Date.now()}`
+  const prj = await api('/rest/v1/projects', {
+    method: 'POST', headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ owner_id: ver.user?.id, name: projName, status: 'active', niche: 'travel-блог' }),
+  })
+  const projectId = Array.isArray(prj.body) ? prj.body[0]?.id : prj.body?.id
+  if (!projectId) { log(`❌ 4. проект не создался: ${prj.status}`); return }
+  const cleanup = async () => {
+    const ls = await api(`/storage/v1/object/list/project-brand`, {
+      method: 'POST', body: JSON.stringify({ prefix: `${projectId}/`, limit: 100 }),
+    }).catch(() => null)
+    const names = Array.isArray(ls?.body) ? ls.body.map((o) => `${projectId}/${o.name}`) : []
+    // list не рекурсивен: пример лежит в samples/
+    const ls2 = await api(`/storage/v1/object/list/project-brand`, {
+      method: 'POST', body: JSON.stringify({ prefix: `${projectId}/samples/`, limit: 100 }),
+    }).catch(() => null)
+    if (Array.isArray(ls2?.body)) names.push(...ls2.body.map((o) => `${projectId}/samples/${o.name}`))
+    if (names.length) await api('/storage/v1/object/project-brand', { method: 'DELETE', body: JSON.stringify({ prefixes: names }) }).catch(() => {})
+    await api(`/rest/v1/projects?id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    const restore = { generations_used: used0, bonus_generations: bonus0 }
+    if (micro0 !== undefined) restore.micro_actions_count = micro0
+    await api(`/rest/v1/profiles?id=eq.${qa.id}`, { method: 'PATCH', body: JSON.stringify(restore) }).catch(() => {})
+    log('🧹 уборка: файлы, проект, счётчики на месте')
+  }
+  try {
+    const img = await fetch(SAMPLE)
+    if (!img.ok) { log('❌ 4. пример стиля Илоны не скачался'); return }
+    const fd = new FormData()
+    fd.append('projectId', projectId)
+    fd.append('kind', 'sample')
+    fd.append('files', new File([await img.arrayBuffer()], 'sample.jpg', { type: 'image/jpeg' }))
+    const up = await fetch(`${APP}/api/brand-kit/upload`, { method: 'POST', headers: { cookie }, body: fd })
+    const upd = await up.json().catch(() => ({}))
+    if (!up.ok || !upd.urls?.[0]) { log(`❌ 4. upload: ${up.status} ${JSON.stringify(upd).slice(0, 120)}`); return }
+    const an = await fetch(`${APP}/api/brand-kit/analyze`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ projectId, sampleUrls: [upd.urls[0]], target: 'story' }),
+    })
+    const and = await an.json().catch(() => ({}))
+    if (!an.ok) { log(`❌ 4. analyze: ${an.status} ${JSON.stringify(and).slice(0, 160)}`); return }
+    const row = await api(`/rest/v1/projects?select=brand_kit&id=eq.${projectId}`)
+    const story = Array.isArray(row.body) ? row.body[0]?.brand_kit?.story : null
+    if (!story) { log('❌ 4. story-стиль не сохранился'); return }
+    const hx = (s) => [parseInt(s.slice(1, 3), 16), parseInt(s.slice(3, 5), 16), parseInt(s.slice(5, 7), 16)]
+    const pairOk = ratioOf(relLum(...hx(story.text)), relLum(...hx(story.bg))) >= 3
+    log(`${pairOk ? '✅' : '❌'} 4а. сохранённая пара читаема: text ${story.text} на bg ${story.bg}`)
+    log(`${story.font ? '✅' : '❌'} 4б. story.font выбран: ${story.font ?? 'НЕТ'}`)
+  } finally {
+    await cleanup()
+  }
+}
+
+// ── ИНСТРУМЕНТ: бэкфилл story.font для китов, снятых до извлечения шрифта ────
+// Экстрактор теперь пишет story.font, но существующие story-стили сохранены без
+// него — сторис таких проектов рендерятся общим шрифтом ПОСТОВ (у Илоны: посты
+// плакатный гротеск, сторис в примерах — сериф). Инструмент выбирает шрифт
+// МОДЕЛЬЮ по сохранённым примерам сторис (не на глаз) и дописывает ТОЛЬКО
+// story.font (merge, остальной кит цел).
+//   node scripts/prod-probe.mjs story-font-backfill                # dry-run: все
+//   node scripts/prod-probe.mjs story-font-backfill --project <id> --run
+async function storyFontBackfill() {
+  // Зеркало lib/fonts.ts FONT_KEYS (скрипт не импортирует TS): страж
+  // unit-costs-style здесь не нужен — рассинхрон даст невалидный ключ, и
+  // analyze/рендер его просто отбросят (fontFamilyOf падает в дефолт).
+  const FONT_OPTS = 'montserrat (Montserrat — геометричный, современный); pt-serif (PT Serif — классический сериф); pt-sans-narrow (PT Sans Narrow — узкий, плакатный); yeseva (Yeseva One — элегантный, женственный); marck (Marck Script — рукописный)'
+  const FONT_KEYS = ['montserrat', 'pt-serif', 'pt-sans-narrow', 'yeseva', 'marck']
+  const onlyProject = (() => { const i = process.argv.indexOf('--project'); return i > 0 ? process.argv[i + 1] : null })()
+  log('\n=== Инструмент: бэкфилл story.font по примерам сторис ===')
+
+  const envTxt = readFileSync(join(ROOT, '.env.local'), 'utf8')
+  const akey = envTxt.match(/^ANTHROPIC_API_KEY=(.*)$/m)?.[1]?.trim()
+  if (!akey) { log('❌ нет ANTHROPIC_API_KEY в .env.local'); return }
+
+  const rows = await api('/rest/v1/projects?select=id,name,brand_kit&order=created_at.asc')
+  const withStory = (rows.body || []).filter((p) => p.brand_kit?.story && (onlyProject ? p.id === onlyProject : true))
+  const todo = withStory.filter((p) => !p.brand_kit.story.font && Array.isArray(p.brand_kit.story.samples) && p.brand_kit.story.samples.length)
+  log(`story-стилей: ${withStory.length}; без font и с примерами: ${todo.length}`)
+
+  const sharp = (await import('sharp')).default
+  for (const p of todo) {
+    const sample = p.brand_kit.story.samples[0]
+    try {
+      const img = await fetch(sample)
+      if (!img.ok) { log(`  ⚠️ ${p.name}: пример не скачался (${img.status})`); continue }
+      const jpg = await sharp(Buffer.from(await img.arrayBuffer())).resize(820, 820, { fit: 'inside' }).jpeg({ quality: 80 }).toBuffer()
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': akey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-opus-5', max_tokens: 300,
+          tools: [{ name: 'pick_font', description: 'Ближайший шрифт', input_schema: { type: 'object', properties: { font: { type: 'string', enum: FONT_KEYS } }, required: ['font'] } }],
+          tool_choice: { type: 'tool', name: 'pick_font' },
+          messages: [{ role: 'user', content: [
+            { type: 'text', text: `Перед тобой пример оформления СТОРИС блогера. Выбери ближайший по духу к его типографике шрифт из: ${FONT_OPTS}. Верни через инструмент pick_font.` },
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: jpg.toString('base64') } },
+          ] }],
+        }),
+      })
+      const body = await res.json().catch(() => ({}))
+      const pick = (body.content || []).find((b) => b.type === 'tool_use')?.input?.font
+      if (!FONT_KEYS.includes(pick)) { log(`  ⚠️ ${p.name}: модель не выбрала шрифт (${res.status})`); continue }
+      log(`  ${p.name} (${p.id}): → ${pick}`)
+      if (!RUN) continue
+      // merge поверх свежего кита (читаем ещё раз — между list и patch могли писать)
+      const cur = await api(`/rest/v1/projects?select=brand_kit&id=eq.${p.id}`)
+      const kit = Array.isArray(cur.body) ? cur.body[0]?.brand_kit : null
+      if (!kit?.story) { log('    ⚠️ story-стиль исчез — пропуск'); continue }
+      const upd = await api(`/rest/v1/projects?id=eq.${p.id}`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ brand_kit: { ...kit, story: { ...kit.story, font: pick } } }),
+      })
+      log(`    ${upd.status < 300 ? '✅ записан' : `❌ PATCH ${upd.status}`}`)
+    } catch (e) {
+      log(`  ⚠️ ${p.name}: ${e.message}`)
+    }
+  }
+  if (!RUN) log('\n[DRY-RUN] ничего не записано. Добавь --run (и --project <id> для одного проекта).')
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))

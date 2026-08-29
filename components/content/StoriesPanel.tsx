@@ -266,15 +266,17 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
     fetch(`/api/brand-kit?projectId=${projectId}`).then((r) => r.json()).then((d) => {
       if (d && !d.error && (d.accentColor || d.bg || d.handle || d.logoUrl)) {
         // Separate story style (brand_kit.story) wins over the posts style
-        const story = (d.kit?.story ?? {}) as { accentColor?: string; bg?: string; text?: string; bgStyle?: string }
+        const story = (d.kit?.story ?? {}) as { accentColor?: string; bg?: string; text?: string; bgStyle?: string; font?: string }
         setBrand({
           accentColor: story.accentColor || d.accentColor,
           bg: story.bg || d.bg,
           text: story.text || d.text,
           bgStyle: story.bgStyle || d.bgStyle,
           handle: d.handle, logoUrl: d.logoUrl,
-          // font + accent style are project-wide (not stored per story style)
-          font: d.font || undefined,
+          // Шрифт сторис свой: у примеров сторис часто другая типографика, чем
+          // у постов (Илона: посты — узкий плакатный, сторис — сериф). Экстрактор
+          // пишет story.font; старые киты без него живут на общем.
+          font: story.font || d.font || undefined,
           accentStyle: d.accentStyle === 'flat' ? 'flat' : 'gradient',
         })
       }

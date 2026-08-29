@@ -9,6 +9,7 @@ import { requireProjectAccess } from '@/lib/projects/access'
 import { assertPublicUrl } from '@/lib/security/ssrf'
 import { anthropic, MODEL, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { FONT_KEYS, FONTS } from '@/lib/fonts'
+import { normalizeBrandColors } from '@/lib/carousel/contrast'
 import sharp from 'sharp'
 
 // Claude-vision brand extraction: reads the uploaded style samples and infers the
@@ -87,7 +88,12 @@ export async function POST(request: Request) {
       },
     }
     const fontOpts = FONT_KEYS.map((k) => `${k} (${FONTS[k].label})`).join('; ')
-    const prompt = `Ты — бренд-дизайнер. Перед тобой примеры оформления ${forStory ? 'СТОРИС блогера' : 'контента блогера (посты/карусели/обложки)'}. Определи его ФИРМЕННЫЙ СТИЛЬ${forStory ? ' ИМЕННО ДЛЯ СТОРИС' : ''}, чтобы генерировать ${forStory ? 'оформление сторис' : 'карусели и посты'} в этом же стиле. Верни через инструмент extract_brand_kit: accent_color (главный акцент для выделения ключевых слов, hex), bg_color (типичный фон, hex), text_color (цвет текста, hex), bg_style (paper если фактура бумаги, solid если однотонный фон, gradient если градиент), font (ВЫБЕРИ ближайший по духу к шрифту примеров из: ${fontOpts}), accent_style (как выделены ключевые слова: flat = один сплошной цвет — так в большинстве примеров; gradient = заметный цветовой градиент/переливание), mood (1-3 слова), font_style (короткое описание шрифта), summary (1-2 предложения о стиле).`
+    // «text_color должен ЧИТАТЬСЯ на bg_color» — контракт пары. Без него модель
+    // возвращала цвет текста, сидящего на ЦВЕТНЫХ ПЛАШКАХ примеров (Илона:
+    // кремовый #F5F1EA с розовых плашек + бумажный фон #F2EDE4 = невидимый
+    // текст). Сохранение всё равно нормализует пару (страховка), но правильный
+    // ответ модели сохраняет больше фирменного тона.
+    const prompt = `Ты — бренд-дизайнер. Перед тобой примеры оформления ${forStory ? 'СТОРИС блогера' : 'контента блогера (посты/карусели/обложки)'}. Определи его ФИРМЕННЫЙ СТИЛЬ${forStory ? ' ИМЕННО ДЛЯ СТОРИС' : ''}, чтобы генерировать ${forStory ? 'оформление сторис' : 'карусели и посты'} в этом же стиле. Верни через инструмент extract_brand_kit: accent_color (главный акцент для выделения ключевых слов, hex), bg_color (типичный фон, hex), text_color (цвет ОСНОВНОГО текста, который ЧИТАЕТСЯ на bg_color — НЕ цвет текста с цветных плашек и НЕ цвет текста поверх фото; если такой пары в примерах нет, верни тёмный/светлый цвет в духе стиля, контрастный к bg_color), bg_style (paper если фактура бумаги, solid если однотонный фон, gradient если градиент), font (ВЫБЕРИ ближайший по духу к шрифту примеров из: ${fontOpts}), accent_style (как выделены ключевые слова: flat = один сплошной цвет — так в большинстве примеров; gradient = заметный цветовой градиент/переливание), mood (1-3 слова), font_style (короткое описание шрифта), summary (1-2 предложения о стиле).`
 
     let kit: Record<string, unknown> | null = null
     for (let attempt = 0; attempt < 3 && !kit; attempt++) {
@@ -104,15 +110,26 @@ export async function POST(request: Request) {
     if (!kit) return NextResponse.json({ error: 'Не удалось распознать стиль — попробуй ещё раз' }, { status: 502 })
 
     const hex = (v: unknown, fb: string) => { const s = String(v ?? '').trim(); return /^#?[0-9a-fA-F]{6}$/.test(s) ? (s.startsWith('#') ? s : '#' + s) : fb }
-    const accent = hex(kit.accent_color, '#EC1E8C')
-    const bg = hex(kit.bg_color, '#F3EEE7')
-    const text = hex(kit.text_color, '#262321')
+    // Нормализация пары ДО сохранения (вторая половина контракта читаемости из
+    // lib/carousel/contrast): модель может вернуть text ≈ bg (кейс Илоны,
+    // белое-на-белом у Радмилы) — в кит такое не пишем, иначе каждая поверхность
+    // обязана лечить это сама. Читаемые пары проходят как есть.
+    const norm = normalizeBrandColors({
+      bg: hex(kit.bg_color, '#F3EEE7'),
+      text: hex(kit.text_color, '#262321'),
+      accent: hex(kit.accent_color, '#EC1E8C'),
+    })
+    const { bg, text, accent } = norm
     const bgStyle = ALLOWED_BG.includes(String(kit.bg_style)) ? String(kit.bg_style) : 'solid'
+    const font = (FONT_KEYS as string[]).includes(String(kit.font)) ? String(kit.font) : undefined
     const admin = createAdminClient()
 
     if (forStory) {
-      // Story style → brand_kit.story (merge; main brand columns untouched)
-      const story = { accentColor: accent, bg, text, bgStyle, mood: String(kit.mood ?? ''), font_style: String(kit.font_style ?? ''), summary: String(kit.summary ?? ''), samples: urls }
+      // Story style → brand_kit.story (merge; main brand columns untouched).
+      // font тоже свой: типографика сторис у блогера часто НЕ совпадает с
+      // постами (Илона: посты — плакатный гротеск, сторис — сериф) — рендерам
+      // сторис нужен именно её сторис-шрифт.
+      const story = { accentColor: accent, bg, text, bgStyle, ...(font ? { font } : {}), mood: String(kit.mood ?? ''), font_style: String(kit.font_style ?? ''), summary: String(kit.summary ?? ''), samples: urls }
       const { data: row } = await admin.from('projects').select('brand_kit').eq('id', projectId).single()
       const existing = (row?.brand_kit as Record<string, unknown>) || {}
       const { error } = await admin.from('projects').update({ brand_kit: { ...existing, story } }).eq('id', projectId)
@@ -127,7 +144,6 @@ export async function POST(request: Request) {
     // keys (story style, saved story sets) survive a re-recognition.
     const { data: prevRow } = await admin.from('projects').select('brand_kit').eq('id', projectId).single()
     const existingKit = (prevRow?.brand_kit as Record<string, unknown>) || {}
-    const font = (FONT_KEYS as string[]).includes(String(kit.font)) ? String(kit.font) : undefined
     const accentStyle = kit.accent_style === 'flat' ? 'flat' : kit.accent_style === 'gradient' ? 'gradient' : undefined
     const brandKit: Record<string, unknown> = {
       ...existingKit, mood: String(kit.mood ?? ''), font_style: String(kit.font_style ?? ''), summary: String(kit.summary ?? ''), samples: urls,

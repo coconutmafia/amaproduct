@@ -20,6 +20,7 @@ import {
 import { downscaleImage } from '@/lib/downscaleImage'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { ArrowSvg, Badge, SHAPE_ASPECT, type FreeShape } from '@/lib/carousel/shapes'
+import { resolveBrandAccent, resolveBrandText } from '@/lib/carousel/contrast'
 import { fontFamilyOf, FONT_HAS_ITALIC, type FontKey } from '@/lib/fonts'
 import { UNIT_HINTS } from '@/components/billing/UnitCostHint'
 
@@ -103,9 +104,15 @@ function PreviewText({ text, plate, color, brand, weight = 'bold', italic = fals
   const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean)
   const base = weight === 'normal' ? 400 : 800
   const emW = weight === 'normal' ? 700 : 900
+  // Те же поправки читаемости, что themeFromBrand на сервере (превью = экспорт):
+  // нечитаемая пара из кита не должна давать невидимый текст ни там, ни тут.
+  // Акцент резолвится на уровне «темы», как на сервере — один цвет и на
+  // плашке, и вне её.
+  const platedText = resolveBrandText(brand.bg, brand.text)
+  const accent = resolveBrandAccent(brand.bg, brand.accentColor)
   const nodes = parts.map((p, i) => {
     const em = p.startsWith('**') && p.endsWith('**')
-    return <span key={i} style={{ color: em ? brand.accentColor : (plate ? brand.text : color), fontWeight: em ? emW : base, fontStyle: italic ? 'italic' : 'normal' }}>{em ? p.slice(2, -2) : p}</span>
+    return <span key={i} style={{ color: em ? accent : (plate ? platedText : color), fontWeight: em ? emW : base, fontStyle: italic ? 'italic' : 'normal' }}>{em ? p.slice(2, -2) : p}</span>
   })
   if (!plate) return <span>{nodes}</span>
   return (

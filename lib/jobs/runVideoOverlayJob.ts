@@ -92,6 +92,9 @@ export async function processVideoOverlayJob(jobId: string): Promise<void> {
       bg: story.bg || project.brand_bg_color || undefined,
       text: story.text || project.brand_text_color || undefined,
       bgStyle: (story.bgStyle || project.brand_bg_style || undefined) as 'paper' | 'solid' | 'gradient' | undefined,
+      // Шрифт сторис (story.font) поверх общего — как в StoriesPanel, чтобы
+      // видео-кадр серии не выпадал из её типографики.
+      font: story.font || (kit.font as string | undefined) || undefined,
       handle: project.brand_handle || undefined,
       logoUrl: project.brand_logo_url || undefined,
     }
