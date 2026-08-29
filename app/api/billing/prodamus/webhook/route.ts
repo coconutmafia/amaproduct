@@ -88,7 +88,7 @@ export async function POST(request: Request) {
       const subCost = sub ? Math.round(Number(sub.cost)) : NaN
       if (Number.isFinite(subCost)) grantedPlan = PAID_PLANS.find((p) => PLAN_CONFIG[p].priceRub === subCost)
       if (!grantedPlan && sub?.name) {
-        const nameMap: Record<string, string> = { 'соло': 'solo', 'про': 'pro', 'продюсер': 'producer' }
+        const nameMap: Record<string, string> = { 'старт': 'starter', 'соло': 'solo', 'про': 'pro', 'продюсер': 'producer' }
         grantedPlan = nameMap[String(sub.name).trim().toLowerCase()]
       }
       if (!grantedPlan) grantedPlan = parsed?.plan

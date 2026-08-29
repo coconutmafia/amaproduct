@@ -23,19 +23,28 @@ function parseCaseLimits(sql: string, fnName: string): Record<string, number> {
 }
 
 describe('лимиты тарифов синхронны: БД ↔ PLAN_CONFIG ↔ пробник', () => {
-  it('generation_limit (миграция 016) == PLAN_CONFIG.generations', () => {
-    const sql = readFileSync(join(ROOT, 'supabase/migrations/016_billing.sql'), 'utf8')
+  // 040 ПЕРЕОПРЕДЕЛЯЕТ обе функции (добавлен starter) — истина теперь там;
+  // 016/035 остаются историей.
+  it('generation_limit (миграция 040) == PLAN_CONFIG.generations', () => {
+    const sql = readFileSync(join(ROOT, 'supabase/migrations/040_starter_tier.sql'), 'utf8')
     const db = parseCaseLimits(sql, 'generation_limit')
-    for (const tier of ['trial', 'solo', 'pro', 'producer'] as const) {
+    for (const tier of ['trial', 'starter', 'solo', 'pro', 'producer'] as const) {
       expect(db[tier], `generation_limit('${tier}')`).toBe(PLAN_CONFIG[tier].generations)
     }
   })
 
-  it('project_limit (миграция 035) == PLAN_CONFIG.projects', () => {
-    const sql = readFileSync(join(ROOT, 'supabase/migrations/035_enforce_project_limit.sql'), 'utf8')
+  it('project_limit (миграция 040) == PLAN_CONFIG.projects', () => {
+    const sql = readFileSync(join(ROOT, 'supabase/migrations/040_starter_tier.sql'), 'utf8')
     const db = parseCaseLimits(sql, 'project_limit')
-    for (const tier of ['trial', 'solo', 'pro', 'producer'] as const) {
+    for (const tier of ['trial', 'starter', 'solo', 'pro', 'producer'] as const) {
       expect(db[tier], `project_limit('${tier}')`).toBe(PLAN_CONFIG[tier].projects)
+    }
+  })
+
+  it('constraint 040 разрешает ровно тиры из PLAN_CONFIG', () => {
+    const sql = readFileSync(join(ROOT, 'supabase/migrations/040_starter_tier.sql'), 'utf8')
+    for (const tier of ['trial', 'starter', 'solo', 'pro', 'producer']) {
+      expect(sql, `'${tier}' в constraint`).toContain(`'${tier}'`)
     }
   })
 

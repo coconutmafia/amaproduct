@@ -6,7 +6,7 @@
 
 // DB-level access level (profiles.subscription_tier). 'trial' is the free 2-month
 // experience; the three paid plans are the approved pricing (PRICING.md).
-export type SubscriptionTier = 'trial' | 'solo' | 'pro' | 'producer'
+export type SubscriptionTier = 'trial' | 'starter' | 'solo' | 'pro' | 'producer'
 export type PaidPlan = Exclude<SubscriptionTier, 'trial'>
 
 // Subscription lifecycle (profiles.subscription_status).
@@ -52,6 +52,35 @@ export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
       'Полный доступ на 2 месяца',
       '~300 единиц контента в месяц',
       'Весь визуал и методология',
+    ],
+  },
+  // «Старт» (29.08) — нижняя ступень воронки после бесплатной диагностики.
+  // Цена/лимиты посчитаны от себестоимости (отчёт 29.08): полный базовый путь
+  // юзера ≈ 75 юнитов и $8-9 себестоимости → 100 юнитов за $25 держат маржу
+  // ≥50% даже в стрессе (весь лимит чатом ≈ $12). Меньше юнитов — юзер НЕ
+  // доходит до конца сервиса, дешевле — маржа ниже 50%.
+  // ВКЛЮЧАЕТСЯ ТОЛЬКО с NEXT_PUBLIC_STARTER_TIER=1 (см. VISIBLE_PAID_PLANS):
+  // до этого должны существовать миграция 040 и продукт в ЛК Продамуса на
+  // 2500₽ — иначе вебхук не смог бы выдать тариф (обе платёжки обязаны вести
+  // себя одинаково — правило из блока МОДЕЛЬ БИЛЛИНГА).
+  starter: {
+    label: 'Старт',
+    price: 25,
+    priceRub: 2500,
+    generations: 100,
+    unlimited: false,
+    projects: 1,
+    teamSeats: 0,
+    competitors: 2,
+    badge: null,
+    paid: true,
+    features: [
+      '1 проект (блог)',
+      '~100 единиц контента в месяц',
+      'Весь функционал: исследование, прогрев, контент-план, визуал',
+      'Голос, ассистент, тренды — без ограничений по фичам',
+      'Анализ конкурентов (до 2)',
+      'Хватает пройти путь целиком: кастдевы → стратегия → 2-3 недели контента',
     ],
   },
   solo: {
@@ -118,7 +147,31 @@ export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
 }
 
 // The plans shown as choosable cards on the pricing/upgrade screen (trial excluded).
-export const PAID_PLANS: PaidPlan[] = ['solo', 'pro', 'producer']
+export const PAID_PLANS: PaidPlan[] = ['starter', 'solo', 'pro', 'producer']
+
+// Тарифы, видимые в UI (страница тарифов, диалог апгрейда, лендинг).
+// «Старт» скрыт, пока Матвей не включит NEXT_PUBLIC_STARTER_TIER=1 — включать
+// ТОЛЬКО после (1) миграции 040 (constraint + лимиты в БД) и (2) продукта на
+// 2500₽ в ЛК Продамуса. Биллинг-роуты и вебхуки работают с ПОЛНЫМ PAID_PLANS —
+// оплата, пришедшая до включения витрины, всё равно корректно выдаст тариф.
+export const STARTER_VISIBLE = process.env.NEXT_PUBLIC_STARTER_TIER === '1'
+export const VISIBLE_PAID_PLANS: PaidPlan[] = STARTER_VISIBLE
+  ? PAID_PLANS
+  : PAID_PLANS.filter((p) => p !== 'starter')
+
+// Лестница апгрейда: каждый тариф «продаёт следующий» (решение Матвея 29.08).
+// Нуджи (полоса юнитов, диалог лимита) показывают ИМЕННО следующую ступень,
+// а не всю сетку — переход должен быть очевидным одним шагом.
+export function nextPlan(tier: SubscriptionTier): PaidPlan | null {
+  const ladder: Record<SubscriptionTier, PaidPlan | null> = {
+    trial: 'solo', // триал жил на обещаниях Августы — его следующий шаг Соло
+    starter: 'solo',
+    solo: 'pro',
+    pro: 'producer',
+    producer: null, // вершина: следующей ступени нет (не «?? solo» — null легален)
+  }
+  return tier in ladder ? ladder[tier] : 'solo'
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ПРАЙС-ЛИСТ ЕДИНИЦ — сколько юнитов стоит каждая дорогая операция.

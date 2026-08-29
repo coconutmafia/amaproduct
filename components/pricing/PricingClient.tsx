@@ -9,16 +9,19 @@ import { Progress } from '@/components/ui/progress'
 import { toast } from 'sonner'
 import { CheckCircle2, Zap, Star, Building2, Gift, AlertTriangle } from 'lucide-react'
 import type { SubscriptionTier, PaidPlan } from '@/lib/generations-config'
-import { PLAN_CONFIG, PAID_PLANS, UNIT_COSTS } from '@/lib/generations-config'
+import { PLAN_CONFIG, VISIBLE_PAID_PLANS, UNIT_COSTS, nextPlan } from '@/lib/generations-config'
 import { LocalDate } from '@/components/ui/LocalDate'
+import { Sparkles } from 'lucide-react'
 
 const PLAN_ICONS: Record<PaidPlan, React.ReactNode> = {
+  starter:  <Sparkles className="h-5 w-5" />,
   solo:     <Star className="h-5 w-5" />,
   pro:      <Zap className="h-5 w-5" />,
   producer: <Building2 className="h-5 w-5" />,
 }
 
 const PLAN_COLORS: Record<PaidPlan, string> = {
+  starter:  'border-emerald-200 dark:border-emerald-400/30',
   solo:     'border-primary/40 ring-1 ring-primary/30', // hero
   pro:      'border-blue-200 dark:border-blue-400/30',
   producer: 'border-amber-200 dark:border-amber-400/30',
@@ -85,6 +88,9 @@ export function PricingClient({
   const current = plans[currentPlan]
   const unlimited = current.unlimited
   const monthlyPct = unlimited ? 0 : Math.min(100, Math.round((generationsUsed / Math.max(1, monthlyLimit)) * 100))
+  // Следующая ступень лестницы — для нуджа у полосы юнитов
+  const nextKey = nextPlan(currentPlan)
+  const next = nextKey ? plans[nextKey] : null
   const resetDate = resetAt
     ? <LocalDate ts={resetAt} opts={{ day: 'numeric', month: 'long' }} />
     : '—'
@@ -118,6 +124,15 @@ export function PricingClient({
               </div>
               <Progress value={monthlyPct} className="h-1.5" />
               <p className="text-xs text-muted-foreground">Сброс {resetDate}</p>
+              {/* Лестница: у полосы, где юниты кончаются, всегда виден следующий
+                  шаг — тариф выше с конкретной выгодой (решение Матвея 29.08). */}
+              {monthlyPct >= 70 && next && (
+                <p className="text-xs font-medium text-primary">
+                  Единицы заканчиваются — на «{next.label}» их {next.unlimited
+                    ? 'безлимит (fair use)'
+                    : `${next.generations} (в ${Math.round(next.generations / Math.max(monthlyLimit, 1))} раза больше)`}.
+                </p>
+              )}
             </div>
           )}
           {/* Прайс-лист единиц (25.08) — что сколько стоит. Числа ТОЛЬКО из
@@ -178,9 +193,9 @@ export function PricingClient({
         </div>
       )}
 
-      {/* Plan cards — Solo is the hero */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {PAID_PLANS.map((key) => {
+      {/* Plan cards — Solo is the hero; «Старт» появляется с NEXT_PUBLIC_STARTER_TIER=1 */}
+      <div className={`grid sm:grid-cols-2 ${VISIBLE_PAID_PLANS.length >= 4 ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4`}>
+        {VISIBLE_PAID_PLANS.map((key) => {
           const cfg = plans[key]
           const isCurrent = key === currentPlan
 

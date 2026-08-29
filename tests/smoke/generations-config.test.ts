@@ -6,11 +6,11 @@ import { PLAN_CONFIG, PAID_PLANS, TRIAL_DAYS } from '@/lib/generations-config'
 // an accidental edit must not slip through.
 
 describe('plan config', () => {
-  it('has the four approved tiers', () => {
-    for (const t of ['trial', 'solo', 'pro', 'producer']) {
+  it('has the five approved tiers (starter добавлен 29.08 — лестница воронки)', () => {
+    for (const t of ['trial', 'starter', 'solo', 'pro', 'producer']) {
       expect(PLAN_CONFIG, `missing tier ${t}`).toHaveProperty(t)
     }
-    expect(PAID_PLANS).toEqual(['solo', 'pro', 'producer'])
+    expect(PAID_PLANS).toEqual(['starter', 'solo', 'pro', 'producer'])
   })
 
   it('approved prices (PRICING.md) — the Продамус anti-escalation guard depends on priceRub', () => {

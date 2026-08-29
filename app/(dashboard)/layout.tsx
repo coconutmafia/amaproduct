@@ -90,8 +90,9 @@ export default async function DashboardLayout({
       {/* Bottom nav — mobile only */}
       <BottomNav />
 
-      {/* Upgrade dialog — opened via showUpgrade() from the banner or 402 handlers */}
-      <UpgradeDialogHost />
+      {/* Upgrade dialog — opened via showUpgrade() from the banner or 402 handlers.
+          currentPlan → диалог подсвечивает следующую ступень лестницы юзера. */}
+      <UpgradeDialogHost currentPlan={profile?.subscription_tier ?? undefined} />
     </div>
   )
 }

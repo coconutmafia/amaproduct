@@ -4,12 +4,13 @@ import { useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { CheckCircle2, Star, Zap, Building2 } from 'lucide-react'
-import { PLAN_CONFIG, PAID_PLANS, type PaidPlan } from '@/lib/generations-config'
+import { CheckCircle2, Star, Zap, Building2, Sparkles } from 'lucide-react'
+import { PLAN_CONFIG, VISIBLE_PAID_PLANS, nextPlan, type PaidPlan, type SubscriptionTier } from '@/lib/generations-config'
 
 export type UpgradeReason = 'limit' | 'needs_plan' | 'trial' | 'view_only' | 'paused'
 
 const ICONS: Record<PaidPlan, React.ReactNode> = {
+  starter:  <Sparkles className="h-4 w-4" />,
   solo:     <Star className="h-4 w-4" />,
   pro:      <Zap className="h-4 w-4" />,
   producer: <Building2 className="h-4 w-4" />,
@@ -36,13 +37,18 @@ export function showUpgrade(reason: UpgradeReason = 'limit') {
 }
 
 export function UpgradeDialog({
-  open, onOpenChange, reason = 'limit',
+  open, onOpenChange, reason = 'limit', currentPlan,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
   reason?: UpgradeReason
+  /** текущий тариф юзера — подсвечиваем СЛЕДУЮЩУЮ ступень лестницы, а не всегда Соло */
+  currentPlan?: SubscriptionTier
 }) {
   const copy = REASON_COPY[reason] ?? REASON_COPY.limit
+  // Лестница (29.08): человеку, упёршемуся в лимит, показываем очевидный
+  // следующий шаг. Без известного тарифа — прежнее поведение (герой Соло).
+  const hero: PaidPlan = (currentPlan && nextPlan(currentPlan)) || 'solo'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -54,16 +60,18 @@ export function UpgradeDialog({
           <DialogDescription>{copy.desc}</DialogDescription>
         </DialogHeader>
 
-        <div className="grid sm:grid-cols-3 gap-3">
-          {PAID_PLANS.map((key) => {
+        <div className={`grid ${VISIBLE_PAID_PLANS.length >= 4 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'} gap-3`}>
+          {VISIBLE_PAID_PLANS.map((key) => {
             const cfg = PLAN_CONFIG[key]
-            const hero = key === 'solo'
+            const isHero = key === hero
             return (
               <div
                 key={key}
-                className={`rounded-xl border p-4 flex flex-col gap-3 ${hero ? 'border-primary/40 ring-1 ring-primary/30 bg-primary/5' : 'border-border'}`}
+                className={`rounded-xl border p-4 flex flex-col gap-3 ${isHero ? 'border-primary/40 ring-1 ring-primary/30 bg-primary/5' : 'border-border'}`}
               >
-                {cfg.badge
+                {isHero
+                  ? <Badge className="self-start bg-primary/15 text-primary border-primary/30 text-[10px]">Твой следующий шаг</Badge>
+                  : cfg.badge
                   ? <Badge className="self-start bg-primary/15 text-primary border-primary/30 text-[10px]">{cfg.badge}</Badge>
                   : <span className="h-[18px]" />}
                 <div className="flex items-center gap-2 text-primary">
@@ -102,7 +110,9 @@ export function UpgradeDialog({
 }
 
 // Mounted ONCE in the dashboard layout. Any showUpgrade() call opens it.
-export function UpgradeDialogHost() {
+// currentPlan приходит из layout (сервер знает профиль) — диалог подсвечивает
+// следующую ступень лестницы для ЭТОГО юзера.
+export function UpgradeDialogHost({ currentPlan }: { currentPlan?: SubscriptionTier }) {
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState<UpgradeReason>('limit')
 
@@ -116,5 +126,5 @@ export function UpgradeDialogHost() {
     return () => window.removeEventListener(SHOW_EVENT, handler)
   }, [])
 
-  return <UpgradeDialog open={open} onOpenChange={setOpen} reason={reason} />
+  return <UpgradeDialog open={open} onOpenChange={setOpen} reason={reason} currentPlan={currentPlan} />
 }

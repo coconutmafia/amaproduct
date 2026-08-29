@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { STARTER_VISIBLE } from '@/lib/generations-config'
 import {
   Check, Minus, Sparkles, Zap,
   BookOpen, Calendar, Mic2, ChevronRight, Menu, X, ArrowRight, Palette, Users,
@@ -39,15 +40,35 @@ import {
 } from 'framer-motion'
 
 // ── Валюты ───────────────────────────────────────────────────────────────────
+// Позиции цен соответствуют PLANS ниже (Старт первый, скрыт без флага).
 type Currency = 'RUB' | 'USD' | 'EUR'
-const CURRENCY_CONFIG: Record<Currency, { symbol: string; prices: [number, number, number] }> = {
-  RUB: { symbol: '₽', prices: [4900, 14900, 29900] },
-  USD: { symbol: '$', prices: [49, 149, 299] },
-  EUR: { symbol: '€', prices: [45, 139, 279] },
+const CURRENCY_CONFIG: Record<Currency, { symbol: string; prices: number[] }> = {
+  RUB: { symbol: '₽', prices: [2500, 4900, 14900, 29900] },
+  USD: { symbol: '$', prices: [25, 49, 149, 299] },
+  EUR: { symbol: '€', prices: [23, 45, 139, 279] },
 }
 
 // ── Тарифы ───────────────────────────────────────────────────────────────────
-const PLANS = [
+// «Старт» — ступень воронки после бесплатной диагностики; появляется только с
+// NEXT_PUBLIC_STARTER_TIER=1 (см. VISIBLE_PAID_PLANS в generations-config).
+const ALL_PLANS = [
+  {
+    name: 'Старт',
+    period: 'в месяц',
+    popular: false,
+    starter: true,
+    features: [
+      { text: '1 проект (твой блог)', ok: true },
+      { text: '~100 генераций в месяц', ok: true },
+      { text: 'Весь функционал без урезаний', ok: true },
+      { text: 'Кастдевы, прогрев, контент-план', ok: true },
+      { text: 'Хватает пройти путь целиком', ok: true },
+      { text: 'Анализ конкурентов (до 2)', ok: true },
+    ],
+    cta: 'Начать со Старта',
+    href: '/register',
+    gradient: false,
+  },
   {
     name: 'Соло',
     period: 'в месяц',
@@ -97,6 +118,10 @@ const PLANS = [
     gradient: false,
   },
 ]
+
+// Видимые карточки: без флага «Старт» скрыт, цены сдвигаются синхронно.
+const PLANS = STARTER_VISIBLE ? ALL_PLANS : ALL_PLANS.filter((p) => !('starter' in p && p.starter))
+const PRICE_OFFSET = STARTER_VISIBLE ? 0 : 1
 
 // ── Утилиты анимаций ──────────────────────────────────────────────────────────
 const EASE = [0.22, 1, 0.36, 1] as [number, number, number, number]
@@ -935,7 +960,7 @@ function PricingSection() {
             ))}
           </motion.div>
 
-          <div className="grid sm:grid-cols-3 gap-5">
+          <div className={`grid sm:grid-cols-2 ${PLANS.length >= 4 ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-5`}>
             {PLANS.map((plan, i) => (
               <TiltCard key={plan.name}>
                 <motion.div
@@ -963,7 +988,7 @@ function PricingSection() {
                     <p className="text-sm font-black text-[#1A1A1A] mb-2 uppercase tracking-wider">{plan.name}</p>
                     <div className="flex items-end gap-1">
                       <span className="text-lg font-bold text-[#888]">{symbol}</span>
-                      <span className="text-4xl sm:text-5xl font-black text-[#1A1A1A]">{prices[i].toLocaleString('ru-RU')}</span>
+                      <span className="text-4xl sm:text-5xl font-black text-[#1A1A1A]">{prices[i + PRICE_OFFSET].toLocaleString('ru-RU')}</span>
                     </div>
                     <p className="text-xs text-[#888] mt-1">{plan.period}</p>
                   </div>

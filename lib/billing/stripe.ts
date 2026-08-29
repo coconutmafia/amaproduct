@@ -19,6 +19,7 @@ export function getStripe(): Stripe {
 
 // Stable lookup keys so we never hardcode Price IDs (and never need extra env vars).
 const LOOKUP: Record<PaidPlan, string> = {
+  starter: 'ama_starter_monthly',
   solo: 'ama_solo_monthly',
   pro: 'ama_pro_monthly',
   producer: 'ama_producer_monthly',
