@@ -25,6 +25,7 @@ const LIMITS: Record<string, { limit: number; windowSeconds: number }> = {
   'scrape-product': { limit: 20, windowSeconds: HOUR },
   'blog-audit':   { limit: 20,  windowSeconds: HOUR }, // 1 Claude call, no Apify
   'blog-audit-standalone': { limit: 10, windowSeconds: HOUR }, // Apify-скрейп + Claude
+  'diagnostic-lead': { limit: 5, windowSeconds: HOUR }, // заявка на консультацию (анти-спам в чат заявок)
   // Wallet guards for expensive AI / Whisper routes (Claude / OpenAI = real $).
   'analyze-competitors': { limit: 15, windowSeconds: HOUR }, // до 4× flagship
   'suggest-trends': { limit: 20, windowSeconds: HOUR }, // web-search + flagship

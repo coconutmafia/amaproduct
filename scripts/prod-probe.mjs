@@ -3296,9 +3296,87 @@ async function funnelProbe() {
   }
 }
 
+// ── ПРОБНИК: долларовый кап месяца (Матвей 29.08: solo ≤ $20 себестоимости) ──
+// Временный ОПЛАЧЕННЫЙ юзер + фейковая строка ai_usage на $25 → боевой чат
+// обязан ответить 402 limit_reached (кап), после удаления строки — работать.
+async function budgetCapProbe() {
+  const APP = 'https://amaproduct.com'
+  log('\n=== Пробник: долларовый кап месяца ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) временный юзер → solo/active (entitled)')
+    log('  2) фейковая строка ai_usage на ~$25 (cacheWrite1h)')
+    log('  3) POST /api/ai/chat → 402 limit_reached (кап сработал)')
+    log('  4) строку удалить → чат снова работает')
+    log('  5) уборка: строки, джобы, юзер')
+    return
+  }
+  const anon = (() => {
+    const m = readFileSync(join(ROOT, '.env.local'), 'utf8').match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет anon-ключа'); return }
+  const email = `${PROBE_PREFIX}budget-${Date.now()}@gmail.com`
+  const created = await api('/auth/v1/admin/users', {
+    method: 'POST', body: JSON.stringify({ email, email_confirm: true, user_metadata: { full_name: 'Budget Probe' } }),
+  })
+  const uid = created.body?.id
+  if (!uid) { log(`❌ юзер не создался: ${created.status}`); return }
+  const cleanup = async () => {
+    await api(`/rest/v1/ai_usage?user_id=eq.${uid}`, { method: 'DELETE' }).catch(() => {})
+    await api(`/rest/v1/jobs?user_id=eq.${uid}`, { method: 'DELETE' }).catch(() => {})
+    await api(`/auth/v1/admin/users/${uid}`, { method: 'DELETE' }).catch(() => {})
+    log('🧹 уборка: строки журнала и юзер удалены')
+  }
+  try {
+    const ends = new Date(Date.now() + 30 * 864e5).toISOString()
+    await api(`/rest/v1/profiles?id=eq.${uid}`, {
+      method: 'PATCH', body: JSON.stringify({ subscription_tier: 'solo', subscription_status: 'active', trial_ends_at: ends }),
+    })
+    log('✅ 1. юзер solo/active (entitled)')
+    const ins = await api('/rest/v1/ai_usage', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        user_id: uid, route: `${PROBE_PREFIX}budget`, provider: 'anthropic', model: 'claude-opus-5',
+        input_tokens: 0, output_tokens: 0, meta: { cacheWrite1h: 2500000, cacheWrite: 2500000, cacheRead: 0 },
+      }),
+    })
+    const rowId = Array.isArray(ins.body) ? ins.body[0]?.id : ins.body?.id
+    if (!rowId) { log(`❌ 2. строка ai_usage не вставилась: ${ins.status} ${JSON.stringify(ins.body).slice(0, 120)}`); return }
+    log('✅ 2. фейковый расход $25 записан (2.5M токенов записи 1ч)')
+
+    const gl = await api('/auth/v1/admin/generate_link', { method: 'POST', body: JSON.stringify({ type: 'magiclink', email }) })
+    const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+    const ver = await fetch(`${U}/auth/v1/verify`, {
+      method: 'POST', headers: { apikey: anon, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'magiclink', email, token: otp }),
+    }).then(r => r.json())
+    const ref = new URL(U).hostname.split('.')[0]
+    const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+
+    const hit = async () => {
+      const r = await fetch(`${APP}/api/ai/chat`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+        body: JSON.stringify({ conversationType: 'assistant', messages: [{ role: 'user', content: 'привет, ответь одним словом' }] }),
+      })
+      let code = null
+      try { code = (await r.clone().json()).code ?? null } catch { /* стрим = не JSON */ }
+      return { status: r.status, code }
+    }
+    const blocked = await hit()
+    log(`${blocked.status === 402 && blocked.code === 'limit_reached' ? '✅' : '❌'} 3. чат при капе: ${blocked.status} code=${blocked.code ?? 'стрим'} (ждали 402 limit_reached)`)
+
+    await api(`/rest/v1/ai_usage?id=eq.${rowId}`, { method: 'DELETE' })
+    const freed = await hit()
+    log(`${freed.status === 200 ? '✅' : '❌'} 4. после удаления строки: ${freed.status} (ждали 200)`)
+  } finally {
+    await cleanup()
+  }
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe, 'budget-cap-probe': budgetCapProbe }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))

@@ -93,8 +93,11 @@ function BlockCard({ block }: { block: AuditBlockResult }) {
 
 // Чистый рендер результата — переиспользуется проектным аудитом (по материалу)
 // и автономным (по введённому @хендлу на главной). onRerun опционален.
-export function BlogAuditScorecard({ result, onRerun, rerunning }: {
+export function BlogAuditScorecard({ result, onRerun, rerunning, hideCta }: {
   result: AuditResult; onRerun?: () => void; rerunning?: boolean
+  /** воронка диагностики (спека 29.08) рисует СВОИ два действия под отчётом —
+      встроенный CTA прячем, чтобы не было двух конкурирующих призывов */
+  hideCta?: boolean
 }) {
   // Блоки, где хоть один пункт не оценивался (для честной подписи внизу) — так
   // список не врёт: если визуал оценён по картинкам, его тут уже НЕ будет.
@@ -212,6 +215,7 @@ export function BlogAuditScorecard({ result, onRerun, rerunning }: {
         </p>
       )}
 
+      {!hideCta && (
       <div className="rounded-2xl gradient-accent p-5 text-white text-center space-y-2">
         <p className="font-bold text-base">Хочешь полную стратегию по блогу?</p>
         <p className="text-sm text-white/90 leading-snug">
@@ -225,6 +229,7 @@ export function BlogAuditScorecard({ result, onRerun, rerunning }: {
           </Button>
         </a>
       </div>
+      )}
 
       {/* Разбор длинный, и его пересылали скриншотами по кускам (фидбэк владельца
           17 июля) — даём выгрузку одним документом: можно отправить маркетологу

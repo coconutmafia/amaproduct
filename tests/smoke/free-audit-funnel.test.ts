@@ -83,7 +83,7 @@ describe('контракт бесплатной диагностики (лид-�
   })
 })
 
-describe('правки Марины по лендингу и финальному экрану (29.08)', () => {
+describe('воронка диагностики v2 (спека ассистентки 29.08)', () => {
   it('лендинг: оффер диагностики + CTA «Пройти диагностику» → /blog-audit', () => {
     const l = read('components/landing/LandingPage.tsx')
     expect(l).toContain('бесплатную диагностику')
@@ -91,19 +91,33 @@ describe('правки Марины по лендингу и финальном�
     expect(l).toContain('href="/blog-audit"')
     expect(l).toContain('DiagnosticPathSection')
   })
-  it('после свежего отчёта — отдельное окно записи на консультацию', () => {
+  it('консультация НЕ предлагается до отчёта: автопопапа нет, действия ВНИЗУ отчёта', () => {
     const s = read('components/blogAudit/StandaloneBlogAudit.tsx')
-    expect(s).toContain('Хочешь разобрать аккаунт глубже?')
-    expect(s).toContain('Записаться на консультацию')
-    expect(s).toContain('setConsultOpen(true)')
-    // Восстановленный старый отчёт окно не открывает (человек его уже видел)
-    expect(s).not.toMatch(/setRestoredFrom\([^n][^)]*\)[\s\S]{0,80}setConsultOpen\(true\)/)
+    expect(s).not.toContain('setConsultOpen')
+    expect(s).toContain('Для тех, кто готов действовать👇🏼')
+    expect(s).toContain('Забронировать место')
+    // второй CTA — тарифы AI-SMMщика
+    expect(s).toContain('Хочешь попробовать пользоваться AI-SMMщиком?')
+    expect(s).toContain('Попробовать')
+    expect(s).toContain('href="/pricing"')
+    // встроенный CTA скоркарда скрыт — не конкурирует с двумя действиями
+    expect(s).toContain('hideCta')
   })
-  it('адрес записи один на всю воронку и переключается env (календарь/форма/бот)', () => {
-    const c = read('lib/consult.ts')
-    expect(c).toContain('NEXT_PUBLIC_CONSULT_URL')
-    expect(c).toContain('NEXT_PUBLIC_CONSULT_TELEGRAM')
-    expect(read('components/blogAudit/StandaloneBlogAudit.tsx')).toContain("from '@/lib/consult'")
-    expect(read('components/projects/BlogAuditDialog.tsx')).toContain("from '@/lib/consult'")
+  it('форма заявки: имя/Telegram/Instagram, бота не используем, текст успеха точный', () => {
+    const s = read('components/blogAudit/StandaloneBlogAudit.tsx')
+    expect(s).toContain("fetch('/api/diagnostic-lead'")
+    expect(s).toContain('Маркетолог команды Августа свяжется с вами в Telegram.')
+    const api = read('app/api/diagnostic-lead/route.ts')
+    expect(api).toContain("rateLimit(user.id, 'diagnostic-lead')")
+    expect(api).toContain("source: 'diagnostic'")
+    // заявка сохраняется ВСЕГДА; Telegram/amoCRM — best-effort в after() за env
+    expect(api).toContain('TG_LEADS_BOT_TOKEN')
+    expect(api).toContain('AMOCRM_WEBHOOK_URL')
+    expect(api).toContain('Заявка с диагностики')
+  })
+  it('CTA проектного аудита не тронут (hideCta только для воронки)', () => {
+    const d = read('components/projects/BlogAuditDialog.tsx')
+    expect(d).toContain('Записаться на бесплатную консультацию')
+    expect(d).toContain('{!hideCta && (')
   })
 })

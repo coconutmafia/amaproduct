@@ -14,6 +14,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { BILLING_ENFORCED } from '@/lib/generations'
 import { UNIT_COSTS } from '@/lib/generations-config'
 import { setUsageUser } from '@/lib/ai/usageContext'
+import { checkBudgetCap } from '@/lib/billing/costCap'
 
 // Журнал расходов живёт в отдельном модуле без лишних зависимостей (его
 // статически импортирует обёртка Anthropic) — здесь только ре-экспорт, чтобы
@@ -26,7 +27,7 @@ export interface MicroGateResult {
   // Совпадает с контрактом gateContentUnit: чат/правки уже стоят ЗА
   // requirePaidAccess (not_entitled отсечён раньше), поэтому здесь причина
   // всегда quota.
-  reason?: 'quota'
+  reason?: 'quota' | 'budget'
 }
 
 // Одно мелкое AI-действие. Вызывать ПОСЛЕ requirePaidAccess. Возвращает
@@ -38,6 +39,12 @@ export async function gateMicroAction(
   batch: number = UNIT_COSTS.micro_batch,
 ): Promise<MicroGateResult> {
   setUsageUser(userId) // журнал расходов узнает, чей это вызов
+  // Долларовый кап месяца (lib/billing/costCap) — как в gateContentUnit:
+  // микро-действия тоже жгут Claude, без этой двери кап дырявый.
+  if (BILLING_ENFORCED) {
+    const budget = await checkBudgetCap(userId)
+    if (budget.blocked) return { blocked: true, reason: 'budget' }
+  }
   try {
     const { data, error } = await createAdminClient().rpc('consume_micro_action', {
       p_user_id: userId,

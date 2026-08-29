@@ -7,6 +7,7 @@ export type { SubscriptionPlan } from '@/lib/generations-config'
 import { PLAN_CONFIG, PAID_PLANS } from '@/lib/generations-config'
 import type { SubscriptionPlan } from '@/lib/generations-config'
 import { setUsageUser } from '@/lib/ai/usageContext'
+import { checkBudgetCap } from '@/lib/billing/costCap'
 
 // ──────────────────────────────────────────────────────
 // Check + consume one generation (server-side)
@@ -74,7 +75,10 @@ export interface GateResult extends GenerationCheckResult {
   //   'quota'        — paying, but this month's units are used up → "лимит исчерпан"
   // Telling a brand-new unpaid user "ты создала все единицы контента" (with 0 used)
   // reads as a lie, so callers must not collapse these into one message.
-  reason?: 'not_entitled' | 'quota'
+  // 'budget' — исчерпан ДОЛЛАРОВЫЙ кап месяца (lib/billing/costCap): юниты
+  // ещё есть, но клиент уже стоил нам 40% цены тарифа. Роуты ветвят его в
+  // limit_reached (тот же UX «лимит месяца», предложение тарифа выше).
+  reason?: 'not_entitled' | 'quota' | 'budget'
 }
 
 // Entitlement — is the account allowed to generate at all, independent of the
@@ -128,6 +132,15 @@ export async function gateContentUnit(userId: string): Promise<GateResult> {
     const stats = await getGenerationStats(userId)
     return { ...stats, allowed: false, blocked: true, reason: 'not_entitled' }
   }
+  // Долларовый кап месяца (Матвей 29.08: «$49 тариф — не дороже ~$20 нам»).
+  // ДО списания юнита: упёршийся в кап не платит юнит за отказ.
+  if (BILLING_ENFORCED) {
+    const budget = await checkBudgetCap(userId)
+    if (budget.blocked) {
+      const stats = await getGenerationStats(userId)
+      return { ...stats, allowed: false, blocked: true, reason: 'budget' }
+    }
+  }
   const res = await checkAndConsumeGeneration(userId)
   const blocked = BILLING_ENFORCED && !res.allowed
   return { ...res, blocked, ...(blocked ? { reason: 'quota' as const } : {}) }
@@ -144,6 +157,14 @@ export async function gateContentUnits(userId: string, count: number): Promise<G
   if (BILLING_ENFORCED && !(await isEntitled(userId))) {
     const stats = await getGenerationStats(userId)
     return { ...stats, allowed: false, blocked: true, reason: 'not_entitled' }
+  }
+  // Долларовый кап месяца — та же проверка, что в gateContentUnit
+  if (BILLING_ENFORCED) {
+    const budget = await checkBudgetCap(userId)
+    if (budget.blocked) {
+      const stats = await getGenerationStats(userId)
+      return { ...stats, allowed: false, blocked: true, reason: 'budget' }
+    }
   }
   const stats = await getGenerationStats(userId)
   if (stats.remaining < count) {

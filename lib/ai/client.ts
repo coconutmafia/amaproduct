@@ -140,6 +140,15 @@ export const MODEL_SONNET = 'claude-sonnet-4-6'
 // never sees the quality of.
 export const MODEL_HAIKU = 'claude-haiku-4-5'
 
+// Цены моделей ($ за 1М токенов) — живут ЗДЕСЬ же, где id моделей (страж
+// model-upgrade: хардкоды id только в этом файле). Потребители: долларовый
+// кап месяца (lib/billing/costCap) и любые будущие расчёты себестоимости.
+export const MODEL_PRICES_USD: Record<string, { inUsd: number; outUsd: number }> = {
+  'claude-opus-5': { inUsd: 5, outUsd: 25 },
+  [MODEL_SONNET]: { inUsd: 3, outUsd: 15 },
+  [MODEL_HAIKU]: { inUsd: 1, outUsd: 5 },
+}
+
 // Prompt caching: wrap a large, stable system/RAG prompt so its tokens are
 // billed at ~10% on repeat calls (same conversation, the auto-continue loop,
 // or repeat requests for the same project). Pure margin win — identical output.
