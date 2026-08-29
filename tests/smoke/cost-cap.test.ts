@@ -44,10 +44,28 @@ describe('usageRowCostUsd: зеркало формулы usage-report', () => {
     })
     expect(usd).toBeCloseTo(0.625, 3)
   })
-  it('whisper и apify оценены константами, неизвестная модель — 0', () => {
-    expect(usageRowCostUsd({ provider: 'openai_whisper', model: 'whisper-1', input_tokens: null, output_tokens: null, meta: null })).toBe(0.05)
+  it('whisper (чанк 10 мин) и apify оценены константами, неизвестная модель — 0', () => {
+    expect(usageRowCostUsd({ provider: 'openai_whisper', model: 'whisper-1', input_tokens: null, output_tokens: null, meta: null })).toBe(0.06)
     expect(usageRowCostUsd({ provider: 'apify', model: 'x', input_tokens: null, output_tokens: null, meta: null })).toBe(0.01)
     expect(usageRowCostUsd({ provider: 'anthropic', model: 'unknown', input_tokens: 1e6, output_tokens: 1e6, meta: null })).toBe(0)
+  })
+  it('картинки: $0.063 за КАЖДЫЙ вариант (слепое пятно, найденное свипом 29.08)', () => {
+    expect(usageRowCostUsd({ provider: 'openai_image', model: 'gpt-image-1', input_tokens: null, output_tokens: null, meta: { count: 3 } })).toBeCloseTo(0.189, 3)
+    expect(usageRowCostUsd({ provider: 'openai_image', model: 'gpt-image-1', input_tokens: null, output_tokens: null, meta: null })).toBeCloseTo(0.063, 3)
+  })
+  it('каждый провайдер из типа AiProvider оценён прайсером (не 0)', () => {
+    // Тип — источник правды журнала: новый провайдер без ветки в прайсере
+    // сделает кап слепым к его деньгам.
+    const t = read('lib/ai/usageLog.ts').match(/AiProvider = ([^\n]+)/)?.[1] ?? ''
+    const providers = [...t.matchAll(/'([a-z_]+)'/g)].map((m) => m[1])
+    expect(providers.length).toBeGreaterThanOrEqual(4)
+    for (const p of providers) {
+      const usd = usageRowCostUsd({
+        provider: p, model: 'claude-opus-5',
+        input_tokens: 1000, output_tokens: 1000, meta: { count: 1, cacheRead: 0, cacheWrite: 0 },
+      })
+      expect(usd, `провайдер ${p} не оценён`).toBeGreaterThan(0)
+    }
   })
 })
 
@@ -62,6 +80,11 @@ describe('свип: кап стоит у КАЖДОЙ двери списани�
     const u = read('lib/ai/usage.ts')
     expect(u).toContain('checkBudgetCap(userId)')
     expect(u).toContain("reason: 'budget'")
+  })
+  it('кап на ОБЩЕЙ двери requirePaidAccess — закрывает и неметереные AI-пути (ToV, автозаполнение)', () => {
+    const a = read('lib/billing/access.ts')
+    expect(a).toContain('checkBudgetCap(userId)')
+    expect(a).toContain("code: 'limit_reached'")
   })
   it('исключения: админы и QA-бот вне капа; сбой чтения = fail-open', () => {
     const c = read('lib/billing/costCap.ts')

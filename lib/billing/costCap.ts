@@ -43,8 +43,16 @@ type UsageRow = {
 }
 
 export function usageRowCostUsd(r: UsageRow): number {
-  if (r.provider === 'openai_whisper') return 0.05
+  // Строка Whisper = один 10-минутный чанк (CHUNK_SEC в runTranscribeJob) × $0.006/мин
+  if (r.provider === 'openai_whisper') return 0.06
   if (r.provider === 'apify') return 0.01
+  // Картинки: gpt-image-1 medium $0.063 ЗА КАЖДЫЙ вариант (meta.count).
+  // Без этой ветки кап был СЛЕП к картинкам (нашлось свипом 29.08 — ровно
+  // класс «лимит должен покрывать реальный путь расхода»).
+  if (r.provider === 'openai_image') {
+    const count = Number((r.meta as Record<string, unknown> | null)?.count ?? 1) || 1
+    return count * 0.063
+  }
   const p = MODEL_PRICES_USD[r.model ?? '']
   if (!p) return 0
   const n = (k: string) => Number((r.meta as Record<string, unknown> | null)?.[k] ?? 0) || 0

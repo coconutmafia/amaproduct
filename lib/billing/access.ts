@@ -15,6 +15,7 @@
 import { NextResponse } from 'next/server'
 import { BILLING_ENFORCED, isEntitled } from '@/lib/generations'
 import { setUsageUser } from '@/lib/ai/usageContext'
+import { checkBudgetCap } from '@/lib/billing/costCap'
 
 // Returns a 402 Response to return early, or null when the user may proceed.
 // Inert while BILLING_ENFORCED is off, and fail-OPEN inside isEntitled — an
@@ -24,10 +25,23 @@ export async function requirePaidAccess(userId: string): Promise<NextResponse | 
   // протягивания его через все места вызова Claude (см. lib/ai/usageContext).
   setUsageUser(userId)
   if (!BILLING_ENFORCED) return null
-  if (await isEntitled(userId)) return null
-  // Same code the client already maps to «Выбери тариф, чтобы начать».
-  return NextResponse.json(
-    { error: 'payment_required', code: 'payment_required' },
-    { status: 402 },
-  )
+  if (!(await isEntitled(userId))) {
+    // Same code the client already maps to «Выбери тариф, чтобы начать».
+    return NextResponse.json(
+      { error: 'payment_required', code: 'payment_required' },
+      { status: 402 },
+    )
+  }
+  // Долларовый кап месяца НА ОБЩЕЙ ДВЕРИ: requirePaidAccess стоит у КАЖДОГО
+  // платного AI-роута, включая неметереные (ToV, автозаполнение мастера) —
+  // свип 29.08 показал, что кап только в гейтах юнитов оставляет их без
+  // потолка. Дубль с проверкой в гейтах не вреден (fail-open, один select).
+  const budget = await checkBudgetCap(userId)
+  if (budget.blocked) {
+    return NextResponse.json(
+      { error: 'limit_reached', code: 'limit_reached' },
+      { status: 402 },
+    )
+  }
+  return null
 }
