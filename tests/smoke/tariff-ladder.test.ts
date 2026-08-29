@@ -41,10 +41,16 @@ describe('тариф «Старт»', () => {
     expect(STARTER_VISIBLE).toBe(false)
     expect(VISIBLE_PAID_PLANS).not.toContain('starter')
     expect(PAID_PLANS).toContain('starter')
-    // UI ходит по VISIBLE_PAID_PLANS, биллинг-роуты — по PAID_PLANS
+    // UI и ЧЕКАУТЫ ходят по VISIBLE_PAID_PLANS: пока флаг выключен, Старт
+    // нельзя купить даже прямым POST к оплате (решение Матвея 29.08 «пока
+    // убираем»). Вебхуки — по полному PAID_PLANS (пришедший платёж корректно
+    // выдаст тариф в любом случае). Включение флага открывает витрину и
+    // оплату одним рычагом.
     expect(read('components/pricing/PricingClient.tsx')).toContain('VISIBLE_PAID_PLANS.map')
     expect(read('components/billing/UpgradeDialog.tsx')).toContain('VISIBLE_PAID_PLANS.map')
-    expect(read('app/api/billing/checkout/route.ts')).toContain('PAID_PLANS.includes')
+    expect(read('app/api/billing/checkout/route.ts')).toContain('VISIBLE_PAID_PLANS.includes')
+    expect(read('app/api/billing/prodamus/checkout/route.ts')).toContain('VISIBLE_PAID_PLANS.includes')
+    expect(read('app/api/billing/prodamus/webhook/route.ts')).toContain('PAID_PLANS.find')
     expect(read('components/landing/LandingPage.tsx')).toContain('STARTER_VISIBLE')
   })
   it('у Старта в Stripe НЕТ триала (60 дней — обещание Августы для Соло)', () => {

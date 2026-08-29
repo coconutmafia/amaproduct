@@ -3291,7 +3291,22 @@ async function funnelProbe() {
     const cd = await chat.json().catch(() => ({}))
     const gated = chat.status === 402 && cd.code === 'payment_required'
     log(`${gated ? '✅' : '❌'} 4. /api/ai/chat для него закрыт: ${chat.status} code=${cd.code ?? '—'}`)
+
+    // 5. Форма заявки на консультацию (миграция 041): заявка сохраняется в БД
+    const lead = await fetch(`${APP}/api/diagnostic-lead`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'Проба Воронки', telegram: '@proba_probe', instagram: 'proba_probe' }),
+    })
+    const ld = await lead.json().catch(() => ({}))
+    if (lead.ok && ld.ok) {
+      const row = await api(`/rest/v1/diagnostic_leads?select=id,name,source,delivered_tg,delivered_amo&user_id=eq.${uid}`)
+      const saved = Array.isArray(row.body) && row.body[0]
+      log(`${saved ? '✅' : '❌'} 5. заявка сохранена: source=${saved?.source ?? '—'} tg=${saved?.delivered_tg} amo=${saved?.delivered_amo} (false = env доставки ещё не заданы)`)
+    } else {
+      log(`❌ 5. форма заявки: ${lead.status} ${JSON.stringify(ld).slice(0, 140)} (миграция 041 применена?)`)
+    }
   } finally {
+    await api(`/rest/v1/diagnostic_leads?user_id=eq.${uid}`, { method: 'DELETE' }).catch(() => {})
     await cleanup()
   }
 }

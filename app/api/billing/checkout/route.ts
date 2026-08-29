@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe, stripeConfigured, ensurePrice } from '@/lib/billing/stripe'
-import { PAID_PLANS, TRIAL_DAYS, type PaidPlan } from '@/lib/generations-config'
+import { VISIBLE_PAID_PLANS, TRIAL_DAYS, type PaidPlan } from '@/lib/generations-config'
 
 export const runtime = 'nodejs'
 
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     if (!stripeConfigured()) return NextResponse.json({ error: 'billing_not_configured' }, { status: 503 })
 
     const { plan } = (await request.json()) as { plan?: string }
-    if (!plan || !PAID_PLANS.includes(plan as PaidPlan)) {
+    if (!plan || !VISIBLE_PAID_PLANS.includes(plan as PaidPlan) /* Старт скрыт флагом — купить нельзя даже прямым запросом */) {
       return NextResponse.json({ error: 'invalid_plan' }, { status: 400 })
     }
 

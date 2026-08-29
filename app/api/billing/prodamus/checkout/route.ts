@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prodamusConfigured, prodamusFormUrl, prodamusSubId, prodamusLink, buildOrderId } from '@/lib/billing/prodamus'
-import { PAID_PLANS, type PaidPlan } from '@/lib/generations-config'
+import { VISIBLE_PAID_PLANS, type PaidPlan } from '@/lib/generations-config'
 
 export const runtime = 'nodejs'
 
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     if (!prodamusConfigured()) return NextResponse.json({ error: 'billing_not_configured' }, { status: 503 })
 
     const { plan } = (await request.json()) as { plan?: string }
-    if (!plan || !PAID_PLANS.includes(plan as PaidPlan)) return NextResponse.json({ error: 'invalid_plan' }, { status: 400 })
+    if (!plan || !VISIBLE_PAID_PLANS.includes(plan as PaidPlan) /* Старт скрыт флагом — купить нельзя даже прямым запросом */) return NextResponse.json({ error: 'invalid_plan' }, { status: 400 })
 
     const link = prodamusLink(plan as PaidPlan)
     const subId = prodamusSubId(plan as PaidPlan)
