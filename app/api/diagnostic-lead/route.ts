@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { captureException } from '@/lib/sentry'
 import { rateLimit } from '@/lib/rateLimit'
+import { amoConfigured, sendLeadToAmo } from '@/lib/leads/amocrm'
 
 // POST /api/diagnostic-lead — заявка на консультацию из воронки диагностики
 // (спека ассистентки 29.08: форма имя/Telegram/Instagram после отчёта; бота
@@ -72,11 +73,15 @@ export async function POST(request: Request) {
         else await captureException(new Error(`tg sendMessage ${r.status}`), { where: 'diagnostic-lead tg' })
       }
     } catch (e) { await captureException(e, { where: 'diagnostic-lead tg' }) }
-    // amoCRM (интеграционный URL — тот же контур, что у Tilda)
+    // amoCRM: основной путь — API v4 с долгосрочным токеном (lib/leads/amocrm,
+    // env AMOCRM_SUBDOMAIN + AMOCRM_TOKEN); запасной — произвольный
+    // AMOCRM_WEBHOOK_URL, если команда даст готовый коннектор.
     try {
-      const amoUrl = process.env.AMOCRM_WEBHOOK_URL
-      if (amoUrl) {
-        const r = await fetch(amoUrl, {
+      if (amoConfigured()) {
+        const ok = await sendLeadToAmo({ name, telegram, instagram, email: user.email ?? '' })
+        if (ok) await admin.from('diagnostic_leads').update({ delivered_amo: true }).eq('id', leadId)
+      } else if (process.env.AMOCRM_WEBHOOK_URL) {
+        const r = await fetch(process.env.AMOCRM_WEBHOOK_URL, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, telegram: `@${telegram}`, instagram: `@${instagram}`, email: user.email ?? '', source: 'Заявка с диагностики' }),
         })

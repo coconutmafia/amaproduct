@@ -121,3 +121,25 @@ describe('воронка диагностики v2 (спека ассистен�
     expect(d).toContain('{!hideCta && (')
   })
 })
+
+describe('amoCRM-адаптер (долгосрочный токен, вкл. через env)', () => {
+  it('роут заявки: API-путь основной, вебхук — запасной', () => {
+    const api = read('app/api/diagnostic-lead/route.ts')
+    expect(api).toContain('amoConfigured()')
+    expect(api).toContain('sendLeadToAmo(')
+    expect(api).toContain('AMOCRM_WEBHOOK_URL')
+  })
+  it('payload: тег «Заявка с диагностики», контакт с email, примечание с TG/IG', async () => {
+    const { buildAmoLeadPayload, buildAmoNoteText } = await import('../../lib/leads/amocrm')
+    const lead = { name: 'Аня', telegram: 'anya', instagram: 'anya_ig', email: 'a@b.c' }
+    const p = buildAmoLeadPayload(lead, 7, 9)
+    expect(p[0].name).toBe('Заявка с диагностики — Аня')
+    expect(p[0].pipeline_id).toBe(7)
+    expect(p[0].status_id).toBe(9)
+    expect(p[0]._embedded.tags[0].name).toBe('Заявка с диагностики')
+    expect(JSON.stringify(p[0]._embedded.contacts[0])).toContain('a@b.c')
+    const note = buildAmoNoteText(lead)
+    expect(note).toContain('@anya')
+    expect(note).toContain('@anya_ig')
+  })
+})
