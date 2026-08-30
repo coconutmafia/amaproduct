@@ -3460,9 +3460,40 @@ async function enforcePaidAccess() {
   log('\n── ИТОГ ── закрыто вечных: ' + eternal.length + ', по капу: ' + over.length)
 }
 
+// ── ИНСТРУМЕНТ: дослать накопленные заявки диагностики ───────────────────────
+// Заявки, созданные ДО настройки env доставки, лежат в diagnostic_leads с
+// delivered_tg=false. Инструмент шлёт их в группу заявок и помечает
+// доставленными. Токен/чат берёт из .env.local (те же TG_LEADS_BOT_TOKEN /
+// TG_LEADS_CHAT_ID, что стоят в Vercel). Дедуп по флагу — повторный запуск
+// ничего не дублирует.
+async function leadsFlush() {
+  const envTxt = readFileSync(join(ROOT, '.env.local'), 'utf8')
+  const token = envTxt.match(/^TG_LEADS_BOT_TOKEN=(.*)$/m)?.[1]?.trim()
+  const chatId = envTxt.match(/^TG_LEADS_CHAT_ID=(.*)$/m)?.[1]?.trim()
+  log('\n=== Инструмент: дослать заявки диагностики в Telegram ===')
+  if (!token || !chatId) { log('❌ нет TG_LEADS_BOT_TOKEN / TG_LEADS_CHAT_ID в .env.local'); return }
+  const rows = await api(`/rest/v1/diagnostic_leads?select=id,name,telegram,instagram,user_email,created_at&delivered_tg=eq.false&order=created_at.asc&limit=200`)
+  const leads = rows.body || []
+  log(`недоставленных: ${leads.length}`)
+  if (!RUN) { for (const l of leads) log(`  ${l.created_at.slice(0, 16)} ${l.name} @${l.telegram}`); if (leads.length) log('\n[DRY-RUN] добавь --run для отправки.'); return }
+  for (const l of leads) {
+    const text = ['🔥 Заявка с диагностики', `Имя: ${l.name}`, `Telegram: @${l.telegram}`, `Instagram: @${l.instagram}`, `Аккаунт AMA: ${l.user_email ?? '—'}`, `(создана ${l.created_at.slice(0, 16).replace('T', ' ')} UTC)`].join('\n')
+    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text }),
+    })
+    if (r.ok) {
+      await api(`/rest/v1/diagnostic_leads?id=eq.${l.id}`, { method: 'PATCH', body: JSON.stringify({ delivered_tg: true }) })
+      log(`  ✅ ${l.name} @${l.telegram}`)
+    } else {
+      log(`  ❌ ${l.name}: tg ${r.status}`)
+    }
+  }
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe, 'budget-cap-probe': budgetCapProbe, 'enforce-paid-access': enforcePaidAccess }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe, 'budget-cap-probe': budgetCapProbe, 'enforce-paid-access': enforcePaidAccess, 'leads-flush': leadsFlush }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
