@@ -3496,9 +3496,91 @@ async function leadsFlush() {
   }
 }
 
+// ── ПРОБНИК: письмо подтверждения регистрации (шаблон + кодировка) ───────────
+// Реальный кейс 31.08: письма приходили кракозябрами («–Я–А–Є–≤...» — UTF-8,
+// прочитанный как мак-кириллица) — в шаблоне не был объявлен charset. Пробник
+// заводит ящик на mail.tm, регистрируется на проде ПО-НАСТОЯЩЕМУ (anon
+// signup), читает пришедшее письмо и проверяет: тема наша, русский читаем,
+// кракозябр нет, код на месте. Уборка: тестовый юзер удаляется.
+// ⚠️ Встроенная почта Supabase = 2 письма/час на проект: пробник тратит слот.
+async function emailProbe() {
+  log('\n=== Пробник: письмо подтверждения регистрации ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) временный ящик на mail.tm (API)')
+    log('  2) настоящий signup на проде → Supabase шлёт письмо подтверждения')
+    log('  3) читаем письмо: тема, русский текст без кракозябр, код присутствует')
+    log('  4) уборка: тестовый юзер удалён')
+    return
+  }
+  const anon = (() => {
+    const m = readFileSync(join(ROOT, '.env.local'), 'utf8').match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет anon-ключа'); return }
+
+  // 1. ящик
+  const dom = await fetch('https://api.mail.tm/domains').then((r) => r.json()).catch(() => null)
+  const domain = dom?.['hydra:member']?.[0]?.domain
+  if (!domain) { log('❌ mail.tm недоступен'); return }
+  const address = `${PROBE_PREFIX}${Date.now()}@${domain}`
+  const password = `Probe-${Date.now()}!x`
+  const acc = await fetch('https://api.mail.tm/accounts', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address, password }),
+  })
+  if (!acc.ok) { log(`❌ ящик не создался: ${acc.status}`); return }
+  const tok = await fetch('https://api.mail.tm/token', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address, password }),
+  }).then((r) => r.json())
+  if (!tok?.token) { log('❌ mail.tm токен'); return }
+  log(`✅ 1. ящик ${address}`)
+
+  // 2. настоящий signup
+  const su = await fetch(`${U}/auth/v1/signup`, {
+    method: 'POST', headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: address, password, data: { full_name: 'Email Probe' } }),
+  })
+  const sud = await su.json().catch(() => ({}))
+  const uid = sud?.user?.id ?? sud?.id
+  if (!su.ok) { log(`❌ 2. signup: ${su.status} ${JSON.stringify(sud).slice(0, 160)}`); return }
+  log('✅ 2. регистрация прошла — ждём письмо (до 2 мин; лимит встроенной почты 2/час может его молча съесть)')
+
+  const cleanup = async () => {
+    if (uid) await api(`/auth/v1/admin/users/${uid}`, { method: 'DELETE' }).catch(() => {})
+    log('🧹 уборка: тестовый юзер удалён')
+  }
+  try {
+    // 3. ждём письмо
+    let msg = null
+    for (let i = 0; i < 24; i++) {
+      await new Promise((r) => setTimeout(r, 5000))
+      const list = await fetch('https://api.mail.tm/messages', { headers: { Authorization: `Bearer ${tok.token}` } }).then((r) => r.json()).catch(() => null)
+      const m = list?.['hydra:member']?.[0]
+      if (m) { msg = await fetch(`https://api.mail.tm/messages/${m.id}`, { headers: { Authorization: `Bearer ${tok.token}` } }).then((r) => r.json()); break }
+    }
+    if (!msg) {
+      log('❌ 3. письмо НЕ ПРИШЛО за 2 минуты — почти наверняка лимит встроенной почты Supabase (2/час). Повторить позже или сначала подключить свой SMTP.')
+      return
+    }
+    const subject = msg.subject ?? ''
+    const html = (Array.isArray(msg.html) ? msg.html.join('') : msg.html) || msg.text || ''
+    const mojibake = /–[А-Яа-я]|вЂ|Ã.|Đ.|�/.test(subject + html)
+    const hasRu = /Привет|подтверди|почт/i.test(html)
+    const code = (subject + ' ' + html).match(/\b(\d{6,10})\b/)?.[1]
+    log(`   тема: «${subject.slice(0, 80)}»`)
+    log(`${mojibake ? '❌' : '✅'} 3а. кракозябр нет${mojibake ? ' — ЕСТЬ! шаблон/кодировка всё ещё битые' : ''}`)
+    log(`${hasRu ? '✅' : '❌'} 3б. русский текст читается`)
+    log(`${code ? '✅' : '❌'} 3в. код в письме: ${code ?? 'НЕ НАЙДЕН'}`)
+  } finally {
+    await cleanup()
+  }
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe, 'budget-cap-probe': budgetCapProbe, 'enforce-paid-access': enforcePaidAccess, 'leads-flush': leadsFlush }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe, 'budget-cap-probe': budgetCapProbe, 'enforce-paid-access': enforcePaidAccess, 'leads-flush': leadsFlush, 'email-probe': emailProbe }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
