@@ -94,7 +94,11 @@ describe('воронка диагностики v2 (спека ассистен�
   it('консультация НЕ предлагается до отчёта: автопопапа нет, действия ВНИЗУ отчёта', () => {
     const s = read('components/blogAudit/StandaloneBlogAudit.tsx')
     expect(s).not.toContain('setConsultOpen')
-    expect(s).toContain('Для тех, кто готов действовать👇🏼')
+    expect(s).toContain('БЕСПЛАТНАЯ ДИАГНОСТИКА, для тех, кто готов действовать👇🏼')
+    // окно перед скачиванием отчёта (Августа, 31.08): оффер + 2 кнопки
+    expect(s).toContain('Запишись на БЕСПЛАТНЫЙ АУДИТ')
+    expect(s).toContain('Пропустить и скачать')
+    expect(s).toContain('onDownloadIntercept={interceptDownload}')
     expect(s).toContain('Забронировать место')
     // второй CTA — тарифы AI-SMMщика
     expect(s).toContain('Хочешь попробовать пользоваться AI-SMMщиком?')

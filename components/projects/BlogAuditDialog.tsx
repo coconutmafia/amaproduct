@@ -93,11 +93,15 @@ function BlockCard({ block }: { block: AuditBlockResult }) {
 
 // Чистый рендер результата — переиспользуется проектным аудитом (по материалу)
 // и автономным (по введённому @хендлу на главной). onRerun опционален.
-export function BlogAuditScorecard({ result, onRerun, rerunning, hideCta }: {
+export function BlogAuditScorecard({ result, onRerun, rerunning, hideCta, onDownloadIntercept }: {
   result: AuditResult; onRerun?: () => void; rerunning?: boolean
   /** воронка диагностики (спека 29.08) рисует СВОИ два действия под отчётом —
       встроенный CTA прячем, чтобы не было двух конкурирующих призывов */
   hideCta?: boolean
+  /** воронка (Августа, 31.08): перед скачиванием отчёта показать предложение
+      записаться на аудит; перехватчик получает продолжение скачивания и сам
+      решает, звать ли его сейчас или после окна. Проектный аудит не задет. */
+  onDownloadIntercept?: (proceed: () => void) => void
 }) {
   // Блоки, где хоть один пункт не оценивался (для честной подписи внизу) — так
   // список не врёт: если визуал оценён по картинкам, его тут уже НЕ будет.
@@ -113,7 +117,7 @@ export function BlogAuditScorecard({ result, onRerun, rerunning, hideCta }: {
   const zones = zoneBreakdown(result)
 
   const [downloading, setDownloading] = useState(false)
-  const downloadReport = async () => {
+  const doDownload = async () => {
     setDownloading(true)
     try {
       const date = fmtDateLocalRu(Date.now(), { day: 'numeric', month: 'long', year: 'numeric' })
@@ -126,6 +130,10 @@ export function BlogAuditScorecard({ result, onRerun, rerunning, hideCta }: {
     } finally {
       setDownloading(false)
     }
+  }
+  const downloadReport = () => {
+    if (onDownloadIntercept) { onDownloadIntercept(() => { void doDownload() }); return }
+    void doDownload()
   }
 
   return (

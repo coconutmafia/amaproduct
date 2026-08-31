@@ -31,6 +31,23 @@ export function StandaloneBlogAudit() {
   const [leadIg, setLeadIg] = useState('')
   const [leadSending, setLeadSending] = useState(false)
   const [leadSent, setLeadSent] = useState(false)
+  // Окно перед скачиванием отчёта (Августа, 31.08): «запишись на БЕСПЛАТНЫЙ
+  // АУДИТ» + две кнопки «Забронировать место» / «Пропустить и скачать».
+  // Показывается один раз на разбор; после заявки или пропуска качает сразу.
+  const [downloadNudgeOpen, setDownloadNudgeOpen] = useState(false)
+  const pendingDownloadRef = useRef<(() => void) | null>(null)
+  const nudgeShownRef = useRef(false)
+  const interceptDownload = (proceed: () => void) => {
+    if (nudgeShownRef.current || leadSent) { proceed(); return }
+    nudgeShownRef.current = true
+    pendingDownloadRef.current = proceed
+    setDownloadNudgeOpen(true)
+  }
+  const skipAndDownload = () => {
+    setDownloadNudgeOpen(false)
+    pendingDownloadRef.current?.()
+    pendingDownloadRef.current = null
+  }
 
   async function submitLead(e: React.FormEvent) {
     e.preventDefault()
@@ -133,12 +150,13 @@ export function StandaloneBlogAudit() {
             Это твой последний разбор ({restoredFrom}) — он доделался, пока страница была закрыта. Хочешь свежий — нажми «Проверить заново».
           </p>
         )}
-        <BlogAuditScorecard result={result} onRerun={() => run(handle)} rerunning={loading} hideCta />
+        <BlogAuditScorecard result={result} onRerun={() => run(handle)} rerunning={loading} hideCta
+          onDownloadIntercept={interceptDownload} />
 
         {/* ── Продолжение воронки ПОСЛЕ отчёта (спека 29.08): два действия ── */}
-        {/* 1. Оффер на консультацию → форма заявки */}
+        {/* 1. Оффер на консультацию → форма заявки (заголовок — текст Августы, 31.08) */}
         <div className="rounded-2xl gradient-accent p-5 text-white space-y-2">
-          <p className="font-bold text-base">Для тех, кто готов действовать👇🏼</p>
+          <p className="font-bold text-base">БЕСПЛАТНАЯ ДИАГНОСТИКА, для тех, кто готов действовать👇🏼</p>
           <p className="text-sm text-white/90 leading-relaxed">
             Отчет показал то, что видно на поверхности профиля. Если ты уже готов к монетизации
             своего блога и хочешь получить индивидуальную систему заработка на блоге, забронируй
@@ -169,6 +187,33 @@ export function StandaloneBlogAudit() {
         <Button variant="ghost" className="w-full text-muted-foreground" onClick={() => { setResult(null); setHandle(''); setRestoredFrom(null) }}>
           Проверить другой аккаунт
         </Button>
+
+        {/* Окно перед скачиванием отчёта (Августа, 31.08): тот же оффер + 2 кнопки */}
+        <Dialog open={downloadNudgeOpen} onOpenChange={setDownloadNudgeOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-black leading-snug">
+                Запишись на БЕСПЛАТНЫЙ АУДИТ своего аккаунта к маркетологу👇🏼
+              </DialogTitle>
+              <DialogDescription className="text-sm leading-relaxed">
+                Отчет показал то, что видно на поверхности профиля. Если ты уже готов к монетизации
+                своего блога и хочешь получить индивидуальную систему заработка на блоге, забронируй
+                место на бесплатную консультацию к маркетологу команды Августы.
+                На консультации мы простроим дорожную карту действий, которые приведут тебя к продажам!
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 pt-1">
+              <Button onClick={() => { setDownloadNudgeOpen(false); pendingDownloadRef.current = null; setFormOpen(true) }}
+                className="w-full gradient-accent text-white border-0 hover:opacity-90">
+                <CalendarCheck className="h-4 w-4 mr-2" />
+                Забронировать место
+              </Button>
+              <Button variant="ghost" className="w-full text-muted-foreground" onClick={skipAndDownload}>
+                Пропустить и скачать
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Форма заявки (бота не используем): имя / Telegram / Instagram */}
         <Dialog open={formOpen} onOpenChange={(o) => { setFormOpen(o); if (!o) setLeadSent(false) }}>
