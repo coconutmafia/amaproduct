@@ -3299,9 +3299,14 @@ async function funnelProbe() {
     })
     const ld = await lead.json().catch(() => ({}))
     if (lead.ok && ld.ok) {
+      // Доставка в Telegram/amoCRM идёт в after() ПОСЛЕ ответа — даём фону
+      // досчитать, потом читаем флаги (иначе ложные false из-за гонки).
+      await new Promise((r) => setTimeout(r, 8000))
       const row = await api(`/rest/v1/diagnostic_leads?select=id,name,source,delivered_tg,delivered_amo&user_id=eq.${uid}`)
       const saved = Array.isArray(row.body) && row.body[0]
-      log(`${saved ? '✅' : '❌'} 5. заявка сохранена: source=${saved?.source ?? '—'} tg=${saved?.delivered_tg} amo=${saved?.delivered_amo} (false = env доставки ещё не заданы)`)
+      log(`${saved ? '✅' : '❌'} 5. заявка сохранена: source=${saved?.source ?? '—'}`)
+      log(`${saved?.delivered_tg ? '✅' : '❌'} 5а. доставлена в Telegram-группу заявок`)
+      log(`${saved?.delivered_amo ? '✅' : '❌'} 5б. доставлена в amoCRM (сделка «Заявка с диагностики — Проба Воронки»)`)
     } else {
       log(`❌ 5. форма заявки: ${lead.status} ${JSON.stringify(ld).slice(0, 140)} (миграция 041 применена?)`)
     }
