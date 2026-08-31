@@ -204,7 +204,7 @@ export function SettingsClient({ userId, currentAiName }: Props) {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            Получил промо-код от AMAproduct или реферальную ссылку от друга? Введи код — получишь дополнительные запросы к AI.
+            Получил промо-код от AVAproduct или реферальную ссылку от друга? Введи код — получишь дополнительные запросы к AI.
           </p>
           <div className="flex gap-2">
             <Input

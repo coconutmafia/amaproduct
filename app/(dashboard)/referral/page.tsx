@@ -117,7 +117,7 @@ export default function ReferralPage() {
       <div>
         <h1 className="text-2xl font-bold">Твои бонусы</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Делись AMAproduct с коллегами — получай бонусные запросы к AI за каждого приглашённого
+          Делись AVAproduct с коллегами — получай бонусные запросы к AI за каждого приглашённого
         </p>
       </div>
 

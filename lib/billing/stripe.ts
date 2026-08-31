@@ -40,7 +40,7 @@ export async function ensurePrice(plan: PaidPlan): Promise<string> {
   if (existing.data[0]) return existing.data[0].id
 
   const cfg = PLAN_CONFIG[plan]
-  const product = await stripe.products.create({ name: `AMA — ${cfg.label}`, metadata: { plan } })
+  const product = await stripe.products.create({ name: `AVA — ${cfg.label}`, metadata: { plan } })
   const price = await stripe.prices.create({
     product: product.id,
     currency: 'usd',

@@ -63,7 +63,7 @@ export async function POST(request: Request) {
           `Имя: ${name}`,
           `Telegram: @${telegram}`,
           `Instagram: @${instagram}`,
-          `Аккаунт AMA: ${user.email ?? '—'}`,
+          `Аккаунт AVA: ${user.email ?? '—'}`,
         ].join('\n')
         const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },

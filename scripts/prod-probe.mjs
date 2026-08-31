@@ -3569,6 +3569,9 @@ async function emailProbe() {
     const mojibake = /–[А-Яа-я]|вЂ|Ã.|Đ.|�/.test(subject + html)
     const hasRu = /Привет|подтверди|почт/i.test(html)
     const code = (subject + ' ' + html).match(/\b(\d{6,10})\b/)?.[1]
+    const fromAddr = msg.from?.address ?? '—'
+    log(`   от: ${msg.from?.name ?? ''} <${fromAddr}>`)
+    log(`${fromAddr.endsWith('@amaproduct.com') ? '✅' : '⚠️'} 3г. отправитель ${fromAddr.endsWith('@amaproduct.com') ? 'НАШ домен → письмо идёт через настроенный SMTP (Resend), лимит 2/час НЕ применяется' : 'не наш домен → похоже, встроенная почта Supabase (лимит 2/час!)'}`)
     log(`   тема: «${subject.slice(0, 80)}»`)
     log(`${mojibake ? '❌' : '✅'} 3а. кракозябр нет${mojibake ? ' — ЕСТЬ! шаблон/кодировка всё ещё битые' : ''}`)
     log(`${hasRu ? '✅' : '❌'} 3б. русский текст читается`)

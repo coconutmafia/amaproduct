@@ -76,7 +76,7 @@ export async function POST(request: Request) {
       // было чистым мусором: 79 666 ₽ чужих денег в /admin/payments + шум.
       // Уровень info, а не error: это штатная ситуация, а не поломка.
       if (!isAmaSubscriptionPayment({ subscription: sub, subscriptionId: subId, orderId })) {
-        await logWebhook('prodamus webhook: чужой платёж (не подписка AMA) — пропущен', {
+        await logWebhook('prodamus webhook: чужой платёж (не подписка AVA) — пропущен', {
           order_id: orderId, email: data.customer_email ?? null,
           sum: data.sum ?? null, currency: data.currency ?? null,
         }, 'info')

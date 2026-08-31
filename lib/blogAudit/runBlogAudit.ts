@@ -16,7 +16,7 @@ async function fetchImageBlock(url: string): Promise<ImageBlock | null> {
   try {
     const res = await fetch(url, {
       signal: AbortSignal.timeout(8000),
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AMAproduct/1.0)' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AVAproduct/1.0)' },
     })
     if (!res.ok) return null
     const ct = (res.headers.get('content-type') || '').toLowerCase()

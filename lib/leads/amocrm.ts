@@ -57,7 +57,7 @@ export function buildAmoLeadPayload(lead: DiagnosticLead, pipelineId?: number, s
 }
 
 export function buildAmoNoteText(lead: DiagnosticLead): string {
-  return [`Telegram: @${lead.telegram}`, `Instagram: @${lead.instagram}`, lead.email ? `Email аккаунта AMA: ${lead.email}` : null]
+  return [`Telegram: @${lead.telegram}`, `Instagram: @${lead.instagram}`, lead.email ? `Email аккаунта AVA: ${lead.email}` : null]
     .filter(Boolean).join('\n')
 }
 

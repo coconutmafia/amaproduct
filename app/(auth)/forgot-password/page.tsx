@@ -66,7 +66,7 @@ export default function ForgotPasswordPage() {
               <Sparkles className="h-6 w-6 text-white" />
             </div>
           </div>
-          <h1 className="text-2xl font-black uppercase text-[#1A1A1A] tracking-tight">AMAproduct</h1>
+          <h1 className="text-2xl font-black uppercase text-[#1A1A1A] tracking-tight">AVAproduct</h1>
           <p className="text-sm text-[#888888]">AI-продюсер для блогеров</p>
         </Link>
 

@@ -17,19 +17,19 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: 'AMAproduct — AI-Продюсер для Блогеров',
+  title: 'AVAproduct — AI-Продюсер для Блогеров',
   description: 'AI-платформа для создания контента запусков микроблогеров и экспертов',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'AMAproduct',
+    title: 'AVAproduct',
     startupImage: '/icon-512.png',
   },
   formatDetection: { telephone: false },
   openGraph: {
     type: 'website',
-    title: 'AMAproduct — AI-Продюсер',
+    title: 'AVAproduct — AI-Продюсер',
     description: 'AI-платформа для создания контента запусков',
   },
 }

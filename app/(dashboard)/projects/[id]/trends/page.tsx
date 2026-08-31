@@ -299,7 +299,7 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
           {system.length > 0 && (
             <div className="space-y-2.5">
               <h2 className="text-sm font-bold text-foreground flex items-center gap-1.5">
-                <Sparkles className="h-3.5 w-3.5 text-primary" /> Тренды от AMA
+                <Sparkles className="h-3.5 w-3.5 text-primary" /> Тренды от AVA
                 <span className="text-[11px] font-medium text-muted-foreground bg-secondary rounded-full px-2 py-0.5">{system.length}</span>
               </h2>
               <p className="text-[11px] text-muted-foreground -mt-1">Подобраны командой — уже вплетаются в твой план по нише.</p>

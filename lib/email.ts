@@ -1,7 +1,7 @@
 // Transactional email via Resend — DORMANT until RESEND_API_KEY is set (then
 // emails just start flowing, no code change). Used by the chain-watch cron for
 // trial lifecycle notices; add payment-failed/receipt senders at billing launch.
-const FROM = process.env.EMAIL_FROM || 'AMA <hello@amaproduct.com>'
+const FROM = process.env.EMAIL_FROM || 'AVA <hello@amaproduct.com>'
 
 export function emailConfigured(): boolean {
   return !!process.env.RESEND_API_KEY
@@ -31,7 +31,7 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
 const wrap = (body: string) => `
 <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#1a1a1a;line-height:1.55">
   ${body}
-  <p style="margin-top:28px;font-size:13px;color:#888">Команда AMAproduct · <a href="https://amaproduct.com" style="color:#d44e7e">amaproduct.com</a></p>
+  <p style="margin-top:28px;font-size:13px;color:#888">Команда AVAproduct · <a href="https://amaproduct.com" style="color:#d44e7e">amaproduct.com</a></p>
 </div>`
 
 export function trialEndingEmail(daysLeft: number): { subject: string; html: string } {
@@ -59,12 +59,12 @@ export function trialEndedEmail(): { subject: string; html: string } {
 export function projectInviteEmail(projectName: string, role: 'editor' | 'viewer'): { subject: string; html: string } {
   const roleLabel = role === 'editor' ? 'редактором' : 'с доступом только на просмотр'
   return {
-    subject: `Тебя пригласили в проект «${projectName}» на AMAproduct`,
+    subject: `Тебя пригласили в проект «${projectName}» на AVAproduct`,
     html: wrap(`
       <h2 style="margin:0 0 12px">Приглашение в проект</h2>
       <p>Тебя добавили в проект «${projectName}» ${roleLabel}.</p>
-      <p>Если у тебя уже есть аккаунт на AMAproduct — просто зайди, проект появится в списке.
+      <p>Если у тебя уже есть аккаунт на AVAproduct — просто зайди, проект появится в списке.
       Если аккаунта ещё нет — зарегистрируйся на amaproduct.com с этим email, и доступ подключится автоматически.</p>
-      <p style="margin:20px 0"><a href="https://amaproduct.com/login" style="background:#d44e7e;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:600">Открыть AMAproduct</a></p>`),
+      <p style="margin:20px 0"><a href="https://amaproduct.com/login" style="background:#d44e7e;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:600">Открыть AVAproduct</a></p>`),
   }
 }

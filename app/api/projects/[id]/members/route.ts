@@ -107,7 +107,7 @@ export async function POST(
     return NextResponse.json({ error: 'Не удалось добавить участника — попробуй ещё раз' }, { status: 500 })
   }
 
-  const { subject, html } = projectInviteEmail(project?.name ?? 'AMAproduct', inviteRole)
+  const { subject, html } = projectInviteEmail(project?.name ?? 'AVAproduct', inviteRole)
   await sendEmail(email, subject, html)
 
   return NextResponse.json({ member })

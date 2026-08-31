@@ -228,7 +228,7 @@ async function handle(request: Request) {
     const tgChat = process.env.TELEGRAM_CHAT_ID
     if (tgToken && tgChat) {
       try {
-        const text = `⚠️ AMA сторож цепи: ${warnings.length} предупр.\n\n` +
+        const text = `⚠️ AVA сторож цепи: ${warnings.length} предупр.\n\n` +
           warnings.slice(0, 15).join('\n').slice(0, 3500) +
           (warnings.length > 15 ? `\n…и ещё ${warnings.length - 15}` : '')
         await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {

@@ -216,7 +216,7 @@ function RegisterForm() {
                 <Sparkles className="h-7 w-7 text-white" />
               </div>
             </div>
-            <h1 className="text-2xl font-black uppercase text-[#1A1A1A] tracking-tight">AMAproduct</h1>
+            <h1 className="text-2xl font-black uppercase text-[#1A1A1A] tracking-tight">AVAproduct</h1>
             <p className="text-[#888888] text-sm">Твой личный AI SMM-щик для запусков</p>
           </Link>
 
@@ -226,7 +226,7 @@ function RegisterForm() {
             <div className="flex items-center gap-3 rounded-xl border border-amber-200 dark:border-amber-400/30 bg-amber-50 dark:bg-amber-400/10 p-3">
               <Gift className="h-5 w-5 text-amber-600 shrink-0" />
               <div className="text-sm">
-                <span className="font-medium text-amber-700 dark:text-amber-400">Тебя пригласили в AMAproduct</span>
+                <span className="font-medium text-amber-700 dark:text-amber-400">Тебя пригласили в AVAproduct</span>
               </div>
             </div>
           )}

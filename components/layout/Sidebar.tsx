@@ -111,7 +111,7 @@ export function Sidebar({ user, projects = [], isAdmin = false, onNavigate }: Si
           <Sparkles className="h-5 w-5 text-white" />
         </motion.div>
         <div>
-          <p className="text-sm font-bold text-sidebar-foreground tracking-wide">AMAproduct</p>
+          <p className="text-sm font-bold text-sidebar-foreground tracking-wide">AVAproduct</p>
           <p className="text-xs text-muted-foreground">AI-Продюсер</p>
         </div>
       </div>

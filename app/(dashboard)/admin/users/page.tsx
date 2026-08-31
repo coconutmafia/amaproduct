@@ -132,7 +132,7 @@ export default function AdminUsersPage() {
         ])
       }
       const { downloadXlsx } = await import('@/lib/utils/xlsxTable')
-      await downloadXlsx('Пользователи AMA', 'Пользователи', aoa)
+      await downloadXlsx('Пользователи AVA', 'Пользователи', aoa)
       toast.success(`Выгружено ${rows.length} пользователей`)
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Ошибка выгрузки')

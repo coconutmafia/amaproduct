@@ -2,8 +2,8 @@ import type { MetadataRoute } from 'next'
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'AMAproduct — AI-Продюсер',
-    short_name: 'AMAproduct',
+    name: 'AVAproduct — AI-Продюсер',
+    short_name: 'AVAproduct',
     description: 'AI-платформа для создания контента запусков',
     start_url: '/dashboard',
     display: 'standalone',

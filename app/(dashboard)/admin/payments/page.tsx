@@ -83,7 +83,7 @@ export default function AdminPaymentsPage() {
         ])
       }
       const { downloadXlsx } = await import('@/lib/utils/xlsxTable')
-      await downloadXlsx('Оплаты AMA', 'Оплаты', aoa)
+      await downloadXlsx('Оплаты AVA', 'Оплаты', aoa)
       toast.success(`Выгружено ${rows.length} оплат`)
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Ошибка выгрузки')

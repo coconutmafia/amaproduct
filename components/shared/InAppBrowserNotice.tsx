@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 
-// Friendly nudge for users who open AMA inside an in-app browser (Instagram /
+// Friendly nudge for users who open AVA inside an in-app browser (Instagram /
 // Telegram / TikTok WebViews). Those old WebViews can lack a working `URL`
 // constructor — Next's client router does `new URL(...)` on navigation, so the
 // app breaks with «URL is not a constructor». Августа's testers arrive via
@@ -51,7 +51,7 @@ export function InAppBrowserNotice() {
     <div className="fixed inset-x-0 top-0 z-[100] bg-amber-500 text-black shadow-md">
       <div className="mx-auto max-w-2xl px-4 py-2.5 flex items-start gap-3 text-sm">
         <div className="flex-1 leading-snug">
-          <strong>Вы открыли AMA во встроенном браузере.</strong>{' '}
+          <strong>Вы открыли AVA во встроенном браузере.</strong>{' '}
           Для стабильной работы откройте сайт в Safari или Chrome — нажмите «⋯» вверху и выберите «Открыть в браузере».
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">

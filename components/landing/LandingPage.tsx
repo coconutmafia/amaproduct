@@ -262,7 +262,7 @@ function Navbar() {
           whileHover={{ scale: 1.05 }}
           className="text-xl font-black text-[#1A1A1A] tracking-tight cursor-default"
         >
-          AMA<span className="gradient-text">product</span>
+          AVA<span className="gradient-text">product</span>
         </motion.span>
 
         <nav className="hidden md:flex items-center gap-8">
@@ -430,7 +430,7 @@ function HeroSection() {
           transition={{ delay: 1.1, duration: 0.6 }}
           className="text-[#555] text-xl sm:text-2xl max-w-2xl mx-auto leading-relaxed"
         >
-          AMA изучает твой голос, нишу и аудиторию — и создаёт твой контент:
+          AVA изучает твой голос, нишу и аудиторию — и создаёт твой контент:
           тексты и визуал, которые звучат и выглядят как ты. План прогрева за{' '}
           <span className="font-bold text-[#1A1A1A]">8 минут</span>.
         </motion.p>
@@ -624,7 +624,7 @@ function SolutionSection() {
         <RevealSection>
           <SectionLabel>Решение</SectionLabel>
           <motion.h2 variants={fadeUp} className="text-4xl sm:text-5xl lg:text-6xl font-black text-[#1A1A1A] text-center mb-4 leading-tight uppercase">
-            AMA знает твою нишу,<br />аудиторию, стиль.
+            AVA знает твою нишу,<br />аудиторию, стиль.
           </motion.h2>
           <motion.p variants={fadeUp} className="text-2xl sm:text-3xl font-bold text-center gradient-text mb-14">
             И пишет именно как ты.
@@ -634,7 +634,7 @@ function SolutionSection() {
             <TiltCard>
               <motion.div variants={fadeUp} className="p-5 sm:p-8 rounded-2xl bg-[#F7F7F7] border border-[#C5CBA5] h-full shadow-md">
                 <p className="text-xs font-bold text-red-400 uppercase tracking-widest flex items-center gap-2 mb-5">
-                  <X className="h-3.5 w-3.5" /> Без AMA
+                  <X className="h-3.5 w-3.5" /> Без AVA
                 </p>
                 <div className="space-y-3">
                   {['Часами смотришь в пустой экран', 'Контент-план теряется в заметках', 'Нейросеть пишет не своим голосом', 'Каждый запуск — стресс с нуля'].map((t, i) => (
@@ -649,7 +649,7 @@ function SolutionSection() {
             <TiltCard>
               <motion.div variants={fadeUp} custom={1} className="p-8 rounded-2xl bg-[#F7F7F7] border border-[#C5CBA5] h-full shadow-md">
                 <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest flex items-center gap-2 mb-5">
-                  <Check className="h-3.5 w-3.5" /> С AMA
+                  <Check className="h-3.5 w-3.5" /> С AVA
                 </p>
                 <div className="space-y-3">
                   {['Контент за 20 минут в твоём голосе', 'Чёткий план по 4 фазам прогрева', 'AI помнит всё о тебе и аудитории', 'Каждый запуск — система, не хаос'].map((t, i) => (
@@ -862,7 +862,7 @@ function ProcessSection() {
       num: '01',
       icon: '☁️',
       title: 'Загрузи себя',
-      desc: 'Загрузи распаковку личности, материалы о нише, кейсы клиентов. AMA изучит тебя и запомнит навсегда.',
+      desc: 'Загрузи распаковку личности, материалы о нише, кейсы клиентов. AVA изучит тебя и запомнит навсегда.',
     },
     {
       num: '02',
@@ -1086,7 +1086,7 @@ function Footer() {
       <div className="max-w-6xl mx-auto grid sm:grid-cols-3 gap-8 text-sm">
         <div>
           <span className="text-xl font-black text-white tracking-tight">
-            AMA<span className="gradient-text">product</span>
+            AVA<span className="gradient-text">product</span>
           </span>
           <p className="text-gray-500 text-xs mt-2">AI SMM-ассистент для экспертов</p>
         </div>
@@ -1100,7 +1100,7 @@ function Footer() {
           </div>
         </div>
         <div className="text-gray-600 text-xs sm:text-right">
-          © 2026 AMA. Сделано с ❤️ для экспертов.
+          © 2026 AVA. Сделано с ❤️ для экспертов.
         </div>
       </div>
     </footer>
