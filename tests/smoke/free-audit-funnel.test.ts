@@ -143,3 +143,19 @@ describe('amoCRM-адаптер (долгосрочный токен, вкл. ч
     expect(note).toContain('@anya_ig')
   })
 })
+
+describe('гигиена env amoCRM (кейс «•» в токене, 31.08)', () => {
+  it('токен с не-ASCII символом даёт человеческую ошибку, а не криптичный ByteString', async () => {
+    const { amoTokenProblem } = await import('../../lib/leads/amocrm')
+    process.env.AMOCRM_TOKEN = 'eyJ0eXAiO•••'
+    expect(amoTokenProblem()).toContain('недопустимый символ')
+    process.env.AMOCRM_TOKEN = 'eyJ0eXAiOiJKV1Qi.normal-token_123'
+    expect(amoTokenProblem()).toBeNull()
+    delete process.env.AMOCRM_TOKEN
+  })
+  it('значения env чистятся от пробелов, битый токен не даёт слать запрос', () => {
+    const src = read('lib/leads/amocrm.ts')
+    expect(src).toContain('cleanEnv(process.env.AMOCRM_TOKEN)')
+    expect(src).toContain('amoTokenProblem()')
+  })
+})

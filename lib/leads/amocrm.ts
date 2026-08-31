@@ -15,13 +15,26 @@ import { captureException } from '@/lib/sentry'
 
 export type DiagnosticLead = { name: string; telegram: string; instagram: string; email: string }
 
-export function amoConfigured(): boolean {
-  return !!(process.env.AMOCRM_SUBDOMAIN && process.env.AMOCRM_TOKEN)
+// Значения из env чистим от пробелов/переносов (артефакты вставки в Vercel).
+// Токен с НЕ-ASCII символом (реальный случай 31.08: при вставке в Vercel в
+// значение попал «•», и fetch падал с криптичным «Cannot convert argument to
+// a ByteString») — ловим заранее и говорим по-человечески.
+const cleanEnv = (v?: string) => (v ?? '').trim()
+export function amoTokenProblem(): string | null {
+  const t = cleanEnv(process.env.AMOCRM_TOKEN)
+  if (!t) return null
+  const bad = t.match(/[^\x21-\x7E]/)
+  if (bad) return `AMOCRM_TOKEN содержит недопустимый символ «${bad[0]}» (код ${bad[0].codePointAt(0)}) на позиции ${bad.index} — токен вставлен с мусором, перевставь его целиком`
+  return null
 }
 
-const base = () => `https://${process.env.AMOCRM_SUBDOMAIN}.amocrm.ru`
+export function amoConfigured(): boolean {
+  return !!(cleanEnv(process.env.AMOCRM_SUBDOMAIN) && cleanEnv(process.env.AMOCRM_TOKEN))
+}
+
+const base = () => `https://${cleanEnv(process.env.AMOCRM_SUBDOMAIN)}.amocrm.ru`
 const authHeaders = () => ({
-  Authorization: `Bearer ${process.env.AMOCRM_TOKEN}`,
+  Authorization: `Bearer ${cleanEnv(process.env.AMOCRM_TOKEN)}`,
   'Content-Type': 'application/json',
 })
 
@@ -69,6 +82,11 @@ async function resolvePipeline(): Promise<{ pipelineId?: number; statusId?: numb
 
 export async function sendLeadToAmo(lead: DiagnosticLead): Promise<boolean> {
   if (!amoConfigured()) return false
+  const tokenProblem = amoTokenProblem()
+  if (tokenProblem) {
+    await captureException(new Error(tokenProblem), { where: 'amocrm sendLead' })
+    return false
+  }
   try {
     const { pipelineId, statusId } = await resolvePipeline()
     const r = await fetch(`${base()}/api/v4/leads/complex`, {
