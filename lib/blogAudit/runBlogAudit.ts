@@ -1,4 +1,4 @@
-import { anthropic, MODEL, MODEL_HAIKU, buildCachedSystem } from '@/lib/ai/client'
+import { anthropic, MODEL, MODEL_HAIKU } from '@/lib/ai/client'
 import { CHECKLIST, diagnose } from '@/lib/blogAudit/checklist'
 import { IMAGE_URLS_HEADER } from '@/lib/instagram/scrapeAccount'
 
@@ -214,10 +214,13 @@ export async function runBlogAudit(handle: string, profileText: string): Promise
     const resp = await anthropic.messages.create({
       model:      MODEL,
       max_tokens: 4000,
-      // SYSTEM — стабильный чек-лист (~10k токенов), одинаковый для всех
-      // диагностик: под кэшем (1ч TTL) поток диагностик платит за него ~10%
-      // вместо полной цены. Контент запроса не меняется байт-в-байт.
-      system:     buildCachedSystem(SYSTEM),
+      // ⚠️ SYSTEM здесь мал (~500 токенов — ниже минимума кэширования), а
+      // тяжёлая стабильная часть (чек-лист) собирается в buildPrompt и уходит
+      // в user-сообщение ПОСЛЕ переменных картинок профиля — кэшировать её
+      // можно только перестройкой промпта (порядок блоков), что меняет
+      // восприятие моделью. Отложено на «после потока» вместе с тримом;
+      // замер 01.09: попытка кэша через system была no-op (usage: creation=0).
+      system:     SYSTEM,
       messages:   [{ role: 'user', content: hasImages ? [...imageBlocks, textBlock] : [textBlock] }],
     })
     return resp.content.map(b => (b.type === 'text' ? b.text : '')).join('\n')

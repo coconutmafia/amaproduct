@@ -3581,9 +3581,53 @@ async function emailProbe() {
   }
 }
 
+// ── ПРОБНИК: одиночный аудит QA-ботом (проверка кэша чек-листа) ──────────────
+// Тихая проверка: QA-сессия → standalone-аудит → строка ai_usage. Без новых
+// юзеров, заявок и сообщений в группу (в отличие от funnel-probe).
+async function qaAudit() {
+  const APP = 'https://amaproduct.com'
+  const handle = process.argv.includes('--handle') ? process.argv[process.argv.indexOf('--handle') + 1] : 'instagram'
+  log('\n=== Пробник: одиночный аудит QA (кэш чек-листа) ===')
+  if (!RUN) { log('[DRY-RUN] добавь --run'); return }
+  const anon = (() => {
+    const m = readFileSync(join(ROOT, '.env.local'), 'utf8').match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  const gl = await api('/auth/v1/admin/generate_link', { method: 'POST', body: JSON.stringify({ type: 'magiclink', email: QA_EMAIL }) })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST', headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA_EMAIL, token: otp }),
+  }).then(r => r.json())
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+  const post = await fetch(`${APP}/api/blog-audit/standalone`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+    body: JSON.stringify({ handle }),
+  })
+  const pd = await post.json().catch(() => ({}))
+  if (!pd.jobId) { log(`❌ старт: ${post.status} ${JSON.stringify(pd).slice(0, 120)}`); return }
+  for (let i = 0; i < 30; i++) {
+    await new Promise((r) => setTimeout(r, 5000))
+    const j = await fetch(`${APP}/api/jobs/${pd.jobId}`, { headers: { cookie } }).then(r => r.json()).catch(() => null)
+    if (j?.job?.status === 'done') { log(`✅ разбор готов (score ${j.job.result?.score100})`); break }
+    if (j?.job?.status === 'error') { log(`❌ джоб: ${j.job.error}`); return }
+  }
+  const rows = await api(`/rest/v1/ai_usage?select=created_at,route,input_tokens,output_tokens,meta&route=eq.api/blog-audit/standalone&order=created_at.desc&limit=2`)
+  for (const r of rows.body || []) {
+    const cw1 = r.meta?.cacheWrite1h ?? 0, cr = r.meta?.cacheRead ?? 0
+    log(`   ${r.created_at.slice(11, 19)} in=${r.input_tokens} cacheRead=${cr} cacheWrite1h=${cw1} out=${r.output_tokens}`)
+  }
+  const main = (rows.body || []).find((r) => (r.input_tokens ?? 0) > 8000 || (r.meta?.cacheRead ?? 0) > 8000 || (r.meta?.cacheWrite1h ?? 0) > 8000)
+  const cached = main && ((main.meta?.cacheWrite1h ?? 0) > 0 || (main.meta?.cacheRead ?? 0) > 0)
+  log(`${cached ? '✅' : '❌'} кэш чек-листа ${cached ? 'РАБОТАЕТ' : 'НЕ работает (деплой не доехал или cache_control не применился)'}`)
+  await api(`/rest/v1/jobs?id=eq.${pd.jobId}`, { method: 'DELETE' }).catch(() => {})
+  log('🧹 джоб-пробник удалён')
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe, 'budget-cap-probe': budgetCapProbe, 'enforce-paid-access': enforcePaidAccess, 'leads-flush': leadsFlush, 'email-probe': emailProbe }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe, 'budget-cap-probe': budgetCapProbe, 'enforce-paid-access': enforcePaidAccess, 'leads-flush': leadsFlush, 'email-probe': emailProbe, 'qa-audit': qaAudit }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
