@@ -210,26 +210,35 @@ export async function runBlogAudit(handle: string, profileText: string): Promise
   const hasImages = imageBlocks.length > 0
 
   const textBlock = { type: 'text' as const, text: buildPrompt(handle, profileText, hasImages) }
-  const resp = await anthropic.messages.create({
-    model:      MODEL,
-    max_tokens: 4000,
-    // SYSTEM — стабильный чек-лист (~10k токенов), одинаковый для всех
-    // диагностик: под кэшем (1ч TTL) поток диагностик платит за него ~10%
-    // вместо полной цены. Контент запроса не меняется байт-в-байт.
-    system:     buildCachedSystem(SYSTEM),
-    messages:   [{ role: 'user', content: hasImages ? [...imageBlocks, textBlock] : [textBlock] }],
-  })
-  const raw = resp.content.map(b => (b.type === 'text' ? b.text : '')).join('\n')
+  const callModel = async () => {
+    const resp = await anthropic.messages.create({
+      model:      MODEL,
+      max_tokens: 4000,
+      // SYSTEM — стабильный чек-лист (~10k токенов), одинаковый для всех
+      // диагностик: под кэшем (1ч TTL) поток диагностик платит за него ~10%
+      // вместо полной цены. Контент запроса не меняется байт-в-байт.
+      system:     buildCachedSystem(SYSTEM),
+      messages:   [{ role: 'user', content: hasImages ? [...imageBlocks, textBlock] : [textBlock] }],
+    })
+    return resp.content.map(b => (b.type === 'text' ? b.text : '')).join('\n')
+  }
 
   let parsed: {
     blocks?: Record<string, Array<{ score?: unknown; note?: unknown }>>
     topGaps?: unknown
     summary?: unknown
   }
+  // Модель изредка возвращает невалидный JSON (случай Августы 01.09, out=2991 —
+  // не обрезка, просто сбой формата). Под потоком диагностик человек не должен
+  // жать «ещё раз» сам — одна автоматическая повторная попытка внутри джоба.
   try {
-    parsed = parseJson(raw) as typeof parsed
+    parsed = parseJson(await callModel()) as typeof parsed
   } catch {
-    throw new Error('Не удалось разобрать ответ анализа. Попробуй ещё раз.')
+    try {
+      parsed = parseJson(await callModel()) as typeof parsed
+    } catch {
+      throw new Error('Не удалось разобрать ответ анализа. Попробуй ещё раз.')
+    }
   }
 
   const modelBlocks = parsed.blocks ?? {}

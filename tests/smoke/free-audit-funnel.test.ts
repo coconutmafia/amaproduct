@@ -170,3 +170,11 @@ describe('экономика диагностики под потоком (за�
     expect(r).toContain('buildCachedSystem(SYSTEM)')
   })
 })
+
+describe('устойчивость разбора под потоком (сбой парсинга у Августы 01.09)', () => {
+  it('невалидный JSON от модели ретраится один раз внутри джоба', () => {
+    const r = read('lib/blogAudit/runBlogAudit.ts')
+    expect((r.match(/parseJson\(await callModel\(\)\)/g) || []).length).toBe(2)
+    expect(r).toContain('Не удалось разобрать ответ анализа')
+  })
+})
