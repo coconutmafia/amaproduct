@@ -163,3 +163,10 @@ describe('гигиена env amoCRM (кейс «•» в токене, 31.08)', 
     expect(src).toContain('amoTokenProblem()')
   })
 })
+
+describe('экономика диагностики под потоком (запуск Августы 1.09)', () => {
+  it('стабильный SYSTEM аудита кэшируется — поток платит за методологию ~10%', () => {
+    const r = read('lib/blogAudit/runBlogAudit.ts')
+    expect(r).toContain('buildCachedSystem(SYSTEM)')
+  })
+})

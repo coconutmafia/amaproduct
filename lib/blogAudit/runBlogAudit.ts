@@ -1,4 +1,4 @@
-import { anthropic, MODEL, MODEL_HAIKU } from '@/lib/ai/client'
+import { anthropic, MODEL, MODEL_HAIKU, buildCachedSystem } from '@/lib/ai/client'
 import { CHECKLIST, diagnose } from '@/lib/blogAudit/checklist'
 import { IMAGE_URLS_HEADER } from '@/lib/instagram/scrapeAccount'
 
@@ -213,7 +213,10 @@ export async function runBlogAudit(handle: string, profileText: string): Promise
   const resp = await anthropic.messages.create({
     model:      MODEL,
     max_tokens: 4000,
-    system:     SYSTEM,
+    // SYSTEM — стабильный чек-лист (~10k токенов), одинаковый для всех
+    // диагностик: под кэшем (1ч TTL) поток диагностик платит за него ~10%
+    // вместо полной цены. Контент запроса не меняется байт-в-байт.
+    system:     buildCachedSystem(SYSTEM),
     messages:   [{ role: 'user', content: hasImages ? [...imageBlocks, textBlock] : [textBlock] }],
   })
   const raw = resp.content.map(b => (b.type === 'text' ? b.text : '')).join('\n')
