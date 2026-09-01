@@ -269,3 +269,12 @@ describe('mergeBriefsIntoPlanData', async () => {
     expect((planData.warmup_plan.phases[0].daily_plan[0] as Record<string, unknown>).briefs).toBeUndefined()
   })
 })
+
+describe('сторож цепи ловит «кончились деньги провайдера» (инцидент 31.08: 19ч простоя)', () => {
+  it('chain-watch ищет credit balance в error_events и бьёт тревогу первой строкой', () => {
+    const src = readFileSync(join(process.cwd(), 'app/api/cron/chain-watch/route.ts'), 'utf8')
+    expect(src).toContain("ilike('message', '%credit balance%')")
+    expect(src).toContain('warnings.unshift')
+    expect(src).toContain('ДЕНЬГИ ANTHROPIC')
+  })
+})

@@ -111,6 +111,28 @@ async function handle(request: Request) {
       warnings.push(`⚠️ джоб ${j.type} ${j.id} висел >24ч в processing — закрыт как error (инвокация потерялась)`)
     }
   } catch { /* jobs может не быть до миграции 024 */ }
+  // (a2) ДЕНЬГИ ПРОВАЙДЕРА КОНЧИЛИСЬ — самый тихий и самый дорогой отказ:
+  // 31.08 баланс Anthropic иссяк (авто-пополнение не списалось), и ВСЕ
+  // генерации (включая бесплатную диагностику — воронку запуска) стояли ~19
+  // часов, а узнали случайно. Ошибка от провайдера содержит «credit balance» —
+  // ловим её в error_events за сутки и бьём тревогу первой строкой.
+  try {
+    const dayAgoIso = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+    const { data: creditErrs } = await admin
+      .from('error_events')
+      .select('created_at, message')
+      .gte('created_at', dayAgoIso)
+      .ilike('message', '%credit balance%')
+      .order('created_at', { ascending: false })
+      .limit(50)
+    if (creditErrs && creditErrs.length > 0) {
+      warnings.unshift(
+        `🔴 ДЕНЬГИ ANTHROPIC: ${creditErrs.length} ошибок «credit balance» за сутки ` +
+        `(последняя ${creditErrs[0].created_at.slice(0, 16).replace('T', ' ')} UTC) — ` +
+        `проверь баланс и авто-пополнение в console.anthropic.com, генерации у клиентов ПАДАЮТ`,
+      )
+    }
+  } catch { /* error_events может отсутствовать — не роняем сторож */ }
   // (b) Файлы упавших расшифровок: при временной ошибке файл нарочно остаётся
   //     в audio-temp, чтобы «Повторить» продолжил с места обрыва (см.
   //     runTranscribeJob). Окно повтора — 48 часов, дальше подчищаем.
