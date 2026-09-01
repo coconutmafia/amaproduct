@@ -1336,6 +1336,8 @@ async function asUser() {
   const ref = new URL(U).hostname.split('.')[0]
   const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
   log('✅ сессия получена')
+  // --cookie-only: напечатать куку для ручной отладки в браузере (локально)
+  if (process.argv.includes('--cookie-only')) { console.log(cookie); return }
   // Форма POST: путь вида "POST:/api/x:field=v&field2=v2" — воспроизводит
   // скрытую форму downloadTextViaServer (webview-безопасные скачивания 20.08)
   for (const p of paths) {

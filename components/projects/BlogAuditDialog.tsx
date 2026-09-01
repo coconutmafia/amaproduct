@@ -9,7 +9,7 @@ import { pollJob } from '@/lib/jobs/pollJob'
 import { friendlyError } from '@/lib/friendlyError'
 import type { AuditResult, AuditBlockResult } from '@/lib/blogAudit/runBlogAudit'
 import { MAX_SCORE } from '@/lib/blogAudit/checklist'
-import { zoneBreakdown } from '@/lib/blogAudit/auditToText'
+import { zoneBreakdown, ballWord } from '@/lib/blogAudit/auditToText'
 import { fmtDateLocalRu } from '@/lib/dates'
 import { UNIT_HINTS } from '@/components/billing/UnitCostHint'
 
@@ -39,15 +39,6 @@ function ScoreDot({ score }: { score: number | null }) {
   return <span className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 mt-1.5 ${color}`} />
 }
 
-// Русское склонение слова «балл» по числу.
-function ballWord(n: number): string {
-  const a = Math.abs(n) % 100
-  const b = n % 10
-  if (a > 10 && a < 20) return 'баллов'
-  if (b === 1) return 'балл'
-  if (b > 1 && b < 5) return 'балла'
-  return 'баллов'
-}
 
 // Легенда одной из трёх зон разложения балла (зелёная/серая/жёлтая).
 function ZoneLegend({ dot, value, title, desc }: { dot: string; value: number; title: string; desc: string }) {
@@ -121,10 +112,11 @@ export function BlogAuditScorecard({ result, onRerun, rerunning, hideCta, onDown
     setDownloading(true)
     try {
       const date = fmtDateLocalRu(Date.now(), { day: 'numeric', month: 'long', year: 'numeric' })
-      // Оформленный документ, а не простыня текста: то же, что на экране —
-      // зоны, карточки блоков, цветные маркеры (просьба владельца 27.08).
-      const { downloadAuditDocx } = await import('@/lib/blogAudit/auditToDocx')
-      await downloadAuditDocx(result, date, `Диагностика блога @${result.handle}`, CONSULT_URL)
+      // PDF, а не docx: разбор пересылают в Telegram, и docx там открывает
+      // Quick Look, который разваливает вёрстку (инцидент 01.09, Августа).
+      // PDF выглядит как экран в любом вьюере — см. lib/blogAudit/auditToPdf.
+      const { downloadAuditPdf } = await import('@/lib/blogAudit/auditToPdf')
+      await downloadAuditPdf(result, date, `Диагностика блога @${result.handle}`, CONSULT_URL)
     } catch (e) {
       toast.error(friendlyError(e, 'Не удалось скачать разбор'))
     } finally {
