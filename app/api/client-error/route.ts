@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { logClientError } from '@/lib/sentry'
+import { isForeignScriptNoise } from '@/lib/errorNoise'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,6 +19,12 @@ export async function POST(request: Request) {
   if (!message.trim()) return NextResponse.json({ ok: true }) // nothing worth logging
 
   const str = (v: unknown, n: number) => (typeof v === 'string' ? v.slice(0, n) : undefined)
+
+  // Шум чужих скриптов (расширения, встроенный браузер Instagram) — дроп на
+  // приёме: клиентский фильтр есть, но старые бандлы из кэша шлют ещё долго.
+  if (isForeignScriptNoise(message, str(body.stack, 6000))) {
+    return NextResponse.json({ ok: true })
+  }
 
   let userId: string | undefined
   try {
