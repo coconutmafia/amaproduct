@@ -28,17 +28,46 @@ export async function POST(request: Request) {
   const denied = await requirePaidAccess(user.id)
   if (denied) return denied
 
-  let body: { projectId?: string; parts?: { name?: string; text?: string }[] }
+  let body: { projectId?: string; parts?: { name?: string; text?: string }[]; materialIds?: string[] }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad JSON' }, { status: 400 }) }
   const projectId = body.projectId
   const parts = (Array.isArray(body.parts) ? body.parts : [])
     .map(p => ({ name: String(p?.name ?? 'Интервью').slice(0, 120), text: String(p?.text ?? '') }))
     .filter(p => p.text.trim().length > 0)
   if (!projectId) return NextResponse.json({ error: 'projectId required' }, { status: 400 })
-  if (parts.length === 0) return NextResponse.json({ error: 'Нет расшифровок для анализа' }, { status: 400 })
 
   const access = await requireProjectAccess(supabase, projectId, user.id, 'editor')
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
+
+  // Таблица по СОХРАНЁННЫМ расшифровкам проекта (инцидент 01.09, Люба: в
+  // проекте лежали 4 полных интервью, а таблица строилась по одному свежему
+  // обрывку из сессии). Клиент шлёт id выбранных материалов, тексты достаём
+  // здесь — им незачем ездить браузер→сервер. RLS юзерского клиента заодно
+  // отрезает чужие материалы; тип и проект проверяем явно. parts остаются
+  // для старых вкладок и нюансных потоков.
+  const materialIds = (Array.isArray(body.materialIds) ? body.materialIds : [])
+    .filter(v => typeof v === 'string' && /^[0-9a-f-]{36}$/.test(v))
+    .slice(0, 60)
+  if (materialIds.length > 0) {
+    const { data: mats, error: matsError } = await supabase
+      .from('project_materials')
+      .select('id, title, raw_content, created_at')
+      .eq('project_id', projectId)
+      .eq('material_type', 'interview_transcript')
+      .in('id', materialIds)
+      .order('created_at', { ascending: true })
+    if (matsError) {
+      return NextResponse.json({ error: 'Не удалось прочитать расшифровки — попробуй ещё раз' }, { status: 500 })
+    }
+    const already = new Set(parts.map(p => p.text.trim()))
+    for (const m of mats ?? []) {
+      const text = String(m.raw_content ?? '')
+      if (text.trim() && !already.has(text.trim())) {
+        parts.push({ name: String(m.title ?? 'Расшифровка').slice(0, 120), text })
+      }
+    }
+  }
+  if (parts.length === 0) return NextResponse.json({ error: 'Нет расшифровок для анализа' }, { status: 400 })
 
   // Сборка общей таблицы кастдевов = UNIT_COSTS.research_table юнита: флагман
   // по ВСЕМ расшифровкам проекта (max_tokens 32000), кнопка нажимается повторно

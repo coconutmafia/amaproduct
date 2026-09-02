@@ -198,6 +198,31 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   // per-file status for multi-file processing
   const [fileQueue, setFileQueue] = useState<FileStatus[]>([])
 
+  // Сохранённые расшифровки проекта — «Таблица исследования» собирается по ВСЕМ
+  // отмеченным кастдевам, а не только по файлам текущей сессии (инцидент 01.09,
+  // Люба: 4 полных интервью лежали в материалах, таблица построилась по одному
+  // свежему обрывку в 408 знаков). Дефолт: включены все содержательные (≥200
+  // знаков); совсем короткие помечены как обрывки и выключены.
+  const [savedTranscripts, setSavedTranscripts] = useState<{ id: string; title: string; chars: number; checked: boolean }[]>([])
+  const refreshSavedTranscripts = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/projects/${id}/transcripts`)
+      if (!res.ok) return
+      const data = await res.json() as { transcripts?: { id: string; title: string; chars: number }[] }
+      setSavedTranscripts(prev => {
+        const prevChecked = new Map(prev.map(t => [t.id, t.checked]))
+        return (data.transcripts ?? []).map(t => ({ ...t, checked: prevChecked.get(t.id) ?? t.chars >= 200 }))
+      })
+    } catch { /* список — удобство поверх основного потока; не сломался — и ладно */ }
+  }, [id])
+  useEffect(() => { void refreshSavedTranscripts() }, [refreshSavedTranscripts])
+
+  // Язык записи для Whisper: 'auto' = автоопределение. Немецкие кастдевы Любы
+  // (02.09) с форс-русским превращались в кривой подстрочник. ref — потому что
+  // transcribeFiles создан с пустыми deps и читал бы замороженный state.
+  const [recLang, setRecLang] = useState('auto')
+  const recLangRef = useRef('auto')
+
   // Черновик (см. ResearchDraft выше): восстановление после выгрузки вкладки.
   const draftKey = `ama_research_${id}`
   const restoredRef = useRef(false)
@@ -403,7 +428,12 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
           headers: { 'Content-Type': 'application/json' },
           // saveTranscriptMaterial: расшифровка ложится в материалы сразу по
           // готовности джоба — не зависит от успеха шага таблицы (урок 31 июля).
-          body:    JSON.stringify({ projectId: id, storagePath, ext, durationSec: durationSec > 0 ? durationSec : undefined, saveTranscriptMaterial: true }),
+          body:    JSON.stringify({
+            projectId: id, storagePath, ext,
+            durationSec: durationSec > 0 ? durationSec : undefined,
+            saveTranscriptMaterial: true,
+            ...(recLangRef.current !== 'auto' ? { language: recLangRef.current } : {}),
+          }),
         })
         const startBody = await startRes.json() as { jobId?: string; error?: string }
         if (!startRes.ok || startBody.error || !startBody.jobId) {
@@ -465,6 +495,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       setTranscriptMaterialIds(runIds)
       setTranscription(allParts.map(p => p.text).join('\n\n'))
       setStep('transcribed')
+      void refreshSavedTranscripts() // свежие расшифровки — в список чекбоксов
       if (fileErrors.length > 0) {
         toast.error(`Часть файлов не расшифровалась: ${friendlyUploadError(fileErrors[0])}`)
       }
@@ -708,16 +739,24 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   // файла (внутри — та же канонизация и форс-тул), при нехватке времени
   // продолжает сам себя; клиент только поллит и переживает любые обрывы.
   const analyzeTable1 = useCallback(async () => {
+    // Таблица = отмеченные сохранённые расшифровки + тексты текущей сессии
+    // (материалы обычно уже среди отмеченных — сервер дедупит по тексту; parts
+    // остаются для ручной вставки текстом и на случай сбоя сохранения).
+    const materialIds = savedTranscripts.filter(t => t.checked).map(t => t.id)
+    const parts = transcriptionParts.length > 0
+      ? transcriptionParts
+      : (transcription.trim() ? [{ name: 'Интервью', text: transcription }] : [])
+    if (materialIds.length === 0 && parts.length === 0) {
+      toast.error('Отметь хотя бы одну расшифровку или загрузи запись интервью.')
+      return
+    }
     setStep('analyzing1')
     setAnalysisBatch(null)
     try {
-      const parts = transcriptionParts.length > 0
-        ? transcriptionParts
-        : [{ name: 'Интервью', text: transcription }]
       const res = await fetch('/api/jobs/research-table', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ projectId: id, parts }),
+        body:    JSON.stringify({ projectId: id, parts, materialIds }),
       })
       const data = await res.json() as { jobId?: string; error?: string }
       if (!res.ok || !data.jobId) throw new Error(data.error ?? 'Не удалось запустить анализ')
@@ -731,7 +770,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       setStep('transcribed')
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, transcription, transcriptionParts, draftKey, pollAnalysisJob])
+  }, [id, transcription, transcriptionParts, savedTranscripts, draftKey, pollAnalysisJob])
 
   // ── Save to materials ───────────────────────────────────────────────────────
   const saveToMaterials = useCallback(async () => {
@@ -931,9 +970,77 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                 >
                   <Upload className="h-3.5 w-3.5" /> Выбрать файл
                 </button>
+                {/* Язык записи: форс-русский на немецких кастдевах давал кривой
+                    подстрочник (Люба, 02.09). Авто справляется с одноязычной
+                    записью; для смешанной речи надёжнее указать язык ответов. */}
+                <label
+                  className="flex items-center gap-2 text-xs text-muted-foreground"
+                  onClick={e => e.stopPropagation()}
+                >
+                  Язык записи:
+                  <select
+                    value={recLang}
+                    onChange={e => { setRecLang(e.target.value); recLangRef.current = e.target.value }}
+                    className="rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground focus:outline-none"
+                  >
+                    <option value="auto">Определить автоматически</option>
+                    <option value="ru">Русский</option>
+                    <option value="de">Немецкий</option>
+                    <option value="en">Английский</option>
+                    <option value="es">Испанский</option>
+                    <option value="uk">Украинский</option>
+                    <option value="pl">Польский</option>
+                    <option value="fr">Французский</option>
+                    <option value="it">Итальянский</option>
+                  </select>
+                </label>
+                {recLang !== 'auto' && (
+                  <p className="text-[11px] text-muted-foreground" onClick={e => e.stopPropagation()}>
+                    Расшифровка будет на языке записи — таблица исследования всё равно соберётся по-русски.
+                  </p>
+                )}
               </>
             )}
           </div>
+
+          {/* Сохранённые расшифровки проекта: таблица собирается по всем
+              отмеченным, свежая загрузка не обязательна (инцидент Любы 01.09 —
+              «кот наплакал»: таблица строилась по одному обрывку сессии). */}
+          {step === 'upload' && savedTranscripts.length > 0 && (
+            <div className="rounded-xl border border-[#ECECEC] bg-white p-4 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-foreground">Расшифровки уже в проекте</p>
+                <span className="text-xs text-muted-foreground">
+                  отмечено {savedTranscripts.filter(t => t.checked).length} из {savedTranscripts.length}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground leading-snug">
+                «Таблица исследования» собирается по всем отмеченным кастдевам — новые записи загружать не обязательно.
+              </p>
+              <div className="space-y-1 max-h-44 overflow-y-auto">
+                {savedTranscripts.map(t => (
+                  <label key={t.id} className="flex items-center gap-2 text-xs cursor-pointer py-0.5">
+                    <input
+                      type="checkbox"
+                      checked={t.checked}
+                      onChange={() => setSavedTranscripts(prev => prev.map(s => s.id === t.id ? { ...s, checked: !s.checked } : s))}
+                      className="h-3.5 w-3.5 accent-[#3A8A48] shrink-0"
+                    />
+                    <span className="flex-1 truncate text-foreground">{t.title}</span>
+                    <span className={`shrink-0 tabular-nums ${t.chars < 200 ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                      {t.chars < 200 ? `${t.chars} зн. — обрывок?` : `${(t.chars / 1000).toFixed(1).replace('.', ',')} тыс. зн.`}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {savedTranscripts.some(t => t.checked) && (
+                <Button size="sm" onClick={analyzeTable1} className="bg-[#3A8A48] hover:bg-[#2E6E3A] text-white">
+                  <Users className="h-3.5 w-3.5 mr-1.5" />
+                  Создать таблицу по отмеченным ({savedTranscripts.filter(t => t.checked).length})
+                </Button>
+              )}
+            </div>
+          )}
 
           {/* Manual text fallback */}
           {step === 'upload' && (
@@ -1031,6 +1138,12 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
               Создать таблицу исследования
             </Button>
           </div>
+          {savedTranscripts.filter(t => t.checked).length > 1 && (
+            <p className="text-xs text-muted-foreground">
+              Таблица соберётся по {savedTranscripts.filter(t => t.checked).length} расшифровкам проекта — состав можно
+              поменять галочками на шаге загрузки («Загрузить другой файл»).
+            </p>
+          )}
         </div>
       )}
 

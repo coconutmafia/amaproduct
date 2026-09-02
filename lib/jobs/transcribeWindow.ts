@@ -36,8 +36,10 @@ export async function transcribeWindow(opts: {
   durSec: number
   ext: string
   apiKey: string
+  /** ISO-639-1 код языка записи; не задан — Whisper определяет сам. */
+  language?: string
 }): Promise<TranscribeWindowResult> {
-  const { admin, storagePath, startSec, durSec, ext, apiKey } = opts
+  const { admin, storagePath, startSec, durSec, ext, apiKey, language } = opts
 
   const { data: signData, error: signError } = await admin.storage
     .from('audio-temp')
@@ -78,8 +80,15 @@ export async function transcribeWindow(opts: {
     const { default: OpenAI, toFile } = await import('openai')
     const openai = new OpenAI({ apiKey })
     const audio = await toFile(seg, 'segment.mp3', { type: 'audio/mpeg' })
+    // Язык НЕ форсим по умолчанию (инцидент 02.09, Люба Тонких): захардкоженный
+    // language:'ru' на немецких кастдевах давал не расшифровку, а корявый
+    // подстрочник с искажением смысла («wie sieht dein Tag aus» → «как твой
+    // день рождения выглядит»). Автодетект Whisper на одноязычной записи
+    // надёжен; для записей с известным языком юзер задаёт его явно на странице
+    // исследования.
     const transcription = await openai.audio.transcriptions.create({
-      file: audio, model: 'whisper-1', language: 'ru', response_format: 'text',
+      file: audio, model: 'whisper-1', response_format: 'text',
+      ...(language ? { language } : {}),
     })
     void logAiUsage({ route: 'jobs/transcribe', provider: 'openai_whisper', model: 'whisper-1', meta: { chunk: true } })
     return { text: transcription as unknown as string }

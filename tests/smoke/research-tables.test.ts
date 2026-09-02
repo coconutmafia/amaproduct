@@ -271,3 +271,48 @@ describe('table1: роут и фоновый джоб используют ОД�
     expect(dialog).toContain('/api/materials/tov-status')
   })
 })
+
+describe('кастдевы Любы 01-02.09 — «кот наплакал» и немецкий язык', () => {
+  const prompt = readFileSync(join(process.cwd(), 'lib/research/table1.ts'), 'utf8')
+
+  it('интервьюер не попадает в участники, респондент кастдева один', () => {
+    expect(prompt).toContain('КТО РЕСПОНДЕНТ')
+    expect(prompt).toContain('НЕ респондент')
+    // первая редакция правила («если нет отвечающих — пустой список») на
+    // реальных подстрочниках Любы давала НОЛЬ участников из двух интервью —
+    // формулировка обязана удерживать «в кастдеве один-на-один респондент один»
+    expect(prompt).toContain('респондент ровно ОДИН')
+  })
+
+  it('пустое = пустое: мета-пересказы и заполнители запрещены', () => {
+    expect(prompt).toContain('ПУСТОЕ = ПУСТОЕ')
+    expect(prompt).toContain('«участник отвечает на вопрос о…»')
+    expect(prompt).toContain('«данных о себе не')
+  })
+
+  it('иноязычная расшифровка → таблица по-русски, дубль записи — один участник', () => {
+    expect(prompt).toContain('Таблицу ВСЕГДА пиши по-русски')
+    expect(prompt).toContain('ОДИН участник, не два')
+  })
+
+  it('Whisper: язык не форсится по умолчанию и прокидывается из джоба', () => {
+    const win = readFileSync(join(process.cwd(), 'lib/jobs/transcribeWindow.ts'), 'utf8')
+    expect(win, 'хардкод language:ru должен уйти').not.toContain("language: 'ru'")
+    expect(win).toContain('...(language ? { language } : {})')
+    const job = readFileSync(join(process.cwd(), 'lib/jobs/runTranscribeJob.ts'), 'utf8')
+    expect(job).toContain('language: row.payload.language')
+    const route = readFileSync(join(process.cwd(), 'app/api/jobs/transcribe/route.ts'), 'utf8')
+    expect(route).toContain("/^[a-z]{2}$/.test(body.language)")
+  })
+
+  it('таблица собирается по СОХРАНЁННЫМ расшифровкам проекта (materialIds)', () => {
+    const route = readFileSync(join(process.cwd(), 'app/api/jobs/research-table/route.ts'), 'utf8')
+    expect(route).toContain('materialIds')
+    expect(route).toContain("eq('material_type', 'interview_transcript')")
+    expect(route, 'тип и проект проверяются на сервере').toContain("eq('project_id', projectId)")
+    const page = readFileSync(join(process.cwd(), 'app/(dashboard)/projects/[id]/research/page.tsx'), 'utf8')
+    expect(page).toContain('/transcripts')
+    expect(page).toContain('materialIds')
+    expect(page, 'селект языка записи на странице').toContain('Язык записи')
+  })
+})

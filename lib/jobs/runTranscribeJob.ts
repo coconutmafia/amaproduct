@@ -20,7 +20,7 @@ interface JobRow {
   user_id: string
   project_id: string | null
   status: string
-  payload: { storagePath: string; ext: string; durationSec?: number | null; saveTranscriptMaterial?: boolean; unitsRefunded?: boolean; unitsCharged?: number }
+  payload: { storagePath: string; ext: string; durationSec?: number | null; saveTranscriptMaterial?: boolean; unitsRefunded?: boolean; unitsCharged?: number; language?: string }
   progress: { doneChunks?: number; totalChunks?: number | null }
   result: { text?: string; materialId?: string | null } | null
 }
@@ -89,7 +89,7 @@ export async function processTranscribeJob(jobId: string): Promise<void> {
     }
 
     const startSec = ci * CHUNK_SEC
-    const res = await transcribeWindow({ admin, storagePath, startSec, durSec: CHUNK_SEC, ext, apiKey })
+    const res = await transcribeWindow({ admin, storagePath, startSec, durSec: CHUNK_SEC, ext, apiKey, language: row.payload.language })
     if (res.error) {
       // Обрыв на части ci из totalChunks. Уроки 31 июля:
       //   1) уже расшифрованный текст — ЦЕННОСТЬ КЛИЕНТА, его нельзя выбрасывать

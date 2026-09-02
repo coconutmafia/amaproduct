@@ -32,11 +32,15 @@ export async function POST(request: Request) {
   const denied = await requirePaidAccess(user.id)
   if (denied) return denied
 
-  let body: { projectId?: string; storagePath?: string; ext?: string; durationSec?: number; saveTranscriptMaterial?: boolean }
+  let body: { projectId?: string; storagePath?: string; ext?: string; durationSec?: number; saveTranscriptMaterial?: boolean; language?: string }
   try { body = await request.json() as typeof body }
   catch { return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 }) }
 
   const { projectId, storagePath, ext, durationSec, saveTranscriptMaterial } = body
+  // Язык записи: ISO-639-1 от клиента (селект на странице исследования) или
+  // undefined = автодетект Whisper. Иное значение молча превращаем в авто —
+  // язык влияет только на качество, ломать загрузку из-за него нельзя.
+  const language = typeof body.language === 'string' && /^[a-z]{2}$/.test(body.language) ? body.language : undefined
   if (!projectId || !storagePath) return NextResponse.json({ error: 'projectId и storagePath обязательны' }, { status: 400 })
   if (!storagePath.startsWith(`${user.id}/`)) return NextResponse.json({ error: 'Access denied' }, { status: 403 })
 
@@ -80,7 +84,7 @@ export async function POST(request: Request) {
     project_id: projectId,
     type: 'transcribe',
     status: 'queued',
-    payload: { storagePath, ext: ext || 'mp3', durationSec: durationSec ?? null, saveTranscriptMaterial: saveTranscriptMaterial === true, unitsCharged: units },
+    payload: { storagePath, ext: ext || 'mp3', durationSec: durationSec ?? null, saveTranscriptMaterial: saveTranscriptMaterial === true, unitsCharged: units, ...(language ? { language } : {}) },
     progress: { doneChunks: 0, totalChunks: durationSec ? null : null },
   }).select('id').single()
   if (error || !job) {
