@@ -12,6 +12,7 @@ const SWIPE_LABELS: Record<string, string> = {
   en: 'SWIPE →',
   es: 'DESLIZA →',
   de: 'WEITER →',
+  it: 'SCORRI →',
 }
 
 // Read / manually-save a project's brand kit (colours, bg style, handle, logo).

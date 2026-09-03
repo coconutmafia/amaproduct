@@ -79,7 +79,9 @@ function collectStyles(doc: ReturnType<typeof buildAuditPdfDoc>): Array<Record<s
   return styles
 }
 
-describe('выгрузка разбора в PDF', () => {
+// 30с: первый тест файла греет renderToBuffer с настоящими шрифтами — под
+// параллельной нагрузкой полного прогона дефолтных 5с не хватает (флак 03.09).
+describe('выгрузка разбора в PDF', { timeout: 30000 }, () => {
   it('это валидный PDF — формат с одинаковым рендером в любом вьюере', async () => {
     const { buf } = await pdfParts()
     expect(buf.subarray(0, 5).toString('latin1')).toBe('%PDF-')

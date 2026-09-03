@@ -35,6 +35,12 @@ const L10N = {
     story: 'Story', voice: 'Stimme', cover: 'Cover', slide: 'Slide',
     lastSlide: 'Letzter Slide', subject: 'Betreff',
   },
+  it: {
+    hook: 'Hook', duration: 'Durata', scene: 'Scena', overlay: 'Testo sullo schermo',
+    voiceover: 'Voce fuori campo', action: 'Azione', description: 'Didascalia',
+    story: 'Storia', voice: 'Voce', cover: 'Copertina', slide: 'Slide',
+    lastSlide: 'Ultima slide', subject: 'Oggetto',
+  },
 }
 
 // Служебные enum-значения из JSON-схем ('cut', 'hook', 'poll'…) — латиница,
@@ -50,26 +56,30 @@ function collectStringValues(v: unknown, acc: string[] = []): string[] {
 
 function labelsFor(sd: Dict): typeof L10N.ru {
   const text = collectStringValues(sd).join(' ')
-  const letters = (text.match(/[a-zA-Zа-яА-ЯёЁäöüßÄÖÜáéíóúüñÁÉÍÓÚÑ]/g) || []).length
+  const letters = (text.match(/[a-zA-Zа-яА-ЯёЁäöüßÄÖÜáéíóúüñÁÉÍÓÚÑàèìòùÀÈÌÒÙ]/g) || []).length
   if (letters < 40) return L10N.ru
-  const latin = (text.match(/[a-zA-ZäöüßÄÖÜáéíóúüñÁÉÍÓÚÑ]/g) || []).length
+  const latin = (text.match(/[a-zA-ZäöüßÄÖÜáéíóúüñÁÉÍÓÚÑàèìòùÀÈÌÒÙ]/g) || []).length
   if (latin / letters <= 0.6) return L10N.ru
   // Латиница ≠ английский: различаем en/es/de по символам и служебным словам
   // (та же логика, что detectTextLanguage в content-brain — локально, чтобы не
   // тянуть модуль промптов в клиентский бандл).
   if (/[¿¡]|ñ/i.test(text)) return L10N.es
   if (/ß/.test(text)) return L10N.de
-  const words = text.toLowerCase().match(/[a-záéíóúüäöß]+/g) || []
-  let esHits = 0, enHits = 0, deHits = 0
+  const words = text.toLowerCase().match(/[a-záéíóúüäößàèìòù']+/g) || []
+  let esHits = 0, enHits = 0, deHits = 0, itHits = 0
   const esStop = new Set(['que', 'de', 'la', 'el', 'los', 'las', 'una', 'para', 'como', 'está', 'pero', 'por', 'con', 'más', 'es', 'un', 'en', 'no', 'se', 'del', 'al', 'y'])
+  const itStop = new Set(['che', 'di', 'non', 'per', 'con', 'una', 'sono', 'questo', 'anche', 'più', 'perché', 'ma', 'della', 'del', 'gli', 'come', 'però', 'così', 'è', 'da', 'nel', 'alla'])
   const enStop = new Set(['the', 'and', 'you', 'that', 'this', 'for', 'with', 'was', 'are', 'have', 'not', 'but', 'what', 'your', 'from', 'they'])
   const deStop = new Set(['und', 'der', 'die', 'das', 'ich', 'nicht', 'mit', 'für', 'ist', 'auf', 'dass', 'ein', 'eine', 'wie', 'aber', 'dem', 'den', 'mir', 'mich', 'dir', 'du', 'wir', 'sich', 'auch'])
   for (const w of words) {
     if (esStop.has(w)) esHits++
     if (enStop.has(w)) enHits++
     if (deStop.has(w)) deHits++
+    if (itStop.has(w)) itHits++
+    if (/^[a-z]+'[aeiou]/.test(w)) itHits++ // элизия: c'è, l'anima, un'ora
   }
-  if (deHits > enHits && deHits > esHits && deHits >= 3) return L10N.de
+  if (deHits > enHits && deHits > esHits && deHits > itHits && deHits >= 3) return L10N.de
+  if (itHits > enHits && itHits > esHits && itHits >= 3) return L10N.it
   if (esHits > enHits && esHits >= 3) return L10N.es
   return L10N.en
 }

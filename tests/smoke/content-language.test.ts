@@ -18,12 +18,13 @@ import { contentItemToText } from '@/lib/contentToText'
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('resolveContentLanguage: настройка проекта → язык контента', () => {
-  it('явные ru/en/es/de распознаются (с нормализацией регистра/пробелов)', () => {
+  it('явные ru/en/es/de/it распознаются (с нормализацией регистра/пробелов)', () => {
     expect(resolveContentLanguage({ content_language: 'en' })).toBe('en')
     expect(resolveContentLanguage({ content_language: ' EN ' })).toBe('en')
     expect(resolveContentLanguage({ content_language: 'ru' })).toBe('ru')
     expect(resolveContentLanguage({ content_language: 'es' })).toBe('es')
     expect(resolveContentLanguage({ content_language: 'de' })).toBe('de')
+    expect(resolveContentLanguage({ content_language: 'it' })).toBe('it')
   })
   it('нет настройки / мусор → null (легаси-поведение, НЕ русский по умолчанию)', () => {
     expect(resolveContentLanguage(null)).toBeNull()
@@ -180,9 +181,9 @@ describe('система промптов: цепочка языка не рвё
     // Безусловное «, на русском,» в структуре ответа — регресс к старому багу
     expect(src).not.toMatch(/СТРУКТУРА ОТВЕТА \(в свободной форме, на русском/)
   })
-  it('проектные PATCH принимают content_language только из белого списка (ru/en/es/de)', () => {
+  it('проектные PATCH принимают content_language только из белого списка (ru/en/es/de/it)', () => {
     const src = readFileSync(join(process.cwd(), 'app/api/projects/route.ts'), 'utf8')
-    expect(src).toContain("['ru', 'en', 'es', 'de']")
+    expect(src).toContain("['ru', 'en', 'es', 'de', 'it']")
     expect(src).toContain('Bad content_language')
   })
   it('update_project: рантайм-аллоулист колонок, сырые fields в update() не уходят', () => {
@@ -191,9 +192,14 @@ describe('система промптов: цепочка языка не рвё
     expect(src).toContain(".update(clean)")
     expect(src).not.toContain('.update(fields)')
   })
-  it('миграция 038 допускает все четыре языка', () => {
+  it('миграция 038 допускает четыре языка, 042 расширяет до пяти (it)', () => {
     const sql = readFileSync(join(process.cwd(), 'supabase/migrations/038_project_content_language.sql'), 'utf8')
     expect(sql).toContain("('ru', 'en', 'es', 'de')")
+    // 'it' в роуте без 042 = валидация пропускает, а БД отвергает (класс
+    // «кнопка без ветки») — миграция обязана существовать и включать 'it'.
+    const sql42 = readFileSync(join(process.cwd(), 'supabase/migrations/042_content_language_it.sql'), 'utf8')
+    expect(sql42).toContain("('ru', 'en', 'es', 'de', 'it')")
+    expect(sql42).toContain('drop constraint if exists projects_content_language_check')
   })
   it('раскадровка сторис ловит и английский придуманный CTA (dm me / link in bio)', () => {
     const src = readFileSync(join(process.cwd(), 'app/api/ai/plan-stories/route.ts'), 'utf8')

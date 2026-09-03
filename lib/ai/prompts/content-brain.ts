@@ -287,9 +287,11 @@ export const CONTENT_BRAIN_ANTI_PATTERNS = `❌ Идеальный герой б
 // разговор с ассистентом — на языке пользователя, контент — на языке блога.
 // NULL/неизвестно = поведение до миграции 038 — язык выводится из языка TOV
 // (так живёт испанский контент Katia Ustina без настройки — не ломать!).
-export type ContentLanguage = 'ru' | 'en' | 'es' | 'de'
+// 'it' добавлен 03.09 (кастдевы итальянского фотографа, вопрос Кристины) —
+// первым классом, свипом по ВСЕМ веткам es/de, а не одной кнопкой.
+export type ContentLanguage = 'ru' | 'en' | 'es' | 'de' | 'it'
 
-const CONTENT_LANGUAGES: ContentLanguage[] = ['ru', 'en', 'es', 'de']
+const CONTENT_LANGUAGES: ContentLanguage[] = ['ru', 'en', 'es', 'de', 'it']
 
 export function resolveContentLanguage(
   project?: { content_language?: string | null } | null
@@ -304,6 +306,7 @@ const LANGUAGE_NAME_RU: Record<ContentLanguage, string> = {
   en: 'АНГЛИЙСКИЙ',
   es: 'ИСПАНСКИЙ',
   de: 'НЕМЕЦКИЙ',
+  it: 'ИТАЛЬЯНСКИЙ',
 }
 
 /**
@@ -330,29 +333,35 @@ export function getContentLanguageDirective(lang: ContentLanguage | null): strin
  * английский). es/de распознаются по своим символам (¿¡ñ / äöüß) и плотности
  * служебных слов; при равенстве очков побеждает английский.
  */
-export function detectTextLanguage(text: string): 'en' | 'es' | 'de' | null {
+export function detectTextLanguage(text: string): 'en' | 'es' | 'de' | 'it' | null {
   const clean = String(text)
     .replace(/https?:\/\/\S+/g, ' ')
     .replace(/@[a-z0-9_.]+/gi, ' ')
     .replace(/\*\*/g, ' ')
-  const letters = (clean.match(/[a-zA-Zа-яА-ЯёЁäöüßÄÖÜáéíóúüñÁÉÍÓÚÑ¿¡]/g) || []).length
+  const letters = (clean.match(/[a-zA-Zа-яА-ЯёЁäöüßÄÖÜáéíóúüñÁÉÍÓÚÑ¿¡àèìòùÀÈÌÒÙ]/g) || []).length
   if (letters < 40) return null // слишком коротко, чтобы судить
-  const latin = (clean.match(/[a-zA-ZäöüßÄÖÜáéíóúüñÁÉÍÓÚÑ]/g) || []).length
+  const latin = (clean.match(/[a-zA-ZäöüßÄÖÜáéíóúüñÁÉÍÓÚÑàèìòùÀÈÌÒÙ]/g) || []).length
   if (latin / letters <= 0.6) return null
   // Явные символы языка решают сразу
   if (/[¿¡]|ñ/i.test(clean)) return 'es'
   if (/ß/.test(clean)) return 'de'
-  const words = clean.toLowerCase().match(/[a-záéíóúüäöß]+/g) || []
+  const words = clean.toLowerCase().match(/[a-záéíóúüäößàèìòù']+/g) || []
   const esStop = new Set(['que', 'de', 'la', 'el', 'los', 'las', 'una', 'uno', 'para', 'como', 'está', 'esto', 'pero', 'por', 'con', 'más', 'te', 'tu', 'mi', 'es', 'un', 'en', 'no', 'se', 'del', 'al', 'y'])
+  // Итальянский — романский сосед испанского: различаем по СВОИМ служебным
+  // словам (che/di/non/perché/più) и элизии с апострофом (c'è, l'ho, un'idea).
+  const itStop = new Set(['che', 'di', 'non', 'per', 'con', 'una', 'sono', 'questo', 'questa', 'anche', 'più', 'perché', 'ma', 'della', 'del', 'gli', 'come', 'cosa', 'quando', 'però', 'già', 'così', 'è', 'da', 'nel', 'alla'])
   const enStop = new Set(['the', 'and', 'you', 'that', 'this', 'for', 'with', 'was', 'are', 'have', 'not', 'but', 'what', 'when', 'your', 'from', 'they', 'she', 'his', 'her'])
   const deStop = new Set(['und', 'der', 'die', 'das', 'ich', 'nicht', 'mit', 'für', 'ist', 'auf', 'dass', 'ein', 'eine', 'wie', 'aber', 'dem', 'den', 'mir', 'mich', 'dir', 'du', 'wir', 'was', 'sich', 'auch'])
-  let esHits = 0, enHits = 0, deHits = 0
+  let esHits = 0, enHits = 0, deHits = 0, itHits = 0
   for (const w of words) {
     if (esStop.has(w)) esHits++
     if (enStop.has(w)) enHits++
     if (deStop.has(w)) deHits++
+    if (itStop.has(w)) itHits++
+    if (/^[a-z]+'[aeiou]/.test(w)) itHits++ // элизия: c'è, l'anima, un'ora
   }
-  if (deHits > enHits && deHits > esHits && deHits >= 3) return 'de'
+  if (deHits > enHits && deHits > esHits && deHits > itHits && deHits >= 3) return 'de'
+  if (itHits > enHits && itHits > esHits && itHits >= 3) return 'it'
   if (esHits > enHits && esHits >= 3) return 'es'
   return 'en'
 }
@@ -478,6 +487,41 @@ export const AI_TELLS_TO_AVOID_ES = `CÓMO NO SONAR COMO IA (los lectores lo det
 
 8. GUION DE REELS / VOZ EN OFF = LENGUA HABLADA, NO TELÉGRAFO. Di cada línea en voz alta mentalmente: una línea hablada tiene 10-25 palabras con conectores naturales, como hablando con una amiga. La regla 2 aplica a la voz en off TODAVÍA más estricto.`
 
+// ── ANTI-AI-TELLS (ITALIANO) ─────────────────────────────────────────────────
+// Итальянский близнец: те же классы паттернов, на живом итальянском.
+export const AI_TELLS_TO_AVOID_IT = `COME NON SEMBRARE UN'IA (i lettori lo capiscono al volo — rispettalo alla lettera):
+
+1. NIENTE LINEETTE «—» COME PAUSA DRAMMATICA. È uno dei segni più riconoscibili del testo IA; letta ad alta voce suona robotica. Riscrivi la frase con le parole.
+   ❌ "Il lancio — un disastro totale."  ✅ "Il lancio si è rivelato un disastro totale."
+   ❌ "Non è talento — è pratica."  ✅ "Alla fine è pratica, non talento."
+
+2. NIENTE FRAMMENTI STACCATO senza verbo, uno dopo l'altro: nessuno parla così.
+   ❌ "Mare. Sole. Una vita nuova."  ✅ "Mare, sole e quella che sembrava una vita nuova."
+   ❌ "Senza filtri. Senza copioni. Solo io."  ✅ "Senza filtri né copioni, solo io."
+   Vale anche per "Non A. Non B. Solo C." — uniscilo in una frase viva.
+
+3. NIENTE PARALLELISMO NEGATIVO, in nessuna forma:
+   ❌ "Non è solo un quadro. È un modo di vedere."
+   ❌ "Non si tratta di arte. Si tratta di attenzione."
+   Afferma diretto: ✅ "Dipingere mi ha insegnato a notare cose che prima ignoravo."
+
+4. NIENTE FRASI FATTE D'APERTURA NÉ FINTA CONFIDENZA:
+   ❌ "Diciamocelo:" / "Sai qual è la cosa assurda?" / "E la parte migliore?" / "Immergiamoci" / "Preparati" / "Spoiler:"
+   Fai la transizione con un'affermazione o vai dritto al punto.
+
+5. NIENTE VOCABOLARIO DA IA: sbloccare, potenziare, elevare, trasformativo, rivoluzionario, "nel mondo di oggi", "catturare l'essenza", "un capolavoro" (sul proprio lavoro), "non perdertelo".
+   Usa la parola semplice che direbbe una persona: imparare, iniziare, migliorare, il mio lavoro, questo pezzo.
+
+6. NIENTE CODE DI GERUNDIO attaccate per fingere profondità:
+   ❌ "…, riflettendo il mio legame profondo con la natura."  ❌ "…, evocando un senso di movimento."
+   Se l'idea conta, dalle una frase sua con soggetto e verbo. Se no, tagliala.
+
+7. OFFERTE VUOTE — nomina SEMPRE il valore concreto.
+   ❌ "Scrivimi 'ARTE' e ti racconto i dettagli." (dettagli di COSA?)
+   ✅ "Scrivimi 'ARTE' e ti mando la lista dei quadri disponibili con misure e prezzi."
+
+8. COPIONE REELS / VOCE FUORI CAMPO = LINGUA PARLATA, NON TELEGRAMMA. Pronuncia ogni riga a mente ad alta voce: una riga parlata ha 10-25 parole con connettivi naturali, come parlando con un'amica. La regola 2 vale per il voiceover ANCORA più severa.`
+
 // ── ANTI-AI-TELLS (DEUTSCH) ──────────────────────────────────────────────────
 // Немецкий близнец: те же классы + немецкая специфика (Nominalstil-канцелярит,
 // «nicht nur …, sondern …», du-Form как в живых блогах).
@@ -524,6 +568,7 @@ export function getAiTells(lang: ContentLanguage | null): string {
   if (lang === 'en') return AI_TELLS_TO_AVOID_EN
   if (lang === 'es') return AI_TELLS_TO_AVOID_ES
   if (lang === 'de') return AI_TELLS_TO_AVOID_DE
+  if (lang === 'it') return AI_TELLS_TO_AVOID_IT
   return AI_TELLS_TO_AVOID
 }
 

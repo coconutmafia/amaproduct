@@ -201,6 +201,16 @@ export function buildValidatorUserPrompt(generatedContent: string, lang: Content
 6. Template lead-ins ("Here's the thing:", "Let's be honest", "And you know what's crazy?") → make it a statement or go straight to the point
 7. Empty offers ("DM me and I'll share the details") → name the concrete value the person gets
 8. "-ing" analysis tails ("..., reflecting my deep connection to art") → give the thought its own sentence or cut it`
+    : lang === 'it'
+    ? `ЧТО ПРОВЕРИТЬ И ИСПРАВИТЬ (только это; текст итальянский — исправления тоже на итальянском):
+1. Frasi da IA ("sbloccare", "potenziare", "trasformativo", "rivoluzionario", "nel mondo di oggi", "catturare l'essenza", "non perdertelo") → sostituiscile con linguaggio concreto e semplice
+2. Apertura di riscaldamento invece del punto? ("Oggi voglio raccontarti...", "Sono entusiasta di condividere...") → tagliala, parti dalla sostanza
+3. Lineette "—" come pausa drammatica → riscrivi la frase con le parole
+4. Frammenti staccato ("Mare. Sole. Una vita nuova.", "Non A. Non B. Solo C.") → unisci OGNI catena in una frase viva e connessa
+5. Parallelismo negativo ("Non è solo X, è Y", "Non si tratta di X. Si tratta di Y.") → afferma diretto
+6. Frasi fatte d'apertura ("Diciamocelo:", "Sai qual è la cosa assurda?") → trasformale in affermazione o vai dritto al punto
+7. Offerte vuote ("Scrivimi e ti racconto i dettagli") → nomina il valore concreto
+8. Code di gerundio ("..., riflettendo il mio legame con l'arte") → frase autonoma o taglio`
     : lang === 'es'
     ? `ЧТО ПРОВЕРИТЬ И ИСПРАВИТЬ (только это; текст испанский — исправления тоже на испанском):
 1. Frases de IA ("desbloquear", "potenciar", "transformador", "revolucionario", "en el mundo actual", "capturar la esencia", "no te lo pierdas") → sustitúyelas por lenguaje concreto y simple
@@ -233,7 +243,7 @@ export function buildValidatorUserPrompt(generatedContent: string, lang: Content
 
   return `Ты редактор. Перед тобой текст, написанный от имени конкретного блогера.
 
-ЗАДАЧА: найти и исправить ТОЛЬКО GPT-паттерны. НЕ переписывай стиль, НЕ улучшай структуру — только убирай маркерные AI-фразы и заменяй их живым языком.${lang && lang !== 'ru' ? ` Текст на языке блога (${lang === 'en' ? 'английском' : lang === 'es' ? 'испанском' : 'немецком'}) — верни его НА ТОМ ЖЕ ЯЗЫКЕ, не переводи.` : ''}
+ЗАДАЧА: найти и исправить ТОЛЬКО GPT-паттерны. НЕ переписывай стиль, НЕ улучшай структуру — только убирай маркерные AI-фразы и заменяй их живым языком.${lang && lang !== 'ru' ? ` Текст на языке блога (${lang === 'en' ? 'английском' : lang === 'es' ? 'испанском' : lang === 'it' ? 'итальянском' : 'немецком'}) — верни его НА ТОМ ЖЕ ЯЗЫКЕ, не переводи.` : ''}
 
 ТЕКСТ:
 ${generatedContent}

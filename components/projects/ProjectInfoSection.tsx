@@ -46,6 +46,7 @@ const LANGUAGE_OPTIONS = [
   { value: 'en', label: 'English' },
   { value: 'es', label: 'Español' },
   { value: 'de', label: 'Deutsch' },
+  { value: 'it', label: 'Italiano' },
 ]
 
 export function ProjectInfoSection({ project }: ProjectInfoSectionProps) {
