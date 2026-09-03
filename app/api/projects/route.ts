@@ -2,6 +2,52 @@ import { NextResponse } from 'next/server'
 import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 
+
+// ── Продукты: материал product_description — единственное, что видит модель ──
+function productMaterialContent(d: {
+  name: string; product_type?: string | null; price?: number | null
+  currency?: string | null; description?: string | null; sales_page_url?: string | null
+}): string {
+  return [
+    `Продукт: ${d.name}`,
+    d.product_type   ? `Тип: ${d.product_type}` : '',
+    d.price          ? `Цена: ${d.price} ${d.currency || 'RUB'}` : '',
+    d.description    ? `Описание: ${d.description}` : '',
+    d.sales_page_url ? `Страница продаж: ${d.sales_page_url}` : '',
+  ].filter(Boolean).join('\n')
+}
+
+// Поиск материала продукта: связь source_product_id (миграция 043), фолбэк по
+// title для записей, созданных до миграции. До применения 043 селект по
+// несуществующей колонке падает — ловим и уходим в фолбэк.
+async function findProductMaterial(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  projectId: string,
+  productId: string,
+  priorName: string,
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('project_materials')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('material_type', 'product_description')
+      .eq('source_product_id', productId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (!error && data && data[0]) return data[0].id as string
+  } catch { /* колонки ещё нет — фолбэк */ }
+  const { data } = await supabase
+    .from('project_materials')
+    .select('id')
+    .eq('project_id', projectId)
+    .eq('material_type', 'product_description')
+    .eq('title', priorName)
+    .order('created_at', { ascending: false })
+    .limit(1)
+  return data && data[0] ? (data[0].id as string) : null
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
@@ -53,23 +99,121 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Не удалось добавить продукт — попробуй ещё раз' }, { status: 500 })
       }
 
-      const raw_content = [
-        `Продукт: ${name}`,
-        product_type   ? `Тип: ${product_type}` : '',
-        price          ? `Цена: ${price} ${currency}` : '',
-        description    ? `Описание: ${description}` : '',
-        sales_page_url ? `Страница продаж: ${sales_page_url}` : '',
-      ].filter(Boolean).join('\n')
-      const { error: matError } = await supabase.from('project_materials').insert({
+      const raw_content = productMaterialContent({ name, product_type, price, currency, description, sales_page_url })
+      const { data: mat, error: matError } = await supabase.from('project_materials').insert({
         project_id: projectId,
         material_type: 'product_description',
         title: name,
         raw_content,
         processing_status: 'ready',
-      })
+      }).select('id').single()
       if (matError) console.error('create_product material error:', matError.message)
+      // Связь материал→продукт (миграция 043): до её применения колонки нет —
+      // update тихо фейлится, синк ниже работает по фолбэку title.
+      if (mat?.id) {
+        await supabase.from('project_materials')
+          .update({ source_product_id: product.id })
+          .eq('id', mat.id)
+          .then(() => {}, () => {})
+      }
 
       return NextResponse.json({ product })
+    }
+
+    // Обновить продукт СУЩЕСТВУЮЩЕГО проекта (жалоба куратора Ланы 03.09:
+    // «состав продуктов меняется, а после заведения проекта править некуда»).
+    // Синхронно обновляется материал product_description — модель видит
+    // продукты только через материалы (см. комментарий у create_product).
+    if (action === 'update_product') {
+      const d = (data || {}) as {
+        productId?: string; name?: string; product_type?: string
+        price?: number | string | null; currency?: string
+        description?: string; sales_page_url?: string
+      }
+      const productId = (d.productId || '').trim()
+      const name = (d.name || '').trim()
+      if (!productId || !name) {
+        return NextResponse.json({ error: 'Нужны продукт и название' }, { status: 400 })
+      }
+      // Юзерский клиент: RLS отсекает чужие продукты; принадлежность проекту фиксируем сами
+      const { data: prior } = await supabase
+        .from('products')
+        .select('id, project_id, name')
+        .eq('id', productId)
+        .single()
+      if (!prior) return NextResponse.json({ error: 'Продукт не найден' }, { status: 404 })
+
+      const price = d.price === '' || d.price === null || d.price === undefined || !Number.isFinite(Number(d.price))
+        ? null : Number(d.price)
+      const currency = (d.currency || 'RUB').trim() || 'RUB'
+      const product_type = (d.product_type || '').trim() || null
+      const description = (d.description || '').trim() || null
+      const sales_page_url = (d.sales_page_url || '').trim() || null
+
+      const { data: product, error } = await supabase
+        .from('products')
+        .update({ name, product_type, price, currency, description, sales_page_url })
+        .eq('id', productId)
+        .select()
+        .single()
+      if (error || !product) {
+        await captureException(new Error(error?.message || 'product update failed'), { where: 'projects update_product' })
+        return NextResponse.json({ error: 'Не удалось сохранить продукт — попробуй ещё раз' }, { status: 500 })
+      }
+
+      const raw_content = productMaterialContent({ name, product_type, price, currency, description, sales_page_url })
+      const matId = await findProductMaterial(supabase, prior.project_id, productId, prior.name)
+      if (matId) {
+        await supabase.from('project_materials')
+          .update({ title: name, raw_content, processing_status: 'ready' })
+          .eq('id', matId)
+        await supabase.from('project_materials')
+          .update({ source_product_id: productId })
+          .eq('id', matId)
+          .then(() => {}, () => {})
+      } else {
+        // Материала нет (старый продукт из ранних версий) — самовосстановление
+        const { data: mat } = await supabase.from('project_materials').insert({
+          project_id: prior.project_id,
+          material_type: 'product_description',
+          title: name,
+          raw_content,
+          processing_status: 'ready',
+        }).select('id').single()
+        if (mat?.id) {
+          await supabase.from('project_materials')
+            .update({ source_product_id: productId })
+            .eq('id', mat.id)
+            .then(() => {}, () => {})
+        }
+      }
+      return NextResponse.json({ product })
+    }
+
+    // Убрать продукт из линейки: is_active=false + удалить его материал —
+    // иначе модель продолжит «продавать» ушедший продукт в контенте.
+    if (action === 'archive_product') {
+      const d = (data || {}) as { productId?: string }
+      const productId = (d.productId || '').trim()
+      if (!productId) return NextResponse.json({ error: 'Нужен продукт' }, { status: 400 })
+      const { data: prior } = await supabase
+        .from('products')
+        .select('id, project_id, name')
+        .eq('id', productId)
+        .single()
+      if (!prior) return NextResponse.json({ error: 'Продукт не найден' }, { status: 404 })
+
+      const { error } = await supabase
+        .from('products')
+        .update({ is_active: false })
+        .eq('id', productId)
+      if (error) {
+        await captureException(new Error(error.message || 'product archive failed'), { where: 'projects archive_product' })
+        return NextResponse.json({ error: 'Не удалось убрать продукт — попробуй ещё раз' }, { status: 500 })
+      }
+      const matId = await findProductMaterial(supabase, prior.project_id, productId, prior.name)
+      if (matId) await supabase.from('project_materials').delete().eq('id', matId)
+      return NextResponse.json({ success: true })
     }
 
     if (action === 'create_warmup_plan') {

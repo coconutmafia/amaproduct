@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ProgressIndicator } from '@/components/shared/ProgressIndicator'
+import { ProductsCard } from '@/components/projects/ProductsCard'
 import { DeleteContentButton } from '@/components/content/DeleteContentButton'
 import {
   ArrowLeft,
@@ -315,29 +316,10 @@ export default async function ProjectPage({ params }: Props) {
             </Card>
           )}
 
-          {/* Products */}
-          {products && products.length > 0 && (
-            <Card className="border-border bg-card">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Package className="h-4 w-4" />
-                  Продукты ({products.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {products.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between gap-2 text-sm min-w-0">
-                    <span className="text-foreground truncate min-w-0">{p.name}</span>
-                    {p.price && (
-                      <span className="text-muted-foreground text-xs ml-2 shrink-0">
-                        {p.price.toLocaleString('ru-RU')} {p.currency}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+          {/* Products — карточка рендерится ВСЕГДА (жалоба Ланы 03.09: при
+              пустой линейке блока не было вовсе, и добавить продукт после
+              заведения проекта было некуда). Управление внутри компонента. */}
+          <ProductsCard projectId={id} products={products ?? []} />
 
           {/* Funnels */}
           {funnels && funnels.length > 0 && (

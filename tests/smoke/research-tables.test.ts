@@ -316,3 +316,36 @@ describe('кастдевы Любы 01-02.09 — «кот наплакал» и 
     expect(page, 'селект языка записи на странице').toContain('Язык записи')
   })
 })
+
+describe('продукты после заведения проекта (жалоба Ланы 03.09)', () => {
+  const route = readFileSync(join(process.cwd(), 'app/api/projects/route.ts'), 'utf8')
+
+  it('update_product и archive_product существуют и синкают материал', () => {
+    expect(route).toContain("action === 'update_product'")
+    expect(route).toContain("action === 'archive_product'")
+    // правка продукта обязана переписать материал product_description —
+    // модель видит продукты только через материалы
+    expect(route).toContain('productMaterialContent')
+    expect(route).toContain('findProductMaterial')
+    // архив убирает материал: иначе AI продолжит продавать ушедший продукт
+    const archiveBlock = route.slice(route.indexOf("action === 'archive_product'"))
+    expect(archiveBlock).toContain("delete().eq('id', matId)")
+  })
+
+  it('поиск материала: связь source_product_id с фолбэком по title (до миграции 043)', () => {
+    expect(route).toContain("eq('source_product_id', productId)")
+    expect(route).toContain("eq('title', priorName)")
+    const sql = readFileSync(join(process.cwd(), 'supabase/migrations/043_product_material_link.sql'), 'utf8')
+    expect(sql).toContain('source_product_id')
+    expect(sql).toContain('references products(id)')
+  })
+
+  it('карточка продуктов на странице проекта рендерится и при пустой линейке', () => {
+    const page = readFileSync(join(process.cwd(), 'app/(dashboard)/projects/[id]/page.tsx'), 'utf8')
+    expect(page).toContain('<ProductsCard')
+    expect(page, 'условный рендер по length скрывал бы кнопку добавления').not.toContain('products.length > 0 && (')
+    const card = readFileSync(join(process.cwd(), 'components/projects/ProductsCard.tsx'), 'utf8')
+    expect(card).toContain("action: editing ? 'update_product' : 'create_product'")
+    expect(card).toContain('archive_product')
+  })
+})
