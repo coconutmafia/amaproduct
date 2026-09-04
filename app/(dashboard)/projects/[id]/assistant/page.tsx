@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, use } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Sparkles, Loader2, Copy, Check, User, CalendarPlus, Wand2 } from 'lucide-react'
+import { ArrowLeft, Sparkles, Loader2, Copy, Check, User, CalendarPlus, Wand2, SquarePen } from 'lucide-react'
 import { toast } from 'sonner'
 import { ChatComposer } from '@/components/ui/ChatComposer'
 import { SaveButton } from '@/components/content/SaveButton'
@@ -320,6 +320,24 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
             <p className="text-[11px] text-muted-foreground leading-tight">Знает твой проект · пишет твоим голосом</p>
           </div>
         </div>
+        {/* Сброс диалога (жалоба Ланы 04.09) — история в localStorage
+            возвращалась при каждом заходе, начать с чистого листа было нельзя. */}
+        {messages.length > 0 && (
+          <button
+            type="button"
+            disabled={!!streaming}
+            onClick={() => {
+              if (!confirm('Начать новый чат? Текущий диалог очистится.')) return
+              setMessages([])
+              try { localStorage.removeItem(chatLsKey) } catch { /* приватный режим */ }
+              clearPendingAnswer(pendingKey)
+              clearGenJobId(pendingKey)
+            }}
+            className="ml-auto shrink-0 inline-flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-border bg-background text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+          >
+            <SquarePen className="h-3.5 w-3.5" /> Новый чат
+          </button>
+        )}
       </div>
 
       {/* Messages */}

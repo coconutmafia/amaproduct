@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { friendlyError } from '@/lib/friendlyError'
-import { Sparkles, Loader2, Copy, Check, User, FolderOpen, ChevronDown, Wand2, CalendarPlus } from 'lucide-react'
+import { Sparkles, Loader2, Copy, Check, User, FolderOpen, ChevronDown, Wand2, CalendarPlus, SquarePen } from 'lucide-react'
 import { toast } from 'sonner'
 import { ChatComposer } from '@/components/ui/ChatComposer'
 import { SaveButton } from '@/components/content/SaveButton'
@@ -230,6 +230,24 @@ export default function CreatePage() {
               {activeProject ? `Пишет под проект «${activeProject.name}» — твой голос и данные` : 'Без проекта · на нашей методологии'}
             </p>
           </div>
+          {/* Сброс диалога (жалоба Ланы 04.09: «постоянно перехожу на старый
+              чат, не понимаю как начать новый») — история живёт в localStorage
+              и без этой кнопки возвращалась всегда. */}
+          {messages.length > 0 && (
+            <button
+              type="button"
+              disabled={!!streaming}
+              onClick={() => {
+                if (!confirm('Начать новый чат? Текущий диалог очистится.')) return
+                setMessages([])
+                try { localStorage.removeItem('ama_chat_create') } catch { /* приватный режим */ }
+                clearPendingAnswer('ama_chat_create_pending')
+              }}
+              className="shrink-0 inline-flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-border bg-background text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+            >
+              <SquarePen className="h-3.5 w-3.5" /> Новый чат
+            </button>
+          )}
         </div>
 
         {/* Project data selector — use a project's voice/niche/cases/competitors, or none */}
