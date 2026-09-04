@@ -42,3 +42,15 @@ describe('isForeignScriptNoise — чужие инжектированные с�
     expect(client).not.toContain('EXTENSION_NOISE')
   })
 })
+
+describe('перегруз Anthropic в чате — тихий повтор вместо «Ошибки» (04.09)', () => {
+  it('чат ретраит overloaded до 2 раз, только пока раунд не начал отдавать текст', () => {
+    const src = readFileSync(`${process.cwd()}/app/api/ai/chat/route.ts`, 'utf8')
+    expect(src).toContain('overloaded_error|Overloaded')
+    expect(src).toContain('attempt < 2')
+    // повтор безопасен только для пустого раунда — иначе задвоится текст
+    expect(src).toContain('acc.length === roundStart')
+    // и рефанд юнита при полном провале никуда не делся
+    expect(src).toContain('onEmptyError')
+  })
+})

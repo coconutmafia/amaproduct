@@ -118,15 +118,35 @@ function streamingChatResponse(
             { role: 'assistant' as const, content: acc },
             { role: 'user' as const, content: 'Продолжи свой ответ ТОЧНО с места обрыва: начни с той самой буквы, на которой оборвался текст, без повторов уже написанного, без вступлений и пояснений.' },
           ]
-          const stream = anthropic.messages.stream({ model: MODEL, max_tokens: 16000, system: buildCachedSystem(system), messages: convo })
-          for await (const chunk of stream) {
-            if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-              acc += chunk.delta.text
-              controller.enqueue(encoder.encode(chunk.delta.text))
+          // Перегруз Anthropic (overloaded_error/529) в промо-дни приходит
+          // пачками по 1-2 минуты (03-04.09: юзеры видели «Ошибка» и жали
+          // повтор руками — повтор через минуту срабатывал). Пока из ТЕКУЩЕГО
+          // раунда не пришло ни символа, повторяем его тихо до 2 раз с паузой —
+          // юзер видит задержку в пару секунд вместо красной плашки.
+          let final: { stop_reason: string | null } | null = null
+          for (let attempt = 0; ; attempt++) {
+            const roundStart = acc.length
+            try {
+              const stream = anthropic.messages.stream({ model: MODEL, max_tokens: 16000, system: buildCachedSystem(system), messages: convo })
+              for await (const chunk of stream) {
+                if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+                  acc += chunk.delta.text
+                  controller.enqueue(encoder.encode(chunk.delta.text))
+                }
+              }
+              final = await stream.finalMessage()
+              break
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err)
+              const overloaded = /overloaded_error|Overloaded|\b529\b/i.test(msg)
+              if (overloaded && attempt < 2 && acc.length === roundStart) {
+                await new Promise(r => setTimeout(r, 2000 + attempt * 3000))
+                continue
+              }
+              throw err
             }
           }
-          const final = await stream.finalMessage()
-          if (final.stop_reason !== 'max_tokens') break
+          if (final?.stop_reason !== 'max_tokens') break
         }
         // Полный ответ — в ящик (инвокация жива даже при умершей вкладке).
         await mailbox({ status: 'done', result: { text: acc, complete: true } })
