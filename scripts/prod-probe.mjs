@@ -2216,7 +2216,7 @@ async function limitSmoke() {
   const APP = 'https://amaproduct.com'
   // Потолки тарифов — зеркало lib/generations-config.ts (страж tier-limits-sync
   // держит их в синхроне с БД-функцией generation_limit из миграции 016).
-  const LIMITS = { trial: 300, solo: 300, pro: 2000, producer: 8000 }
+  const LIMITS = { trial: 300, solo: 300, pro: 900, producer: 1800 }
   log('\n=== Пробник: месячный лимит юнитов глазами клиента ===')
   if (!RUN) {
     log('\n[DRY-RUN] план (добавь --run):')
