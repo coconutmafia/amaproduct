@@ -165,12 +165,16 @@ describe('гигиена env amoCRM (кейс «•» в токене, 31.08)', 
 })
 
 describe('экономика диагностики под потоком (запуск Августы 1.09)', () => {
-  it('честность о кэше: SYSTEM аудита мал (не кэшируется), причина задокументирована', () => {
-    // Замер 01.09: SYSTEM ~500 токенов < минимума кэширования; попытка кэша
-    // была no-op. Реальный кэш = перестройка промпта — отложено после потока.
-    const r = read('lib/blogAudit/runBlogAudit.ts')
-    expect(r).not.toContain('buildCachedSystem(SYSTEM)')
-    expect(r).toContain('ниже минимума кэширования')
+  it('кэш диагностики: чек-лист и правила — в system под кэшем 1h, профиль — в user', () => {
+    // 05.09: стабильная часть (~3k токенов) перенесена из user в system —
+    // под промо-потоком каждая диагностика писала её заново (−30% цены).
+    const r = readFileSync(join(process.cwd(), 'lib/blogAudit/runBlogAudit.ts'), 'utf8')
+    expect(r).toContain('buildCachedSystem(buildAuditSystem(hasImages))')
+    const userFn = r.slice(r.indexOf('function buildAuditUser'), r.indexOf('// Достаём JSON'))
+    expect(userFn, 'чек-лист не должен ехать в user').not.toContain('CHECKLIST.map')
+    const sysFn = r.slice(r.indexOf('function buildAuditSystem'), r.indexOf('function buildAuditUser'))
+    expect(sysFn).toContain('CHECKLIST.map')
+    expect(sysFn).toContain('"topGaps"')
   })
 })
 

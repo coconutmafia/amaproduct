@@ -1,4 +1,4 @@
-import { anthropic, MODEL, MODEL_HAIKU } from '@/lib/ai/client'
+import { anthropic, MODEL, MODEL_HAIKU, buildCachedSystem } from '@/lib/ai/client'
 import { CHECKLIST, diagnose } from '@/lib/blogAudit/checklist'
 import { IMAGE_URLS_HEADER } from '@/lib/instagram/scrapeAccount'
 
@@ -75,7 +75,13 @@ function itemVisible(blockKey: string, fromText: boolean, hasImages: boolean): b
   return fromText || (hasImages && blockKey === 'visual')
 }
 
-function buildPrompt(handle: string, profileText: string, hasImages: boolean): string {
+// Стабильная часть промпта (чек-лист + инструкции + формат) — в SYSTEM с
+// кэшем 1h: под промо-потоком каждая диагностика писала ~2.5k токенов
+// инструкций заново (замер 01.09: SYSTEM был ~500 токенов, ниже минимума
+// кэширования; тяжёлая часть ехала в user ПОСЛЕ переменных картинок).
+// Теперь порядок: [system: правила + чек-лист] → [user: картинки + текст
+// профиля]. Две стабильные версии (с картинками / без) — два кэш-префикса.
+function buildAuditSystem(hasImages: boolean): string {
   const blocks = CHECKLIST.map(b => {
     const items = b.items
       .map((it, i) => {
@@ -86,16 +92,7 @@ function buildPrompt(handle: string, profileText: string, hasImages: boolean): s
     return `"${b.key}" — ${b.title}:\n${items}`
   }).join('\n\n')
 
-  const imagesNote = hasImages
-    ? '\nК сообщению приложены изображения профиля (аватар и обложки последних постов). Блок "visual" (Визуальная упаковка) оцени ПО ЭТИМ ИЗОБРАЖЕНИЯМ: единство концепции, фирменные цвета, шрифты, узнаваемые элементы, соответствие ЦА.\n'
-    : ''
-
-  return `Профиль: @${handle}
-${imagesNote}
-
-=== ТЕКСТ ПРОФИЛЯ (шапка + последние посты) ===
-${profileText.slice(0, 24000)}
-=== КОНЕЦ ТЕКСТА ===
+  return `${SYSTEM}
 
 Оцени профиль по чек-листу «блог к продажам». Блоки и пункты (индексация с 0):
 
@@ -149,6 +146,22 @@ ${blocks}
   "topGaps": ["...", "..."],
   "summary": "..."
 }`
+}
+
+// Переменная часть: только профиль (и пометка про приложенные картинки).
+function buildAuditUser(handle: string, profileText: string, hasImages: boolean): string {
+  const imagesNote = hasImages
+    ? '\nК сообщению приложены изображения профиля (аватар и обложки последних постов). Блок "visual" (Визуальная упаковка) оцени ПО ЭТИМ ИЗОБРАЖЕНИЯМ: единство концепции, фирменные цвета, шрифты, узнаваемые элементы, соответствие ЦА.\n'
+    : ''
+
+  return `Профиль: @${handle}
+${imagesNote}
+
+=== ТЕКСТ ПРОФИЛЯ (шапка + последние посты) ===
+${profileText.slice(0, 24000)}
+=== КОНЕЦ ТЕКСТА ===
+
+Оцени этот профиль по чек-листу и правилам из системной инструкции. Ответ — строго JSON описанного формата.`
 }
 
 // Достаём JSON из ответа модели (снимаем возможные ```json-заборы, берём первый {…}).
@@ -209,18 +222,15 @@ export async function runBlogAudit(handle: string, profileText: string): Promise
   const imageBlocks = (await Promise.all(imageUrlsFromText(profileText).map(fetchImageBlock))).filter((b): b is ImageBlock => b !== null)
   const hasImages = imageBlocks.length > 0
 
-  const textBlock = { type: 'text' as const, text: buildPrompt(handle, profileText, hasImages) }
+  const textBlock = { type: 'text' as const, text: buildAuditUser(handle, profileText, hasImages) }
   const callModel = async () => {
     const resp = await anthropic.messages.create({
       model:      MODEL,
       max_tokens: 4000,
-      // ⚠️ SYSTEM здесь мал (~500 токенов — ниже минимума кэширования), а
-      // тяжёлая стабильная часть (чек-лист) собирается в buildPrompt и уходит
-      // в user-сообщение ПОСЛЕ переменных картинок профиля — кэшировать её
-      // можно только перестройкой промпта (порядок блоков), что меняет
-      // восприятие моделью. Отложено на «после потока» вместе с тримом;
-      // замер 01.09: попытка кэша через system была no-op (usage: creation=0).
-      system:     SYSTEM,
+      // Стабильная часть (правила + чек-лист + формат, ~3k токенов) — в system
+      // под кэшем 1h; переменное (картинки + текст профиля) — в user. Под
+      // промо-потоком это −30% на каждой диагностике (05.09).
+      system:     buildCachedSystem(buildAuditSystem(hasImages)),
       messages:   [{ role: 'user', content: hasImages ? [...imageBlocks, textBlock] : [textBlock] }],
     })
     return resp.content.map(b => (b.type === 'text' ? b.text : '')).join('\n')
