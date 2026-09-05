@@ -108,7 +108,7 @@ describe('безопасность охватов Instagram/Meta закрепл�
 // генерирует пользовательский текст, подключает запрет.
 describe('запрет AI-маркеров подключён во всех генераторах текста', () => {
   const routesThatMustBan = [
-    'app/api/ai/chat/route.ts',
+    'lib/ai/chatContext.ts',
     'app/api/ai/edit/route.ts',
     'app/api/ai/edit-carousel/route.ts',
     'app/api/ai/edit-stories/route.ts',
@@ -131,7 +131,7 @@ describe('запрет AI-маркеров подключён во всех ге
   // проверяем оба звена цепочки, чтобы она не порвалась ни в одном месте.
   // (Сиротский /api/ai/generate удалён 25.08 — решение Матвея.)
   it('чат-генерация получает запрет через buildSystemPrompt', () => {
-    const route = readFileSync(join(process.cwd(), 'app/api/ai/chat/route.ts'), 'utf8')
+    const route = readFileSync(join(process.cwd(), 'lib/ai/chatContext.ts'), 'utf8')
     expect(route).toContain('buildSystemPrompt')
     const system = readFileSync(join(process.cwd(), 'lib/ai/prompts/system.ts'), 'utf8')
     expect(system).toContain('getAiTells')

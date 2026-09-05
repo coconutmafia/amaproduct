@@ -168,7 +168,7 @@ describe('система промптов: цепочка языка не рвё
     // 25.08: сиротский /api/ai/generate удалён (решение Матвея) — генерация
     // юнитов идёт через чат (genFormat) с 02.06. Языковая гарантия живёт там:
     // метки «Slide/Scene» для en/es/de, чтобы в контент не просачивался русский.
-    const src = readFileSync(join(process.cwd(), 'app/api/ai/chat/route.ts'), 'utf8')
+    const src = readFileSync(join(process.cwd(), 'lib/ai/chatContext.ts'), 'utf8')
     expect(src).toContain('Scene 1 (0-3 sec)')
     expect(src).toContain('Escena 1 (0-3 seg)')
     expect(src).toContain('Szene 1 (0-3 Sek)')

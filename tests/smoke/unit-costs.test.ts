@@ -78,7 +78,7 @@ describe('прайс-лист единиц', () => {
 // Каждая дорогая операция обязана иметь гейт. Список — это КОНТРАКТ: добавил
 // платный роут, не добавил гейт — тест краснеет здесь, а не в счёте от провайдера.
 const METERED_ROUTES: Array<{ file: string; gate: RegExp }> = [
-  { file: 'app/api/ai/chat/route.ts',            gate: /gateContentUnit\(|gateMicroAction\(/ },
+  { file: 'app/api/ai/chat/route.ts',            gate: /gateContentUnits?\(|gateMicroAction\(|chargeChatByUsage\(/ },
   { file: 'app/api/ai/plan-stories/route.ts',    gate: /gateContentUnit\(/ },
   { file: 'app/api/jobs/montage/route.ts',       gate: /gateContentUnits\(/ },
   { file: 'app/api/jobs/video-overlay/route.ts', gate: /gateContentUnit\(/ },

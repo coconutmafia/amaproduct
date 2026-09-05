@@ -17,12 +17,14 @@ describe('чат: кэш-префикс истории не ломается п�
   })
 
   it('RAG-фрагменты по-прежнему приклеиваются только к последнему сообщению', () => {
-    expect(src).toContain('isLast && matchesBlock')
+    const ctx = readFileSync(`${process.cwd()}/lib/ai/chatContext.ts`, 'utf8')
+    expect(ctx).toContain('isLast && matchesBlock')
   })
 
   it('«Готовое» — отдельный кэш-блок, а не хвост стабильных материалов', () => {
-    expect(src).toContain('streamingChatResponse([systemPrompt, savedBlock]')
-    expect(src).not.toContain('${baseSystem}${savedBlock}')
+    const ctx = readFileSync(`${process.cwd()}/lib/ai/chatContext.ts`, 'utf8')
+    expect(ctx).toContain('systemBlocks: [systemPrompt, savedBlock]')
+    expect(ctx).not.toContain('${baseSystem}${savedBlock}')
     expect(src).toContain('buildCachedSystemBlocks(systemBlocks)')
     const client = readFileSync(`${process.cwd()}/lib/ai/client.ts`, 'utf8')
     expect(client).toContain('export function buildCachedSystemBlocks')

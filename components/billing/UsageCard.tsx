@@ -85,29 +85,11 @@ export function UsageCard({ compact = false }: { compact?: boolean }) {
           )}
         </div>
 
-        {/* Шкала 2 — ресурс AI (себестоимость тарифа). Показываем только тем,
-            кого она ограничивает: у админов/QA её нет. */}
-        {data.budget.tracked && (
-          <div className="space-y-1.5">
-            <div className="flex items-baseline justify-between gap-2 text-xs">
-              <span className="font-medium text-foreground">Ресурс AI на месяц</span>
-              <span className={`tabular-nums ${budgetOver ? 'text-red-600 font-semibold' : 'text-muted-foreground'}`}>
-                {Math.min(100, data.budget.pct)}%{budgetOver ? ' — исчерпан' : ''}
-              </span>
-            </div>
-            <Bar pct={data.budget.pct} tone={tone(data.budget.pct)} />
-            <p className="text-[11px] text-muted-foreground leading-snug">
-              Отдельный от единиц лимит: длинные диалоги с ассистентом и большая база знаний расходуют его быстрее.
-              {data.budget.boostUntil && ` Временно расширен до ${fmtDateLocalRu(new Date(data.budget.boostUntil).getTime(), { day: 'numeric', month: 'long' })}.`}
-            </p>
-          </div>
-        )}
-
         {/* Что именно закрыло доступ — прямым текстом */}
         {(budgetOver || unitsOver) && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 leading-snug">
             {budgetOver && !unitsOver
-              ? 'Единицы ещё есть, но ресурс AI на этот месяц исчерпан — поэтому генерация на паузе.'
+              ? 'Ресурс тарифа на этот месяц исчерпан — генерация на паузе до обновления лимита.'
               : 'Единицы контента на этот месяц закончились.'}{' '}
             <Link href="/pricing" className="font-semibold underline underline-offset-2">Тариф выше</Link> откроет больше.
           </div>

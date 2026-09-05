@@ -51,7 +51,7 @@ describe('итальянский (и каждый язык) добавлен в�
   })
 
   it('метки слайдов/сцен: у чата и редактора есть итальянская ветка', () => {
-    for (const p of ['app/api/ai/chat/route.ts', 'app/api/ai/edit/route.ts']) {
+    for (const p of ['lib/ai/chatContext.ts', 'app/api/ai/edit/route.ts']) {
       const src = read(p)
       expect(src, p).toContain("l === 'it'")
       expect(src, p).toContain('Scena 1')

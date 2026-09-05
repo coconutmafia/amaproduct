@@ -26,7 +26,7 @@ describe('залетевшие рилзы доходят до AI', () => {
   })
 
   it('ассистент знает, куда девать присланную ссылку, вместо «нет доступа в интернет»', () => {
-    const chat = read('app/api/ai/chat/route.ts')
+    const chat = read('lib/ai/chatContext.ts')
     expect(chat).toMatch(/ССЫЛКИ/)
     expect(chat, 'нужен конкретный маршрут, а не отказ').toMatch(/Тренды/)
     expect(chat).toMatch(/Добавить и разобрать/)

@@ -218,6 +218,22 @@ export function transcribeUnits(durationSec?: number | null): number {
 // Free trial length (kept in one place — also encoded in migration 016).
 export const TRIAL_DAYS = 60
 
+// ── ЧЕСТНЫЕ ЕДИНИЦЫ (мандат Матвея 05.09) ────────────────────────────────────
+// Чат списывает единицы ПО ФАКТИЧЕСКОЙ себестоимости ответа, а не «2 сообщения
+// = 1 единица»: у Даши сообщение стоило $0.50 при списании 0,5 ед. ($0.08
+// выручки). Единица = $0.163 выручки на Соло ($49/300); её себестоимость при
+// целевой марже 60% — $0.065. Пользователь видит ТОЛЬКО единицы (наша цена —
+// коммерческая тайна, наружу не отдаётся ни в API, ни в UI).
+export const UNIT_COST_USD = 0.065
+// Прогноз длины ответа для оценки «≈ N ед.» до отправки (медиана по журналу 04.09: 1.6k)
+export const CHAT_ESTIMATE_OUTPUT_TOKENS = 1500
+
+/** $ себестоимости → единицы шагом 0,5, минимум 0,5. */
+export function unitsForUsd(usd: number): number {
+  if (!Number.isFinite(usd) || usd <= 0) return 0.5
+  return Math.max(0.5, Math.ceil(usd / UNIT_COST_USD * 2) / 2)
+}
+
 // Grace window after the trial/period ends before the project is paused.
 export const VIEW_ONLY_GRACE_DAYS = 7
 

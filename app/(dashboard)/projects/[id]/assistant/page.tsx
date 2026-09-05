@@ -76,6 +76,8 @@ function SaveToPlanButton({ projectId, ctx, text }: { projectId: string; ctx: Ge
   )
 }
 
+const fmtUnits = (n: number) => n.toLocaleString('ru-RU', { maximumFractionDigits: 1 })
+
 export default function AssistantPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
@@ -85,6 +87,23 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
   const [images, setImages] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [streaming, setStreaming] = useState('')
+
+  // Честные единицы (05.09): оценка следующего сообщения и последнее списание —
+  // человек видит цену ДО отправки и факт ПОСЛЕ, в единицах, без наших долларов.
+  const [est, setEst] = useState<{ units: number; remaining: number; lastCharge: number | null } | null>(null)
+  useEffect(() => {
+    if (loading || streaming) return
+    const t = setTimeout(() => {
+      fetch('/api/ai/chat/estimate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: id, messages: messages.slice(-60).map(m => ({ role: m.role, content: m.content })) }),
+      }).then(r => (r.ok ? r.json() : null)).then((d: { units?: number; remaining?: number; lastCharge?: number | null } | null) => {
+        if (d && typeof d.units === 'number') setEst({ units: d.units, remaining: d.remaining ?? 0, lastCharge: d.lastCharge ?? null })
+      }).catch(() => {})
+    }, 800)
+    return () => clearTimeout(t)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, loading, streaming, id])
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
@@ -453,6 +472,12 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
         <div aria-hidden style={{ height: tailSpace }} />
       </div>
 
+      {est && (
+        <p className="px-4 pb-2 text-[11px] text-muted-foreground">
+          {est.lastCharge != null ? `Списано ${fmtUnits(est.lastCharge)} ед. · ` : ''}
+          Следующее сообщение ≈ {fmtUnits(est.units)} ед. · осталось {est.remaining < 0 ? '∞' : fmtUnits(est.remaining)}
+        </p>
+      )}
       <ChatComposer value={input} onChange={setInput} onSend={() => send(input)}
         images={images} onImagesChange={setImages}
         loading={loading} onStop={stop}
