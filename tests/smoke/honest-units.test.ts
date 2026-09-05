@@ -59,3 +59,13 @@ describe('честные единицы', () => {
     }
   })
 })
+
+describe('списание живёт до закрытия стрима (serverless засыпает после ответа)', () => {
+  it('onUsage вызывается ДО controller.close() в обеих ветках', () => {
+    const src = read('app/api/ai/chat/route.ts')
+    const okBranch = src.slice(src.indexOf("result: { text: acc, complete: true }"), src.indexOf("controller.close()", src.indexOf("result: { text: acc, complete: true }")))
+    expect(okBranch).toContain('await onUsage(usages)')
+    const cutBranch = src.slice(src.indexOf('Ответ прервался'), src.indexOf('already closed', src.indexOf('Ответ прервался')))
+    expect(cutBranch).toContain('await onUsage(usages)')
+  })
+})

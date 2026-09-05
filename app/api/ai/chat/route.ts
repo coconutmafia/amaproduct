@@ -172,8 +172,10 @@ function streamingChatResponse(
         }
         // Полный ответ — в ящик (инвокация жива даже при умершей вкладке).
         await mailbox({ status: 'done', result: { text: acc, complete: true } })
-        controller.close()
+        // Списание — ДО закрытия стрима: после close() ответ отдан, и serverless
+        // засыпает, не дописав (ход 3 пробника 05.09 пропал из ленты).
         if (onUsage) { try { await onUsage(usages) } catch { /* списание не должно ронять ответ */ } }
+        controller.close()
       } catch (err) {
         console.error('Chat stream error:', err)
         // Слепое окно урока 31 июля: обрыв стрима (перегруз/кредиты Anthropic)
@@ -185,8 +187,8 @@ function streamingChatResponse(
           // then close so the partial text is kept.
           await mailbox({ status: 'done', result: { text: acc, complete: false } })
           try { controller.enqueue(encoder.encode('\n\n⚠️ Ответ прервался — нажми отправить ещё раз, чтобы продолжить.')) } catch { /* ignore */ }
-          try { controller.close() } catch { /* already closed */ }
           if (onUsage && usages.length) { try { await onUsage(usages) } catch { /* ignore */ } }
+          try { controller.close() } catch { /* already closed */ }
         } else {
           // Nothing was produced — refund the consumed content unit (if metered).
           if (onEmptyError) { try { await onEmptyError() } catch { /* ignore */ } }
