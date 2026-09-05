@@ -34,7 +34,7 @@ export function tierBudgetUsd(tier: SubscriptionTier | null | undefined): number
 // lib/ai/client.ts рядом с id моделей (страж model-upgrade).
 import { MODEL_PRICES_USD } from '@/lib/ai/client'
 
-type UsageRow = {
+export type UsageRow = {
   provider: string | null
   model: string | null
   input_tokens: number | null
@@ -93,6 +93,22 @@ export async function monthSpendUsd(userId: string): Promise<number> {
   return sum
 }
 
+// Временное расширение капа («открыть на N дней» — миграция 044). Отдельный
+// best-effort запрос: до применения миграции колонок нет, и селект в общей
+// выборке уронил бы весь кап в fail-open. Нет колонок / нет буста → 0.
+export async function activeBoostUsd(admin: ReturnType<typeof createAdminClient>, userId: string): Promise<number> {
+  try {
+    const { data, error } = await admin
+      .from('profiles')
+      .select('budget_boost_usd, budget_boost_until')
+      .eq('id', userId)
+      .single()
+    if (error || !data) return 0
+    const until = data.budget_boost_until ? new Date(data.budget_boost_until as string).getTime() : 0
+    return until > Date.now() ? Math.max(0, Number(data.budget_boost_usd ?? 0)) : 0
+  } catch { return 0 }
+}
+
 // Главная проверка: зовётся из ОБОИХ гейтов (юниты и микро) ДО списания.
 export async function checkBudgetCap(userId: string): Promise<BudgetCheck> {
   try {
@@ -105,7 +121,7 @@ export async function checkBudgetCap(userId: string): Promise<BudgetCheck> {
     if (!profile) return { blocked: false }
     if (profile.role === 'admin') return { blocked: false }
     if ((profile.email ?? '').toLowerCase() === QA_EMAIL) return { blocked: false }
-    const capUsd = tierBudgetUsd(profile.subscription_tier as SubscriptionTier)
+    const capUsd = tierBudgetUsd(profile.subscription_tier as SubscriptionTier) + await activeBoostUsd(admin, userId)
     const spentUsd = await monthSpendUsd(userId)
     return { blocked: spentUsd >= capUsd, spentUsd, capUsd }
   } catch (e) {

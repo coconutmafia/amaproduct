@@ -4,10 +4,11 @@ import { useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { UsageCard } from '@/components/billing/UsageCard'
 import { CheckCircle2, Star, Zap, Building2, Sparkles } from 'lucide-react'
 import { PLAN_CONFIG, VISIBLE_PAID_PLANS, nextPlan, type PaidPlan, type SubscriptionTier } from '@/lib/generations-config'
 
-export type UpgradeReason = 'limit' | 'needs_plan' | 'trial' | 'view_only' | 'paused'
+export type UpgradeReason = 'limit' | 'budget' | 'needs_plan' | 'trial' | 'view_only' | 'paused'
 
 const ICONS: Record<PaidPlan, React.ReactNode> = {
   starter:  <Sparkles className="h-4 w-4" />,
@@ -20,6 +21,10 @@ const ICONS: Record<PaidPlan, React.ReactNode> = {
 // который ничего не создал, «ты создала все единицы контента» читается как враньё.
 const REASON_COPY: Record<UpgradeReason, { title: string; desc: string }> = {
   limit:      { title: 'Лимит на этот месяц исчерпан', desc: 'Ты создала все единицы контента в этом месяце. Подключи тариф — и продолжай без пауз.' },
+  // 'budget' — второй ограничитель: единицы ещё есть, а ресурс AI тарифа
+  // (себестоимость) исчерпан. Даша 04.09: 29/300 единиц и «лимит исчерпан» —
+  // без этой ветки текст про «все единицы» читался как враньё.
+  budget:     { title: 'Ресурс AI на этот месяц исчерпан', desc: 'Единицы контента ещё остались, но ресурс AI твоего тарифа закончился — его быстрее расходуют длинные диалоги с ассистентом и большая база знаний. Тариф выше даёт больше ресурса.' },
   needs_plan: { title: 'Выбери тариф, чтобы начать', desc: 'Генерация контента доступна по тарифу. Выбери подходящий — подключение занимает минуту.' },
   trial:      { title: 'Пробный период заканчивается', desc: 'Выбери тариф, чтобы не потерять доступ к контенту и генерации.' },
   view_only:  { title: 'Генерация на паузе', desc: 'Контент виден, но создавать новый можно по тарифу. Все твои данные на месте.' },
@@ -59,6 +64,9 @@ export function UpgradeDialog({
           <DialogTitle>{copy.title}</DialogTitle>
           <DialogDescription>{copy.desc}</DialogDescription>
         </DialogHeader>
+
+        {/* Обе шкалы прямо в окне лимита — человек видит, ЧТО именно кончилось */}
+        {(reason === 'limit' || reason === 'budget') && <UsageCard compact />}
 
         <div className={`grid ${VISIBLE_PAID_PLANS.length >= 4 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'} gap-3`}>
           {VISIBLE_PAID_PLANS.map((key) => {
@@ -119,7 +127,15 @@ export function UpgradeDialogHost({ currentPlan }: { currentPlan?: SubscriptionT
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { reason?: UpgradeReason } | undefined
-      setReason(detail?.reason ?? 'limit')
+      const r = detail?.reason ?? 'limit'
+      setReason(r)
+      // 402 limit_reached приходит и за единицы, и за ресурс AI. Уточняем по
+      // факту, чтобы заголовок не врал: единицы есть, а ресурс исчерпан → budget.
+      if (r === 'limit') {
+        fetch('/api/account/usage').then(x => (x.ok ? x.json() : null)).then((u: { budget?: { exhausted?: boolean }; units?: { remaining?: number } } | null) => {
+          if (u?.budget?.exhausted && (u.units?.remaining ?? 0) !== 0) setReason('budget')
+        }).catch(() => {})
+      }
       setOpen(true)
     }
     window.addEventListener(SHOW_EVENT, handler)

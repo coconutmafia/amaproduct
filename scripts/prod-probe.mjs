@@ -3627,9 +3627,37 @@ async function qaAudit() {
   log('🧹 джоб-пробник удалён')
 }
 
+
+// ── ИНСТРУМЕНТ: временно расширить ресурс AI клиента на N дней ──────────────
+// «Открыть на 5 дней, не больше» (Матвей 04.09, Даша): кап тарифа + usd до даты,
+// после — само гаснет (миграция 044, проверка в costCap.activeBoostUsd).
+async function grantBoost() {
+  const email = (arg('email') || '').trim().toLowerCase()
+  const usd = Number(arg('usd') || 0)
+  const days = Math.floor(Number(arg('days') || 0))
+  log('\n=== Инструмент: временное расширение ресурса AI ===')
+  if (!email.includes('@')) { log('❌ укажи --email'); return }
+  if (!Number.isFinite(usd) || usd <= 0 || usd > 200) { log('❌ --usd 1..200'); return }
+  if (!Number.isFinite(days) || days <= 0 || days > 60) { log('❌ --days 1..60'); return }
+  const prof = await api(`/rest/v1/profiles?select=id,email,subscription_tier,budget_boost_usd,budget_boost_until&email=eq.${email}`)
+  if (prof.status >= 400) { log(`❌ профиль не читается (${prof.status}) — миграция 044 применена?`); return }
+  const p = Array.isArray(prof.body) ? prof.body[0] : null
+  if (!p) { log(`❌ не найден: ${email}`); return }
+  const until = new Date(Date.now() + days * 86400000).toISOString()
+  log(`${p.email}: тариф ${p.subscription_tier}, сейчас буст $${p.budget_boost_usd ?? 0} до ${p.budget_boost_until ?? '—'}`)
+  log(`план: +$${usd} к ресурсу AI до ${until.slice(0, 16)} (${days} дн.)`)
+  if (!RUN) { log('\n[DRY-RUN] ничего не записано, добавь --run'); return }
+  const r = await api(`/rest/v1/profiles?id=eq.${p.id}`, {
+    method: 'PATCH', body: JSON.stringify({ budget_boost_usd: usd, budget_boost_until: until }),
+  })
+  if (r.status >= 300) { log(`❌ запись отбита: ${r.status} ${JSON.stringify(r.body).slice(0, 150)}`); return }
+  const after = await api(`/rest/v1/profiles?select=budget_boost_usd,budget_boost_until&id=eq.${p.id}`)
+  log(`✅ буст: $${after.body?.[0]?.budget_boost_usd} до ${after.body?.[0]?.budget_boost_until}`)
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe, 'budget-cap-probe': budgetCapProbe, 'enforce-paid-access': enforcePaidAccess, 'leads-flush': leadsFlush, 'email-probe': emailProbe, 'qa-audit': qaAudit }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe, 'budget-cap-probe': budgetCapProbe, 'enforce-paid-access': enforcePaidAccess, 'leads-flush': leadsFlush, 'email-probe': emailProbe, 'qa-audit': qaAudit, 'grant-boost': grantBoost }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))

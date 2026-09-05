@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { Bot, Gift, LogOut, Trash2, Loader2, CheckCircle2, Sparkles, Zap, AlertCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { UsageCard } from '@/components/billing/UsageCard'
 
 interface Props {
   userId: string
@@ -121,6 +122,9 @@ export function SettingsClient({ userId, currentAiName }: Props) {
 
   return (
     <div className="space-y-6">
+
+      {/* Тариф и расход — прозрачные шкалы (мандат Матвея 04.09) */}
+      <UsageCard />
 
       {/* AI diagnostics */}
       <Card>

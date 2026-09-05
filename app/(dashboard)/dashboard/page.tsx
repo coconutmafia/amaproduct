@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ProjectCard } from '@/components/projects/ProjectCard'
 import { Plus, FolderKanban, FileText, Sparkles, ArrowRight, Clock, Gauge } from 'lucide-react'
 import { DashboardClient } from '@/components/dashboard/DashboardClient'
+import { UsageCard } from '@/components/billing/UsageCard'
 
 function pluralize(n: number, one: string, few: string, many: string) {
   const abs = Math.abs(n) % 100
@@ -93,6 +94,9 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
       </Link>
+
+      {/* Тариф и расход — чтобы лимит не был сюрпризом (мандат Матвея 04.09) */}
+      <UsageCard compact />
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
