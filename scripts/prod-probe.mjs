@@ -2784,12 +2784,25 @@ async function cacheProbe() {
     const rows = await api(`/rest/v1/ai_usage?select=created_at,route,input_tokens,output_tokens,meta&provider=eq.anthropic&created_at=gte.${t0}&order=created_at.asc&limit=20`)
     const list = (Array.isArray(rows.body) ? rows.body : []).filter(r => (r.route || '').includes('chat'))
     log(`\n── ФАКТ ПО ХОДАМ ──`)
+    const perTurn = []
     for (const [i, r] of list.entries()) {
-      const cr = Number(r.meta?.cacheRead ?? 0), cw = Number(r.meta?.cacheWrite ?? 0)
+      const cr = Number(r.meta?.cacheRead ?? 0)
+      const cw1 = Number(r.meta?.cacheWrite1h ?? 0), cw5 = Number(r.meta?.cacheWrite5m ?? 0), cwL = Number(r.meta?.cacheWrite ?? 0)
+      const cw = cw1 + cw5 + cwL
       const inp = r.input_tokens ?? 0
       const share = cr + inp > 0 ? Math.round(cr / (cr + inp) * 100) : 0
-      const cost = (inp * 5 + cr * 0.5 + cw * 6.25 + (r.output_tokens ?? 0) * 25) / 1e6
-      log(`   ход ${i+1}: вход ${inp}, из кэша ${cr} (${share}%), запись кэша ${cw}, выход ${r.output_tokens} → $${cost.toFixed(4)}`)
+      const cost = (inp * 5 + cr * 0.5 + cw1 * 10 + cw5 * 6.25 + cwL * 6.25 + (r.output_tokens ?? 0) * 25) / 1e6
+      perTurn.push({ cr, cw, cost })
+      log(`   ход ${i+1}: вход ${inp}, из кэша ${cr} (${share}%), ЗАПИСЬ кэша ${cw}, выход ${r.output_tokens} → $${cost.toFixed(4)}`)
+    }
+    // 04.09: главный симптом — запись на ходах 2+ сопоставима с чтением (переписывается история).
+    // Здоровая картина: запись хода 2-3 ≪ чтения (только новый хвост диалога).
+    if (perTurn.length >= 2) {
+      const later = perTurn.slice(1)
+      const heavy = later.filter(t => t.cr > 0 && t.cw > t.cr * 0.15)
+      log(heavy.length === 0
+        ? `✅ ЗАПИСЬ КЭША МАЛА: на ходах 2+ пишется только хвост диалога (< 15% от чтения)`
+        : `❌ ПЕРЕЗАПИСЬ КЭША: ${heavy.length}/${later.length} ходов пишут > 15% от прочитанного — префикс истории ломается`)
     }
     if (list.length >= 2) {
       const later = list.slice(1)

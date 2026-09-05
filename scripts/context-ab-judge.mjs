@@ -26,10 +26,19 @@ const blind = readFileSync(join(DIR, 'ab-blind.md'), 'utf8')
 const { key, costs } = JSON.parse(readFileSync(join(DIR, 'ab-key.json'), 'utf8'))
 
 // Разбор пар из слепого файла
+// Разбор по заголовкам пар: разделитель «---» встречается и ВНУТРИ ответов
+// модели, поэтому режем по «## Пара N», а ответы — по первым вхождениям
+// «### Ответ 1/2». Хвост «---» последней пары отбрасываем.
 const pairs = []
-for (const block of blind.split(/\n---\n\n/)) {
-  const m = block.match(/## Пара (\d+) — (.+?)\n\n\*\*Вопрос:\*\* ([\s\S]+?)\n\n### Ответ 1\n\n([\s\S]+?)\n\n### Ответ 2\n\n([\s\S]+)$/)
-  if (m) pairs.push({ pair: Number(m[1]), project: m[2].trim(), question: m[3].trim(), a1: m[4].trim(), a2: m[5].trim() })
+for (const block of blind.split(/^## Пара /m).slice(1)) {
+  const head = block.match(/^(\d+) — (.+?)\n\n\*\*Вопрос:\*\* ([\s\S]+?)\n\n### Ответ 1\n\n/)
+  if (!head) continue
+  const rest = block.slice(head[0].length)
+  const i2 = rest.indexOf('\n### Ответ 2\n\n')
+  if (i2 < 0) continue
+  const a1 = rest.slice(0, i2).trim()
+  const a2 = rest.slice(i2 + '\n### Ответ 2\n\n'.length).replace(/\n---\n*$/, '').trim()
+  pairs.push({ pair: Number(head[1]), project: head[2].trim(), question: head[3].trim(), a1, a2 })
 }
 console.log(`пар для суда: ${pairs.length}`)
 
@@ -66,7 +75,7 @@ const JUDGE_SYSTEM = `Ты — строгий аудитор качества о
 3. ПОЛНОТА: покрывает вопрос по существу, ничего важного из материалов не упущено.
 4. ПОЛЬЗА: блогер может взять и применить.
 Затем вердикт: "1", "2" или "равны" — какой ответ лучше В ЦЕЛОМ, с одной фразой почему.
-Верни ТОЛЬКО JSON: {"a1":{"facts":n,"accuracy":n,"completeness":n,"useful":n,"invented":["..."]},"a2":{...},"verdict":"1|2|равны","why":"..."}`
+Верни ТОЛЬКО JSON без markdown, строки внутри БЕЗ кавычек и переносов: {"a1":{"facts":n,"accuracy":n,"completeness":n,"useful":n,"invented":["короткий пример выдумки без кавычек"]},"a2":{...},"verdict":"1|2|равны","why":"одна фраза"}`
 
 const results = []
 for (const p of pairs) {
@@ -75,8 +84,9 @@ for (const p of pairs) {
   const user = `=== МАТЕРИАЛЫ ПРОЕКТА (правда) ===\n${mats}\n\n=== ВОПРОС ===\n${p.question}\n\n=== ОТВЕТ 1 ===\n${p.a1}\n\n=== ОТВЕТ 2 ===\n${p.a2}`
   let verdict = null
   try {
-    const raw = await ask(JUDGE_SYSTEM, user)
-    verdict = JSON.parse(raw.replace(/^```json\s*|```$/g, '').trim())
+    const raw = await ask(JUDGE_SYSTEM, user, 2000)
+    const jm = raw.match(/\{[\s\S]*\}/)
+    verdict = JSON.parse(jm ? jm[0] : raw)
   } catch (e) { console.log('❌', e.message.slice(0, 80)); continue }
   const k = key.find(x => x.pair === p.pair)
   const which = v => v === 'равны' ? 'равны' : (v === '1' ? k.answer1 : k.answer2)

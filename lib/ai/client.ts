@@ -165,6 +165,16 @@ export function buildCachedSystem(text: string) {
   return [{ type: 'text' as const, text, cache_control: { type: 'ephemeral' as const, ttl: '1h' as const } }]
 }
 
+// Несколько system-блоков, каждый со своим брейкпоинтом: стабильные материалы
+// проекта — первым (живёт весь диалог), редко меняющееся («Готовое») — вторым.
+// Изменение второго блока переписывает только его и историю, а не 100k
+// материалов (04.09: у Даши 77% цены чата была перезапись кэша).
+export function buildCachedSystemBlocks(texts: string[]) {
+  return texts
+    .filter(t => t && t.trim())
+    .map(text => ({ type: 'text' as const, text, cache_control: { type: 'ephemeral' as const, ttl: '1h' as const } }))
+}
+
 // Честный текст для главного catch AI-роутов. Правило (урок 17/31 июля):
 // в ответ клиенту НИКОГДА не уходит сырой error.message — он тащит хвосты
 // провайдера («credit balance», ссылки на биллинг) и внутренности; сырец

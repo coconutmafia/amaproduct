@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
+import { anthropic, MODEL, buildCachedSystemBlocks } from '@/lib/ai/client'
 import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt } from '@/lib/ai/prompts/system'
 import { AI_TELLS_TO_AVOID, resolveContentLanguage } from '@/lib/ai/prompts/content-brain'
@@ -72,7 +72,7 @@ function imageBlocks(images?: string[]) {
 }
 
 function streamingChatResponse(
-  system: string,
+  systemBlocks: string[],
   messages: ChatMsg[],
   onEmptyError?: () => void | Promise<void>,
   genJobId?: string | null,
@@ -85,16 +85,34 @@ function streamingChatResponse(
   // TTL '1h', как у системного блока (см. buildCachedSystem): пауза человека
   // между сообщениями обычно длиннее 5 минут, и протухший брейкпоинт заставлял
   // переписывать систему+историю целиком по 1.25× — 84% цены чата были записи.
+  // ЗАМЕРЕНО 04.09 (Даша, 33 сообщения): 77% цены чата — ЗАПИСЬ кэша, ~39k
+  // токенов на ход. Причина: брейкпоинт стоял на ПОСЛЕДНЕМ сообщении, к
+  // которому приклеены RAG-фрагменты этого хода; на следующем ходу то же
+  // сообщение уходит уже без фрагментов → префикс истории расходится в этой
+  // точке, и вся история переписывается по 2× цене. Теперь брейкпоинт — на
+  // ПРЕДПОСЛЕДНЕМ сообщении (история читается из кэша по 0.1×), а последнее,
+  // с переменными фрагментами, идёт после брейкпоинта и не пишется в кэш.
+  // На следующем ходу записывается только новый хвост (~2k токенов).
   const cachedMessages = messages.map((m, i) => {
-    const imgs = i === messages.length - 1 ? imageBlocks(m.images) : []
-    if (i !== messages.length - 1) return { role: m.role, content: m.content }
-    return {
-      role: m.role,
-      content: [
-        ...imgs,
-        { type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' as const, ttl: '1h' as const } },
-      ],
+    const isLast = i === messages.length - 1
+    const isBreakpoint = i === messages.length - 2
+    if (isLast) {
+      const imgs = imageBlocks(m.images)
+      return {
+        role: m.role,
+        content: [
+          ...imgs,
+          { type: 'text' as const, text: m.content },
+        ],
+      }
     }
+    if (isBreakpoint) {
+      return {
+        role: m.role,
+        content: [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' as const, ttl: '1h' as const } }],
+      }
+    }
+    return { role: m.role, content: m.content }
   })
   const mailbox = async (patch: Record<string, unknown>) => {
     if (!genJobId) return
@@ -127,7 +145,7 @@ function streamingChatResponse(
           for (let attempt = 0; ; attempt++) {
             const roundStart = acc.length
             try {
-              const stream = anthropic.messages.stream({ model: MODEL, max_tokens: 16000, system: buildCachedSystem(system), messages: convo })
+              const stream = anthropic.messages.stream({ model: MODEL, max_tokens: 16000, system: buildCachedSystemBlocks(systemBlocks), messages: convo })
               for await (const chunk of stream) {
                 if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
                   acc += chunk.delta.text
@@ -317,13 +335,14 @@ export async function POST(request: Request) {
 
 ${AI_TELLS_TO_AVOID}
 
-${sysKnowledge ? `═══ МЕТОДОЛОГИЯ (опирайся на неё) ═══\n${sysKnowledge}` : ''}${savedBlock}`
+${sysKnowledge ? `═══ МЕТОДОЛОГИЯ (опирайся на неё) ═══\n${sysKnowledge}` : ''}`
 
       const blocked = await meterGeneration()
       if (blocked) return blocked
       const genJobId = genFormat ? await createGenMailbox(user.id) : null
+      // «Готовое» — отдельным кэш-блоком (см. ветку с проектом ниже)
       return streamingChatResponse(
-        standaloneSystem,
+        [standaloneSystem, savedBlock],
         messages.map((m, i) => ({ role: m.role, content: m.content, ...(i === messages.length - 1 ? { images } : {}) })),
         refundIfMetered, genJobId,
       )
@@ -402,7 +421,7 @@ ${genFormat ? `
 - НЕ добавляй комментарии после текста («Готово!», «Если нужно — поправлю», «Хочешь иначе?»).
 - Первая строка ответа = первая строка контента. Последняя строка ответа = последняя строка контента.` : ''}
 
-${baseSystem}${savedBlock}`
+${baseSystem}`
 
     const blocked = await meterGeneration()
     if (blocked) return blocked
@@ -423,7 +442,10 @@ ${baseSystem}${savedBlock}`
         : m.content
       return { role: m.role, content, ...(isLast ? { images } : {}) }
     })
-    return streamingChatResponse(systemPrompt, outMessages, refundIfMetered, genJobId)
+    // «Готовое» — отдельным кэш-блоком после стабильных материалов: юзер
+    // сохраняет тексты по ходу диалога, и раньше каждое сохранение меняло
+    // ЕДИНЫЙ system → перезапись всех материалов проекта.
+    return streamingChatResponse([systemPrompt, savedBlock], outMessages, refundIfMetered, genJobId)
   } catch (error) {
     console.error('Chat error:', error)
     // Сырец — в телеметрию (диагностика), клиенту — честный русский текст:
