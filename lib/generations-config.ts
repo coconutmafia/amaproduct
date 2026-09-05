@@ -50,7 +50,7 @@ export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
     paid: false,
     features: [
       'Полный доступ на 2 месяца',
-      '~300 единиц контента в месяц',
+      '300 единиц контента в месяц',
       'Весь визуал и методология',
     ],
   },
@@ -76,7 +76,7 @@ export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
     paid: true,
     features: [
       '1 проект (блог)',
-      '~100 единиц контента в месяц',
+      '100 единиц контента в месяц',
       'Весь функционал: исследование, прогрев, контент-план, визуал',
       'Голос, ассистент, тренды — без ограничений по фичам',
       'Анализ конкурентов (до 2)',
@@ -96,7 +96,7 @@ export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
     paid: true,
     features: [
       '1 проект (блог)',
-      '~300 единиц контента в месяц',
+      '300 единиц контента в месяц',
       'Весь визуал: слайды, бренд-кит, сторис по фото, видео с текстом',
       'Голос + план прогрева + контент-план + ассистент + тренды + библиотека',
       'Анализ конкурентов и Instagram (до 5)',
@@ -106,21 +106,21 @@ export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
     label: 'Про',
     price: 149,
     priceRub: 14900,
-    generations: 2000,
-    unlimited: true,
+    // 05.09: объём = кап ($60 = 40% цены) / себестоимость единицы $0.065 ≈ 920.
+    // Раньше «безлимит (fair use)» при капе — витрина обещала то, чего кап не
+    // давал (Даша: «Про — бесконечная генерация, а мне это и не нужно»).
+    generations: 900,
+    unlimited: false,
     projects: 3,
     teamSeats: 1,
     competitors: 5,
     badge: null,
     paid: true,
     features: [
-      '3 проекта',
-      'Безлимит генераций (fair use)',
+      '3 проекта (блога)',
+      '900 единиц контента в месяц — в 3 раза больше Соло',
       'Всё из тарифа Соло',
-      'Автопостинг Telegram (при запуске)',
-      'Видео-сторис / рилз с титрами (при запуске)',
-      'Push-напоминания из контент-плана (при запуске)',
-      '+1 место в команду',
+      '+1 место в команду (ассистент, куратор)',
       'Приоритетная поддержка',
     ],
   },
@@ -128,8 +128,9 @@ export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
     label: 'Продюсер',
     price: 299,
     priceRub: 29900,
-    generations: 8000,
-    unlimited: true,
+    // кап $120 / $0.065 ≈ 1840 — честный объём вместо «безлимита»
+    generations: 1800,
+    unlimited: false,
     projects: 10,
     teamSeats: 5,
     competitors: 10,
@@ -137,10 +138,9 @@ export const PLAN_CONFIG: Record<SubscriptionTier, PlanInfo> = {
     paid: true,
     features: [
       '10 проектов (расширяется пакетами)',
-      'Безлимит генераций (fair use)',
-      'Команда 3–5 + клиентский доступ',
+      '1800 единиц контента в месяц — в 6 раз больше Соло',
+      'Команда до 5 + клиентский доступ',
       'Анализ конкурентов до 10 на проект',
-      'Автопостинг + видео + push-напоминания (при запуске)',
       'Приоритет + персональный менеджер',
     ],
   },
@@ -227,6 +227,26 @@ export const TRIAL_DAYS = 60
 export const UNIT_COST_USD = 0.065
 // Прогноз длины ответа для оценки «≈ N ед.» до отправки (медиана по журналу 04.09: 1.6k)
 export const CHAT_ESTIMATE_OUTPUT_TOKENS = 1500
+
+/**
+ * Что можно сделать на объём тарифа — в понятных величинах, из UNIT_COSTS
+ * (витрина не имеет права хардкодить «≈150 постов»: цены меняются в одном
+ * месте, тексты обязаны следовать). «Если тратить только на что-то одно».
+ */
+export function planCapacity(units: number): { posts: number; chatMessages: number; transcribeHours: number } {
+  return {
+    posts: Math.floor(units / UNIT_COSTS.content),
+    // после честных единиц (05.09) обычное сообщение ≈ 1–1,5 ед.; берём консервативно 1,5
+    chatMessages: Math.floor(units / 1.5),
+    transcribeHours: Math.floor(units / UNIT_COSTS.transcribe_per_10min * 10 / 60),
+  }
+}
+
+/** Строка для витрины: «≈ 150 постов, или 200 сообщений ассистенту, или 50 ч расшифровок». */
+export function planCapacityLine(units: number): string {
+  const c = planCapacity(units)
+  return `≈ ${c.posts} постов или рилзов, или ${c.chatMessages} сообщений ассистенту, или ${c.transcribeHours} ч расшифровок — если тратить только на что-то одно`
+}
 
 /** $ себестоимости → единицы шагом 0,5, минимум 0,5. */
 export function unitsForUsd(usd: number): number {

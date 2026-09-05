@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { UsageCard } from '@/components/billing/UsageCard'
 import { CheckCircle2, Star, Zap, Building2, Sparkles } from 'lucide-react'
-import { PLAN_CONFIG, VISIBLE_PAID_PLANS, nextPlan, type PaidPlan, type SubscriptionTier } from '@/lib/generations-config'
+import { PLAN_CONFIG, VISIBLE_PAID_PLANS, nextPlan, planCapacityLine, type PaidPlan, type SubscriptionTier } from '@/lib/generations-config'
 
 export type UpgradeReason = 'limit' | 'budget' | 'needs_plan' | 'trial' | 'view_only' | 'paused'
 
@@ -91,8 +91,9 @@ export function UpgradeDialog({
                   <span className="text-muted-foreground text-xs mb-0.5">/мес</span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {cfg.unlimited ? 'Безлимит генераций' : `~${cfg.generations} единиц/мес`}
+                  {cfg.unlimited ? 'Безлимит генераций' : `${cfg.generations} единиц/мес`}
                 </p>
+                {!cfg.unlimited && <p className="text-[10px] text-muted-foreground leading-snug">{planCapacityLine(cfg.generations)}</p>}
                 <ul className="space-y-1.5 flex-1">
                   {cfg.features.slice(0, 4).map(f => (
                     <li key={f} className="flex gap-1.5 text-[11px] text-muted-foreground">

@@ -25,8 +25,9 @@ function parseCaseLimits(sql: string, fnName: string): Record<string, number> {
 describe('лимиты тарифов синхронны: БД ↔ PLAN_CONFIG ↔ пробник', () => {
   // 040 ПЕРЕОПРЕДЕЛЯЕТ обе функции (добавлен starter) — истина теперь там;
   // 016/035 остаются историей.
-  it('generation_limit (миграция 040) == PLAN_CONFIG.generations', () => {
-    const sql = readFileSync(join(ROOT, 'supabase/migrations/040_starter_tier.sql'), 'utf8')
+  it('generation_limit (миграция 046) == PLAN_CONFIG.generations', () => {
+    // 046 переопределяет generation_limit (честные объёмы pro/producer 05.09)
+    const sql = readFileSync(join(ROOT, 'supabase/migrations/046_honest_tier_limits.sql'), 'utf8')
     const db = parseCaseLimits(sql, 'generation_limit')
     for (const tier of ['trial', 'starter', 'solo', 'pro', 'producer'] as const) {
       expect(db[tier], `generation_limit('${tier}')`).toBe(PLAN_CONFIG[tier].generations)

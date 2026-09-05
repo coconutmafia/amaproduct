@@ -9,7 +9,7 @@ import { Progress } from '@/components/ui/progress'
 import { toast } from 'sonner'
 import { CheckCircle2, Zap, Star, Building2, Gift, AlertTriangle } from 'lucide-react'
 import type { SubscriptionTier, PaidPlan } from '@/lib/generations-config'
-import { PLAN_CONFIG, VISIBLE_PAID_PLANS, UNIT_COSTS, nextPlan } from '@/lib/generations-config'
+import { PLAN_CONFIG, VISIBLE_PAID_PLANS, UNIT_COSTS, nextPlan, planCapacityLine } from '@/lib/generations-config'
 import { LocalDate } from '@/components/ui/LocalDate'
 import { Sparkles } from 'lucide-react'
 
@@ -217,7 +217,9 @@ export function PricingClient({
                   <span className="text-muted-foreground text-sm mb-1">/мес</span>
                 </div>
                 <CardDescription className="text-xs">
-                  {cfg.unlimited ? 'Безлимит генераций' : `~${cfg.generations} единиц контента`} · {cfg.projects === -1 ? '∞' : cfg.projects} {cfg.projects === 1 ? 'проект' : cfg.projects <= 4 ? 'проекта' : 'проектов'}
+                  {cfg.unlimited ? 'Безлимит генераций' : `${cfg.generations} единиц контента`} · {cfg.projects === -1 ? '∞' : cfg.projects} {cfg.projects === 1 ? 'проект' : cfg.projects <= 4 ? 'проекта' : 'проектов'}
+                  {/* Честная витрина (05.09): что реально можно сделать на этот объём */}
+                  {!cfg.unlimited && <span className="block mt-1 text-[11px] leading-snug">{planCapacityLine(cfg.generations)}</span>}
                 </CardDescription>
               </CardHeader>
 
