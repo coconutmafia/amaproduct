@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
     // A story series is a content unit (it lays out a full storyboard).
-    const gate = await gateContentUnit(user.id)
+    const gate = await gateContentUnit(user.id, 'plan-stories')
     if (gate.blocked) {
       // Неоплатившему — «подключи тариф», а не «лимит исчерпан» (у него 0 создано).
       const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'

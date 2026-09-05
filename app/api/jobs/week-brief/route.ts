@@ -32,7 +32,7 @@ export async function POST(request: Request) {
   // Недельные брифы = UNIT_COSTS.week_brief единиц (прайс-лист 25.08: замеренная
   // себестоимость $0.09-0.20). Операция входит в подписку — просто расходует
   // единицы из общего месячного лимита, как и всё остальное.
-  const gate = await gateContentUnits(user.id, UNIT_COSTS.week_brief)
+  const gate = await gateContentUnits(user.id, UNIT_COSTS.week_brief, 'week_brief')
   if (gate.blocked) {
     const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
     return NextResponse.json(

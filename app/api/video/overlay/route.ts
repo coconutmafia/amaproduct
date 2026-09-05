@@ -75,7 +75,7 @@ export async function POST(request: Request) {
     if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
     // Burning text onto a video is an expensive content unit (ffmpeg + render).
-    const gate = await gateContentUnit(user.id)
+    const gate = await gateContentUnit(user.id, 'video_overlay')
     if (gate.blocked) {
       // Неоплатившему — «подключи тариф», а не «лимит исчерпан» (у него 0 создано).
       const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'

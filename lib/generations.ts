@@ -8,6 +8,7 @@ import { PLAN_CONFIG, PAID_PLANS } from '@/lib/generations-config'
 import type { SubscriptionPlan } from '@/lib/generations-config'
 import { setUsageUser } from '@/lib/ai/usageContext'
 import { checkBudgetCap } from '@/lib/billing/costCap'
+import { recordUnits } from '@/lib/billing/unitLedger'
 
 // ──────────────────────────────────────────────────────
 // Check + consume one generation (server-side)
@@ -123,7 +124,7 @@ export async function isEntitled(userId: string): Promise<boolean> {
 // series, a video overlay). Consumes one unit and reports whether to block.
 // Refinement/edits, slide/image rendering of already-counted content, and brand
 // setup are NOT metered (fair-use) — don't call this there.
-export async function gateContentUnit(userId: string): Promise<GateResult> {
+export async function gateContentUnit(userId: string, action = 'content'): Promise<GateResult> {
   setUsageUser(userId) // журнал расходов узнает, чей это вызов
   // Check entitlement BEFORE consuming so an un-entitled user (expired trial /
   // lapsed subscription) isn't charged a unit just to be blocked. Only enforced
@@ -143,6 +144,8 @@ export async function gateContentUnit(userId: string): Promise<GateResult> {
   }
   const res = await checkAndConsumeGeneration(userId)
   const blocked = BILLING_ENFORCED && !res.allowed
+  // Лента списаний (миграция 045): что и сколько — клиент видит в «Тариф и расход»
+  if (res.allowed) void recordUnits(userId, action, 1)
   return { ...res, blocked, ...(blocked ? { reason: 'quota' as const } : {}) }
 }
 
@@ -151,9 +154,9 @@ export async function gateContentUnit(userId: string): Promise<GateResult> {
 // then consumes unit-by-unit through the same audited RPC. If a later consume
 // fails mid-way (race with another tab), the consumed part is refunded — the
 // caller either gets the whole price charged or nothing.
-export async function gateContentUnits(userId: string, count: number): Promise<GateResult> {
+export async function gateContentUnits(userId: string, count: number, action = 'content'): Promise<GateResult> {
   setUsageUser(userId)
-  if (count <= 1) return gateContentUnit(userId)
+  if (count <= 1) return gateContentUnit(userId, action)
   if (BILLING_ENFORCED && !(await isEntitled(userId))) {
     const stats = await getGenerationStats(userId)
     return { ...stats, allowed: false, blocked: true, reason: 'not_entitled' }
@@ -183,17 +186,19 @@ export async function gateContentUnits(userId: string, count: number): Promise<G
     return { ...after, allowed: false, blocked, ...(blocked ? { reason: 'quota' as const } : {}) }
   }
   const after = await getGenerationStats(userId)
+  void recordUnits(userId, action, count)
   return { ...after, allowed: true, blocked: false }
 }
 
 // Refund `count` units at once (video job failed after charging its price).
-export async function refundGenerations(userId: string, count: number): Promise<void> {
+export async function refundGenerations(userId: string, count: number, action = 'refund'): Promise<void> {
   try {
     const supabase = await createClient()
     const { data: profile } = await supabase
       .from('profiles').select('role').eq('id', userId).single()
     if (profile?.role === 'admin') return
     await createAdminClient().rpc('add_bonus_generations', { p_user_id: userId, p_amount: count })
+    void recordUnits(userId, action, -count)
   } catch (e) {
     console.error('refundGenerations failed:', e)
   }
@@ -202,7 +207,7 @@ export async function refundGenerations(userId: string, count: number): Promise<
 // Refund one generation — called when a consumed generation produced nothing
 // (project not found, AI error, etc.). Credited as a bonus generation, which
 // is consumed first, so it's effectively a full refund and never goes negative.
-export async function refundGeneration(userId: string): Promise<void> {
+export async function refundGeneration(userId: string, action = 'refund'): Promise<void> {
   try {
     const supabase = await createClient()
     const { data: profile } = await supabase
@@ -213,6 +218,7 @@ export async function refundGeneration(userId: string): Promise<void> {
     // Runs through the service-role client (EXECUTE revoked from anon/authenticated
     // in migration 032). Refund is credited as a bonus generation.
     await createAdminClient().rpc('add_bonus_generations', { p_user_id: userId, p_amount: 1 })
+    void recordUnits(userId, action, -1)
   } catch (e) {
     console.error('refundGeneration failed:', e)
   }

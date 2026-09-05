@@ -586,7 +586,7 @@ export async function POST(request: Request) {
     // продукта: до 380k символов входа и 32k выхода (замер 25.08: до $1.39 за
     // пересборку), а кнопка «Обновить» нажимается повторно. Входит в подписку,
     // но расходует общий лимит — как и всё остальное.
-    const gateM = await gateContentUnits(user.id, UNIT_COSTS.meanings_map)
+    const gateM = await gateContentUnits(user.id, UNIT_COSTS.meanings_map, 'meanings_map')
     if (gateM.blocked) {
       const code = gateM.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
       return NextResponse.json(

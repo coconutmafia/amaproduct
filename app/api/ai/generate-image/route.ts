@@ -70,7 +70,7 @@ export async function POST(request: Request) {
     // Цена за КАЖДЫЙ вариант, а не за клик: gpt-image-1 берёт $0.063 с картинки,
     // и «3 варианта за одну единицу» давали −16% маржи (замер 25.08).
     const imageUnits = count * UNIT_COSTS.image_per_variant
-    const gate = await gateContentUnits(user.id, imageUnits)
+    const gate = await gateContentUnits(user.id, imageUnits, 'image')
     if (gate.blocked) {
       const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
       return NextResponse.json(

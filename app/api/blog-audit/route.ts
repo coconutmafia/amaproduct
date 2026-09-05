@@ -52,7 +52,7 @@ export async function POST(request: Request) {
   // Аудит блога = UNIT_COSTS.blog_audit юнитов (прайс-лист 25.08). Гейт заодно
   // закрывает дыру: у роута не было requirePaidAccess вовсе — gateContentUnits
   // проверяет entitlement внутри. Провал джоба возвращает юниты (раннер/страж).
-  const gate = await gateContentUnits(user.id, UNIT_COSTS.blog_audit)
+  const gate = await gateContentUnits(user.id, UNIT_COSTS.blog_audit, 'blog_audit')
   if (gate.blocked) {
     const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
     return NextResponse.json(

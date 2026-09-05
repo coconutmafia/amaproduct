@@ -46,7 +46,7 @@ export async function POST(request: Request) {
   // Монтаж стоит VIDEO_MONTAGE_UNITS юнитов (решение Матвея: дороже текста,
   // т.к. Whisper + минуты CPU). Списываем ДО постановки джоба: полный провал
   // джоба возвращает всё через refundGenerations внутри раннера.
-  const gate = await gateContentUnits(user.id, VIDEO_MONTAGE_UNITS)
+  const gate = await gateContentUnits(user.id, VIDEO_MONTAGE_UNITS, 'video_montage')
   if (gate.blocked) {
     const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
     return NextResponse.json({

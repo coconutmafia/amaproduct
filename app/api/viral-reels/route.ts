@@ -91,7 +91,7 @@ export async function POST(request: Request) {
   // Разбор рилза = UNIT_COSTS.viral_reels юнитов (Apify + Whisper + Claude —
   // прайс-лист 25.08). Админский scope=system не страдает: у админов юниты не
   // считаются внутри gateContentUnits. Провал джоба возвращает юниты.
-  const gate = await gateContentUnits(user.id, UNIT_COSTS.viral_reels)
+  const gate = await gateContentUnits(user.id, UNIT_COSTS.viral_reels, 'viral_reels')
   if (gate.blocked) {
     const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
     return NextResponse.json(

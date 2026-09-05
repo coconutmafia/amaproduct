@@ -15,6 +15,7 @@ import { BILLING_ENFORCED } from '@/lib/generations'
 import { UNIT_COSTS } from '@/lib/generations-config'
 import { setUsageUser } from '@/lib/ai/usageContext'
 import { checkBudgetCap } from '@/lib/billing/costCap'
+import { recordUnits, microUnits } from '@/lib/billing/unitLedger'
 
 // Журнал расходов живёт в отдельном модуле без лишних зависимостей (его
 // статически импортирует обёртка Anthropic) — здесь только ре-экспорт, чтобы
@@ -56,6 +57,8 @@ export async function gateMicroAction(
       return { blocked: false }
     }
     if (data === false && BILLING_ENFORCED) return { blocked: true, reason: 'quota' }
+    // Лента списаний: микро-действие = доля единицы (чат 1/2, прочее 1/10)
+    void recordUnits(userId, route, microUnits(route, batch))
     return { blocked: false }
   } catch (e) {
     console.warn('[gateMicroAction] failed (fail-open):', e instanceof Error ? e.message : e)

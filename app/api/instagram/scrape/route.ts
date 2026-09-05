@@ -101,7 +101,7 @@ export async function POST(request: Request) {
   // Запуск скрейпа = UNIT_COSTS.instagram_scrape юнит (Apify = живые $;
   // прайс-лист 25.08). Квота «до 5/10 конкурентов на проект» выше — отдельный
   // потолок, юнит платится за сам запуск. Провал джоба возвращает юнит.
-  const gate = await gateContentUnits(user.id, UNIT_COSTS.instagram_scrape)
+  const gate = await gateContentUnits(user.id, UNIT_COSTS.instagram_scrape, 'instagram_scrape')
   if (gate.blocked) {
     const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
     return NextResponse.json(

@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { PLAN_CONFIG, UNIT_COSTS, type SubscriptionTier } from '@/lib/generations-config'
 import { tierBudgetUsd, usageRowCostUsd, activeBoostUsd, type UsageRow } from '@/lib/billing/costCap'
+import { recentLedger, type LedgerRow } from '@/lib/billing/unitLedger'
 
 // «Тариф и расход» — прозрачная картина для клиента (мандат Матвея 04.09:
 // Даша упёрлась в лимит при 29/300 единиц и не понимала, за что; закрыл её
@@ -27,6 +28,7 @@ export type UsageSummary = {
   breakdown: UsageCategory[]
   fits: { content: number; chatMessages: number; transcribeHours: number; images: number }
   prices: { key: string; label: string; units: number; per: string }[]
+  ledger: LedgerRow[]
 }
 
 // route ai_usage → категория (имена маршрутов в журнале разнородные: api/ai/chat,
@@ -115,7 +117,9 @@ export async function getUsageSummary(userId: string): Promise<UsageSummary> {
   const pct = exempt ? 0 : Math.min(999, Math.round(totalUsd / capUsd * 100))
 
   const rem = plan.unlimited ? 9999 : remaining
+  const ledger = await recentLedger(userId, 30)
   return {
+    ledger,
     tier,
     status: (profile?.subscription_status as string | null) ?? null,
     // remaining: -1 = безлимит (Infinity не переживает JSON)

@@ -69,7 +69,7 @@ export async function POST(request: Request) {
   // списывает. Возвраты: непоправимая ошибка — в раннере; брошенный на 48ч —
   // в chain-watch (маркер unitsRefunded защищает от двойного возврата).
   const units = transcribeUnits(durationSec)
-  const gate = await gateContentUnits(user.id, units)
+  const gate = await gateContentUnits(user.id, units, 'transcribe')
   if (gate.blocked) {
     const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
     return NextResponse.json(

@@ -136,6 +136,26 @@ export function UsageCard({ compact = false }: { compact?: boolean }) {
           </p>
         )}
 
+        {/* Лента списаний — «каждая задача фиксируется» (мандат 04.09) */}
+        {!compact && data.ledger && data.ledger.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-foreground">Последние списания</p>
+            <div className="max-h-44 overflow-y-auto space-y-0.5">
+              {data.ledger.slice(0, 15).map(l => (
+                <div key={l.id} className="flex items-center gap-2 text-[11px]">
+                  <span className="w-12 shrink-0 text-muted-foreground tabular-nums">
+                    {fmtDateLocalRu(new Date(l.created_at).getTime(), { day: 'numeric', month: 'short' })}
+                  </span>
+                  <span className="flex-1 truncate text-foreground">{l.label}</span>
+                  <span className={`shrink-0 tabular-nums ${l.units < 0 ? 'text-green-600' : 'text-muted-foreground'}`}>
+                    {l.units < 0 ? '+' : '−'}{Math.abs(l.units).toLocaleString('ru-RU')} ед.
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Прайс действий */}
         {!compact && (
           <div>

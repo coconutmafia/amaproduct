@@ -72,7 +72,7 @@ export async function POST(request: Request) {
   // Сборка общей таблицы кастдевов = UNIT_COSTS.research_table юнита: флагман
   // по ВСЕМ расшифровкам проекта (max_tokens 32000), кнопка нажимается повторно
   // (Даша 25.08 перегенерировала 6 раз). Провал джоба возвращает юниты.
-  const gate = await gateContentUnits(user.id, UNIT_COSTS.research_table)
+  const gate = await gateContentUnits(user.id, UNIT_COSTS.research_table, 'research_table')
   if (gate.blocked) {
     const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
     return NextResponse.json(

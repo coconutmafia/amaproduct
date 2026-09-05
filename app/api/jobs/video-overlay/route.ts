@@ -41,7 +41,7 @@ export async function POST(request: Request) {
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
   // Жжём юнит ДО постановки (как монтаж); любой провал джоба вернёт его.
-  const gate = await gateContentUnit(user.id)
+  const gate = await gateContentUnit(user.id, 'video_overlay')
   if (gate.blocked) {
     const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
     return NextResponse.json(

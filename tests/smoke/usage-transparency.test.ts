@@ -43,3 +43,26 @@ describe('прозрачность лимитов', () => {
     expect(read('scripts/prod-probe.mjs')).toContain("'grant-boost': grantBoost")
   })
 })
+
+describe('лента списаний — каждая задача фиксируется (миграция 045)', () => {
+  it('гейты и возвраты пишут в unit_ledger, best-effort', () => {
+    const gen = read('lib/generations.ts')
+    expect((gen.match(/recordUnits\(/g) || []).length).toBe(4)
+    expect(gen).toContain("if (res.allowed) void recordUnits(userId, action, 1)")
+    const micro = read('lib/ai/usage.ts')
+    expect(micro).toContain('recordUnits(userId, route, microUnits(route, batch))')
+    expect(read('supabase/migrations/045_unit_ledger.sql')).toContain('unit_ledger_owner_read')
+  })
+
+  it('каждый вызов gateContentUnit(s) в роутах подписан действием', () => {
+    const { execSync } = require('node:child_process') as typeof import('node:child_process')
+    const out = execSync("grep -rn 'gateContentUnits\\?(' app --include='*.ts' | grep -v 'export async function'", { cwd: process.cwd() }).toString()
+    const unlabeled = out.split('\n').filter(l => l.trim()).filter(l => /gateContentUnit\(user\.id\)|gateContentUnits\(user\.id, [^,)]+\)/.test(l))
+    expect(unlabeled, `без подписи действия:\n${unlabeled.join('\n')}`).toEqual([])
+  })
+
+  it('лента показана в карточке и приходит в сводке', () => {
+    expect(read('components/billing/UsageCard.tsx')).toContain('Последние списания')
+    expect(read('lib/billing/usageSummary.ts')).toContain('recentLedger(userId, 30)')
+  })
+})

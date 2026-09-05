@@ -271,7 +271,7 @@ export async function POST(request: Request) {
         }
         return null
       }
-      const gate = await gateContentUnits(user.id, UNIT_COSTS.content)
+      const gate = await gateContentUnits(user.id, UNIT_COSTS.content, 'content')
       if (gate.blocked) {
         // Report WHY: an unpaid user must not be told «лимит исчерпан» (he has
         // used 0) — he needs «подключи тариф».

@@ -32,7 +32,7 @@ export async function POST(request: Request) {
   // План прогрева = UNIT_COSTS.warmup_plan единиц (прайс-лист 25.08: замеренная
   // себестоимость $0.10-0.20). Операция входит в подписку — просто расходует
   // единицы из общего месячного лимита, как и всё остальное.
-  const gate = await gateContentUnits(user.id, UNIT_COSTS.warmup_plan)
+  const gate = await gateContentUnits(user.id, UNIT_COSTS.warmup_plan, 'warmup_plan')
   if (gate.blocked) {
     const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
     return NextResponse.json(

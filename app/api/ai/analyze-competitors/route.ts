@@ -37,7 +37,7 @@ export async function POST(request: Request) {
 
   // Сводная таблица конкурентов = UNIT_COSTS.competitor_table юнит (флагман по
   // всем разборам; кнопка повторяемая). Провал возвращает юнит сразу.
-  const gate = await gateContentUnits(user.id, UNIT_COSTS.competitor_table)
+  const gate = await gateContentUnits(user.id, UNIT_COSTS.competitor_table, 'competitor_table')
   if (gate.blocked) {
     const code = gate.reason === 'not_entitled' ? 'payment_required' : 'limit_reached'
     return NextResponse.json(
