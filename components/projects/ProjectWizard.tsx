@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { friendlyError } from '@/lib/friendlyError'
+import { projectLimitFor, projectLimitMessage, isProjectLimitError, PLAN_LABEL } from '@/lib/projects/limit'
 import { pollJob } from '@/lib/jobs/pollJob'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -88,6 +89,32 @@ export function ProjectWizard() {
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const draftLoadedRef = useRef(false)
   const [draftRestored, setDraftRestored] = useState(false)
+  // Лимит проектов тарифа — до заполнения формы, а не после (Полина 06.09:
+  // заполнила всё, нажала «Создать» — «ошибка сервиса»). Админов лимит не касается.
+  const [limitInfo, setLimitInfo] = useState<{ tier: string; limit: number; count: number; admin: boolean; firstId?: string; firstName?: string } | null>(null)
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const uid = session?.user?.id
+        if (!uid) return
+        const [{ data: prof }, { data: mine }] = await Promise.all([
+          supabase.from('profiles').select('subscription_tier, role').eq('id', uid).maybeSingle(),
+          supabase.from('projects').select('id, name').eq('owner_id', uid).order('created_at', { ascending: true }),
+        ])
+        if (!alive) return
+        const tier = String(prof?.subscription_tier || 'trial')
+        setLimitInfo({
+          tier, limit: projectLimitFor(tier), count: mine?.length ?? 0, admin: prof?.role === 'admin',
+          firstId: mine?.[0]?.id as string | undefined, firstName: mine?.[0]?.name as string | undefined,
+        })
+      } catch { /* нет данных — форма работает как раньше */ }
+    })()
+    return () => { alive = false }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const atLimit = !!limitInfo && !limitInfo.admin && limitInfo.count >= limitInfo.limit
 
   // Resolve the current user + purge the legacy per-browser draft key (it leaked
   // drafts across accounts). Runs once on mount.
@@ -309,6 +336,10 @@ export function ProjectWizard() {
 
   const handleSubmit = async () => {
     if (!name.trim()) { toast.error('Введите название проекта'); return }
+    if (atLimit && limitInfo) {
+      toast.error(projectLimitMessage(limitInfo.tier, limitInfo.count), { duration: 12000, action: { label: 'Тарифы', onClick: () => router.push('/pricing') } })
+      return
+    }
     setLoading(true)
     try {
       // Use getSession() — reliable, reads from cookie, no network call
@@ -447,6 +478,10 @@ export function ProjectWizard() {
       // failure → friendly generic message.
       if (/сессия истекла/i.test(msg)) {
         toast.error(msg)
+      } else if (isProjectLimitError(msg)) {
+        // Лимит проектов тарифа — это НЕ «ошибка сервиса» (Полина 06.09):
+        // говорим, какой лимит и куда идти; черновик формы остаётся.
+        toast.error(projectLimitMessage(limitInfo?.tier, limitInfo?.count ?? projectLimitFor(limitInfo?.tier)), { duration: 12000, action: { label: 'Тарифы', onClick: () => router.push('/pricing') } })
       } else {
         toast.error('Упс, ошибка сервиса — это на нашей стороне, не в твоих данных. Скоро починим, попробуй ещё раз чуть позже.')
       }
@@ -464,6 +499,19 @@ export function ProjectWizard() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-10">
+
+      {atLimit && limitInfo && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/8 px-4 py-3 text-sm text-foreground space-y-2">
+          <p className="font-semibold">На тарифе «{PLAN_LABEL[limitInfo.tier] ?? limitInfo.tier}» доступно {limitInfo.limit} {limitInfo.limit === 1 ? 'проект' : limitInfo.limit < 5 ? 'проекта' : 'проектов'}{limitInfo.limit === 1 ? ' — он у тебя уже есть' : ` — у тебя уже ${limitInfo.count}`}.</p>
+          <p className="text-muted-foreground">{projectLimitMessage(limitInfo.tier, limitInfo.count).split('. ').slice(1).join('. ')} Данные текущего проекта можно менять в его настройках — новый заводить не обязательно.</p>
+          <div className="flex flex-wrap gap-2 pt-1">
+            {limitInfo.firstId && (
+              <Button asChild size="sm" variant="outline"><a href={`/projects/${limitInfo.firstId}`}>Открыть «{limitInfo.firstName || 'мой проект'}»</a></Button>
+            )}
+            <Button asChild size="sm" className="gradient-accent text-white"><a href="/pricing">Тарифы</a></Button>
+          </div>
+        </div>
+      )}
 
       {/* Draft auto-restored — nothing is lost on navigation; offer a fresh start */}
       {draftRestored && (

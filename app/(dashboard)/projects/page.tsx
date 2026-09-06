@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { ProjectCard } from '@/components/projects/ProjectCard'
 import { Plus, FolderKanban } from 'lucide-react'
 import { ProjectsListClient } from '@/components/projects/ProjectsListClient'
+import { projectLimitFor, PLAN_LABEL } from '@/lib/projects/limit'
 
 function pluralizeProjects(n: number) {
   const abs = Math.abs(n) % 100
@@ -28,6 +29,13 @@ export default async function ProjectsPage() {
     .select('*')
     .order('updated_at', { ascending: false })
 
+  // Лимит проектов тарифа виден ДО нажатия «Новый проект» (Полина 06.09).
+  const { data: prof } = await supabase.from('profiles').select('subscription_tier, role').eq('id', user.id).maybeSingle()
+  const tier = String(prof?.subscription_tier || 'trial')
+  const limit = projectLimitFor(tier)
+  const owned = (projects ?? []).filter((p) => p.owner_id === user.id).length
+  const atLimit = prof?.role !== 'admin' && owned >= limit
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
@@ -35,6 +43,10 @@ export default async function ProjectsPage() {
           <h1 className="text-2xl font-bold text-foreground">Мои проекты</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {pluralizeProjects(projects?.length || 0)}
+            {atLimit && (
+              <> · на тарифе «{PLAN_LABEL[tier] ?? tier}» {limit === 1 ? 'один проект' : `${limit} проекта`} — больше на{' '}
+                <Link href="/pricing" className="underline underline-offset-2 hover:text-foreground">{tier === 'pro' ? '«Продюсер»' : '«Про» и «Продюсер»'}</Link></>
+            )}
           </p>
         </div>
         <Button asChild className="gradient-accent text-white hover:opacity-90">
