@@ -20,3 +20,18 @@ export function isCurrentPlan(
 ): boolean {
   return key === currentTier && hasActivePaidSubscription(status, provider)
 }
+
+// «Возвращающийся» клиент — уже имел доступ/подписку (закрыт за неоплату,
+// пауза, отменил, истёк период). Демо-период — только для НОВЫХ: возвращающийся
+// платит сразу (мандат Матвея 06.09: «она сейчас оплачивает реальные деньги»).
+// Новый после регистрации: status trialing, period_end null, платёжки нет.
+export function isReturningCustomer(p: {
+  subscription_status?: string | null
+  current_period_end?: string | null
+  provider_subscription_id?: string | null
+  payment_provider?: string | null
+}): boolean {
+  if (p.current_period_end) return true
+  if (p.provider_subscription_id || p.payment_provider) return true
+  return ['view_only', 'paused', 'canceled', 'past_due', 'expired'].includes(p.subscription_status ?? '')
+}

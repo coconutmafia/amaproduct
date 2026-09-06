@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe, stripeConfigured, ensurePrice } from '@/lib/billing/stripe'
 import { VISIBLE_PAID_PLANS, TRIAL_DAYS, type PaidPlan } from '@/lib/generations-config'
+import { isReturningCustomer } from '@/lib/billing/planState'
 
 export const runtime = 'nodejs'
 
@@ -51,7 +52,10 @@ export async function POST(request: Request) {
     const admin = createAdminClient()
 
     // Reuse the user's Stripe customer if we have one, else create + persist it.
-    const { data: profile } = await admin.from('profiles').select('provider_customer_id').eq('id', user.id).single()
+    const { data: profile } = await admin.from('profiles').select('provider_customer_id, subscription_status, current_period_end, provider_subscription_id, payment_provider').eq('id', user.id).single()
+    // Демо (60 дней) — только НОВОМУ клиенту. Возвращающийся (закрыт за
+    // неоплату, пауза, истёк период) платит сразу — мандат Матвея 06.09.
+    const returning = profile ? isReturningCustomer(profile) : false
     let customerId = (profile?.provider_customer_id as string | null) || null
     // A stored id may belong to another Stripe mode (test-mode id after the
     // switch to live keys) — verify it exists under the current key, else start fresh.
@@ -87,7 +91,7 @@ export async function POST(request: Request) {
       // `trialing`, и наш вебхук активирует тариф так же. Зеркало демо-периода Продамуса.
       subscription_data: {
         metadata: { userId: user.id, plan },
-        ...(plan === 'solo' && soloTrialDays() > 0 ? { trial_period_days: soloTrialDays() } : {}),
+        ...(plan === 'solo' && !returning && soloTrialDays() > 0 ? { trial_period_days: soloTrialDays() } : {}),
       },
       allow_promotion_codes: true,
       success_url: `${origin}/pricing?status=success`,

@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { prodamusConfigured, prodamusFormUrl, prodamusSubId, prodamusLink, buildOrderId } from '@/lib/billing/prodamus'
+import { prodamusConfigured, prodamusFormUrl, prodamusSubId, prodamusLink, prodamusLinkNoDemo, buildOrderId } from '@/lib/billing/prodamus'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { isReturningCustomer } from '@/lib/billing/planState'
+import { captureMessage } from '@/lib/sentry'
 import { VISIBLE_PAID_PLANS, type PaidPlan } from '@/lib/generations-config'
 
 export const runtime = 'nodejs'
@@ -19,7 +22,17 @@ export async function POST(request: Request) {
     const { plan } = (await request.json()) as { plan?: string }
     if (!plan || !VISIBLE_PAID_PLANS.includes(plan as PaidPlan) /* Старт скрыт флагом — купить нельзя даже прямым запросом */) return NextResponse.json({ error: 'invalid_plan' }, { status: 400 })
 
-    const link = prodamusLink(plan as PaidPlan)
+    // Возвращающемуся клиенту — продукт без демо (06.09). Нет такой ссылки в
+    // env → продаём с демо и громко пишем в журнал: Марине завести продукт.
+    const { data: prof } = await createAdminClient().from('profiles')
+      .select('subscription_status, current_period_end, provider_subscription_id, payment_provider')
+      .eq('id', user.id).single()
+    const returning = prof ? isReturningCustomer(prof) : false
+    const noDemo = returning ? prodamusLinkNoDemo(plan as PaidPlan) : undefined
+    if (returning && !noDemo) {
+      await captureMessage('prodamus checkout: возвращающийся клиент получит ДЕМО — нет PRODAMUS_LINK_' + plan.toUpperCase() + '_NODEMO', 'warning', { userId: user.id, plan })
+    }
+    const link = noDemo || prodamusLink(plan as PaidPlan)
     const subId = prodamusSubId(plan as PaidPlan)
     if (!link && !subId) return NextResponse.json({ error: 'subscription_not_configured' }, { status: 503 })
 

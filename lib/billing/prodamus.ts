@@ -36,6 +36,51 @@ export function prodamusLink(plan: PaidPlan): string | undefined {
   }[plan]
 }
 
+// Возвращающемуся клиенту — продукт БЕЗ демо-периода (06.09: демо только для
+// новых; иначе закрытый за неоплату получил бы ещё 60 дней бесплатно).
+// Создаётся в ЛК Продамуса отдельным продуктом (та же цена, демо 0), ссылка —
+// в env PRODAMUS_LINK_<PLAN>_NODEMO. Нет ссылки → checkout логирует и падает
+// на демо-ссылку (лучше продать с демо, чем не продать).
+export function prodamusLinkNoDemo(plan: PaidPlan): string | undefined {
+  return {
+    starter: process.env.PRODAMUS_LINK_STARTER_NODEMO,
+    solo: process.env.PRODAMUS_LINK_SOLO_NODEMO,
+    pro: process.env.PRODAMUS_LINK_PRO_NODEMO,
+    producer: process.env.PRODAMUS_LINK_PRODUCER_NODEMO,
+  }[plan]
+}
+
+// Докупка объёма тарифа раньше срока — РАЗОВЫЙ продукт в ЛК (не подписка):
+// цена тарифа, название содержит «докупка» — по нему вебхук отличает платёж.
+export function prodamusTopupLink(plan: PaidPlan): string | undefined {
+  return {
+    starter: process.env.PRODAMUS_LINK_TOPUP_STARTER,
+    solo: process.env.PRODAMUS_LINK_TOPUP_SOLO,
+    pro: process.env.PRODAMUS_LINK_TOPUP_PRO,
+    producer: process.env.PRODAMUS_LINK_TOPUP_PRODUCER,
+  }[plan]
+}
+
+// Разовый платёж-докупка (вебхук): без объекта subscription, но наш order_id
+// «userId.topup-plan.ts» ИЛИ товар с «докупка» в названии. Чужие разовые
+// платежи Августы (курсы) сюда не проходят — у них нет ни того, ни другого.
+export function parseTopupPayment(data: Record<string, unknown>): { userId?: string; plan?: PaidPlan } | null {
+  const orderId = String(data.order_id ?? '')
+  const parsed = parseOrderId(orderId)
+  if (parsed?.plan?.startsWith('topup-')) {
+    return { userId: parsed.userId, plan: parsed.plan.slice('topup-'.length) as PaidPlan }
+  }
+  const products = data.products
+  const first = Array.isArray(products) ? products[0] : (products && typeof products === 'object' ? Object.values(products as Record<string, unknown>)[0] : null)
+  const name = first && typeof first === 'object' ? String((first as Record<string, unknown>).name ?? '') : ''
+  if (/докупк/i.test(name)) {
+    const m = name.toLowerCase()
+    const plan = m.includes('продюсер') ? 'producer' : m.includes('про') ? 'pro' : m.includes('старт') ? 'starter' : 'solo'
+    return { plan: plan as PaidPlan }
+  }
+  return null
+}
+
 // ── HMAC signature (Продамус Hmac) ────────────────────────────────────────────
 // Algorithm (per Продамус docs): cast every value to string, recursively sort by
 // key, json_encode with UNESCAPED unicode but ESCAPED slashes, then

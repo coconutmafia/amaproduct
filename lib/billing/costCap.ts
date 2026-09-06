@@ -76,6 +76,14 @@ export async function monthSpendUsd(userId: string): Promise<number> {
   const monthStart = new Date()
   monthStart.setUTCDate(1)
   monthStart.setUTCHours(0, 0, 0, 0)
+  // Биллинговый период (миграция 047): у платящего расход считается с даты
+  // оплаты, а не с 1-го числа — иначе один платёж покрывал до двух капов.
+  // Best-effort: до миграции колонки нет → календарный месяц.
+  try {
+    const { data } = await admin.from('profiles').select('period_started_at').eq('id', userId).single()
+    const ps = data?.period_started_at ? new Date(data.period_started_at as string) : null
+    if (ps && !Number.isNaN(ps.getTime()) && ps.getTime() > monthStart.getTime()) monthStart.setTime(ps.getTime())
+  } catch { /* колонки ещё нет */ }
   let sum = 0
   // Страницами: PostgREST по умолчанию отдаёт максимум 1000 строк, а у
   // активного клиента их может быть больше (ловушка из памяти postgrest).

@@ -55,6 +55,7 @@ export function PricingClient({
   useEffect(() => {
     const s = searchParams.get('status')
     if (s === 'success') toast.success('Оплата прошла! Тариф активируется в течение минуты — обнови страницу.')
+    else if (s === 'topup_success') toast.success('Оплата прошла — единицы добавлены, ресурс расширен до конца периода. Обнови страницу.')
     else if (s === 'cancel') toast.info('Оплата отменена — тариф не изменился.')
   }, [searchParams])
 
@@ -67,6 +68,22 @@ export function PricingClient({
     })
     const d = await res.json().catch(() => ({} as { url?: string; error?: string }))
     return { res, d }
+  }
+
+  // Разовая докупка объёма текущего тарифа: единицы + ресурс до конца периода
+  const handleTopup = async () => {
+    setUpgrading(currentPlan as PaidPlan)
+    try {
+      const res = await fetch('/api/billing/topup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ region }) })
+      const d = await res.json().catch(() => ({} as { url?: string; error?: string }))
+      if (res.ok && d.url) { window.location.href = d.url; return }
+      if (d.error === 'topup_not_configured') toast.info('Докупка картой РФ скоро подключится — напиши в поддержку, откроем вручную.')
+      else toast.error(d.error ? String(d.error).slice(0, 120) : `Не удалось открыть оплату (код ${res.status})`)
+    } catch {
+      toast.error('Сеть недоступна — попробуй ещё раз')
+    } finally {
+      setUpgrading(null)
+    }
   }
 
   const handleUpgrade = async (plan: PaidPlan) => {
@@ -241,6 +258,19 @@ export function PricingClient({
                   ))}
                 </ul>
 
+                {/* Докупка объёма СВОЕГО действующего тарифа раньше срока (06.09) */}
+                {isCurrent && (
+                  <Button
+                    className="w-full"
+                    variant="default"
+                    disabled={upgrading !== null}
+                    onClick={handleTopup}
+                  >
+                    {upgrading === key
+                      ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" />
+                      : `Докупить ещё ${cfg.generations} единиц — ${region === 'ru' ? `${cfg.priceRub.toLocaleString('ru-RU')} ₽` : `$${cfg.price}`}`}
+                  </Button>
+                )}
                 <Button
                   className="w-full"
                   variant={isCurrent ? 'outline' : key === 'solo' ? 'default' : 'outline'}

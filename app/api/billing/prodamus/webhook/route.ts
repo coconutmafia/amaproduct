@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { prodamusConfigured, prodamusVerify, parseFormNested, parseOrderId, mapProdamusStatus, isAmaSubscriptionPayment } from '@/lib/billing/prodamus'
+import { prodamusConfigured, prodamusVerify, parseFormNested, parseOrderId, mapProdamusStatus, isAmaSubscriptionPayment, parseTopupPayment } from '@/lib/billing/prodamus'
+import { startBillingPeriod } from '@/lib/billing/period'
+import { grantTopup } from '@/lib/billing/topup'
+import type { PaidPlan } from '@/lib/generations-config'
 import { cancelSubscriptionAnyProvider } from '@/lib/billing/cancel'
 import { PLAN_CONFIG, PAID_PLANS } from '@/lib/generations-config'
 
@@ -75,6 +78,27 @@ export async function POST(request: Request) {
       // нельзя (план резолвится по subscription.cost), так что до сегодня это
       // было чистым мусором: 79 666 ₽ чужих денег в /admin/payments + шум.
       // Уровень info, а не error: это штатная ситуация, а не поломка.
+      // ── ДОКУПКА (разовый платёж, 06.09): наш order_id «userId.topup-plan.ts»
+      // или товар с «докупка» в названии → +объём тарифа, рекуррент не трогаем.
+      const topup = parseTopupPayment(data as Record<string, unknown>)
+      if (topup && !isAmaSubscriptionPayment({ subscription: sub, subscriptionId: subId, orderId: '' })) {
+        let tuUser = topup.userId
+        if (!tuUser && data.customer_email) {
+          const { data: prof } = await admin.from('profiles').select('id').ilike('email', String(data.customer_email)).maybeSingle()
+          tuUser = prof?.id
+        }
+        if (tuUser && topup.plan) {
+          await grantTopup(admin, tuUser, topup.plan as PaidPlan)
+          await admin.from('payments').insert({
+            user_id: tuUser, amount: Number(data.sum ?? 0) || 0, currency: String(data.currency ?? 'RUB'),
+            status: 'succeeded', provider: 'prodamus', external_id: orderId || null, description: `Prodamus · докупка ${topup.plan}`,
+          }).then(() => {}, () => {})
+        } else {
+          await logWebhook('prodamus webhook: докупка прошла, но пользователь/тариф не сопоставлены', { order_id: orderId, email: data.customer_email ?? null })
+        }
+        return new NextResponse('success', { status: 200 })
+      }
+
       if (!isAmaSubscriptionPayment({ subscription: sub, subscriptionId: subId, orderId })) {
         await logWebhook('prodamus webhook: чужой платёж (не подписка AVA) — пропущен', {
           order_id: orderId, email: data.customer_email ?? null,
@@ -166,6 +190,8 @@ export async function POST(request: Request) {
           ...(subId ? { provider_subscription_id: String(subId) } : {}),
         }
         await admin.from('profiles').update(patch).eq('id', userId)
+        // Успешная оплата = новый биллинговый период: единицы и кап с этого дня
+        await startBillingPeriod(admin, userId, periodEnd)
       }
     }
   } catch (e) {

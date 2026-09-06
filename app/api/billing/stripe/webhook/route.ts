@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe, stripeConfigured, mapSubStatus, subscriptionPeriodEnd, planFromSubscription } from '@/lib/billing/stripe'
 import { cancelSubscriptionAnyProvider } from '@/lib/billing/cancel'
+import { startBillingPeriod } from '@/lib/billing/period'
+import { grantTopup } from '@/lib/billing/topup'
+import type { PaidPlan } from '@/lib/generations-config'
 import type Stripe from 'stripe'
 
 export const runtime = 'nodejs'
@@ -32,10 +35,13 @@ async function applySubscription(admin: Admin, sub: Stripe.Subscription, userIdH
 
   // Read the currently-stored subscription id for this user/customer once.
   const prevQuery = userId
-    ? admin.from('profiles').select('provider_subscription_id').eq('id', userId).maybeSingle()
-    : cust ? admin.from('profiles').select('provider_subscription_id').eq('provider_customer_id', cust).maybeSingle()
+    ? admin.from('profiles').select('id, provider_subscription_id, current_period_end').eq('id', userId).maybeSingle()
+    : cust ? admin.from('profiles').select('id, provider_subscription_id, current_period_end').eq('provider_customer_id', cust).maybeSingle()
     : null
-  const prevSub = prevQuery ? ((await prevQuery).data?.provider_subscription_id as string | null | undefined) : undefined
+  const prevRow = prevQuery ? (await prevQuery).data : null
+  const prevSub = prevRow?.provider_subscription_id as string | null | undefined
+  const prevPeriodEnd = prevRow?.current_period_end ? new Date(prevRow.current_period_end as string).getTime() : 0
+  const resolvedUserId = (userId || (prevRow?.id as string | undefined)) ?? null
 
   // Out-of-order guard (Stripe doesn't guarantee delivery order): a `created`/
   // `updated` event for a CANCELED subscription that is NOT the one we currently
@@ -69,6 +75,14 @@ async function applySubscription(admin: Admin, sub: Stripe.Subscription, userIdH
   }
   if (userId) await admin.from('profiles').update(patch).eq('id', userId)
   else if (cust) await admin.from('profiles').update(patch).eq('provider_customer_id', cust)
+
+  // Новый оплаченный период (конец периода сдвинулся вперёд) → единицы и кап
+  // считаются заново с этого дня (биллинговый месяц, а не календарный — 06.09).
+  const newEnd = subscriptionPeriodEnd(sub)
+  const newEndMs = newEnd ? new Date(newEnd).getTime() : 0
+  if (resolvedUserId && newEndMs > prevPeriodEnd && (sub.status === 'active' || sub.status === 'trialing')) {
+    await startBillingPeriod(admin, resolvedUserId, new Date(newEndMs))
+  }
 }
 
 export async function POST(request: Request) {
@@ -104,6 +118,21 @@ export async function POST(request: Request) {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
+        // Докупка объёма (mode=payment, metadata.type=topup) — разовый платёж
+        if (session.mode === 'payment' && session.metadata?.type === 'topup') {
+          const uid = session.metadata.userId || session.client_reference_id
+          const plan = session.metadata.plan as PaidPlan | undefined
+          if (uid && plan) {
+            await grantTopup(admin, uid, plan)
+            await admin.from('payments').insert({
+              user_id: uid, amount: (session.amount_total ?? 0) / 100, currency: (session.currency || 'usd').toUpperCase(),
+              status: 'succeeded', provider: 'stripe', external_id: session.id, description: `Stripe · докупка ${plan}`,
+            }).then(() => {}, () => {})
+          } else {
+            await logWebhook('stripe: докупка без userId/plan в metadata', { session: session.id })
+          }
+          break
+        }
         if (session.subscription) {
           const sub = await stripe.subscriptions.retrieve(String(session.subscription))
           await applySubscription(admin, sub as Stripe.Subscription, session.client_reference_id || undefined)
