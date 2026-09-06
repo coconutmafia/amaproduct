@@ -18,7 +18,9 @@ export interface RunStyle { em: boolean; bold: boolean; italic: boolean }
 export interface Run extends RunStyle { text: string }
 export interface LayoutLine { blank?: boolean; runs: Run[] }
 
-type Tok = { word: string; style: RunStyle } | { br: true; blank: boolean }
+// glue: слово приклеено к предыдущему без пробела — знак препинания сразу после
+// маркера («**рублей**.») или слово, начатое внутри другого стиля без пробела.
+type Tok = { word: string; style: RunStyle; glue?: boolean } | { br: true; blank: boolean }
 
 const isBr = (t: Tok): t is { br: true; blank: boolean } => 'br' in t
 
@@ -29,15 +31,24 @@ export function tokenizeStyled(text: string): Tok[] {
   const src = text.replace(/\[\[|\]\]/g, '')
   // Сегменты по маркерам: ** (акцент) → __ (жирный) → * (курсив).
   const segs = src.split(/(\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*)/g).filter(Boolean)
+  let prevEndsTight = false // предыдущий сегмент кончился НЕ пробелом → следующее слово клеится
   for (const seg of segs) {
     const em = seg.startsWith('**') && seg.endsWith('**') && seg.length > 4
     const bold = !em && seg.startsWith('__') && seg.endsWith('__') && seg.length > 4
     const italic = !em && !bold && seg.startsWith('*') && seg.endsWith('*') && seg.length > 2
     const raw = em || bold ? seg.slice(2, -2) : italic ? seg.slice(1, -1) : seg
+    const startsTight = !/^\s/.test(raw)
     raw.split('\n').forEach((line, li) => {
-      if (li > 0) out.push({ br: true, blank: line.trim() === '' })
-      for (const w of line.split(/\s+/)) if (w) out.push({ word: w, style: { em, bold, italic } })
+      if (li > 0) { out.push({ br: true, blank: line.trim() === '' }); prevEndsTight = false }
+      let first = true
+      for (const w of line.split(/\s+/)) {
+        if (!w) continue
+        const glue = first && li === 0 && startsTight && prevEndsTight && out.length > 0 && !isBr(out[out.length - 1])
+        out.push({ word: w, style: { em, bold, italic }, ...(glue ? { glue: true } : {}) })
+        first = false
+      }
     })
+    prevEndsTight = !/\s$/.test(raw) && raw.length > 0
   }
   return out
 }
@@ -47,13 +58,13 @@ export type Measure = (text: string, style: RunStyle) => number
 
 const sameStyle = (a: RunStyle, b: RunStyle) => a.em === b.em && a.bold === b.bold && a.italic === b.italic
 
-type WordTok = { word: string; style: RunStyle }
+type WordTok = { word: string; style: RunStyle; glue?: boolean }
 
 function lineWidth(words: WordTok[], measure: Measure): number {
   let w = 0
   for (let i = 0; i < words.length; i++) {
     w += measure(words[i].word, words[i].style)
-    if (i < words.length - 1) w += measure(' ', words[i].style)
+    if (i < words.length - 1 && !words[i + 1].glue) w += measure(' ', words[i].style)
   }
   return w
 }
@@ -64,6 +75,12 @@ function wrapOnce(tokens: Tok[], maxWidth: number, measure: Measure): { lines: W
   for (const t of tokens) {
     if (isBr(t)) { if (t.blank) blankAt.add(lines.length); lines.push([]); continue }
     const cur = lines[lines.length - 1]
+    // Приклеенный знак («рублей**.») не отрывается от слова: переносим вместе.
+    if (t.glue && cur.length > 0 && lineWidth([...cur, t], measure) > maxWidth) {
+      const prev = cur.pop()!
+      lines.push([prev, t])
+      continue
+    }
     if (cur.length > 0 && lineWidth([...cur, t], measure) > maxWidth) lines.push([t])
     else cur.push(t)
   }
@@ -109,7 +126,7 @@ function toRuns(words: WordTok[]): Run[] {
   const runs: Run[] = []
   words.forEach((w, i) => {
     const last = runs[runs.length - 1]
-    const sep = i === 0 ? '' : ' '
+    const sep = i === 0 || w.glue ? '' : ' '
     if (last && sameStyle(last, w.style)) last.text += sep + w.word
     else {
       // Пробел между разными стилями остаётся в предыдущем пробеге — так

@@ -56,6 +56,14 @@ describe('lib/carousel/textLayout — один перенос для превь�
     expect(lines[0].runs.map((r) => [r.text, r.em])).toEqual([['ОНА ', false], ['БЫЛА ', true], ['МОИМ', false]])
   })
 
+  it('знак препинания сразу после маркера клеится к слову, а не висит через пробел', () => {
+    const lines = layoutText('занятие за **2 500 рублей**.', { maxWidth: 1000, measure })
+    expect(lines[0].runs.map((r) => r.text)).toEqual(['занятие за ', '2 500 рублей', '.'])
+    // и не отрывается при переносе: «рублей» и «.» уходят на новую строку вместе
+    const tight = layoutText('раз два **три**.', { maxWidth: 70, measure }) // «раз два» = 64; +«три.» не влезает
+    expect(tight.map((l) => l.runs.map((r) => r.text).join(''))).toEqual(['раз два', 'три.'])
+  })
+
   it('геометрия плашки одна на обе стороны', () => {
     const m = textMetrics(56)
     expect(m.padX).toBe(Math.round(56 * 0.26))
