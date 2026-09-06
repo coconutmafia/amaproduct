@@ -30,7 +30,11 @@ export async function POST(request: Request) {
     const returning = prof ? isReturningCustomer(prof) : false
     const noDemo = returning ? prodamusLinkNoDemo(plan as PaidPlan) : undefined
     if (returning && !noDemo) {
-      await captureMessage('prodamus checkout: возвращающийся клиент получит ДЕМО — нет PRODAMUS_LINK_' + plan.toUpperCase() + '_NODEMO', 'warning', { userId: user.id, plan })
+      // Решение Матвея 06.09: пока в ЛК Продамуса нет продукта без демо —
+      // возвращающемуся НЕ продаём (иначе он оформит себе второе демо).
+      // Кнопка на витрине в этом состоянии выключена с подписью «подключается».
+      await captureMessage('prodamus checkout: возвращающийся клиент — нет PRODAMUS_LINK_' + plan.toUpperCase() + '_NODEMO, оплата отклонена', 'warning', { userId: user.id, plan })
+      return NextResponse.json({ error: 'nodemo_not_configured' }, { status: 503 })
     }
     const link = noDemo || prodamusLink(plan as PaidPlan)
     const subId = prodamusSubId(plan as PaidPlan)

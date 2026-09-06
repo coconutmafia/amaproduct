@@ -18,7 +18,12 @@ describe('демо только новым', () => {
     expect(read('app/api/billing/checkout/route.ts')).toContain("plan === 'solo' && !returning && soloTrialDays() > 0")
     const pr = read('app/api/billing/prodamus/checkout/route.ts')
     expect(pr).toContain('prodamusLinkNoDemo(plan as PaidPlan)')
-    expect(pr).toContain('_NODEMO')
+    // решение 06.09: без продукта без демо возвращающемуся НЕ продаём (503), а не даём демо
+    expect(pr).toContain("{ error: 'nodemo_not_configured' }, { status: 503 }")
+    expect(read('app/(dashboard)/pricing/page.tsx')).toContain('ruReady')
+    const pc = read('components/pricing/PricingClient.tsx')
+    expect(pc).toContain('Оплата картой РФ подключается')
+    expect(pc).toContain('Докупка картой РФ подключается')
   })
 })
 

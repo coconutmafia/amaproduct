@@ -1,7 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { PricingClient } from '@/components/pricing/PricingClient'
-import { PLAN_CONFIG } from '@/lib/generations-config'
+import { PLAN_CONFIG, PAID_PLANS, type PaidPlan } from '@/lib/generations-config'
+import { isReturningCustomer } from '@/lib/billing/planState'
+import { prodamusLinkNoDemo, prodamusTopupLink } from '@/lib/billing/prodamus'
 import type { SubscriptionPlan } from '@/lib/generations-config'
 
 export default async function PricingPage() {
@@ -11,11 +13,19 @@ export default async function PricingPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('subscription_tier, subscription_status, payment_provider, bonus_generations, generations_used, generations_reset_at')
+    .select('subscription_tier, subscription_status, payment_provider, provider_subscription_id, current_period_end, bonus_generations, generations_used, generations_reset_at')
     .eq('id', session.user.id)
     .single()
 
   const currentPlan = (profile?.subscription_tier ?? 'trial') as SubscriptionPlan
+  // Возвращающийся клиент (06.09): картой РФ продаём только через продукт без
+  // демо — пока ссылки нет в env, кнопка на витрине выключена. Докупка — тоже
+  // по своей ссылке. Stripe (зарубежная карта) без демо уже работает.
+  const returning = profile ? isReturningCustomer(profile) : false
+  const ruReady = Object.fromEntries(PAID_PLANS.map((p: PaidPlan) => [p, {
+    buy: returning ? !!prodamusLinkNoDemo(p) : true,
+    topup: !!prodamusTopupLink(p),
+  }])) as Record<PaidPlan, { buy: boolean; topup: boolean }>
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto">
@@ -29,6 +39,8 @@ export default async function PricingPage() {
         userEmail={session.user.email ?? ''}
         currentPlan={currentPlan}
         subscriptionStatus={profile?.subscription_status ?? null}
+        returning={returning}
+        ruReady={ruReady}
         paymentProvider={profile?.payment_provider ?? null}
         bonusGenerations={profile?.bonus_generations ?? 0}
         generationsUsed={profile?.generations_used ?? 0}

@@ -33,6 +33,10 @@ interface Props {
   currentPlan: SubscriptionTier
   subscriptionStatus?: string | null
   paymentProvider?: string | null
+  /** возвращающийся клиент — картой РФ только через продукт без демо (06.09) */
+  returning?: boolean
+  /** готовность оплаты картой РФ по тарифам: покупка (для возвращающихся) и докупка */
+  ruReady?: Record<string, { buy: boolean; topup: boolean }>
   bonusGenerations: number
   generationsUsed: number
   monthlyLimit: number
@@ -41,7 +45,7 @@ interface Props {
 }
 
 export function PricingClient({
-  userEmail, currentPlan, subscriptionStatus, paymentProvider, bonusGenerations, generationsUsed, monthlyLimit, plans, resetAt,
+  userEmail, currentPlan, subscriptionStatus, paymentProvider, returning = false, ruReady, bonusGenerations, generationsUsed, monthlyLimit, plans, resetAt,
 }: Props) {
   // Подписка реально действует? Иначе свой же тариф обязан быть покупаемым
   // (Виктория 06.09: view_only на Соло — кнопка Соло была выключена).
@@ -95,7 +99,9 @@ export function PricingClient({
       const { res, d } = await tryProvider(endpoint, plan)
 
       if (res.ok && d.url) { window.location.href = d.url; return }
-      if (notConfigured(res.status, d.error)) {
+      if (d.error === 'nodemo_not_configured') {
+        toast.info('Оплата картой РФ для возобновления подключается — 1–2 дня. Зарубежной картой можно оплатить уже сейчас.')
+      } else if (notConfigured(res.status, d.error)) {
         toast.info(region === 'ru' ? 'Оплата картой РФ скоро подключится.' : 'Оплата зарубежной картой скоро подключится.')
       } else {
         // Surface the real reason so a screenshot pinpoints the issue.
@@ -259,33 +265,47 @@ export function PricingClient({
                 </ul>
 
                 {/* Докупка объёма СВОЕГО действующего тарифа раньше срока (06.09) */}
-                {isCurrent && (
-                  <Button
-                    className="w-full"
-                    variant="default"
-                    disabled={upgrading !== null}
-                    onClick={handleTopup}
-                  >
-                    {upgrading === key
-                      ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" />
-                      : `Докупить ещё ${cfg.generations} единиц — ${region === 'ru' ? `${cfg.priceRub.toLocaleString('ru-RU')} ₽` : `$${cfg.price}`}`}
-                  </Button>
-                )}
+                {isCurrent && (() => {
+                  const topupBlocked = region === 'ru' && !(ruReady?.[key]?.topup ?? false)
+                  return (
+                    <Button
+                      className="w-full"
+                      variant="default"
+                      disabled={upgrading !== null || topupBlocked}
+                      onClick={handleTopup}
+                      title={topupBlocked ? 'Докупка картой РФ подключается' : undefined}
+                    >
+                      {upgrading === key
+                        ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" />
+                        : topupBlocked
+                        ? 'Докупка картой РФ подключается'
+                        : `Докупить ещё ${cfg.generations} единиц — ${region === 'ru' ? `${cfg.priceRub.toLocaleString('ru-RU')} ₽` : `$${cfg.price}`}`}
+                    </Button>
+                  )
+                })()}
+                {(() => {
+                  // Возвращающемуся по РФ — только через продукт без демо (06.09)
+                  const buyBlocked = returning && region === 'ru' && !(ruReady?.[key]?.buy ?? true)
+                  return (
                 <Button
                   className="w-full"
                   variant={isCurrent ? 'outline' : key === 'solo' ? 'default' : 'outline'}
-                  disabled={isCurrent || upgrading !== null}
+                  disabled={isCurrent || upgrading !== null || buyBlocked}
                   onClick={() => handleUpgrade(key)}
                 >
                   {upgrading === key
                     ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" />
                     : isCurrent
                     ? 'Текущий план'
+                    : buyBlocked
+                    ? 'Оплата картой РФ подключается'
                     : isOwnLapsed
                     ? `Возобновить «${cfg.label}»`
                     : `Подключить «${cfg.label}»`
                   }
                 </Button>
+                  )
+                })()}
               </CardContent>
             </Card>
           )
