@@ -3844,6 +3844,12 @@ async function ruLinksProbe() {
     const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
     const describe = (u) => { try { const x = new URL(u); return `${x.host}${x.pathname} [${['order_id', 'customer_email', 'urlNotification'].filter(k => x.searchParams.has(k)).join(', ')}]` } catch { return String(u) } }
     let ok = true
+    // Витрина глазами возвращающегося: кнопки «Возобновить»/«Оформить» живые,
+    // а не «Оплата картой РФ подключается».
+    const page1 = await fetch(`${APP}/pricing`, { headers: { cookie } }).then(r => r.text()).catch(() => '')
+    const off1 = (page1.match(/подключается/g) || []).length
+    log(`${off1 === 0 ? '✅' : '❌'} 2. витрина возвращающегося: «подключается» ×${off1}, «Возобновить» ${page1.includes('Возобновить') ? 'есть' : 'НЕТ'}`)
+    if (off1 > 0) ok = false
     for (const plan of ['solo', 'pro', 'producer']) {
       const r = await fetch(`${APP}/api/billing/prodamus/checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie, origin: APP }, body: JSON.stringify({ plan }) })
       const b = await r.json().catch(() => ({}))
@@ -3852,6 +3858,10 @@ async function ruLinksProbe() {
     }
     const act = await api(`/rest/v1/profiles?id=eq.${userId}`, { method: 'PATCH', body: JSON.stringify({ subscription_status: 'active', current_period_end: new Date(Date.now() + 20 * 86400000).toISOString() }) })
     if (act.status >= 300) { log('❌ 3. профиль не перевёлся в active:', act.status); return }
+    const page2 = await fetch(`${APP}/pricing`, { headers: { cookie } }).then(r => r.text()).catch(() => '')
+    const off2 = (page2.match(/подключается/g) || []).length
+    log(`${off2 === 0 && page2.includes('Докупить') ? '✅' : '❌'} 3. витрина действующего: «Докупить» ${page2.includes('Докупить') ? 'есть' : 'НЕТ'}, «подключается» ×${off2}`)
+    if (off2 > 0 || !page2.includes('Докупить')) ok = false
     for (const plan of ['solo', 'pro', 'producer']) {
       await api(`/rest/v1/profiles?id=eq.${userId}`, { method: 'PATCH', body: JSON.stringify({ subscription_tier: plan }) })
       const r = await fetch(`${APP}/api/billing/topup`, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie, origin: APP }, body: JSON.stringify({ region: 'ru' }) })
