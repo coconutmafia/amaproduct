@@ -155,8 +155,12 @@ describe('свип класса: каждая поверхность держи�
   it('FreeCanvas-превью зеркалит серверные поправки (превью = экспорт)', () => {
     const fc = read('components/carousel/FreeCanvas.tsx')
     expect(fc).toContain("from '@/lib/carousel/contrast'")
-    expect(fc).toMatch(/resolveBrandText\(brand\.bg, brand\.text\)/)
-    expect(fc).toMatch(/resolveBrandAccent\(brand\.bg, brand\.accentColor\)/)
+    // 06.09: поправки считаются от ЭФФЕКТИВНОГО фона (Бумага/Тёмный/Светлый и
+    // свой цвет фона) в одном месте — effectiveTheme, оно же кормит экспорт.
+    expect(fc).toMatch(/resolveBrandText\(bg, preferredText\)/)
+    expect(fc).toMatch(/resolveBrandAccent\(bg, brand\.accentColor\)/)
+    expect(fc).toContain('export function effectiveTheme(')
+    expect(fc).toMatch(/const eff = effectiveTheme\(v, brand\)/)
   })
   it('pickPlacement проверяет тёмность брендового текста', () => {
     const pb = read('lib/photoBands.ts')

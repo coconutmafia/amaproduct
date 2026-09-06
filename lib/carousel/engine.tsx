@@ -12,6 +12,8 @@ import { join } from 'node:path'
 import type { ReactElement } from 'react'
 import { ArrowSvg, Badge, SHAPE_ASPECT, type FreeShape } from './shapes'
 import { FONTS, fontFamilyOf } from '@/lib/fonts'
+import { textMetrics, type LayoutLine } from '@/lib/carousel/textLayout'
+import { cropGeometry, frameRadius } from '@/lib/carousel/imageGeometry'
 import { readableTextOn, resolveBrandAccent, resolveBrandText } from './contrast'
 
 // ── Formats ─────────────────────────────────────────────────────────────────────
@@ -566,6 +568,17 @@ export interface FreeBlock {
   // нет курсива»). По умолчанию — как раньше: жирный без курсива.
   weight?: 'normal' | 'bold'
   italic?: boolean
+  // 06.09 (Марина): готовые строки от клиента — перенос по реальным ширинам
+  // (lib/carousel/textLayout), сервер их НЕ переносит заново; заглавные;
+  // шрифт блока; у картинок — скругление (доля меньшей стороны, 0.5 = круг),
+  // прозрачность и кадрирование (зум+сдвиг в рамке aspect, srcAspect = исходник).
+  lines?: LayoutLine[]
+  uppercase?: boolean
+  font?: string
+  radius?: number
+  opacity?: number
+  crop?: { zoom: number; x: number; y: number }
+  srcAspect?: number
 }
 
 export interface SlideSpec {
@@ -862,6 +875,41 @@ function Scheme({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: 
   )
 }
 
+// ── Готовые строки текста (06.09) ───────────────────────────────────────────────
+// Клиент разложил текст на строки по реальным ширинам (тот же TTF, что здесь);
+// рендерим строки как есть: whiteSpace:'pre' — пробелы настоящие, переноса нет.
+// Геометрия (поля плашки, межстрочные) — общая с превью: textMetrics().
+function FreeLines({ lines, size, plate, plateBg, platedColor, plainColor, accent, align, weight, accentWeight, italic }: {
+  lines: LayoutLine[]; size: number; plate: boolean; plateBg: string; platedColor: string; plainColor: string
+  accent: string; align: 'left' | 'center' | 'right'; weight: number; accentWeight: number; italic: boolean
+}): ReactElement {
+  const m = textMetrics(size)
+  const alignItems = align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center'
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems, width: '100%' }}>
+      {lines.map((ln, li) => ln.blank ? (
+        <div key={li} style={{ display: 'flex', width: '100%', height: plate ? m.blankPlate : m.blankPlain }} />
+      ) : (
+        <div key={li} style={{
+          display: 'flex', flexWrap: 'nowrap', whiteSpace: 'pre', fontSize: size,
+          lineHeight: plate ? m.plateLineHeight : m.plainLineHeight,
+          ...(plate ? { backgroundColor: plateBg, padding: `${m.padY}px ${m.padX}px`, borderRadius: m.radius } : {}),
+          marginBottom: li === lines.length - 1 ? 0 : plate ? 0 : m.plainGap,
+        }}>
+          {ln.runs.map((r, i) => (
+            <div key={i} style={{
+              display: 'flex', whiteSpace: 'pre', fontSize: size,
+              color: r.em ? accent : plate ? platedColor : plainColor,
+              fontWeight: r.em ? accentWeight : r.bold ? Math.max(weight, 800) : weight,
+              fontStyle: italic || r.italic ? 'italic' : 'normal',
+            }}>{r.text}</div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Free (9:16) — text / shapes / images placed anywhere (drag editor) ──────────
 // Element library (step b): besides text, blocks can be draggable arrows, curved
 // arrows, numbered badges (shape) and stickers / illustrations (image). Drag /
@@ -901,9 +949,22 @@ function Free({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Si
         if (type === 'image' && b.src) {
           const w = Math.round((b.widthPct ?? 0.4) * W)
           const h = Math.round(w / (b.aspect || 1))
+          const radius = frameRadius(w, h, b.radius)
+          const opacity = typeof b.opacity === 'number' ? Math.min(1, Math.max(0.05, b.opacity)) : 1
+          if (b.crop) {
+            // Кадрирование: рамка режет (overflow hidden), картинка cover-ом с зумом и сдвигом.
+            const g = cropGeometry(w, h, b.srcAspect || b.aspect || 1, b.crop)
+            return (
+              <div key={i} style={{ position: 'absolute', left, top, width: w, height: h, display: 'flex', overflow: 'hidden', borderRadius: radius, opacity, ...rot }}>
+                <div style={{ position: 'absolute', left: g.left, top: g.top, width: g.iw, height: g.ih, display: 'flex' }}>
+                  <img src={b.src} width={g.iw} height={g.ih} style={{ objectFit: 'fill' }} alt="" />
+                </div>
+              </div>
+            )
+          }
           return (
-            <div key={i} style={{ position: 'absolute', left, top, width: w, height: h, display: 'flex', ...rot }}>
-              <img src={b.src} width={w} height={h} style={{ objectFit: 'contain' }} alt="" />
+            <div key={i} style={{ position: 'absolute', left, top, width: w, height: h, display: 'flex', opacity, ...rot }}>
+              <img src={b.src} width={w} height={h} style={{ objectFit: 'contain', borderRadius: radius }} alt="" />
             </div>
           )
         }
@@ -926,13 +987,21 @@ function Free({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Si
 
         // text / icon (default)
         const blockW = Math.round((b.widthPct ?? 0.8) * W)
+        const weight = b.weight === 'normal' ? 400 : 800
+        const accentWeight = b.weight === 'normal' ? 700 : 900
+        const family = b.font ? fontFamilyOf(b.font) : theme.fontFamily
+        const text = b.uppercase ? (b.text || '').toUpperCase() : (b.text || '')
         return (
-          <div key={i} style={{ position: 'absolute', left, top, width: blockW, display: 'flex', ...rot }}>
-            {b.plate
-              ? <StoryText text={b.text || ''} size={b.size ?? 56} accent={theme.accent} plateBg={theme.bg}
-                  platedColor={theme.text} plainColor={b.color || '#FFFFFF'} defaultPlated maxWidth={blockW}
-                  weight={b.weight === 'normal' ? 400 : 800} italic={!!b.italic} />
-              : <RichText text={b.text || ''} o={{ size: b.size ?? 56, weight: b.weight === 'normal' ? 400 : 800, accentWeight: b.weight === 'normal' ? 700 : 900, color: b.color || '#FFFFFF', accent: theme.accent, align: b.align || 'left', lineGap: 6, italic: !!b.italic }} />}
+          <div key={i} style={{ position: 'absolute', left, top, width: blockW, display: 'flex', fontFamily: family, ...rot }}>
+            {Array.isArray(b.lines) && b.lines.length > 0
+              ? <FreeLines lines={b.lines} size={b.size ?? 56} plate={!!b.plate} plateBg={theme.bg} platedColor={theme.text}
+                  plainColor={b.color || '#FFFFFF'} accent={theme.accent} align={b.align || 'left'}
+                  weight={weight} accentWeight={accentWeight} italic={!!b.italic} />
+              : b.plate
+                ? <StoryText text={text} size={b.size ?? 56} accent={theme.accent} plateBg={theme.bg}
+                    platedColor={theme.text} plainColor={b.color || '#FFFFFF'} defaultPlated maxWidth={blockW}
+                    weight={weight} italic={!!b.italic} />
+                : <RichText text={text} o={{ size: b.size ?? 56, weight, accentWeight, color: b.color || '#FFFFFF', accent: theme.accent, align: b.align || 'left', lineGap: 6, italic: !!b.italic }} />}
           </div>
         )
       })}

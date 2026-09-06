@@ -11,7 +11,7 @@ import { toast } from 'sonner'
 import { friendlyError } from '@/lib/friendlyError'
 import { Loader2, Plus, Copy, Trash2, GalleryHorizontalEnd, Images } from 'lucide-react'
 import {
-  FreeCanvas, blankSlide, slideHasBg, exportBrandFor, buildFreeSlide,
+  FreeCanvas, blankSlide, slideHasBg, exportBrandFor, buildFreeSlide, prepareFontsFor,
   type SlideValue, type Brand,
 } from '@/components/carousel/FreeCanvas'
 import { saveBlobSmart } from '@/lib/utils/saveFile'
@@ -77,9 +77,11 @@ export function CarouselDesigner({ projectId }: { projectId: string }) {
       const blobs: Blob[] = []
       // Sequential keeps memory + the render function calm; carousels are ≤12 slides.
       for (let i = 0; i < slides.length; i++) {
+        // Строки текста считаются на клиенте тем же шрифтом, что рендерит сервер (WYSIWYG).
+        await prepareFontsFor(slides[i], brand)
         const res = await fetch('/api/carousel/render', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ slide: buildFreeSlide(slides[i], i, slides.length), format: 'carousel', projectId, brand: exportBrandFor(slides[i], brand) }),
+          body: JSON.stringify({ slide: buildFreeSlide(slides[i], i, slides.length, brand), format: 'carousel', projectId, brand: exportBrandFor(slides[i], brand) }),
         })
         if (!res.ok) throw new Error(`Слайд ${i + 1}: не удалось собрать`)
         blobs.push(await res.blob())

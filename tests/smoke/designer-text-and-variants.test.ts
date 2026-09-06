@@ -34,7 +34,8 @@ describe('начертание текста в дизайнере (Ж/К)', () =
     const src = readFileSync(join(process.cwd(), 'components/carousel/FreeCanvas.tsx'), 'utf8')
     expect(src).toContain('aria-label="жирный"')
     expect(src).toContain('aria-label="курсив"')
-    expect(src).toContain('FONT_HAS_ITALIC[(brand.font')
+    // 06.09: курсив решает шрифт БЛОКА (свой шрифт на блок), с фолбэком на бренд
+    expect(src).toContain('FONT_HAS_ITALIC[(sel.font ?? brand.font')
     expect(src).toContain('weight: b.weight, italic: b.italic')
   })
 })

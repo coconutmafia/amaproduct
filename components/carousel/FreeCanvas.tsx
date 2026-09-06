@@ -9,20 +9,28 @@
 // scale + rotate (2 fingers). The slide DATA is controlled (value / onChange) so
 // a parent can hold one slide (story) or an array of them (carousel); only
 // UI-local state (selection, panels, upload flags) lives inside.
+//
+// WYSIWYG (06.09, Марина: «сохраняю — слайд меняется»): строки текста считает
+// ОДИН алгоритм (lib/carousel/textLayout) по реальным ширинам глифов того же
+// TTF, что рендерит сервер; готовые строки уезжают в экспорт, сервер их не
+// переносит заново. Геометрия плашек/межстрочных — общая (textMetrics).
 
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useMemo, type ReactElement } from 'react'
 import { toast } from 'sonner'
 import { friendlyError } from '@/lib/friendlyError'
 import {
-  Upload, Loader2, Plus, Trash2, Copy, RotateCw,
-  ArrowUpRight, Spline, Hash, Smile, Image as ImageIcon, Sparkles,
+  Upload, Loader2, Plus, Trash2, Copy, RotateCw, Crop as CropIcon,
+  ArrowUpRight, Spline, Hash, Smile, Image as ImageIcon, Sparkles, AlignCenterHorizontal,
 } from 'lucide-react'
 import { downscaleImage } from '@/lib/downscaleImage'
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { ArrowSvg, Badge, SHAPE_ASPECT, type FreeShape } from '@/lib/carousel/shapes'
 import { resolveBrandAccent, resolveBrandText } from '@/lib/carousel/contrast'
-import { fontFamilyOf, FONT_HAS_ITALIC, type FontKey } from '@/lib/fonts'
+import { FONT_HAS_ITALIC, FONT_KEYS, FONTS, type FontKey } from '@/lib/fonts'
 import { UNIT_HINTS } from '@/components/billing/UnitCostHint'
+import { layoutText, textMetrics, wrapWidthFor, type LayoutLine } from '@/lib/carousel/textLayout'
+import { cropGeometry, frameRadius, type Crop } from '@/lib/carousel/imageGeometry'
+import { editorFamilyOf, ensureFonts, makeMeasure } from '@/lib/carousel/measureClient'
 
 let _idc = 0
 const newId = () => `b${++_idc}`
@@ -30,6 +38,7 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
 
 export type BType = 'text' | 'image' | 'shape'
 export type BgMode = 'photo' | 'split' | 'paper' | 'dark' | 'light'
+export type Align = 'left' | 'center' | 'right'
 
 export interface Block {
   id: string
@@ -37,13 +46,22 @@ export interface Block {
   text: string                 // text content / number for a 'badge'
   src?: string                 // image source (type 'image')
   shape?: FreeShape            // shape kind (type 'shape')
-  aspect?: number              // w/h for image & shape
+  aspect?: number              // w/h of the FRAME for image & shape (= source ratio until cropped)
   xPct: number; yPct: number; widthPct: number
-  size: number; color: string; plate: boolean; align: 'left' | 'center'; rotation: number
+  size: number; color: string; plate: boolean; align: Align; rotation: number
   // Начертание (Марина 24.08: «весь текст жирный, нельзя убрать, нет курсива»).
   // По умолчанию — жирный без курсива, как раньше.
   weight?: 'normal' | 'bold'
   italic?: boolean
+  // 06.09 (Марина): заглавные, шрифт блока; у картинок — скругление (доля
+  // меньшей стороны, 0.5 = круг), прозрачность, кадрирование (зум + сдвиг в
+  // рамке aspect; srcAspect — пропорции исходника).
+  uppercase?: boolean
+  font?: FontKey
+  radius?: number
+  opacity?: number
+  crop?: Crop
+  srcAspect?: number
 }
 export interface Brand { accentColor: string; bg: string; text: string; bgStyle?: string; font?: string; accentStyle?: 'gradient' | 'flat'; swipeHint?: boolean; swipeLabel?: string }
 
@@ -54,10 +72,26 @@ export interface SlideValue {
   photoTop: string | null
   photoBottom: string | null
   blocks: Block[]
+  // Свой цвет фона для «Бумага/Тёмный/Светлый» (Марина 06.09) — null = как в бренде.
+  bgColor?: string | null
 }
-export const blankSlide = (): SlideValue => ({ bgMode: 'photo', photoUrl: null, photoTop: null, photoBottom: null, blocks: [] })
+export const blankSlide = (): SlideValue => ({ bgMode: 'photo', photoUrl: null, photoTop: null, photoBottom: null, blocks: [], bgColor: null })
 
 const ICONS = ['⚠️', '✅', '❌', '💡', '🔥', '⭐', '👉', '💰', '📌', '❤️', '🎯', '✨', '🙌', '🤔', '📈', '🎁']
+// Палитра сверх цветов бренда (Марина: «только чёрный, белый и акцентный»).
+export const PALETTE = ['#FFFFFF', '#1A1A1A', '#F5F0E8', '#EC1E8C', '#FF6B35', '#FFC107', '#2ECC71', '#00BCD4', '#3B82F6', '#8B5CF6', '#E11D48', '#9E9E9E']
+const DARK_BG = '#121214'
+const CANVAS_W = 1080
+
+// ── Effective colours per background mode — ONE place for preview + export ────
+export function effectiveTheme(v: SlideValue, brand: Brand): { bg: string; text: string; accent: string } {
+  const bg = v.bgMode === 'dark' ? (v.bgColor || DARK_BG)
+    : v.bgMode === 'light' || v.bgMode === 'paper' ? (v.bgColor || brand.bg)
+    : brand.bg
+  const preferredText = v.bgMode === 'dark' && !v.bgColor ? '#FFFFFF' : brand.text
+  // Те же поправки читаемости, что themeFromBrand на сервере (превью = экспорт).
+  return { bg, text: resolveBrandText(bg, preferredText), accent: resolveBrandAccent(bg, brand.accentColor) }
+}
 
 // ── Export helpers (shared by story + carousel exporters) ───────────────────────
 export function slideHasBg(v: SlideValue): boolean {
@@ -66,14 +100,40 @@ export function slideHasBg(v: SlideValue): boolean {
 export function exportBrandFor(v: SlideValue, brand: Brand) {
   // Non-photo backgrounds render via the engine's Backdrop using these hints.
   // font + accentStyle travel with every bg mode so the chosen font / accent
-  // fill apply to the free designer too.
+  // fill apply to the free designer too. bg/text — ровно те, что видит превью.
   const base = { accentColor: brand.accentColor, font: brand.font, accentStyle: brand.accentStyle, swipeHint: brand.swipeHint, swipeLabel: brand.swipeLabel }
-  return v.bgMode === 'paper' ? { ...base, text: brand.text, bgStyle: 'paper' }
-    : v.bgMode === 'dark' ? { ...base, bg: '#121214', text: '#FFFFFF', bgStyle: 'solid' }
-    : v.bgMode === 'light' ? { ...base, bg: brand.bg, text: brand.text, bgStyle: 'solid' }
+  const eff = effectiveTheme(v, brand)
+  return v.bgMode === 'paper' ? { ...base, bg: eff.bg, text: brand.text, bgStyle: 'paper' }
+    : v.bgMode === 'dark' ? { ...base, bg: eff.bg, text: v.bgColor ? brand.text : '#FFFFFF', bgStyle: 'solid' }
+    : v.bgMode === 'light' ? { ...base, bg: eff.bg, text: brand.text, bgStyle: 'solid' }
     : { ...base, bg: brand.bg, text: brand.text, bgStyle: brand.bgStyle }
 }
-export function buildFreeSlide(v: SlideValue, index = 0, total = 1) {
+
+const weightsOf = (b: Block) => (b.weight === 'normal' ? { weight: 400, accentWeight: 700 } : { weight: 800, accentWeight: 900 })
+
+/** Строки текстового блока по реальным ширинам (в px холста 1080). */
+export function layoutBlock(b: Block, brand: Brand): LayoutLine[] {
+  const { weight, accentWeight } = weightsOf(b)
+  const measure = makeMeasure({ family: editorFamilyOf(b.font ?? brand.font), size: b.size, weight, accentWeight, italic: !!b.italic })
+  return layoutText(b.text, { maxWidth: wrapWidthFor(b.widthPct * CANVAS_W, b.size, b.plate), measure, uppercase: b.uppercase })
+}
+
+/** Перед экспортом дождаться начертаний всех текстовых блоков — иначе canvas меряет запасным шрифтом. */
+export async function prepareFontsFor(v: SlideValue, brand: Brand): Promise<void> {
+  const fams = new Map<string, { weights: Set<number>; italic: boolean }>()
+  for (const b of v.blocks) {
+    if (b.type !== 'text') continue
+    const fam = editorFamilyOf(b.font ?? brand.font)
+    const { weight, accentWeight } = weightsOf(b)
+    const e = fams.get(fam) ?? { weights: new Set<number>(), italic: false }
+    e.weights.add(weight); e.weights.add(accentWeight); e.weights.add(800)
+    if (b.italic || /\*[^*]+\*/.test(b.text)) e.italic = true
+    fams.set(fam, e)
+  }
+  await Promise.all([...fams].map(([fam, e]) => ensureFonts(fam, [...e.weights], e.italic)))
+}
+
+export function buildFreeSlide(v: SlideValue, index = 0, total = 1, brand?: Brand) {
   return {
     kind: 'free' as const, index, total,
     ...(v.bgMode === 'photo' ? { photoUrl: v.photoUrl } : {}),
@@ -83,6 +143,9 @@ export function buildFreeSlide(v: SlideValue, index = 0, total = 1) {
       xPct: b.xPct, yPct: b.yPct, widthPct: b.widthPct, size: b.size,
       color: b.color, plate: b.plate, align: b.align, rotation: b.rotation,
       weight: b.weight, italic: b.italic,
+      uppercase: b.uppercase, font: b.font, radius: b.radius, opacity: b.opacity, crop: b.crop, srcAspect: b.srcAspect,
+      // Готовые строки — сервер рендерит их как есть (WYSIWYG).
+      ...(b.type === 'text' && brand && typeof document !== 'undefined' ? { lines: layoutBlock(b, brand) } : {}),
     })),
   }
 }
@@ -100,28 +163,40 @@ async function imageAspect(file: File): Promise<number> {
   } catch { return 1 }
 }
 
-function PreviewText({ text, plate, color, brand, weight = 'bold', italic = false }: { text: string; plate: boolean; color: string; brand: Brand; weight?: 'normal' | 'bold'; italic?: boolean }) {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean)
-  const base = weight === 'normal' ? 400 : 800
-  const emW = weight === 'normal' ? 700 : 900
-  // Те же поправки читаемости, что themeFromBrand на сервере (превью = экспорт):
-  // нечитаемая пара из кита не должна давать невидимый текст ни там, ни тут.
-  // Акцент резолвится на уровне «темы», как на сервере — один цвет и на
-  // плашке, и вне её.
-  const platedText = resolveBrandText(brand.bg, brand.text)
-  const accent = resolveBrandAccent(brand.bg, brand.accentColor)
-  const nodes = parts.map((p, i) => {
-    const em = p.startsWith('**') && p.endsWith('**')
-    return <span key={i} style={{ color: em ? accent : (plate ? platedText : color), fontWeight: em ? emW : base, fontStyle: italic ? 'italic' : 'normal' }}>{em ? p.slice(2, -2) : p}</span>
-  })
-  if (!plate) return <span>{nodes}</span>
+// Превью строк: та же геометрия, что FreeLines в движке, в масштабе холста.
+function PreviewLines({ lines, size, scale, plate, plateBg, platedColor, plainColor, accent, align, weight, accentWeight, italic, fontFamily }: {
+  lines: LayoutLine[]; size: number; scale: number; plate: boolean; plateBg: string; platedColor: string; plainColor: string
+  accent: string; align: Align; weight: number; accentWeight: number; italic: boolean; fontFamily: string
+}): ReactElement {
+  const m = textMetrics(size)
+  const s = (px: number) => px * scale
+  const alignItems = align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center'
   return (
-    <span style={{
-      background: brand.bg, padding: '0.14em 0.26em', borderRadius: '0.14em',
-      boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone',
-    } as React.CSSProperties}>{nodes}</span>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems, width: '100%', fontFamily }}>
+      {lines.map((ln, li) => ln.blank ? (
+        <div key={li} style={{ width: '100%', height: s(plate ? m.blankPlate : m.blankPlain) }} />
+      ) : (
+        <div key={li} style={{
+          display: 'flex', flexWrap: 'nowrap', whiteSpace: 'pre', fontSize: s(size),
+          lineHeight: plate ? m.plateLineHeight : m.plainLineHeight,
+          ...(plate ? { background: plateBg, padding: `${s(m.padY)}px ${s(m.padX)}px`, borderRadius: s(m.radius) } : {}),
+          marginBottom: li === lines.length - 1 ? 0 : plate ? 0 : s(m.plainGap),
+        }}>
+          {ln.runs.map((r, i) => (
+            <span key={i} style={{
+              whiteSpace: 'pre',
+              color: r.em ? accent : plate ? platedColor : plainColor,
+              fontWeight: r.em ? accentWeight : r.bold ? Math.max(weight, 800) : weight,
+              fontStyle: italic || r.italic ? 'italic' : 'normal',
+            }}>{r.text}</span>
+          ))}
+        </div>
+      ))}
+    </div>
   )
 }
+
+const FONT_SHORT: Record<string, string> = { montserrat: 'Montserrat', 'pt-serif': 'PT Serif', 'pt-sans-narrow': 'PT Sans Narrow', yeseva: 'Yeseva One', marck: 'Marck Script' }
 
 export function FreeCanvas({ projectId, brand, value, onChange, format = 'story', photos }: {
   projectId: string
@@ -156,8 +231,15 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
   // она может не подходить») — грид на выбор, тап = применить.
   const [aiVariants, setAiVariants] = useState<{ url: string; aspect: number; mode: 'sticker' | 'background' }[]>([])
   const [canvasW, setCanvasW] = useState(360)
+  // Направляющие при перетаскивании: центр холста по вертикали/горизонтали.
+  const [guides, setGuides] = useState<{ v: boolean; h: boolean }>({ v: false, h: false })
+  // Перерисовать превью, когда догрузился шрифт (до этого canvas мерил запасным).
+  const [fontsTick, setFontsTick] = useState(0)
+  const [cropOpen, setCropOpen] = useState(false)
 
   const canvasRef = useRef<HTMLDivElement>(null)
+  const blockEls = useRef<Map<string, HTMLDivElement>>(new Map())
+  const taRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     const el = canvasRef.current
@@ -166,6 +248,21 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
     ro.observe(el)
     setCanvasW(el.getBoundingClientRect().width || 360)
     return () => ro.disconnect()
+  }, [])
+
+  // Шрифты блоков: грузим нужные начертания и перерисовываем по готовности.
+  const fontSig = blocks.filter((b) => b.type === 'text').map((b) => `${b.font ?? brand.font ?? ''}|${b.weight ?? 'bold'}|${b.italic ? 1 : 0}`).join(',')
+  useEffect(() => {
+    let alive = true
+    prepareFontsFor(valueRef.current, brand).then(() => { if (alive) setFontsTick((t) => t + 1) })
+    return () => { alive = false }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fontSig, brand.font])
+  useEffect(() => {
+    if (typeof document === 'undefined' || !('fonts' in document)) return
+    const onDone = () => setFontsTick((t) => t + 1)
+    document.fonts.addEventListener('loadingdone', onDone)
+    return () => document.fonts.removeEventListener('loadingdone', onDone)
   }, [])
 
   // ── Touch/mouse gesture: 1 finger = drag, 2 fingers = scale + rotate ──────────
@@ -200,7 +297,16 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
     const ps = [...pointers.current.values()]
     if (g.mode === 'drag' && ps.length === 1) {
       const dx = (ps[0].x - g.px!) / g.w, dy = (ps[0].y - g.py!) / g.h
-      patch(g.id, { xPct: clamp(g.x0 + dx, 0, 0.99), yPct: clamp(g.y0 + dy, 0, 0.99) })
+      let x = clamp(g.x0 + dx, 0, 0.99), y = clamp(g.y0 + dy, 0, 0.99)
+      // Прилипание к центру холста (Марина: «линии для ориентира, когда текст по центру»).
+      const el = blockEls.current.get(g.id)
+      const bw = el?.offsetWidth ?? 0, bh = el?.offsetHeight ?? 0
+      const thr = 6
+      let v = false, h = false
+      if (bw > 0 && Math.abs(x * g.w + bw / 2 - g.w / 2) < thr) { x = (g.w / 2 - bw / 2) / g.w; v = true }
+      if (bh > 0 && Math.abs(y * g.h + bh / 2 - g.h / 2) < thr) { y = (g.h / 2 - bh / 2) / g.h; h = true }
+      setGuides((prev) => (prev.v === v && prev.h === h ? prev : { v, h }))
+      patch(g.id, { xPct: x, yPct: y })
     } else if (g.mode === 'pinch' && ps.length >= 2) {
       const [p1, p2] = ps
       const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y)
@@ -233,7 +339,7 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
     if (!pointers.current.has(e.pointerId)) return
     pointers.current.delete(e.pointerId)
     canvasRef.current?.releasePointerCapture?.(e.pointerId)
-    if (pointers.current.size === 0) gesture.current = null
+    if (pointers.current.size === 0) { gesture.current = null; setGuides({ v: false, h: false }) }
     else if (gesture.current) initGesture(gesture.current.id) // re-baseline for the finger still down
   }
 
@@ -283,7 +389,7 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
       if (!res.ok || !d.urls?.[0]) throw new Error(d.error || (res.status === 413 ? 'Картинка слишком большая' : 'Не удалось загрузить картинку'))
       const id = newId()
       setBlocks((p) => [...p, {
-        id, type: 'image', text: '', src: d.urls![0], aspect,
+        id, type: 'image', text: '', src: d.urls![0], aspect, srcAspect: aspect,
         xPct: 0.3, yPct: 0.38, widthPct: 0.42, size: 56, color: '#FFFFFF', plate: false, align: 'center', rotation: 0,
       }])
       setSelected(id)
@@ -322,7 +428,7 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
     } else {
       const id = newId()
       setBlocks((p) => [...p, {
-        id, type: 'image', text: '', src: v.url, aspect: v.aspect || 1,
+        id, type: 'image', text: '', src: v.url, aspect: v.aspect || 1, srcAspect: v.aspect || 1,
         xPct: 0.3, yPct: 0.34, widthPct: 0.46, size: 56, color: '#FFFFFF', plate: false, align: 'center', rotation: 0,
       }])
       setSelected(id)
@@ -365,20 +471,49 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
     if (s.type === 'text') patch(s.id, { size: clamp(s.size + dir * 8, 22, 240) })
     else patch(s.id, { widthPct: clamp(+(s.widthPct + dir * 0.05).toFixed(3), 0.05, 1) })
   }
+  // Центрировать выбранный элемент по горизонтали (кнопкой, без перетаскивания).
+  function centerSel(s: Block) {
+    const el = blockEls.current.get(s.id)
+    const bw = el?.offsetWidth ?? s.widthPct * canvasW
+    patch(s.id, { xPct: clamp((canvasW - bw) / 2 / canvasW, 0, 0.99) })
+  }
+  // Жирным/курсивом ТОЛЬКО выделенные слова: маркеры __слово__ / *слово*
+  // (Марина: «выделить одно или несколько слов, как акцентным цветом»).
+  function wrapSelection(s: Block, marker: '__' | '*') {
+    const ta = taRef.current
+    if (!ta) return
+    const a = ta.selectionStart ?? 0, e = ta.selectionEnd ?? 0
+    if (a === e) { toast.message('Выдели в тексте слово или несколько слов, потом нажми кнопку'); return }
+    const t = s.text
+    const inner = t.slice(a, e)
+    const before = t.slice(0, a), after = t.slice(e)
+    const already = inner.startsWith(marker) && inner.endsWith(marker) && inner.length > marker.length * 2
+    const next = already ? before + inner.slice(marker.length, -marker.length) + after : before + marker + inner.trim() + marker + after
+    patch(s.id, { text: next })
+    requestAnimationFrame(() => { try { ta.focus(); ta.setSelectionRange(a, a + (already ? inner.length - marker.length * 2 : inner.trim().length + marker.length * 2)) } catch { /* */ } })
+  }
 
-  const scale = canvasW / 1080
+  const scale = canvasW / CANVAS_W
   const hasBg = slideHasBg(value)
   const sel = blocks.find((b) => b.id === selected) || null
-  const swatches = ['#FFFFFF', brand.text, brand.accentColor]
-  // WYSIWYG: the canvas previews in the project's chosen font (matching the PNG
-  // output). Only the active @font-face below actually downloads. MontserratEd
-  // stays as the fallback while a face loads or for the default.
-  const editorFam = fontFamilyOf(brand.font)
-  const fontStack = `'${editorFam === 'Montserrat' ? 'MontserratEd' : editorFam}', 'MontserratEd', system-ui, sans-serif`
+  const eff = effectiveTheme(value, brand)
+  const swatches = [...new Set(['#FFFFFF', brand.text, brand.accentColor, brand.bg, ...PALETTE])]
   const isBadge = sel?.shape === 'badge'
   const isArrow = sel?.type === 'shape' && !isBadge
   const isImage = sel?.type === 'image'
   const addBtn = 'inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold hover:border-primary/40 disabled:opacity-40'
+  const chip = (on: boolean) => `h-7 min-w-7 rounded-md border px-1.5 text-xs font-semibold ${on ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground'}`
+
+  // Строки текстовых блоков — пересчёт при смене текста/размера/ширины/стиля/шрифта.
+  const layoutKey = blocks.map((b) => b.type === 'text' ? `${b.id}|${b.text}|${b.size}|${b.widthPct}|${b.plate ? 1 : 0}|${b.weight ?? ''}|${b.italic ? 1 : 0}|${b.uppercase ? 1 : 0}|${b.font ?? ''}` : b.id).join('\n')
+  const lines = useMemo(() => {
+    const m = new Map<string, LayoutLine[]>()
+    for (const b of blocks) if (b.type === 'text') m.set(b.id, layoutBlock(b, brand))
+    return m
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutKey, brand.font, fontsTick])
+
+  const bgSupportsColor = bgMode === 'paper' || bgMode === 'dark' || bgMode === 'light'
 
   return (
     <>
@@ -406,6 +541,13 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
           <button key={m} type="button" onClick={() => setBgMode(m)}
             className={`rounded-lg px-2.5 py-1.5 font-medium ${bgMode === m ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground hover:text-foreground'}`}>{label}</button>
         ))}
+        {bgSupportsColor && (
+          <label className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-[11px] text-muted-foreground">
+            цвет фона
+            <input type="color" value={eff.bg} onChange={(e) => update({ bgColor: e.target.value })} className="h-6 w-8 cursor-pointer rounded border-0 bg-transparent p-0" aria-label="цвет фона" />
+            {value.bgColor && <button type="button" onClick={() => update({ bgColor: null })} className="underline">как в бренде</button>}
+          </label>
+        )}
       </div>
       {bgMode === 'photo' && (
         <div className="mt-2 space-y-2">
@@ -528,37 +670,59 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
           </div>
         )}
         {bgMode !== 'photo' && bgMode !== 'split' && (
+          // Бумага = цвет фона + полупрозрачная текстура поверх (как Backdrop на
+          // сервере). Раньше текстура ложилась на тёмный холст → «фон чёрный,
+          // а после сохранения светлый» (Марина 06.09).
           <div className="pointer-events-none absolute inset-0"
-            style={bgMode === 'paper' ? { backgroundImage: "url('/textures/paper.png')", backgroundSize: 'cover', backgroundPosition: 'center' } : { background: bgMode === 'dark' ? '#121214' : brand.bg }} />
+            style={bgMode === 'paper'
+              ? { backgroundColor: eff.bg, backgroundImage: "url('/textures/paper.png')", backgroundSize: 'cover', backgroundPosition: 'center' }
+              : { background: eff.bg }} />
         )}
+        {/* Направляющие центра */}
+        {guides.v && <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px bg-primary/80" />}
+        {guides.h && <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-primary/80" />}
         {blocks.map((b) => {
           const isTxt = b.type === 'text'
           const pxW = b.widthPct * canvasW
+          const { weight, accentWeight } = weightsOf(b)
+          const famName = editorFamilyOf(b.font ?? brand.font)
+          const fontStack = `'${famName}', 'MontserratEd', system-ui, sans-serif`
           return (
             <div
               key={b.id}
+              ref={(el) => { if (el) blockEls.current.set(b.id, el); else blockEls.current.delete(b.id) }}
               onPointerDown={(e) => onBlockDown(e, b.id)}
               style={{
                 position: 'absolute', left: `${b.xPct * 100}%`, top: `${b.yPct * 100}%`,
-                ...(isTxt ? {
-                  width: `${b.widthPct * 100}%`,
-                  fontSize: Math.max(8, b.size * scale), fontFamily: fontStack, lineHeight: 1.18,
-                  textAlign: b.align, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                } : { display: 'flex' }),
+                ...(isTxt ? { width: `${b.widthPct * 100}%` } : { display: 'flex' }),
                 transform: b.rotation ? `rotate(${b.rotation}deg)` : undefined, transformOrigin: 'center',
                 cursor: 'move', touchAction: 'none',
                 outline: selected === b.id ? `2px solid ${brand.accentColor}` : 'none', outlineOffset: 3,
               }}
             >
-              {b.type === 'image' && b.src ? (
+              {b.type === 'image' && b.src ? (() => {
+                const pxH = pxW / (b.aspect || 1)
+                const r = frameRadius(pxW, pxH, b.radius)
+                const op = typeof b.opacity === 'number' ? clamp(b.opacity, 0.05, 1) : 1
+                if (b.crop) {
+                  const g = cropGeometry(pxW, pxH, b.srcAspect || b.aspect || 1, b.crop)
+                  return (
+                    <div style={{ position: 'relative', width: pxW, height: pxH, overflow: 'hidden', borderRadius: r, opacity: op, pointerEvents: 'none' }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={b.src} alt="" draggable={false} style={{ position: 'absolute', left: g.left, top: g.top, width: g.iw, height: g.ih, maxWidth: 'none' }} />
+                    </div>
+                  )
+                }
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={b.src} alt="" draggable={false} style={{ width: pxW, height: pxW / (b.aspect || 1), objectFit: 'contain', pointerEvents: 'none' }} />
-              ) : b.type === 'shape' && b.shape === 'badge' ? (
+                return <img src={b.src} alt="" draggable={false} style={{ width: pxW, height: pxH, objectFit: 'contain', borderRadius: r, opacity: op, pointerEvents: 'none' }} />
+              })() : b.type === 'shape' && b.shape === 'badge' ? (
                 <Badge size={pxW} color={b.color} label={b.text || '1'} fontFamily="'MontserratEd'" />
               ) : b.type === 'shape' && b.shape ? (
                 <ArrowSvg w={pxW} h={pxW / (b.aspect || SHAPE_ASPECT[b.shape])} color={b.color} curve={b.shape === 'arrow-curve'} />
               ) : (
-                <PreviewText text={b.text} plate={b.plate} color={b.color} brand={brand} weight={b.weight} italic={b.italic} />
+                <PreviewLines lines={lines.get(b.id) ?? []} size={b.size} scale={scale} plate={b.plate} plateBg={eff.bg}
+                  platedColor={eff.text} plainColor={b.color} accent={eff.accent} align={b.align}
+                  weight={weight} accentWeight={accentWeight} italic={!!b.italic} fontFamily={fontStack} />
               )}
             </div>
           )
@@ -569,9 +733,19 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
       {sel && (
         <div className="mt-3 space-y-2 rounded-xl border border-primary/25 bg-primary/5 p-3">
           {sel.type === 'text' && (
-            <textarea value={sel.text} onChange={(e) => patch(sel.id, { text: e.target.value })} rows={2}
-              placeholder="Текст блока (слово в **звёздочках** = акцент)"
-              className="w-full resize-none rounded-lg border border-border bg-background p-2.5 text-sm" />
+            <>
+              <textarea ref={taRef} value={sel.text} onChange={(e) => patch(sel.id, { text: e.target.value })} rows={2}
+                placeholder="Текст блока (слово в **звёздочках** = акцент)"
+                className="w-full resize-none rounded-lg border border-border bg-background p-2.5 text-sm" />
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span>Выдели слова в тексте и:</span>
+                <button type="button" onClick={() => wrapSelection(sel, '__')} className={chip(false)} title="жирным только выделенное">Ж слово</button>
+                {FONT_HAS_ITALIC[(sel.font ?? brand.font ?? 'montserrat') as FontKey] && (
+                  <button type="button" onClick={() => wrapSelection(sel, '*')} className={`${chip(false)} italic`} title="курсивом только выделенное">К слово</button>
+                )}
+                <span>· **акцент** — цветом</span>
+              </div>
+            </>
           )}
           {isBadge && (
             <input value={sel.text} onChange={(e) => patch(sel.id, { text: e.target.value.slice(0, 3) })} maxLength={3}
@@ -586,12 +760,7 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
             <button type="button" onClick={() => patch(sel.id, { rotation: sel.rotation - 10 })} className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 font-medium text-muted-foreground"><RotateCw className="h-3 w-3 -scale-x-100" /> −10°</button>
             <button type="button" onClick={() => patch(sel.id, { rotation: sel.rotation + 10 })} className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 font-medium text-muted-foreground"><RotateCw className="h-3 w-3" /> +10°</button>
             {sel.rotation !== 0 && <button type="button" onClick={() => patch(sel.id, { rotation: 0 })} className="text-[11px] text-muted-foreground underline">сброс ↻</button>}
-
-            {/* Colour: text colour / shape stroke or fill (not for images) */}
-            {!isImage && swatches.map((c, i) => (
-              <button key={i} type="button" onClick={() => patch(sel.id, { color: c })} aria-label="цвет"
-                className={`h-7 w-7 rounded-full border ${sel.color === c ? 'ring-2 ring-primary ring-offset-1' : 'border-border'}`} style={{ background: c }} />
-            ))}
+            <button type="button" onClick={() => centerSel(sel)} className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 font-medium text-muted-foreground" title="по центру холста"><AlignCenterHorizontal className="h-3 w-3" /> центр</button>
 
             {sel.type === 'text' && (
               <>
@@ -599,30 +768,80 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
                     К прячем для шрифтов без настоящего italic-файла — иначе
                     превью врало бы (браузер наклоняет сам, сервер — нет). */}
                 <button type="button" onClick={() => patch(sel.id, { weight: (sel.weight ?? 'bold') === 'bold' ? 'normal' : 'bold' })}
-                  aria-label="жирный"
-                  className={`h-7 w-7 rounded-md border font-bold ${(sel.weight ?? 'bold') === 'bold' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground'}`}>
-                  Ж
-                </button>
-                {FONT_HAS_ITALIC[(brand.font ?? 'montserrat') as FontKey] && (
+                  aria-label="жирный" className={`${chip((sel.weight ?? 'bold') === 'bold')} font-bold`}>Ж</button>
+                {FONT_HAS_ITALIC[(sel.font ?? brand.font ?? 'montserrat') as FontKey] && (
                   <button type="button" onClick={() => patch(sel.id, { italic: !sel.italic })}
-                    aria-label="курсив"
-                    className={`h-7 w-7 rounded-md border italic font-semibold ${sel.italic ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground'}`}>
-                    К
-                  </button>
+                    aria-label="курсив" className={`${chip(!!sel.italic)} italic`}>К</button>
                 )}
+                <button type="button" onClick={() => patch(sel.id, { uppercase: !sel.uppercase })}
+                  aria-label="заглавные" className={chip(!!sel.uppercase)} title="заглавными буквами">АА</button>
                 <button type="button" onClick={() => patch(sel.id, { plate: !sel.plate })}
                   className={`rounded-lg px-2.5 py-1.5 font-medium ${sel.plate ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground'}`}>
                   {sel.plate ? 'на плашке' : 'без плашки'}
                 </button>
-                <button type="button" onClick={() => patch(sel.id, { align: sel.align === 'left' ? 'center' : 'left' })}
+                <button type="button" onClick={() => patch(sel.id, { align: sel.align === 'left' ? 'center' : sel.align === 'center' ? 'right' : 'left' })}
                   className="rounded-lg border border-border px-2.5 py-1.5 font-medium text-muted-foreground">
-                  {sel.align === 'left' ? 'слева' : 'по центру'}
+                  {sel.align === 'left' ? 'слева' : sel.align === 'center' ? 'по центру' : 'справа'}
                 </button>
+                <select value={sel.font ?? ''} onChange={(e) => patch(sel.id, { font: (e.target.value || undefined) as FontKey | undefined, italic: e.target.value && !FONT_HAS_ITALIC[e.target.value as FontKey] ? false : sel.italic })}
+                  className="h-7 rounded-md border border-border bg-background px-1.5 text-xs" aria-label="шрифт блока">
+                  <option value="">Шрифт бренда</option>
+                  {FONT_KEYS.map((k) => <option key={k} value={k}>{FONT_SHORT[k] ?? FONTS[k].name}</option>)}
+                </select>
               </>
             )}
             <button type="button" onClick={() => duplicate(sel.id)} className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 font-medium text-muted-foreground"><Copy className="h-3.5 w-3.5" /> копия</button>
             <button type="button" onClick={() => removeBlock(sel.id)} className="ml-auto inline-flex items-center gap-1 rounded-lg border border-rose-300 px-2.5 py-1.5 font-medium text-rose-600"><Trash2 className="h-3.5 w-3.5" /> удалить</button>
           </div>
+
+          {/* Цвет: текст / стрелка / номер — бренд + палитра + любой (Марина 06.09) */}
+          {!isImage && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-muted-foreground">Цвет:</span>
+              {swatches.map((c, i) => (
+                <button key={i} type="button" onClick={() => patch(sel.id, { color: c })} aria-label="цвет"
+                  className={`h-6 w-6 rounded-full border ${sel.color.toLowerCase() === c.toLowerCase() ? 'ring-2 ring-primary ring-offset-1' : 'border-border'}`} style={{ background: c }} />
+              ))}
+              <label className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                свой <input type="color" value={/^#[0-9a-f]{6}$/i.test(sel.color) ? sel.color : '#ffffff'} onChange={(e) => patch(sel.id, { color: e.target.value })} className="h-5 w-7 cursor-pointer border-0 bg-transparent p-0" aria-label="свой цвет" />
+              </label>
+            </div>
+          )}
+
+          {/* Картинка: форма, прозрачность, кадрирование */}
+          {isImage && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="text-[11px] text-muted-foreground">Форма:</span>
+                {([[0, 'углы'], [0.15, 'скруглить'], [0.5, 'круг']] as const).map(([r, label]) => (
+                  <button key={r} type="button" onClick={() => patch(sel.id, { radius: r || undefined })} className={chip((sel.radius ?? 0) === r)}>{label}</button>
+                ))}
+                <label className="ml-2 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  прозрачность
+                  <input type="range" min={0.2} max={1} step={0.05} value={sel.opacity ?? 1} onChange={(e) => patch(sel.id, { opacity: Number(e.target.value) })} className="w-24" aria-label="прозрачность" />
+                  {Math.round((sel.opacity ?? 1) * 100)}%
+                </label>
+                <button type="button" onClick={() => {
+                  if (sel.crop) { patch(sel.id, { crop: undefined, aspect: sel.srcAspect ?? sel.aspect }); setCropOpen(false) }
+                  else { patch(sel.id, { crop: { zoom: 1.2, x: 0, y: 0 }, srcAspect: sel.srcAspect ?? sel.aspect ?? 1 }); setCropOpen(true) }
+                }} className={`${chip(!!sel.crop)} inline-flex items-center gap-1`}><CropIcon className="h-3 w-3" /> {sel.crop ? 'убрать обрезку' : 'обрезать'}</button>
+                {sel.crop && <button type="button" onClick={() => setCropOpen((v) => !v)} className="text-[11px] text-muted-foreground underline">{cropOpen ? 'свернуть' : 'настроить'}</button>}
+              </div>
+              {sel.crop && cropOpen && (
+                <div className="space-y-1.5 rounded-lg border border-border bg-background/60 p-2 text-[11px] text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span>Рамка:</span>
+                    {([[sel.srcAspect ?? sel.aspect ?? 1, 'как исходник'], [1, '1:1'], [0.8, '4:5'], [0.75, '3:4'], [16 / 9, '16:9']] as const).map(([a, label]) => (
+                      <button key={label} type="button" onClick={() => patch(sel.id, { aspect: a })} className={chip(Math.abs((sel.aspect ?? 1) - a) < 0.01)}>{label}</button>
+                    ))}
+                  </div>
+                  <label className="flex items-center gap-2">зум <input type="range" min={1} max={3} step={0.05} value={sel.crop.zoom} onChange={(e) => patch(sel.id, { crop: { ...sel.crop!, zoom: Number(e.target.value) } })} className="flex-1" /> {sel.crop.zoom.toFixed(2)}×</label>
+                  <label className="flex items-center gap-2">сдвиг ↔ <input type="range" min={-1} max={1} step={0.02} value={sel.crop.x} onChange={(e) => patch(sel.id, { crop: { ...sel.crop!, x: Number(e.target.value) } })} className="flex-1" /></label>
+                  <label className="flex items-center gap-2">сдвиг ↕ <input type="range" min={-1} max={1} step={0.02} value={sel.crop.y} onChange={(e) => patch(sel.id, { crop: { ...sel.crop!, y: Number(e.target.value) } })} className="flex-1" /></label>
+                </div>
+              )}
+            </div>
+          )}
           {isArrow && <p className="text-[11px] text-muted-foreground">Поверни элемент (двумя пальцами или ±10°), чтобы направить стрелку.</p>}
         </div>
       )}
