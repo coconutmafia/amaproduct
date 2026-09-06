@@ -3798,9 +3798,76 @@ async function researchLegsProbe() {
   }
 }
 
+// ── ПРОБНИК: переходы на оплату картой РФ для возвращающегося (06.09) ────────
+// После ссылок Марины (продукты без демо + докупки) проверяем ТОТ путь, которым
+// ходит клиент: пробный юзер в состоянии «закрыт за неоплату» (как Виктория) →
+// POST /api/billing/prodamus/checkout по каждому тарифу → ожидаем URL
+// продукта БЕЗ демо (не 503 nodemo_not_configured); затем тот же юзер с
+// действующей подпиской → POST /api/billing/topup {region:'ru'} → URL докупки.
+// Денег не двигает: до платёжной формы не ходим, юзера удаляем каскадом.
+async function ruLinksProbe() {
+  const APP = 'https://amaproduct.com'
+  log('\n=== Пробник: ссылки Продамуса для возвращающегося (без демо) и докупки ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) создать пробного юзера ama-probe-rulinks-*, профиль: solo / view_only / prodamus / период в прошлом')
+    log('  2) сессия (magiclink → OTP → verify → кука) → POST checkout для solo/pro/producer → ждём url без демо')
+    log('  3) профиль → active → POST /api/billing/topup {region:ru} → ждём url докупки')
+    log('  4) удалить пробного юзера')
+    return
+  }
+  const anon = (() => {
+    const txt = readFileSync(join(ROOT, '.env.local'), 'utf8')
+    const m = txt.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY'); return }
+  const email = `${PROBE_PREFIX}rulinks-${Date.now()}@amaproduct.com`
+  const created = await api('/auth/v1/admin/users', { method: 'POST', body: JSON.stringify({ email, email_confirm: true, user_metadata: { full_name: 'ama-probe rulinks' } }) })
+  const userId = created.body?.id
+  if (!userId) { log('❌ 1. юзер не создался:', created.status, JSON.stringify(created.body).slice(0, 200)); return }
+  const cleanup = async () => {
+    await api(`/auth/v1/admin/users/${userId}`, { method: 'DELETE' }).catch(() => {})
+    log('🧹 уборка: пробный юзер удалён (профиль — каскадом)')
+  }
+  try {
+    const past = new Date(Date.now() - 10 * 86400000).toISOString()
+    const pr = await api(`/rest/v1/profiles?id=eq.${userId}`, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ subscription_tier: 'solo', subscription_status: 'view_only', payment_provider: 'prodamus', current_period_end: past }) })
+    if (pr.status >= 300 || !Array.isArray(pr.body) || pr.body.length === 0) { log('❌ 1. профиль не обновился:', pr.status, JSON.stringify(pr.body).slice(0, 200)); return }
+    log('✅ 1. пробный юзер в состоянии «закрыт за неоплату, платил через Продамус»')
+
+    const gl = await api('/auth/v1/admin/generate_link', { method: 'POST', body: JSON.stringify({ type: 'magiclink', email }) })
+    const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+    const ver = await fetch(`${U}/auth/v1/verify`, { method: 'POST', headers: { apikey: anon, 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'magiclink', email, token: otp }) }).then(r => r.json())
+    if (!ver?.access_token) { log('❌ 2. сессия не получена'); return }
+    const ref = new URL(U).hostname.split('.')[0]
+    const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+    const describe = (u) => { try { const x = new URL(u); return `${x.host}${x.pathname} [${['order_id', 'customer_email', 'urlNotification'].filter(k => x.searchParams.has(k)).join(', ')}]` } catch { return String(u) } }
+    let ok = true
+    for (const plan of ['solo', 'pro', 'producer']) {
+      const r = await fetch(`${APP}/api/billing/prodamus/checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie, origin: APP }, body: JSON.stringify({ plan }) })
+      const b = await r.json().catch(() => ({}))
+      if (r.ok && b.url) log(`✅ 2. checkout ${plan} → ${describe(b.url)}`)
+      else { ok = false; log(`❌ 2. checkout ${plan} → HTTP ${r.status} ${JSON.stringify(b).slice(0, 120)}`) }
+    }
+    const act = await api(`/rest/v1/profiles?id=eq.${userId}`, { method: 'PATCH', body: JSON.stringify({ subscription_status: 'active', current_period_end: new Date(Date.now() + 20 * 86400000).toISOString() }) })
+    if (act.status >= 300) { log('❌ 3. профиль не перевёлся в active:', act.status); return }
+    for (const plan of ['solo', 'pro', 'producer']) {
+      await api(`/rest/v1/profiles?id=eq.${userId}`, { method: 'PATCH', body: JSON.stringify({ subscription_tier: plan }) })
+      const r = await fetch(`${APP}/api/billing/topup`, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie, origin: APP }, body: JSON.stringify({ region: 'ru' }) })
+      const b = await r.json().catch(() => ({}))
+      if (r.ok && b.url) log(`✅ 3. докупка ${plan} → ${describe(b.url)}`)
+      else { ok = false; log(`❌ 3. докупка ${plan} → HTTP ${r.status} ${JSON.stringify(b).slice(0, 120)}`) }
+    }
+    log(ok ? '\n🎉 Все шесть переходов живы: возвращающийся платит без демо, докупка ведёт на разовый товар.' : '\n⚠️ Часть переходов ещё не настроена — см. ❌ выше (env PRODAMUS_LINK_*_NODEMO / PRODAMUS_LINK_TOPUP_* + редеплой).')
+  } finally {
+    await cleanup()
+  }
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe, 'budget-cap-probe': budgetCapProbe, 'enforce-paid-access': enforcePaidAccess, 'leads-flush': leadsFlush, 'email-probe': emailProbe, 'qa-audit': qaAudit, 'grant-boost': grantBoost, 'research-legs': researchLegsProbe }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe, 'budget-cap-probe': budgetCapProbe, 'enforce-paid-access': enforcePaidAccess, 'leads-flush': leadsFlush, 'email-probe': emailProbe, 'qa-audit': qaAudit, 'grant-boost': grantBoost, 'research-legs': researchLegsProbe, 'ru-links': ruLinksProbe }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))
