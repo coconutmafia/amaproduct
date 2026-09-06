@@ -55,7 +55,8 @@ describe('тариф «Старт»', () => {
   })
   it('у Старта в Stripe НЕТ триала (60 дней — обещание Августы для Соло)', () => {
     const checkout = read('app/api/billing/checkout/route.ts')
-    expect(checkout).toMatch(/plan === 'solo' && soloTrialDays\(\)/)
+    // 06.09: триал только НОВЫМ — возвращающийся платит сразу (!returning)
+    expect(checkout).toMatch(/plan === 'solo' && !returning && soloTrialDays\(\)/)
     expect(checkout).not.toMatch(/plan === 'starter'.*trial/)
   })
 })
