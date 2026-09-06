@@ -75,7 +75,7 @@ describe('лестница апгрейда: каждый тариф прода�
   })
   it('диалог лимита подсвечивает следующую ступень юзера («Твой следующий шаг»)', () => {
     const ud = read('components/billing/UpgradeDialog.tsx')
-    expect(ud).toContain("(currentPlan && nextPlan(currentPlan)) || 'solo'")
+    expect(ud).toContain("(lapsed && ownPaid) ? ownPaid : ((currentPlan && nextPlan(currentPlan)) || 'solo')")
     expect(ud).toContain('Твой следующий шаг')
     // layout передаёт текущий тариф — иначе диалог всегда герой-Соло
     expect(read('app/(dashboard)/layout.tsx')).toContain('UpgradeDialogHost currentPlan=')
