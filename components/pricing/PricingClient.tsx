@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { CheckCircle2, Zap, Star, Building2, Gift, AlertTriangle } from 'lucide-react'
 import type { SubscriptionTier, PaidPlan } from '@/lib/generations-config'
 import { PLAN_CONFIG, VISIBLE_PAID_PLANS, UNIT_COSTS, nextPlan, planCapacityLine } from '@/lib/generations-config'
+import { isCurrentPlan, hasActivePaidSubscription } from '@/lib/billing/planState'
 import { LocalDate } from '@/components/ui/LocalDate'
 import { Sparkles } from 'lucide-react'
 
@@ -30,6 +31,8 @@ const PLAN_COLORS: Record<PaidPlan, string> = {
 interface Props {
   userEmail: string
   currentPlan: SubscriptionTier
+  subscriptionStatus?: string | null
+  paymentProvider?: string | null
   bonusGenerations: number
   generationsUsed: number
   monthlyLimit: number
@@ -38,8 +41,11 @@ interface Props {
 }
 
 export function PricingClient({
-  userEmail, currentPlan, bonusGenerations, generationsUsed, monthlyLimit, plans, resetAt,
+  userEmail, currentPlan, subscriptionStatus, paymentProvider, bonusGenerations, generationsUsed, monthlyLimit, plans, resetAt,
 }: Props) {
+  // Подписка реально действует? Иначе свой же тариф обязан быть покупаемым
+  // (Виктория 06.09: view_only на Соло — кнопка Соло была выключена).
+  const activeSub = hasActivePaidSubscription(subscriptionStatus, paymentProvider)
   const [upgrading, setUpgrading] = useState<PaidPlan | null>(null)
   const [region, setRegion] = useState<'ru' | 'intl'>('ru') // ru → Продамус (₽), intl → Stripe ($)
   const searchParams = useSearchParams()
@@ -64,7 +70,7 @@ export function PricingClient({
   }
 
   const handleUpgrade = async (plan: PaidPlan) => {
-    if (plan === currentPlan) return
+    if (isCurrentPlan(plan, currentPlan, subscriptionStatus, paymentProvider)) return
     setUpgrading(plan)
     try {
       // Explicit choice: РФ → Продамус (₽), зарубежная → Stripe ($).
@@ -103,7 +109,7 @@ export function PricingClient({
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Zap className="h-4 w-4 text-amber-500" />
-              <span className="font-medium text-sm">Текущий план: <span>{current.label}</span></span>
+              <span className="font-medium text-sm">{activeSub ? 'Текущий план' : 'Тариф'}: <span>{current.label}</span>{!activeSub && <span className="text-muted-foreground font-normal"> · подписка не оформлена</span>}</span>
             </div>
             {bonusGenerations > 0 && (
               <Badge variant="outline" className="text-xs text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-400/10 gap-1">
@@ -197,7 +203,9 @@ export function PricingClient({
       <div className={`grid sm:grid-cols-2 ${VISIBLE_PAID_PLANS.length >= 4 ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4`}>
         {VISIBLE_PAID_PLANS.map((key) => {
           const cfg = plans[key]
-          const isCurrent = key === currentPlan
+          const isCurrent = isCurrentPlan(key, currentPlan, subscriptionStatus, paymentProvider)
+          // Свой тариф без действующей подписки — предлагаем возобновить
+          const isOwnLapsed = key === currentPlan && !activeSub
 
           return (
             <Card
@@ -243,6 +251,8 @@ export function PricingClient({
                     ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" />
                     : isCurrent
                     ? 'Текущий план'
+                    : isOwnLapsed
+                    ? `Возобновить «${cfg.label}»`
                     : `Подключить «${cfg.label}»`
                   }
                 </Button>

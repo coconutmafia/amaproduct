@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { UsageCard } from '@/components/billing/UsageCard'
+import { hasActivePaidSubscription } from '@/lib/billing/planState'
 import { CheckCircle2, Star, Zap, Building2, Sparkles } from 'lucide-react'
 import { PLAN_CONFIG, VISIBLE_PAID_PLANS, nextPlan, planCapacityLine, type PaidPlan, type SubscriptionTier } from '@/lib/generations-config'
 
@@ -42,18 +43,24 @@ export function showUpgrade(reason: UpgradeReason = 'limit') {
 }
 
 export function UpgradeDialog({
-  open, onOpenChange, reason = 'limit', currentPlan,
+  open, onOpenChange, reason = 'limit', currentPlan, subscriptionStatus, paymentProvider,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
   reason?: UpgradeReason
   /** текущий тариф юзера — подсвечиваем СЛЕДУЮЩУЮ ступень лестницы, а не всегда Соло */
   currentPlan?: SubscriptionTier
+  subscriptionStatus?: string | null
+  paymentProvider?: string | null
 }) {
   const copy = REASON_COPY[reason] ?? REASON_COPY.limit
   // Лестница (29.08): человеку, упёршемуся в лимит, показываем очевидный
   // следующий шаг. Без известного тарифа — прежнее поведение (герой Соло).
-  const hero: PaidPlan = (currentPlan && nextPlan(currentPlan)) || 'solo'
+  // 06.09: если подписка НЕ действует (view_only/пауза без платёжки), герой —
+  // его же тариф: Виктории на просроченном Соло предлагали Про.
+  const lapsed = !hasActivePaidSubscription(subscriptionStatus, paymentProvider)
+  const ownPaid = currentPlan && PLAN_CONFIG[currentPlan]?.paid ? (currentPlan as PaidPlan) : null
+  const hero: PaidPlan = (lapsed && ownPaid) ? ownPaid : ((currentPlan && nextPlan(currentPlan)) || 'solo')
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -121,7 +128,7 @@ export function UpgradeDialog({
 // Mounted ONCE in the dashboard layout. Any showUpgrade() call opens it.
 // currentPlan приходит из layout (сервер знает профиль) — диалог подсвечивает
 // следующую ступень лестницы для ЭТОГО юзера.
-export function UpgradeDialogHost({ currentPlan }: { currentPlan?: SubscriptionTier }) {
+export function UpgradeDialogHost({ currentPlan, subscriptionStatus, paymentProvider }: { currentPlan?: SubscriptionTier; subscriptionStatus?: string | null; paymentProvider?: string | null }) {
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState<UpgradeReason>('limit')
 
@@ -143,5 +150,5 @@ export function UpgradeDialogHost({ currentPlan }: { currentPlan?: SubscriptionT
     return () => window.removeEventListener(SHOW_EVENT, handler)
   }, [])
 
-  return <UpgradeDialog open={open} onOpenChange={setOpen} reason={reason} currentPlan={currentPlan} />
+  return <UpgradeDialog open={open} onOpenChange={setOpen} reason={reason} currentPlan={currentPlan} subscriptionStatus={subscriptionStatus} paymentProvider={paymentProvider} />
 }

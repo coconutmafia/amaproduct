@@ -11,7 +11,7 @@ export default async function PricingPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('subscription_tier, bonus_generations, generations_used, generations_reset_at')
+    .select('subscription_tier, subscription_status, payment_provider, bonus_generations, generations_used, generations_reset_at')
     .eq('id', session.user.id)
     .single()
 
@@ -28,6 +28,8 @@ export default async function PricingPage() {
       <PricingClient
         userEmail={session.user.email ?? ''}
         currentPlan={currentPlan}
+        subscriptionStatus={profile?.subscription_status ?? null}
+        paymentProvider={profile?.payment_provider ?? null}
         bonusGenerations={profile?.bonus_generations ?? 0}
         generationsUsed={profile?.generations_used ?? 0}
         monthlyLimit={PLAN_CONFIG[currentPlan].generations}

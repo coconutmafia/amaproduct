@@ -92,7 +92,11 @@ export default async function DashboardLayout({
 
       {/* Upgrade dialog — opened via showUpgrade() from the banner or 402 handlers.
           currentPlan → диалог подсвечивает следующую ступень лестницы юзера. */}
-      <UpgradeDialogHost currentPlan={profile?.subscription_tier ?? undefined} />
+      <UpgradeDialogHost
+        currentPlan={profile?.subscription_tier ?? undefined}
+        subscriptionStatus={(profile as Record<string, unknown>)?.subscription_status as string | undefined}
+        paymentProvider={(profile as Record<string, unknown>)?.payment_provider as string | undefined}
+      />
     </div>
   )
 }
