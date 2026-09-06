@@ -31,6 +31,9 @@ export function stuckJobMessage(type: string): string {
   if (type === 'chat_gen') {
     return 'Ответ прервался на сервере — отправь сообщение ещё раз. Единица контента возвращена.'
   }
+  if (type === 'research_table1') {
+    return 'Анализ прервался на сервере — это на нашей стороне. Единицы контента возвращены, нажми «Создать таблицу» ещё раз.'
+  }
   return 'Обработка прервалась на сервере — это на нашей стороне. Запусти ещё раз; если повторится, напиши нам.'
 }
 
@@ -61,6 +64,10 @@ export async function settleStuckJob(admin: SupabaseClient, job: StuckJobRow): P
   }
   if (job.type === 'instagram_scrape' && job.user_id) {
     await refundGenerations(job.user_id, UNIT_COSTS.instagram_scrape).catch(() => {})
+  }
+  // Таблица исследования (06.09): списана на POST, застряла навсегда — вернуть.
+  if (job.type === 'research_table1' && job.user_id) {
+    await refundGenerations(job.user_id, UNIT_COSTS.research_table).catch(() => {})
   }
   // transcribe: файл нарочно остаётся (окно «Повторить»); юниты вернёт чистка
   // 48ч в chain-watch (или раннер при непоправимой ошибке) — здесь НЕ возвращаем,

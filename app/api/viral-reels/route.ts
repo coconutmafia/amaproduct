@@ -9,6 +9,7 @@ import { processViralReelJob } from '@/lib/jobs/runViralReelJob'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { gateContentUnits, refundGenerations } from '@/lib/generations'
 import { UNIT_COSTS } from '@/lib/generations-config'
+import { isReelUrl } from '@/lib/reels/isReelUrl'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 300
@@ -72,7 +73,7 @@ export async function POST(request: Request) {
   }
   const url   = (body.url ?? '').trim()
   const scope = body.scope === 'system' ? 'system' : 'project'
-  if (!url || !/instagram\.com\/(reel|p|tv)\//.test(url)) {
+  if (!url || !isReelUrl(url)) {
     return NextResponse.json({ error: 'Вставь ссылку на Instagram рилз/пост' }, { status: 400 })
   }
 

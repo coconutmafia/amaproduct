@@ -8,6 +8,7 @@ import { gateContentUnits, refundGenerations } from '@/lib/generations'
 import { UNIT_COSTS } from '@/lib/generations-config'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { processResearchTableJob } from '@/lib/jobs/runResearchTableJob'
+import { dedupeParts, isUsablePart } from '@/lib/research/parts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -67,7 +68,14 @@ export async function POST(request: Request) {
       }
     }
   }
-  if (parts.length === 0) return NextResponse.json({ error: 'Нет расшифровок для анализа' }, { status: 400 })
+  // Дубли (одна запись залита несколько раз, повторная расшифровка той же
+  // записи) и обрывки («you» из пустой записи) режем ДО списания единиц —
+  // иначе участник попадает в таблицу дважды, а пустой батч жжёт вызов.
+  // Инцидент Стаси 04–05.09: из 14 расшифровок 5 были дублями и 2 обрывками.
+  const { parts: uniqueParts, dropped } = dedupeParts(parts.filter(isUsablePart))
+  const skipped = parts.length - uniqueParts.length
+  void dropped
+  if (uniqueParts.length === 0) return NextResponse.json({ error: 'Нет расшифровок для анализа' }, { status: 400 })
 
   // Сборка общей таблицы кастдевов = UNIT_COSTS.research_table юнита: флагман
   // по ВСЕМ расшифровкам проекта (max_tokens 32000), кнопка нажимается повторно
@@ -87,7 +95,7 @@ export async function POST(request: Request) {
     project_id: projectId,
     type:       'research_table1',
     status:     'queued',
-    payload:    { projectId, parts },
+    payload:    { projectId, parts: uniqueParts },
   }).select('id').single()
   if (error || !job) {
     await captureException(new Error(error?.message || 'job insert failed'), { where: 'research-table POST' })
@@ -96,5 +104,5 @@ export async function POST(request: Request) {
   }
 
   after(() => processResearchTableJob(job.id as string))
-  return NextResponse.json({ jobId: job.id }, { status: 202 })
+  return NextResponse.json({ jobId: job.id, parts: uniqueParts.length, skipped }, { status: 202 })
 }

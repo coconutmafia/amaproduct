@@ -8,6 +8,9 @@ import { ArrowLeft, TrendingUp, Plus, Trash2, Loader2, Sparkles, Wand2, Check, G
 import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { ViralReelsManager } from '@/components/projects/ViralReelsManager'
 import { isRlsError, READ_ONLY_MESSAGE } from '@/lib/projects/access'
+import { findReelUrl } from '@/lib/reels/isReelUrl'
+import { pollJob } from '@/lib/jobs/pollJob'
+import { UNIT_HINTS } from '@/components/billing/UnitCostHint'
 import { toast } from 'sonner'
 
 interface Trend {
@@ -50,6 +53,17 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
   const [description, setDescription] = useState('')
   const [example, setExample] = useState('')
   const [formatType, setFormatType] = useState('any')
+  const titleRef = useRef<HTMLInputElement>(null)
+  const descWrapRef = useRef<HTMLDivElement>(null)
+
+  // Ссылка на рилз в форме тренда (Августа 06.09: вставила ссылку на рилз в
+  // «Добавить свой тренд», описание не заполнила — кнопка молча была серой,
+  // а нужный блок «Залетевшие рилз» лежал ниже восьми трендов). Ссылка без
+  // описания = «разбери этот рилз»: та же кнопка запускает разбор.
+  const reelLink = findReelUrl(example, description, title)
+  const reelMode = !!reelLink && !description.trim()
+  const [reelsRefresh, setReelsRefresh] = useState(0)
+  const reelsRef = useRef<HTMLDivElement>(null)
 
   // AI-подбор трендов
   const [suggestMode, setSuggestMode] = useState<'niche' | 'popular'>('niche')
@@ -85,8 +99,45 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
     setTimeout(() => setFlash(false), 2200)
   }
 
+  const focusDescription = () => descWrapRef.current?.querySelector('textarea')?.focus()
+
+  // Разбор рилза прямо из формы тренда: тот же фоновый джоб, что у блока
+  // «Залетевшие рилз» (скачать → расшифровать → разобрать формат).
+  const analyzeReel = async (url: string) => {
+    setSaving(true)
+    const t = toast.loading('Загружаю рилз…')
+    try {
+      const res = await fetch('/api/viral-reels', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, scope: 'project', projectId: id }),
+      })
+      const startBody = await res.json().catch(() => ({})) as { jobId?: string; error?: string }
+      if (!res.ok || !startBody.jobId) throw new Error(startBody.error ?? 'Ошибка')
+      toast.loading('Разбираю рилз — обычно 30-60 секунд…', { id: t })
+      await pollJob(startBody.jobId)
+      toast.dismiss(t)
+      toast.success('Рилз разобран и добавлен в «Залетевшие рилз». Под разбором есть кнопка «Сценарий по этому рилзу».', { duration: 9000 })
+      setTitle(''); setDescription(''); setExample(''); setFormatType('any')
+      setReelsRefresh(n => n + 1)
+      setTimeout(() => reelsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150)
+    } catch (e) { toast.dismiss(t); toast.error(friendlyError(e, 'Не удалось разобрать рилз'), { duration: 12000 }) }
+    finally { setSaving(false) }
+  }
+
+  // Кнопка не бывает «молча серой»: чего не хватает — говорим и ставим курсор.
   const add = async () => {
-    if (!title.trim() || !description.trim() || saving) return
+    if (saving) return
+    if (reelMode && reelLink) { await analyzeReel(reelLink); return }
+    if (!title.trim()) {
+      toast.error('Назови тренд одной строкой — например «Формат вопрос-ответ на экране»')
+      titleRef.current?.focus()
+      return
+    }
+    if (!description.trim()) {
+      toast.error('Опиши в двух словах, что это и как использовать — можно надиктовать голосом')
+      focusDescription()
+      return
+    }
     setSaving(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -248,31 +299,55 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
 
       {/* Add form */}
       <div className="rounded-xl border border-[#ECECEC] bg-white p-4 space-y-3">
-        <p className="text-sm font-semibold text-foreground">Добавить свой тренд</p>
-        <input value={title} onChange={e => setTitle(e.target.value)}
+        <div>
+          <p className="text-sm font-semibold text-foreground">Добавить свой тренд</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">Опиши тренд словами — или вставь ссылку на залетевший рилз, и AI разберёт его сам.</p>
+        </div>
+        <input ref={titleRef} value={title} onChange={e => setTitle(e.target.value)}
           placeholder="Название тренда — напр. «Формат вопрос-ответ на экране»"
           className="w-full rounded-xl border border-[#E0E0E0] px-3.5 py-2.5 text-sm focus:outline-none focus:border-primary/50 bg-background" />
-        <VoiceTextarea value={description} onChange={setDescription}
-          placeholder="Что это и как использовать — надиктуй или впиши" rows={2} />
+        <div ref={descWrapRef}>
+          <VoiceTextarea value={description} onChange={setDescription}
+            placeholder="Что это и как использовать — надиктуй или впиши" rows={2} />
+        </div>
         <input value={example} onChange={e => setExample(e.target.value)}
-          placeholder="Пример (по желанию)"
+          placeholder="Пример или ссылка на рилз (по желанию)"
           className="w-full rounded-xl border border-[#E0E0E0] px-3.5 py-2.5 text-sm focus:outline-none focus:border-primary/50 bg-background" />
+        {reelMode && (
+          <p className="text-[11px] text-primary leading-snug">
+            Это ссылка на рилз: AI скачает его, расшифрует и разберёт формат — хук, структуру, почему зашёл. Разбор появится в «Залетевшие рилз» ниже, оттуда одним нажатием попросишь сценарий. {UNIT_HINTS.viralReel}.
+          </p>
+        )}
         <div className="flex items-center gap-2">
           <select value={formatType} onChange={e => setFormatType(e.target.value)}
             className="flex-1 rounded-xl border border-[#E0E0E0] px-3 py-2.5 text-sm bg-background focus:outline-none focus:border-primary/50">
             {FORMATS.map(f => <option key={f.v} value={f.v}>{f.label}</option>)}
           </select>
-          <button onClick={add} disabled={!title.trim() || !description.trim() || saving}
-            className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-white gradient-accent disabled:opacity-40 active:opacity-90">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Добавить
+          <button onClick={add} disabled={saving}
+            className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-white gradient-accent disabled:opacity-60 active:opacity-90">
+            {saving
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : reelMode ? <Film className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+            {saving && reelMode ? 'Разбираю…' : reelMode ? 'Разобрать рилз' : 'Добавить'}
           </button>
         </div>
+      </div>
+
+      {/* Viral reels — прямо под формой (раньше лежали в самом низу, за всеми
+          трендами: на телефоне до блока не доскролливали, ссылку вставляли в
+          форму тренда). Сюда же ведёт подсказка ассистента про ссылки. */}
+      <div ref={reelsRef} className="space-y-2.5 scroll-mt-4">
+        <div>
+          <h2 className="text-sm font-bold text-foreground flex items-center gap-1.5"><Film className="h-3.5 w-3.5 text-primary" /> Залетевшие рилз — референсы</h2>
+          <p className="text-[11px] text-muted-foreground mt-0.5">Вставь ссылку на чужой залетевший рилз — AI разберёт, почему он зашёл, и вплетёт такой формат в твой план.</p>
+        </div>
+        <ViralReelsManager scope="project" projectId={id} refreshKey={reelsRefresh} />
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-10 text-muted-foreground text-sm gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Загрузка…</div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-6 pt-3 border-t border-[#ECECEC]">
           {/* My trends */}
           <div ref={mineRef} className={`space-y-2.5 scroll-mt-4 rounded-2xl transition-all duration-500 ${flash ? 'ring-2 ring-primary/60 ring-offset-4 ring-offset-background' : ''}`}>
             <h2 className="text-sm font-bold text-foreground">Мои тренды <span className="text-[11px] font-medium text-muted-foreground bg-secondary rounded-full px-2 py-0.5">{mine.length}</span></h2>
@@ -317,15 +392,6 @@ export default function ProjectTrendsPage({ params }: { params: Promise<{ id: st
           )}
         </div>
       )}
-
-      {/* Viral reels — merged in (was a separate "Виральные рилз" section) */}
-      <div className="space-y-2.5 pt-3 border-t border-[#ECECEC]">
-        <div>
-          <h2 className="text-sm font-bold text-foreground flex items-center gap-1.5"><Film className="h-3.5 w-3.5 text-primary" /> Залетевшие рилз — референсы</h2>
-          <p className="text-[11px] text-muted-foreground mt-0.5">Вставь ссылку на чужой залетевший рилз — AI разберёт, почему он зашёл, и вплетёт такой формат в твой план.</p>
-        </div>
-        <ViralReelsManager scope="project" projectId={id} />
-      </div>
     </div>
   )
 }

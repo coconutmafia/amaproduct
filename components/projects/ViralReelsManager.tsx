@@ -1,13 +1,15 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import Link from 'next/link'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { ChevronDown, ChevronRight, Loader2, Plus, Trash2, Film, Eye, Heart, MessageCircle, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronRight, Loader2, Plus, Trash2, Film, Eye, Heart, MessageCircle, Sparkles, Wand2 } from 'lucide-react'
 import { pollJob } from '@/lib/jobs/pollJob'
 import { friendlyError } from '@/lib/friendlyError'
 import { UNIT_HINTS } from '@/components/billing/UnitCostHint'
+import { isReelUrl } from '@/lib/reels/isReelUrl'
 
 interface Reel {
   id: string
@@ -24,9 +26,20 @@ interface Reel {
 interface Props {
   scope: 'system' | 'project'
   projectId?: string
+  // Меняется снаружи (форма трендов разобрала рилз) — список перечитывается.
+  refreshKey?: number
 }
 
-export function ViralReelsManager({ scope, projectId }: Props) {
+// Один тап от разбора к сценарию (Августа 06.09: «хочу, чтобы он тренд
+// проанализировал и мне написал сценарий»): ассистент получает готовый
+// запрос с указанием на конкретный референс и пишет в голосе блогера.
+export function scriptPrompt(r: { reel_type: string | null; username: string | null; analysis: string | null }): string {
+  const who = r.username ? ` от @${r.username}` : ''
+  const gist = (r.analysis || '').replace(/\s+/g, ' ').trim().slice(0, 160)
+  return `Напиши сценарий рилза в моём голосе по референсу из «Залетевших рилз»: формат «${r.reel_type || 'рилз'}»${who}${gist ? ` (разбор: ${gist}…)` : ''}. Повтори его конструкцию — хук, структуру, ритм, где стоят вставки — но на моих смыслах и для моей аудитории.`
+}
+
+export function ViralReelsManager({ scope, projectId, refreshKey }: Props) {
   const [reels, setReels] = useState<Reel[]>([])
   const [loading, setLoading] = useState(true)
   const [needsMigration, setNeedsMigration] = useState(false)
@@ -38,6 +51,7 @@ export function ViralReelsManager({ scope, projectId }: Props) {
   // список». Свёрнуто по умолчанию, когда référencesов много; счётчик виден
   // всегда, поиск фильтрует по формату, автору и тексту разбора.
   const [collapsed, setCollapsed] = useState(false)
+  const initRef = useRef(false)
   const [q, setQ] = useState('')
 
   const load = useCallback(async () => {
@@ -47,14 +61,16 @@ export function ViralReelsManager({ scope, projectId }: Props) {
       if (res.status === 403) { toast.error('Нет доступа'); setLoading(false); return }
       const data = await res.json() as { reels: Reel[]; needsMigration?: boolean }
       setReels(data.reels || []); setNeedsMigration(!!data.needsMigration)
+      // Много референсов — сворачиваем при первом показе, счётчик и поиск остаются.
+      if (!initRef.current) { initRef.current = true; if ((data.reels || []).length > 5) setCollapsed(true) }
     } catch { toast.error('Ошибка загрузки') }
     setLoading(false)
   }, [scope, projectId])
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load() }, [load, refreshKey])
 
   const add = async () => {
     const v = url.trim()
-    if (!/instagram\.com\/(reel|p|tv)\//.test(v)) { toast.error('Вставь ссылку на Instagram рилз'); return }
+    if (!isReelUrl(v)) { toast.error('Вставь ссылку на Instagram рилз'); return }
     setAdding(true)
     // Background job (roadmap #8 pattern) — the client just enqueues + polls,
     // so a locked/backgrounded phone doesn't lose the in-flight analysis.
@@ -173,6 +189,14 @@ export function ViralReelsManager({ scope, projectId }: Props) {
                 {r.comments ? <span className="flex items-center gap-0.5"><MessageCircle className="h-3 w-3" />{r.comments.toLocaleString('ru-RU')}</span> : null}
               </div>
               {r.analysis && <p className="text-xs text-foreground/80 leading-snug flex items-start gap-1.5"><Sparkles className="h-3 w-3 text-primary mt-0.5 shrink-0" />{r.analysis}</p>}
+              {scope === 'project' && projectId && (
+                <Link
+                  href={`/projects/${projectId}/assistant?prompt=${encodeURIComponent(scriptPrompt(r))}`}
+                  className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-[11px] font-semibold text-primary hover:bg-primary/10"
+                >
+                  <Wand2 className="h-3 w-3" /> Сценарий по этому рилзу
+                </Link>
+              )}
               {r.niches && r.niches.length > 0 && (
                 <div className="flex flex-wrap gap-1">{r.niches.map(n => <span key={n} className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">{n}</span>)}</div>
               )}

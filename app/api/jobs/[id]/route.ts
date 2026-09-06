@@ -69,6 +69,31 @@ export async function GET(
     .single()
   if (error || !job) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  // ── Передача ноги через поллер (06.09) ─────────────────────────────────────
+  // Нога закончилась (status 'queued' + progress.legEnded), а self-fetch на
+  // /api/jobs/continue мог не дойти (инцидент Стаси: ни одного дошедшего за всю
+  // историю). Поллер сам запускает следующую ногу — с оптимистической
+  // блокировкой, чтобы из N поллеров диспетчером стал один; раннер к тому же
+  // захватывает ногу атомарно. Повторный диспатч — не раньше чем через 45 с,
+  // если захват так и не случился.
+  const legProgress = (job.progress ?? {}) as Record<string, unknown>
+  if (job.status === 'queued' && legProgress.legEnded === true && RUNNERS[job.type as string]) {
+    const lastDispatch = typeof legProgress.dispatchedAt === 'number' ? legProgress.dispatchedAt : 0
+    if (Date.now() - lastDispatch > 45_000) {
+      const admin = createAdminClient()
+      const { data: won } = await admin
+        .from('jobs')
+        .update({ progress: { ...legProgress, dispatchedAt: Date.now() } })
+        .eq('id', id)
+        .eq('updated_at', job.updated_at as string)
+        .select('id')
+      if (won && won.length > 0) {
+        const runner = RUNNERS[job.type as string]
+        after(() => runner(id))
+      }
+    }
+  }
+
   // ── Самолечение застрявшего джоба ──────────────────────────────────────────
   const stalled =
     (job.status === 'processing' || job.status === 'queued') &&
@@ -120,5 +145,13 @@ export async function GET(
     }
   }
 
+  // Тяжёлые поля прогресса (готовые батчи таблицы — до сотен КБ) клиенту не
+  // нужны: поллинг с телефона каждые 4 с возит только счётчики.
+  const pr = job.progress as Record<string, unknown> | null
+  if (pr && typeof pr === 'object' && 'done' in pr) {
+    const { done: _done, continueToken: _token, ...light } = pr
+    void _done; void _token
+    job.progress = light
+  }
   return NextResponse.json({ job })
 }

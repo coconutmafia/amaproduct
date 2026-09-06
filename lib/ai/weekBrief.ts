@@ -8,6 +8,7 @@ import { captureException } from '@/lib/sentry'
 import { anthropic, MODEL, buildCachedSystem, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { getSchemaForPhase, getEmotionalMechanics, getCTAEngine, AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
+import { toArray } from '@/lib/ai/toolInput'
 
 export interface BriefDay {
   day: number
@@ -289,13 +290,6 @@ ${daysText}
     // serializes the nested array (or a single day's `items`) as a JSON STRING
     // instead. Without this, a perfectly good response 500s as "пустой план".
     // Accept both shapes everywhere we expect an array.
-    const toArray = (v: unknown): unknown[] => {
-      if (Array.isArray(v)) return v
-      if (typeof v === 'string') {
-        try { const p = JSON.parse(v); return Array.isArray(p) ? p : [] } catch { return [] }
-      }
-      return []
-    }
 
     const input = toolBlock.input as { days?: unknown }
     const rawDays = toArray(input.days) as Array<{ day: number; items?: unknown }>

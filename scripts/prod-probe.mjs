@@ -3668,9 +3668,139 @@ async function grantBoost() {
   log(`✅ буст: $${after.body?.[0]?.budget_boost_usd} до ${after.body?.[0]?.budget_boost_until}`)
 }
 
+// ── ПРОБНИК: таблица исследования в ДВЕ ноги (06.09, инцидент Стаси) ─────────
+// 6 синтетических кастдевов по ~13 тыс. знаков → 2 батча (≤3 частей и ≤40 тыс.
+// знаков на батч). Канон-батч длиннее 60 с закрывает первую ногу →
+// self-fetch /api/jobs/continue с токеном ноги → вторая нога → волна.
+// Проверяем тем путём, которым ходит клиент (POST + поллинг GET /api/jobs/[id]):
+//   • переходы статуса (processing → queued+legEnded → processing → done);
+//   • КТО запустил вторую ногу: ai_usage route api/jobs/continue = self-fetch
+//     дошёл; api/jobs/[id] = сработал запасной путь через поллер;
+//   • итог: участники из обоих батчей, progress.leg = 2;
+//   • единицы: одно списание research_table в unit_ledger.
+// Стоимость ≈ $0.8 API (два батча Opus по ~20 тыс. токенов входа).
+async function researchLegsProbe() {
+  const APP = 'https://amaproduct.com'
+  const QA = 'ama-qa-bot@gmail.com'
+  log('\n=== Пробник: таблица исследования в две ноги (канон-батч + волна) ===')
+  if (!RUN) {
+    log('\n[DRY-RUN] план (добавь --run):')
+    log('  1) QA-бот: magiclink → verify → сессия')
+    log('  2) временный проект ama-probe-legs-* + 6 расшифровок по ~13 тыс. знаков (REST)')
+    log(`  3) POST ${APP}/api/jobs/research-table {materialIds} → поллинг до done, лог переходов`)
+    log('  4) ai_usage по маршрутам (continue vs [id]) + progress.leg + unit_ledger')
+    log('  5) удалить проект (джоб и материалы уходят каскадом)')
+    return
+  }
+  const anon = (() => {
+    const txt = readFileSync(join(ROOT, '.env.local'), 'utf8')
+    const m = txt.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)$/m)
+    return m ? m[1].trim() : null
+  })()
+  if (!anon) { log('❌ нет NEXT_PUBLIC_SUPABASE_ANON_KEY в .env.local'); return }
+  const gl = await api('/auth/v1/admin/generate_link', { method: 'POST', body: JSON.stringify({ type: 'magiclink', email: QA }) })
+  const otp = gl.body?.properties?.email_otp || gl.body?.email_otp
+  if (!otp) { log('❌ generate_link не дал email_otp:', gl.status); return }
+  const ver = await fetch(`${U}/auth/v1/verify`, {
+    method: 'POST', headers: { apikey: anon, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'magiclink', email: QA, token: otp }),
+  }).then(r => r.json())
+  if (!ver?.access_token) { log('❌ verify не дал сессию'); return }
+  const ref = new URL(U).hostname.split('.')[0]
+  const cookie = `sb-${ref}-auth-token=base64-${Buffer.from(JSON.stringify(ver)).toString('base64url')}`
+  const qaId = ver.user?.id
+  log('✅ 1. сессия QA-бота получена')
+
+  const projName = `${PROBE_PREFIX}legs-${Date.now()}`
+  const prj = await api('/rest/v1/projects', {
+    method: 'POST', headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ owner_id: qaId, name: projName, niche: 'смоук', status: 'active' }),
+  })
+  const projectId = Array.isArray(prj.body) ? prj.body[0]?.id : prj.body?.id
+  if (!projectId) { log('❌ 2. проект не создался:', prj.status, JSON.stringify(prj.body).slice(0, 200)); return }
+
+  const QUESTIONS = [
+    'Расскажи о себе: возраст, город, чем занимаешься?', 'Как давно ты в этой теме и с чего началось?',
+    'Что для тебя самое сложное сейчас?', 'Что уже пробовала, чтобы это решить?', 'Почему прошлые попытки не сработали?',
+    'Как выглядит твой идеальный результат?', 'Что тебя останавливает от покупки таких продуктов?',
+    'По каким критериям выбираешь наставника или курс?', 'Сколько готова вложить в решение и почему?',
+    'Что должно случиться, чтобы ты решилась прямо сейчас?', 'Какой прошлый опыт обучения запомнился и чем?',
+    'Кому бы ты порекомендовала такой продукт?',
+  ]
+  const NAMES = ['Ольга', 'Марина', 'Виктория', 'Дарья', 'Алина', 'Светлана']
+  const answer = (name, qi, city) =>
+    `Ну смотрите, если честно, у меня с этим вопросом номер ${qi + 1} всё непросто. Я ${name} из города ${city}, ` +
+    `и я уже несколько лет пытаюсь разобраться, пробовала разные подходы, курсы, марафоны, и каждый раз одно и то же: ` +
+    `начинаю с энтузиазмом, делаю недели две, потом появляется работа, ребёнок, быт, и всё съезжает. ` +
+    `Самое обидное, что я вижу, как у других получается, и думаю, ну чем я хуже, вроде и опыт есть, и люди меня хвалят. ` +
+    `Наверное, мне не хватает системы и человека рядом, который скажет: делай вот так, не распыляйся, вот твой план на неделю. ` +
+    `Деньги я готова вкладывать, но мне важно понимать, за что я плачу, потому что был опыт, когда я заплатила приличную сумму ` +
+    `и осталась одна с записями уроков без обратной связи. Вот это прям боль, если честно, до сих пор вспоминаю с раздражением. ` +
+    `Ещё мне важно, чтобы наставник сам делал то, чему учит, а не просто пересказывал чужие книги, я это сразу чувствую по речи. ` +
+    `И чтобы группа была небольшая, человек десять, иначе я теряюсь и молчу, а потом бросаю, как было уже два раза.`
+  const CITIES = ['Казань', 'Пермь', 'Тула', 'Омск', 'Уфа', 'Самара']
+  const rows = NAMES.map((name, i) => {
+    let t = `Интервьюер: Привет, ${name}! Слышно нормально? Отлично, я буду задавать вопросы, отвечай как есть.\n${name}: Привет! Да, слышно хорошо, давай.\n\n`
+    for (let qi = 0; qi < QUESTIONS.length; qi++) t += `Интервьюер: ${QUESTIONS[qi]}\n${name}: ${answer(name, qi, CITIES[i])}\n\n`
+    return { project_id: projectId, title: `Кастдев ${name}`, material_type: 'interview_transcript', raw_content: t, processing_status: 'ready' }
+  })
+  const ins = await api('/rest/v1/project_materials', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(rows) })
+  const materialIds = (ins.body || []).map(m => m.id)
+  if (materialIds.length !== NAMES.length) { log('❌ 2. материалы не вставились:', ins.status, JSON.stringify(ins.body).slice(0, 200)); await api(`/rest/v1/projects?id=eq.${projectId}`, { method: 'DELETE' }); return }
+  log(`✅ 2. проект ${projName}, ${materialIds.length} расшифровок по ~${Math.round(rows[0].raw_content.length / 1000)} тыс. знаков`)
+
+  const cleanup = async () => {
+    await api(`/rest/v1/projects?id=eq.${projectId}`, { method: 'DELETE' }).catch(() => {})
+    log('🧹 уборка: проект удалён (материалы и джоб — каскадом)')
+  }
+  const sinceIso = new Date().toISOString()
+  try {
+    const t0 = Date.now()
+    const start = await fetch(`${APP}/api/jobs/research-table`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ projectId, parts: [], materialIds }),
+    })
+    const startBody = await start.json().catch(() => null)
+    if (start.status !== 202 || !startBody?.jobId) { log(`❌ 3. джоб не создался: HTTP ${start.status} ${JSON.stringify(startBody).slice(0, 300)}`); return }
+    log(`✅ 3. джоб ${startBody.jobId} создан (частей: ${startBody.parts}, отброшено: ${startBody.skipped})`)
+    let last = ''
+    let final = null
+    const deadline = Date.now() + 14 * 60_000
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 4000))
+      const st = await fetch(`${APP}/api/jobs/${startBody.jobId}`, { headers: { cookie } }).then(r => r.json()).catch(() => null)
+      const job = st?.job
+      if (!job) continue
+      const pr = job.progress || {}
+      const sig = `${job.status} leg=${pr.leg ?? '-'} done=${pr.doneBatches ?? 0}/${pr.totalBatches ?? '?'} legEnded=${pr.legEnded ? 'да' : 'нет'} restarts=${pr.restarts ?? 0}`
+      if (sig !== last) { log(`   ${((Date.now() - t0) / 1000).toFixed(0).padStart(4)}с  ${sig}`); last = sig }
+      if (job.status === 'done') { final = job; break }
+      if (job.status === 'error') { log(`❌ 3. джоб упал: ${job.error}`); break }
+    }
+    if (!final) { log('❌ 3. не дособрался за 14 минут'); return }
+    const resp = final.result?.table1?.respondents || []
+    log(`✅ 3. done за ${((Date.now() - t0) / 1000).toFixed(0)}с: участников ${resp.length} — ${resp.map(r => r.name || r.id).join(', ')}`)
+    const questions = new Set(resp.flatMap(r => (r.answers || []).map(a => a.question.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, '').trim())))
+    log(`   уникальных формулировок вопросов: ${questions.size} (при 12 вопросах в анкете канон работает, если ≈12–16)`)
+
+    const usage = await api(`/rest/v1/ai_usage?user_id=eq.${qaId}&created_at=gte.${sinceIso}&provider=eq.anthropic&select=created_at,route,input_tokens,output_tokens&order=created_at.asc`)
+    for (const u of usage.body || []) log(`   ai_usage ${u.created_at.slice(11, 19)} ${u.route} in=${u.input_tokens} out=${u.output_tokens}`)
+    const routes = (usage.body || []).map(u => u.route)
+    if (routes.includes('api/jobs/continue')) log('✅ 4. вторая нога пришла через self-fetch /api/jobs/continue (токен ноги работает)')
+    else if (routes.includes('api/jobs/[id]')) log('⚠️ 4. вторая нога пришла через ПОЛЛЕР (self-fetch не дошёл — смотри Sentry «job continue: HTTP …»)')
+    else log(`⚠️ 4. второй ноги не видно в журнале (маршруты: ${routes.join(', ')}) — обе части в одной ноге?`)
+    const jobRow = await api(`/rest/v1/jobs?id=eq.${startBody.jobId}&select=progress`)
+    log(`   progress.leg = ${jobRow.body?.[0]?.progress?.leg ?? '-'}, restarts = ${jobRow.body?.[0]?.progress?.restarts ?? 0}`)
+    const ledger = await api(`/rest/v1/unit_ledger?user_id=eq.${qaId}&created_at=gte.${sinceIso}&select=action,units&order=created_at.asc`)
+    log(`   unit_ledger: ${(ledger.body || []).map(l => `${l.action}:${l.units}`).join(', ') || '(пусто — админ/безлимит?)'}`)
+  } finally {
+    await cleanup()
+  }
+}
+
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe, 'budget-cap-probe': budgetCapProbe, 'enforce-paid-access': enforcePaidAccess, 'leads-flush': leadsFlush, 'email-probe': emailProbe, 'qa-audit': qaAudit, 'grant-boost': grantBoost }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe, 'budget-cap-probe': budgetCapProbe, 'enforce-paid-access': enforcePaidAccess, 'leads-flush': leadsFlush, 'email-probe': emailProbe, 'qa-audit': qaAudit, 'grant-boost': grantBoost, 'research-legs': researchLegsProbe }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))

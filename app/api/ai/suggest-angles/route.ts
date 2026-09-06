@@ -8,6 +8,7 @@ import { anthropic, MODEL, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { getAiTells, resolveContentLanguage } from '@/lib/ai/prompts/content-brain'
 import { buildRAGContext } from '@/lib/ai/rag'
 import { requireProjectAccess } from '@/lib/projects/access'
+import { toArray } from '@/lib/ai/toolInput'
 
 // Proactive content angles: when the user opens the assistant from the content
 // plan to make a unit, suggest 2-3 distinct ways to approach the day's topic —
@@ -20,12 +21,6 @@ const PHASE_RU: Record<string, string> = {
   niche: 'прогрев на нишу', expert: 'прогрев на эксперта', product: 'прогрев на продукт', objections: 'отработка возражений',
   awareness: 'знакомство', trust: 'доверие', desire: 'желание', close: 'закрытие',
   phase_1: 'прогрев на нишу', phase_2: 'прогрев на эксперта', phase_3: 'прогрев на продукт', phase_4: 'отработка возражений',
-}
-
-function toArray(v: unknown): unknown[] {
-  if (Array.isArray(v)) return v
-  if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : [] } catch { return [] } }
-  return []
 }
 
 export async function POST(request: Request) {

@@ -5,6 +5,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { anthropic, MODEL } from '@/lib/ai/client'
 import { MASTER_RESEARCH_TITLE } from '@/lib/researchMaster'
+import { toArray, toRecord, toStringList } from '@/lib/ai/toolInput'
 
 export interface RespondentAnswer {
   question:       string
@@ -106,10 +107,63 @@ JSON формат (строго, без markdown):
 }`
 }
 
+export const NO_RESPONDENTS_MESSAGE = 'AI не нашёл в расшифровке участников интервью. Проверь, что это запись интервью.'
+
+const qKey = (q: string) => q.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim()
+
+/** Уникальные формулировки вопросов в порядке первого появления (пунктуация/регистр не различаются). */
+export function uniqueQuestions(list: string[], limit = 60): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of list) {
+    const q = String(raw ?? '').trim()
+    const k = qKey(q)
+    if (!q || !k || seen.has(k)) continue
+    seen.add(k); out.push(q)
+    if (out.length >= limit) break
+  }
+  return out
+}
+
+/** Вопросы, прозвучавшие в уже разобранных интервью — канон для следующих батчей. */
+export function questionsOf(respondents: Respondent[]): string[] {
+  return uniqueQuestions(respondents.flatMap(r => (r.answers ?? []).map(a => a.question)))
+}
+
+const BLOCKS = new Set(['point_a', 'point_b', 'barriers', 'criteria', 'other'])
+
+// Модель временами отдаёт respondents / answers / key_quotes JSON-СТРОКОЙ
+// вместо массива (замер 06.09 на батче Стаси: 2 прогона из 3, 19–23 тыс.
+// знаков валидной таблицы). Раньше это читалось как «участников нет» и джоб
+// уходил в ошибку — теперь любая форма приводится к InterviewTable.
+export function normalizeTable(raw: unknown): InterviewTable {
+  const root = toRecord(raw) ?? {}
+  const respondents: Respondent[] = toArray(root.respondents).map((r, i) => {
+    const o = toRecord(r) ?? {}
+    const answers: RespondentAnswer[] = toArray(o.answers).map((a) => {
+      const x = toRecord(a) ?? {}
+      const block = String(x.block ?? 'other')
+      return {
+        question:       String(x.question ?? '').trim(),
+        block:          (BLOCKS.has(block) ? block : 'other') as RespondentAnswer['block'],
+        full_answer:    String(x.full_answer ?? '').trim(),
+        key_quotes:     toStringList(x.key_quotes),
+        emotional_tone: String(x.emotional_tone ?? '').trim(),
+      }
+    }).filter(a => a.question && a.full_answer)
+    return {
+      id:      String(o.id ?? '').trim() || `Участник ${i + 1}`,
+      name:    String(o.name ?? '').trim(),
+      segment: String(o.segment ?? '').trim(),
+      answers,
+    }
+  }).filter(r => r.answers.length > 0)
+  return { respondents }
+}
+
 // Канонизация: формулировки вопросов из мастер-таблицы проекта (файл Дарьи,
 // 11 августа) — совпадающий по смыслу вопрос переиспользуется дословно.
 export async function loadKnownQuestions(supabase: SupabaseClient, projectId: string): Promise<string[]> {
-  let knownQuestions: string[] = []
   try {
     const { data: master } = await supabase
       .from('project_materials')
@@ -118,16 +172,12 @@ export async function loadKnownQuestions(supabase: SupabaseClient, projectId: st
       .eq('title', MASTER_RESEARCH_TITLE)
       .maybeSingle()
     if (master?.raw_content) {
-      const seen = new Set<string>()
-      for (const m of String(master.raw_content).matchAll(/^\s*Вопрос:\s*(.+)$/gm)) {
-        const q = m[1].trim()
-        const k = q.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ')
-        if (q && !seen.has(k)) { seen.add(k); knownQuestions.push(q) }
-      }
-      knownQuestions = knownQuestions.slice(0, 60)
+      const found: string[] = []
+      for (const m of String(master.raw_content).matchAll(/^\s*Вопрос:\s*(.+)$/gm)) found.push(m[1].trim())
+      return uniqueQuestions(found)
     }
   } catch { /* мастера ещё нет — обычный режим */ }
-  return knownQuestions
+  return []
 }
 
 const tableTool = {
@@ -173,7 +223,8 @@ export type Table1BatchResult =
 
 // Один батч расшифровок → таблица. Форс-тул + стрим с потолком 32k — защита
 // от обрезанного JSON (25 июля). Ошибки — ЧЕЛОВЕЧЕСКИМ текстом (их читает
-// клиент и джоб пишет их в job.error).
+// клиент и джоб пишет их в job.error). Ответ модели нормализуется
+// (normalizeTable) — строка вместо массива больше не роняет батч.
 export async function runTable1Batch(transcription: string, knownQuestions: string[]): Promise<Table1BatchResult> {
   let finalMsg
   try {
@@ -197,9 +248,8 @@ export async function runTable1Batch(transcription: string, knownQuestions: stri
     console.error('[table1] no tool_use. stop_reason=%s', finalMsg.stop_reason)
     return { ok: false, error: 'AI не смог структурировать данные. Попробуй ещё раз.', retryable: true }
   }
-  const data = toolBlock.input as unknown as InterviewTable
-  if (!Array.isArray(data?.respondents) || data.respondents.length === 0) {
-    return { ok: false, error: 'AI не нашёл в расшифровке участников интервью. Проверь, что это запись интервью.', retryable: false }
-  }
-  return { ok: true, table: data }
+  // Пустой список участников — НЕ ошибка батча: решает вызывающий (в джобе
+  // пустой батч пропускается, ошибка только если участников нет нигде;
+  // синхронный роут отвечает NO_RESPONDENTS_MESSAGE).
+  return { ok: true, table: normalizeTable(toolBlock.input) }
 }

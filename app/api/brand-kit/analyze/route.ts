@@ -11,6 +11,7 @@ import { anthropic, MODEL, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { FONT_KEYS, FONTS } from '@/lib/fonts'
 import { normalizeBrandColors } from '@/lib/carousel/contrast'
 import sharp from 'sharp'
+import { toRecord } from '@/lib/ai/toolInput'
 
 // Claude-vision brand extraction: reads the uploaded style samples and infers the
 // project's brand kit (palette / background style / mood / font), then saves it to
@@ -105,7 +106,7 @@ export async function POST(request: Request) {
         messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, ...images] }],
       })
       const block = res.content.find((b) => b.type === 'tool_use')
-      if (block && block.type === 'tool_use') kit = block.input as Record<string, unknown>
+      if (block && block.type === 'tool_use') kit = toRecord(block.input)
     }
     if (!kit) return NextResponse.json({ error: 'Не удалось распознать стиль — попробуй ещё раз' }, { status: 502 })
 

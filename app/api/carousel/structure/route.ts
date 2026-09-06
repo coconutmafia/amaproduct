@@ -5,18 +5,13 @@ import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
 import { gateMicroAction } from '@/lib/ai/usage'
 import { anthropic, MODEL_SONNET, AI_BUSY_MESSAGE } from '@/lib/ai/client'
+import { toArray } from '@/lib/ai/toolInput'
 
 // Bridges chat-generated TEXT → the structured carousel shape the slide renderer
 // needs. The chat produces clean text (no JSON by design), so when the user wants
 // real slide images we structure that text here (no new content invented — only
 // reshaped), marking key phrases with **…** so the engine highlights them.
 export const maxDuration = 60
-
-function toArray(v: unknown): unknown[] {
-  if (Array.isArray(v)) return v
-  if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : [] } catch { return [] } }
-  return []
-}
 
 export async function POST(request: Request) {
   try {

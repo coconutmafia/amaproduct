@@ -247,15 +247,17 @@ describe('table1: роут и фоновый джоб используют ОД�
     expect(route).toContain("from '@/lib/research/table1'")
     expect(route).toContain('runTable1Batch(')
   })
-  it('джоб research_table1: самопродолжение и прогресс в job.progress', () => {
+  it('джоб research_table1: самопродолжение (общая передача ноги) и прогресс в job.progress', () => {
     const job = readFileSync(join(process.cwd(), 'lib/jobs/runResearchTableJob.ts'), 'utf8')
     expect(job).toContain('runTable1Batch(')
-    expect(job).toContain('/api/jobs/continue')
+    expect(job).toContain('endLegAndContinue(')
     expect(job).toContain('doneBatches')
+    const leg = readFileSync(join(process.cwd(), 'lib/jobs/continueLeg.ts'), 'utf8')
+    expect(leg).toContain('/api/jobs/continue')
   })
   it('continue диспетчеризует по типу джоба', () => {
     const c = readFileSync(join(process.cwd(), 'app/api/jobs/continue/route.ts'), 'utf8')
-    expect(c).toContain("job?.type === 'research_table1'")
+    expect(c).toMatch(/research_table1:\s+processResearchTableJob/)
   })
   it('клиент исследования: джоб + поллинг, jobId в черновике сразу', () => {
     const page = readFileSync(join(process.cwd(), 'app/(dashboard)/projects/[id]/research/page.tsx'), 'utf8')

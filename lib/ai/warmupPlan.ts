@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { captureException } from '@/lib/sentry'
 import { anthropic, MODEL, buildCachedSystem } from '@/lib/ai/client'
 import { AI_TELLS_TO_AVOID } from '@/lib/ai/prompts/content-brain'
+import { toArray } from '@/lib/ai/toolInput'
 
 export interface WarmupPlanInput {
   projectId: string
@@ -500,11 +501,7 @@ ${isEvergreen ? `
     // phase's `daily_plan`) as a JSON STRING instead of a native array.
     // Accept both, otherwise a valid plan is wrongly rejected as
     // "incomplete". No-op when arrays come through normally.
-    const toArray = (v: unknown): unknown[] => {
-      if (Array.isArray(v)) return v
-      if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : [] } catch { return [] } }
-      return []
-    }
+    // (общий toArray — lib/ai/toolInput)
     const phases = (toArray(input2.phases) as Array<Record<string, unknown>>)
       .map(ph => ({ ...ph, daily_plan: toArray(ph.daily_plan) }))
     // Validate plan completeness — truncated output (max_tokens hit) produces empty phases

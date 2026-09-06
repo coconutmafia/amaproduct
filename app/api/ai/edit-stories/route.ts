@@ -7,6 +7,7 @@ import { gateMicroAction } from '@/lib/ai/usage'
 import { anthropic, MODEL, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { getAiTells, detectTextLanguage, VISUAL_RULES } from '@/lib/ai/prompts/content-brain'
 import { requireProjectAccess } from '@/lib/projects/access'
+import { toArray } from '@/lib/ai/toolInput'
 
 // Chat/voice edits to an already-designed stories series («на третьей сторис
 // поменяй…», owner request). Takes the current frames + a free-form instruction
@@ -15,12 +16,6 @@ import { requireProjectAccess } from '@/lib/projects/access'
 export const maxDuration = 60
 
 interface Frame { headline?: string; body?: string; cta?: string; position?: string; plate?: boolean }
-
-function toArray(v: unknown): unknown[] {
-  if (Array.isArray(v)) return v
-  if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : [] } catch { return [] } }
-  return []
-}
 
 export async function POST(request: Request) {
   try {

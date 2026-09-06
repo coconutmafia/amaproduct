@@ -6,6 +6,7 @@ import { requirePaidAccess } from '@/lib/billing/access'
 import { gateMicroAction } from '@/lib/ai/usage'
 import { anthropic, MODEL, AI_BUSY_MESSAGE } from '@/lib/ai/client'
 import { getAiTells, detectTextLanguage, VISUAL_RULES } from '@/lib/ai/prompts/content-brain'
+import { toArray } from '@/lib/ai/toolInput'
 
 // Chat/voice edits to already-rendered carousel slides (owner: «подредактировать
 // не могу, только скачать как есть»). Takes the structured carousel + a free-form
@@ -14,11 +15,6 @@ export const maxDuration = 60
 
 type Dict = Record<string, unknown>
 
-function toArray(v: unknown): unknown[] {
-  if (Array.isArray(v)) return v
-  if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : [] } catch { return [] } }
-  return []
-}
 const str = (v: unknown) => String(v ?? '').trim()
 
 export async function POST(request: Request) {

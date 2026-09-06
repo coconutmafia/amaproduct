@@ -19,7 +19,8 @@ import { requireProjectAccess } from '@/lib/projects/access'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse, after } from 'next/server'
 import { MASTER_RESEARCH_TITLE } from '@/lib/researchMaster'
-import { loadKnownQuestions, runTable1Batch } from '@/lib/research/table1'
+import { loadKnownQuestions, runTable1Batch, NO_RESPONDENTS_MESSAGE } from '@/lib/research/table1'
+import { toArray, toRecord, toStringList } from '@/lib/ai/toolInput'
 import type { InterviewTable } from '@/lib/research/table1'
 
 export const maxDuration = 300
@@ -385,6 +386,7 @@ export async function POST(request: Request) {
       await captureException(new Error(`table1: ${r.error}`), { where: 'research-analyze table1', projectId })
       return NextResponse.json({ error: r.error }, { status: r.retryable ? 503 : 400 })
     }
+    if (r.table.respondents.length === 0) return NextResponse.json({ error: NO_RESPONDENTS_MESSAGE }, { status: 400 })
     return NextResponse.json({ table1: r.table })
   }
 
@@ -438,15 +440,18 @@ export async function POST(request: Request) {
       console.error('[research-analyze table2] no tool_use. stop_reason=%s', t2final.stop_reason)
       return NextResponse.json({ error: 'AI не смог создать карту смыслов. Попробуй ещё раз.' }, { status: 500 })
     }
-    const data = t2block.input as unknown as MeaningsMap
-    if (!Array.isArray(data?.categories)) {
+    // Массивы могут прийти JSON-строкой (класс tool_use, см. lib/ai/toolInput) —
+    // нормализуем, а не отбраковываем валидную карту.
+    const t2input = toRecord(t2block.input) ?? {}
+    const data = { ...t2input, categories: toArray(t2input.categories) } as unknown as MeaningsMap
+    if (data.categories.length === 0) {
       return NextResponse.json({ error: 'AI не смог создать карту смыслов. Попробуй ещё раз.' }, { status: 500 })
     }
 
     // Save meanings map to project_materials — RAG will pick this up automatically
     // when generating content, so the AI will use audience language
     const meaningsText = data.categories
-      .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${c.customer_words.join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
+      .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${toStringList(c.customer_words).join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
       .join('\n\n')
 
     await upsertProjectMaterial(supabase, {
@@ -667,7 +672,7 @@ export async function POST(request: Request) {
           const finalMsg = await aiStream.finalMessage()
           const toolBlock = finalMsg.content.find((b) => b.type === 'tool_use')
           const rawRows = toolBlock && toolBlock.type === 'tool_use'
-            ? (toolBlock.input as { rows?: unknown[] }).rows ?? []
+            ? toArray((toRecord(toolBlock.input) ?? {}).rows)
             : []
           const rows = normalizeMeaningRows(rawRows)
 
@@ -824,7 +829,7 @@ export async function POST(request: Request) {
     }
 
     const meaningsText = data.categories
-      .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${c.customer_words.join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
+      .map(c => `[${c.type.toUpperCase()}] ${c.category}:\nФормулировки: ${toStringList(c.customer_words).join(', ')}\nГлубинный триггер: ${c.deep_trigger}\nВозражение: ${c.objection}\nИдея контента: ${c.content_idea}`)
       .join('\n\n')
 
     await upsertProjectMaterial(supabase, {

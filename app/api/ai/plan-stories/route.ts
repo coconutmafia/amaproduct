@@ -6,17 +6,12 @@ import { buildRAGContext } from '@/lib/ai/rag'
 import { gateContentUnit, refundGeneration } from '@/lib/generations'
 import { rateLimit } from '@/lib/rateLimit'
 import { requireProjectAccess } from '@/lib/projects/access'
+import { toArray } from '@/lib/ai/toolInput'
 
 // Turns a story idea/script into a sequence of story FRAMES (minimal on-screen
 // text per frame, in the blogger's voice) that the engine renders over their
 // photos in their brand style. The "design layout" half of the stories feature.
 export const maxDuration = 60
-
-function toArray(v: unknown): unknown[] {
-  if (Array.isArray(v)) return v
-  if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : [] } catch { return [] } }
-  return []
-}
 
 export async function POST(request: Request) {
   let consumed = false

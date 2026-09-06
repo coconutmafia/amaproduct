@@ -5,12 +5,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { captureException } from '@/lib/sentry'
 import { anthropic, MODEL, AI_BUSY_MESSAGE } from '@/lib/ai/client'
-
-function toArray(v: unknown): unknown[] {
-  if (Array.isArray(v)) return v
-  if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : [] } catch { return [] } }
-  return []
-}
+import { toArray } from '@/lib/ai/toolInput'
 
 export interface CompetitorRow {
   handle: string

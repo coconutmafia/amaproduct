@@ -1,4 +1,3 @@
-import { after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { transcribeWindow } from '@/lib/jobs/transcribeWindow'
 import { sanitizeTranscribeError } from '@/lib/jobs/transcribeErrors'
@@ -8,6 +7,7 @@ import { fmtDateRu } from '@/lib/dates'
 import { refundGenerations } from '@/lib/generations'
 import { transcribeUnits } from '@/lib/generations-config'
 import { setUsageUser } from '@/lib/ai/usageContext'
+import { claimJobLeg, carryProgress, endLegAndContinue } from '@/lib/jobs/continueLeg'
 
 const CHUNK_SEC = 600     // 10-min windows — matches the client's prior chunking
 const MAX_CHUNKS = 48     // safety cap ≈ 8h, same as before
@@ -20,8 +20,9 @@ interface JobRow {
   user_id: string
   project_id: string | null
   status: string
+  updated_at: string
   payload: { storagePath: string; ext: string; durationSec?: number | null; saveTranscriptMaterial?: boolean; unitsRefunded?: boolean; unitsCharged?: number; language?: string }
-  progress: { doneChunks?: number; totalChunks?: number | null }
+  progress: { doneChunks?: number; totalChunks?: number | null; [k: string]: unknown } | null
   result: { text?: string; materialId?: string | null } | null
 }
 
@@ -29,26 +30,22 @@ interface JobRow {
 // обрыве (≈ полминуты речи). Меньше — скорее шум/обрывок, чем ценность.
 const PARTIAL_SAVE_MIN_CHARS = 400
 
-function continueUrl(): string {
-  const base = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL
-    ? (process.env.NEXT_PUBLIC_SITE_URL || `https://${process.env.VERCEL_URL}`)
-    : 'http://localhost:3000'
-  return `${base}/api/jobs/continue`
-}
-
 // Runs one "leg" of a transcription job: processes chunks until either the
 // file is fully transcribed, an error occurs, or this invocation's time
-// budget is exhausted — in which case it schedules its own continuation via
-// a self-fetch wrapped in `after()` (guaranteed to be sent even though this
-// invocation is about to end) and returns. Idempotent: re-entering a
-// done/error job is a no-op, so a duplicate continuation call can't corrupt
-// state or double-charge Whisper.
+// budget is exhausted — in which case it hands the job to the next leg via
+// lib/jobs/continueLeg.ts (self-fetch with a per-leg token, the poller as a
+// second path, atomic leg claim). Idempotent: re-entering a done/error job is
+// a no-op, and the claim makes a duplicate dispatch a no-op too — so nothing
+// can double-charge Whisper.
 export async function processTranscribeJob(jobId: string): Promise<void> {
   const admin = createAdminClient()
   const { data: job, error } = await admin.from('jobs').select('*').eq('id', jobId).single()
   if (error || !job) return
   const row = job as unknown as JobRow
   if (row.status === 'done' || row.status === 'error') return // already finished
+  const claimed = await claimJobLeg(admin, row)
+  if (!claimed) return // ногу уже ведёт другой раннер
+  const carry = carryProgress(claimed)
 
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) {
@@ -57,7 +54,6 @@ export async function processTranscribeJob(jobId: string): Promise<void> {
   }
 
   setUsageUser(row.user_id ?? undefined) // чей расход — для журнала ai_usage
-  await admin.from('jobs').update({ status: 'processing' }).eq('id', jobId)
 
   const { storagePath, ext, durationSec } = row.payload
   const known = typeof durationSec === 'number' && durationSec > 0
@@ -70,20 +66,11 @@ export async function processTranscribeJob(jobId: string): Promise<void> {
   while (ci < totalChunks) {
     if (Date.now() - startedAt > TIME_BUDGET_MS) {
       // Out of time this leg — persist progress and hand off to a fresh invocation.
-      await admin.from('jobs').update({
-        progress: { doneChunks: ci, totalChunks: known ? totalChunks : null },
+      await endLegAndContinue(admin, {
+        jobId,
+        progress: { ...carry, doneChunks: ci, totalChunks: known ? totalChunks : null },
         result: { text },
-      }).eq('id', jobId)
-      after(async () => {
-        try {
-          await fetch(continueUrl(), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.CRON_SECRET ?? ''}` },
-            body: JSON.stringify({ jobId }),
-          })
-        } catch (e) {
-          await captureException(e, { where: 'runTranscribeJob continue-fetch', jobId })
-        }
+        where: 'runTranscribeJob',
       })
       return
     }
@@ -148,7 +135,7 @@ export async function processTranscribeJob(jobId: string): Promise<void> {
     if (res.text) text += (text ? ' ' : '') + res.text
     ci++
     await admin.from('jobs').update({
-      progress: { doneChunks: ci, totalChunks: known ? totalChunks : null },
+      progress: { ...carry, doneChunks: ci, totalChunks: known ? totalChunks : null },
       result: { text },
     }).eq('id', jobId)
   }
@@ -200,6 +187,6 @@ export async function processTranscribeJob(jobId: string): Promise<void> {
   await admin.from('jobs').update({
     status: 'done',
     result: { text, materialId },
-    progress: { doneChunks: ci, totalChunks: known ? totalChunks : ci },
+    progress: { ...carry, doneChunks: ci, totalChunks: known ? totalChunks : ci },
   }).eq('id', jobId)
 }

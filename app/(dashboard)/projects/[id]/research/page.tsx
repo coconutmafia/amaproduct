@@ -188,6 +188,15 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   const [transcriptMaterialIds, setTranscriptMaterialIds] = useState<string[]>([])
   const [table1, setTable1]           = useState<InterviewTable | null>(null)
   const [analysisBatch, setAnalysisBatch] = useState<{ current: number; total: number } | null>(null)
+  // Когда стартовал анализ — чтобы после 8 минут честно сказать «дольше
+  // обычного, страницу можно закрыть», а не молчать со спиннером.
+  const [analysisStartedAt, setAnalysisStartedAt] = useState<number | null>(null)
+  const [nowTick, setNowTick] = useState(() => Date.now())
+  useEffect(() => {
+    if (step !== 'analyzing1') return
+    const t = setInterval(() => setNowTick(Date.now()), 30_000)
+    return () => clearInterval(t)
+  }, [step])
   const [expandedRespondent, setExpandedRespondent] = useState<string | null>(null)
   const [isDragging, setIsDragging]   = useState(false)
   const [selectedFile, setSelectedFile] = useState<{ name: string; sizeMb: string; estMin: string } | null>(null)
@@ -692,9 +701,14 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
   // молча (поллинг продолжается), вкладку можно закрыть — джоб дойдёт сам.
   const pollAnalysisJob = useCallback(async (jobId: string) => {
     setStep('analyzing1')
-    const deadline = Date.now() + 15 * 60_000
+    setAnalysisStartedAt(Date.now())
+    // Батчи идут параллельно на сервере (06.09): счётчик — сколько частей
+    // ГОТОВО. Поллим до часа: первые 15 минут часто, дальше реже — джоб
+    // передаёт ноги сам, а поллер к тому же запускает следующую ногу.
+    const startedAt = Date.now()
+    const deadline = startedAt + 60 * 60_000
     while (Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 4000))
+      await new Promise(r => setTimeout(r, Date.now() - startedAt < 15 * 60_000 ? 4000 : 15000))
       try {
         const res = await fetch(`/api/jobs/${jobId}`)
         if (!res.ok) continue
@@ -702,8 +716,8 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         const job = j.job
         if (!job) continue
         const pr = job.progress
-        if (job.status === 'processing' && pr?.totalBatches && pr.totalBatches > 1) {
-          setAnalysisBatch({ current: Math.min((pr.doneBatches ?? 0) + 1, pr.totalBatches), total: pr.totalBatches })
+        if ((job.status === 'processing' || job.status === 'queued') && pr?.totalBatches && pr.totalBatches > 1) {
+          setAnalysisBatch({ current: Math.min(pr.doneBatches ?? 0, pr.totalBatches), total: pr.totalBatches })
         }
         if (job.status === 'done') {
           const table = job.result?.table1
@@ -728,8 +742,13 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
         }
       } catch { /* сеть моргнула — продолжаем поллить, джоб живёт на сервере */ }
     }
+    // Час без результата — это застрявший джоб, а не «подожди ещё»: честно
+    // возвращаем на шаг назад (самолечение сервера вернёт единицы за
+    // незавершённый анализ), вместо вечного спиннера у Стаси 05.09.
     setAnalysisBatch(null)
-    toast.message('Анализ ещё идёт на сервере — обнови страницу через пару минут, продолжу с того же места.', { duration: 15000 })
+    patchDraft(draftKey, { analysisJobId: null })
+    setStep('transcribed')
+    toast.error('Анализ не завершился за час — это на нашей стороне. Нажми «Создать таблицу» ещё раз; единицы за незавершённый анализ вернутся автоматически.', { duration: 15000 })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftKey])
 
@@ -1154,16 +1173,21 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
           <div>
             <p className="font-semibold text-foreground">
               {analysisBatch && analysisBatch.total > 1
-                ? `Анализирую часть ${analysisBatch.current} из ${analysisBatch.total}...`
+                ? (analysisBatch.current > 0
+                    ? `Готово ${analysisBatch.current} из ${analysisBatch.total} частей…`
+                    : `Анализирую ${analysisBatch.total} части параллельно…`)
                 : 'Анализирую интервью...'}
             </p>
             <p className="text-sm text-muted-foreground mt-1">Определяю участников, вопросы, цитаты и эмоциональные тоны</p>
-            <p className="text-xs text-muted-foreground/70 mt-1">Это займёт несколько минут — не закрывай страницу</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">Обычно 3–5 минут. Можно закрыть страницу — анализ идёт на сервере, при следующем открытии продолжу с того же места</p>
+            {analysisStartedAt && nowTick - analysisStartedAt > 8 * 60_000 && (
+              <p className="text-xs text-amber-700 mt-2">Дольше обычного — сервер продолжает работу, страницу можно закрыть и вернуться позже.</p>
+            )}
             {analysisBatch && analysisBatch.total > 1 && (
               <div className="mt-3 w-48 h-1.5 rounded-full bg-[#3A8A48]/15 overflow-hidden mx-auto">
                 <div
                   className="h-full rounded-full bg-[#3A8A48] transition-all duration-500"
-                  style={{ width: `${Math.round(((analysisBatch.current - 1) / analysisBatch.total) * 100)}%` }}
+                  style={{ width: `${Math.round((analysisBatch.current / analysisBatch.total) * 100)}%` }}
                 />
               </div>
             )}

@@ -1,4 +1,5 @@
 import { anthropic, MODEL, MODEL_HAIKU } from '@/lib/ai/client'
+import { toArray } from '@/lib/ai/toolInput'
 
 // Shared trend-suggestion engine, reused by /api/ai/suggest-trends (on-demand)
 // and /api/cron/refresh-trends (weekly auto-refresh).
@@ -31,12 +32,6 @@ export interface SuggestTrendsOptions {
 export interface SuggestTrendsResult {
   trends: TrendCandidate[]
   grounded: { web: boolean; competitors: boolean; reels: boolean }
-}
-
-function toArray(v: unknown): unknown[] {
-  if (Array.isArray(v)) return v
-  if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : [] } catch { return [] } }
-  return []
 }
 
 export async function suggestTrends(opts: SuggestTrendsOptions): Promise<SuggestTrendsResult> {
