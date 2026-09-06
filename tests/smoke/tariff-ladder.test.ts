@@ -78,6 +78,8 @@ describe('лестница апгрейда: каждый тариф прода�
     expect(ud).toContain("(lapsed && ownPaid) ? ownPaid : ((currentPlan && nextPlan(currentPlan)) || 'solo')")
     expect(ud).toContain('Твой следующий шаг')
     // layout передаёт текущий тариф — иначе диалог всегда герой-Соло
-    expect(read('app/(dashboard)/layout.tsx')).toContain('UpgradeDialogHost currentPlan=')
+    const layout = read('app/(dashboard)/layout.tsx')
+    expect(layout).toContain('<UpgradeDialogHost')
+    expect(layout).toContain('currentPlan={profile?.subscription_tier')
   })
 })
