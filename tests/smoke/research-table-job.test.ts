@@ -75,6 +75,12 @@ describe('передача ноги (lib/jobs/continueLeg)', () => {
     expect(continueUrl()).toBe('https://amaproduct.com/api/jobs/continue')
     process.env.VERCEL_ENV = 'preview'
     expect(continueUrl()).toBe('https://ama-abc123-team.vercel.app/api/jobs/continue')
+    // Пробник 06.09 на проде: env без схемы → «Failed to parse URL» → нога
+    // доехала только через поллер. Схема дописывается.
+    process.env.NEXT_PUBLIC_APP_URL = 'amaproduct.com'
+    expect(continueUrl()).toBe('https://amaproduct.com/api/jobs/continue')
+    process.env.NEXT_PUBLIC_APP_URL = 'localhost:3000'
+    expect(continueUrl()).toBe('http://localhost:3000/api/jobs/continue')
   })
 
   it('не-2xx ответ продолжения — событие, а не тишина; статус queued + legEnded + токен', () => {

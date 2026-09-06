@@ -18,14 +18,22 @@ import { captureException, captureMessage } from '@/lib/sentry'
 //   5) захват ноги атомарный (updated_at): два диспетчера не запустят два
 //      раннера на один джоб.
 
+// Значение env может быть без схемы (на Vercel NEXT_PUBLIC_APP_URL = «amaproduct.com»
+// — пробник 06.09 поймал «Failed to parse URL»): схему дописываем сами.
+function withScheme(u: string): string {
+  const t = u.trim()
+  if (/^https?:\/\//i.test(t)) return t
+  return /^(localhost|127\.0\.0\.1)(:|$)/i.test(t) ? `http://${t}` : `https://${t}`
+}
+
 export function continueUrl(): string {
-  const canonical = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL
+  const canonical = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || '').trim()
   const base = canonical
-    ? canonical
+    ? withScheme(canonical)
     : process.env.VERCEL_ENV === 'production'
       ? 'https://amaproduct.com'
       : process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
+        ? withScheme(process.env.VERCEL_URL)
         : 'http://localhost:3000'
   return `${base.replace(/\/+$/, '')}/api/jobs/continue`
 }
