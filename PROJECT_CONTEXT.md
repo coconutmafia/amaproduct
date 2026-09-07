@@ -121,6 +121,19 @@
     72 878 (−37%), d6441a19 60 152 → 63 268 (расшифровок мало — эффекта не
     ждали). Дашу смотреть по ai_usage 08–09.09 (ожидание ≈86k).
     Миграция 048 — ПРИМЕНЕНА (story_layouts на проде читается), 049 не нужна.
+    ПРОД-ПРОВЕРКИ 07.09 (после деплоя a9c8416): (а) вебхук — боевой секрет
+    Продамуса живёт только в Vercel (старый qa-prodamus-sim.mjs с «st1265po89»
+    → bad_signature), поэтому тот же билд поднят локально (`next start`,
+    PRODAMUS_SECRET_KEY тестовый, база — прод): подписанное уведомление с
+    ЧУЖОЙ почтой ama-probe-nobody@example.com и order_num=<QA>.solo.<ts> →
+    200, QA-бот стал solo/active/prodamus до +30 дн., период с нуля, событие
+    «платёж сопоставлен» user_source=order; всё возвращено (producer, 19 ед.,
+    строки payments/billing_events/error_events пробы удалены). (б) Плашка —
+    браузер под QA-ботом на /create: синтетический ChunkLoadError → страница
+    перезагрузилась сама (navigation.type=reload, отметка в sessionStorage),
+    второй → плашка «Вышла новая версия AVA» с кнопкой «Обновить», кнопка
+    перезагружает, чат на месте. (в) vercel.json ignoreCommand: коммиты
+    только *.md больше не деплоятся (сегодня 2 из 6 выкладок были docs-only).
 
 ### ✅ 7 СЕНТЯБРЯ — ЦЕНА ЧАТА: 80% = ЗАПИСЬ КЭША НА ХОЛОДНОМ СТАРТЕ; ЧЕСТНАЯ ОЦЕНКА; РАСШИФРОВКИ ИЗ СЛОЯ В ПОДБОР
 65. Даша: «за сообщение написано 5 единиц, снимается 25; в ChatGPT/Claude
@@ -1485,7 +1498,8 @@ assistant-can-test-prod).
    вебхук читает наш номер из order_num; «новая версия — обнови» + сеть/сессия в friendlyError.
    ⚠️ ОСТАЛОСЬ МАТВЕЮ: (а) применить миграцию 050 (billing_email) и выполнить
    `node scripts/prod-probe.mjs set-billing-email --email viktoriaabertasova529@gmail.com --billing-email vika.abertasova@yandex.ru --run`;
-   (б) Vercel → Settings → Advanced → Skew Protection → вкл + redeploy; (в) решения по
+   (б) Vercel → Settings → Advanced → Skew Protection → вкл + redeploy (docs-only коммиты
+   теперь не деплоятся — vercel.json ignoreCommand); (в) решения по
    «Убрать фон» (remove.bg / Replicate) и возврату Стасе ~9 ед. (grant-bonus).
    Проверить 08–09.09: ai_usage Даши (prompt ≈86k), первый платёж Продамуса → info-событие
    «платёж сопоставлен» с user_source=order (подтверждает order_num).
