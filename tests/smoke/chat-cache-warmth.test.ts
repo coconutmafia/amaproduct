@@ -66,3 +66,16 @@ describe('оценка и списание знают про тёплый кэш
     }
   })
 })
+
+describe('контекст чата: сырые расшифровки не в постоянном слое (A/B 07.09)', () => {
+  it('чат строит стабильный слой без interview_transcript, RAG поддерживает excludeAlways и дедуп по тексту', () => {
+    const cc = read('lib/ai/chatContext.ts')
+    expect(cc).toContain("excludeAlways: ['interview_transcript']")
+    const rag = read('lib/ai/rag.ts')
+    expect(rag).toContain('excludeAlways?: string[]')
+    expect(rag).toMatch(/if \(excluded\.has\(m\.material_type as string\)\) continue/)
+    expect(rag, 'один текст под двумя типами — один раз').toContain('seenRaw')
+    // расшифровки по-прежнему эмбеддятся и приходят подбором: тип остаётся в ALWAYS_INCLUDE
+    expect(rag).toMatch(/'interview_transcript',\s*\/\/ raw customer-interview quotes/)
+  })
+})

@@ -102,7 +102,8 @@ export async function buildProjectChatContext(opts: {
   let queryMatches: RAGContext = { systemKnowledge: [], projectContext: [], styleExamples: [] }
   try {
     ;[ragContext, queryMatches] = await Promise.all([
-      buildRAGContext('', projectId, undefined, { stableOnly: true }),
+      // Сырые расшифровки — только подбором под вопрос (A/B 07.09, см. RagOptions.excludeAlways)
+      buildRAGContext('', projectId, undefined, { stableOnly: true, excludeAlways: ['interview_transcript'] }),
       buildRAGContext(lastMessage, projectId, undefined, { matchesOnly: true }),
     ])
   } catch {

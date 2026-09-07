@@ -113,6 +113,14 @@ export interface RagOptions {
   stableOnly?: boolean
   /** только найденные под вопрос фрагменты (кладутся в сообщение, вне кэша) */
   matchesOnly?: boolean
+  // Типы, которые НЕ кладём в стабильный слой целиком (их фрагменты всё равно
+  // приходят подбором под вопрос). Чат/генерация (07.09): сырые расшифровки
+  // кастдевов давали 53% контекста Даши (155 тыс. токенов, обрезанные до первых
+  // 15 тыс. знаков каждая — в основном приветствия), а таблицы исследования по
+  // ним и так в слое. Слепой A/B с судьёй по фактам (12 вопросов, Даша+Августа):
+  // без сырых расшифровок 6:5:1 при среднем балле 18,3 против 17,9 и МЕНЬШЕ
+  // выдумок (14 против 18); вход −34% (у Даши 155k → 86k токенов).
+  excludeAlways?: string[]
 }
 
 export async function buildRAGContext(
@@ -255,10 +263,18 @@ export async function buildRAGContext(
     const rawKey = (mt: string, title: string, raw: string) =>
       `${mt}::${title}::${raw.length}::${raw.slice(0, 120)}`
     const seen = new Set(projectChunks.map(c => `${c.material_type}::${c.chunk_text.slice(0, 120)}`))
+    // Один и тот же текст под разными типами (у Даши «КАРТА СМЫСЛОВ+КАСДЕВ»
+    // лежала и как audience_research, и как meanings_map) — в слой один раз.
+    const seenRaw = new Set<string>()
+    const excluded = new Set(opts?.excludeAlways ?? [])
     for (const m of alwaysMats) {
       if (!isUsableMaterial(m.processing_status)) continue
+      if (excluded.has(m.material_type as string)) continue
       const raw = (m.raw_content ?? '').toString()
       if (!raw.trim()) continue
+      const rawSig = `${raw.length}::${raw.slice(0, 300)}`
+      if (seenRaw.has(rawSig)) continue
+      seenRaw.add(rawSig)
       // Per-type budget. Long raw materials (interview transcripts, research
       // tables, surveys) hold the audience's own language — the whole point of
       // the moat — so a blanket 3000-char cut dropped ~95% of a 60-min
