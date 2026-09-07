@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { MASTER_RESEARCH_TITLE } from '@/lib/researchMaster'
 import type { StyleExample } from '@/types'
@@ -17,6 +18,13 @@ export interface RAGContext {
   // Standing per-project rules the blogger dictated («не пиши…», «всегда…») —
   // injected prominently into the system prompt, top priority.
   voiceRules?: string
+  // «Память проекта» (07.09): выжимка всех материалов вместо сырья в стабильном
+  // слое. Ставится сборкой контекста чата (lib/ai/chatContext.ts), рендерится
+  // в system.ts вместо «Материалы проекта».
+  projectBrief?: string
+  // Индекс материалов стабильного слоя (id/тип/длина) — по нему считается
+  // хэш состояния и объём слоя, без второго запроса к базе.
+  materialsIndex?: Array<{ id: string; material_type: string; title: string; len: number; status: string | null }>
 }
 
 // Per-material_type raw_content budget for the ALWAYS_INCLUDE layer (chars).
@@ -121,6 +129,8 @@ export interface RagOptions {
   // без сырых расшифровок 6:5:1 при среднем балле 18,3 против 17,9 и МЕНЬШЕ
   // выдумок (14 против 18); вход −34% (у Даши 155k → 86k токенов).
   excludeAlways?: string[]
+  /** Готовый клиент (скрипты/A/B под vitest, где серверный createClient недоступен). В проде не передаётся. */
+  client?: SupabaseClient
 }
 
 export async function buildRAGContext(
@@ -129,7 +139,7 @@ export async function buildRAGContext(
   contentType?: string,
   opts?: RagOptions
 ): Promise<RAGContext> {
-  const supabase = await createClient()
+  const supabase = opts?.client ?? await createClient()
   // Системная методология — актив компании, общий для всех, а НЕ данные юзера.
   // Читаем её service-role клиентом, потому что миграция 036 забирает у роли
   // authenticated право читать knowledge_chunks напрямую (иначе любой оплативший
@@ -249,13 +259,17 @@ export async function buildRAGContext(
   // the context inspector).
   const { data: alwaysMats } = opts?.matchesOnly ? { data: null } : await supabase
     .from('project_materials')
-    .select('title, material_type, raw_content, processing_status')
+    .select('id, title, material_type, raw_content, processing_status')
     .eq('project_id', projectId)
     .in('material_type', [...ALWAYS_INCLUDE])
     // Сводная таблица кастдевов — дубликат отдельных таблиц для людей,
     // в контекст генерации не берём (иначе каждое интервью попадёт дважды).
     .neq('title', MASTER_RESEARCH_TITLE)
 
+  const materialsIndex = (alwaysMats ?? []).map(m => ({
+    id: String((m as { id?: string }).id ?? ''), material_type: String(m.material_type), title: String(m.title ?? ''),
+    len: String(m.raw_content ?? '').length, status: (m.processing_status as string | null) ?? null,
+  }))
   if (!opts?.matchesOnly && alwaysMats && alwaysMats.length > 0) {
     // De-dup key must NOT collapse two distinct long materials that share a
     // title prefix (e.g. two customer interviews saved the same day). Key on
@@ -434,7 +448,7 @@ export async function buildRAGContext(
     if (raw) voiceRules = raw.slice(0, 3000)
   } catch { /* unavailable */ }
 
-  return { systemKnowledge: systemChunks, projectContext: projectChunks, styleExamples, voiceRules, viralReels }
+  return { systemKnowledge: systemChunks, projectContext: projectChunks, styleExamples, voiceRules, viralReels, materialsIndex }
 }
 
 export function splitIntoChunks(text: string, chunkSize = 512, overlap = 50): string[] {

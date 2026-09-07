@@ -161,7 +161,12 @@ ${fewShotSection}
 ${project.description ? `О проекте: ${project.description}` : ''}
 ${socials ? `Соцсети: ${socials}` : ''}
 
-${otherChunks.length > 0 ? `Материалы проекта (кейсы, продукт, аудитория):
+${context.projectBrief
+  ? `═══════════════════════════════════════
+ПАМЯТЬ ПРОЕКТА
+═══════════════════════════════════════
+${context.projectBrief}`
+  : otherChunks.length > 0 ? `Материалы проекта (кейсы, продукт, аудитория):
 ${otherChunks.map((c) => `[${c.material_type}]: ${c.chunk_text}`).join('\n\n')}` : ''}
 ${reelsSection}
 

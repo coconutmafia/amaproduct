@@ -6,6 +6,8 @@ import { buildRAGContext, type RAGContext } from '@/lib/ai/rag'
 import { buildSystemPrompt } from '@/lib/ai/prompts/system'
 import { AI_TELLS_TO_AVOID, resolveContentLanguage } from '@/lib/ai/prompts/content-brain'
 import type { Project } from '@/types'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { briefSourceHash, stableLayerChars, getBriefState, ensureBriefJob, renderBriefSection, BRIEF_MIN_LAYER_CHARS, BRIEF_KEEP_TYPES } from '@/lib/ai/projectBrief'
 
 export type ChatMsg = { role: 'user' | 'assistant'; content: string; images?: string[] }
 type Db = SupabaseClient
@@ -109,6 +111,37 @@ export async function buildProjectChatContext(opts: {
   } catch {
     // RAG unavailable
   }
+
+  // «Память проекта» вместо сырья (07.09): у больших проектов стабильный слой
+  // = бриф + голос/линии блога; остальное приходит подбором под вопрос.
+  // Бриф устарел или его нет → этот ответ идёт по полному слою, а пересборка
+  // ставится в очередь (не чаще раза в 15 минут на проект).
+  try {
+    const index = ragContext.materialsIndex ?? []
+    // ВЫКЛЮЧЕНО по умолчанию: A/B №3 (07.09) память проекта проиграла проду
+    // 3:7, средний балл 16,0 против 18,3, выдумок 34 против 14 — дистилляция
+    // теряет дословный материал, и модель дописывает от себя. Код оставлен для
+    // версии 2 (бриф + целые таблицы); включается PROJECT_BRIEF_ENABLED=1.
+    if (process.env.PROJECT_BRIEF_ENABLED === '1' && index.length > 0 && stableLayerChars(index) >= BRIEF_MIN_LAYER_CHARS) {
+      const admin = createAdminClient()
+      const hash = briefSourceHash(project, index)
+      const st = await getBriefState(admin, projectId, hash)
+      if (st.state === 'fresh') {
+        ragContext = {
+          ...ragContext,
+          projectBrief: renderBriefSection(st.brief),
+          projectContext: ragContext.projectContext.filter(c => BRIEF_KEEP_TYPES.has(c.material_type)),
+        }
+      } else if (st.state === 'stale') {
+        const jobId = await ensureBriefJob(admin, projectId, userId, hash)
+        if (jobId) {
+          const { after } = await import('next/server')
+          const { processProjectBriefJob } = await import('@/lib/jobs/runProjectBriefJob')
+          after(() => processProjectBriefJob(jobId))
+        }
+      }
+    }
+  } catch { /* вне request-скоупа (тесты/скрипты) или без таблицы — полный слой */ }
 
   const baseSystem = buildSystemPrompt(ragContext, project)
   const savedBlock = await buildSavedBlock(supabase, userId, projectId)

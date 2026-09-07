@@ -8,6 +8,8 @@ import { getGenerationStats } from '@/lib/generations'
 import type { Project } from '@/types'
 
 export const dynamic = 'force-dynamic'
+// Отсюда тоже может стартовать фоновая пересборка «памяти проекта» (after) — ей нужны те же 300 с.
+export const maxDuration = 300
 
 // POST /api/ai/chat/estimate { projectId?, messages, genFormat? } — «≈ N ед.»
 // до отправки (честные единицы, 05.09). Считает ТЕ ЖЕ system-блоки и историю,
