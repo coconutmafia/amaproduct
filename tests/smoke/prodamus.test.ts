@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { isAmaSubscriptionPayment, prodamusSign, prodamusVerify, parseFormNested, buildOrderId, parseOrderId, mapProdamusStatus } from '@/lib/billing/prodamus'
+import { readFileSync } from 'node:fs'
+import { isAmaSubscriptionPayment, prodamusSign, prodamusVerify, parseFormNested, buildOrderId, parseOrderId, mapProdamusStatus, resolveMerchantOrder, parseTopupPayment, webhookEvidence } from '@/lib/billing/prodamus'
 
 // Payment-webhook signature logic. A silent regression here = either rejecting
 // every real payment or accepting forged callbacks. Never touch without tests.
@@ -89,5 +90,50 @@ describe('isAmaSubscriptionPayment', () => {
     expect(isAmaSubscriptionPayment({})).toBe(false)
     expect(isAmaSubscriptionPayment({ subscription: null, subscriptionId: null, orderId: '' })).toBe(false)
     expect(isAmaSubscriptionPayment({ subscriptionId: '', orderId: '46792048' })).toBe(false)
+  })
+})
+
+// 07.09 (Виктория Курбатова, «Соло без демо», 4 900 ₽ на чужую почту): в
+// уведомлении Продамуса `order_id` — «ID заказа в системе Prodamus» (их
+// 48521255), а НАШ userId.plan.ts возвращается полем `order_num` («номер
+// заказа на стороне магазина»). Код читал только order_id → «пользователь не
+// найден». Теперь наш номер ищем в обоих полях, order_num первым, и только с
+// настоящим UUID (данные с формы — не доверяем строке «что-то.solo»).
+describe('resolveMerchantOrder — наш номер заказа в order_num', () => {
+  const U = '6405276f-c82b-4ee9-b346-69e2bde9ff02'
+  it('order_num несёт userId.plan.ts, order_id — числовой Продамуса', () => {
+    expect(resolveMerchantOrder({ order_id: '48521255', order_num: `${U}.solo.1788000000000` })).toEqual({ userId: U, plan: 'solo' })
+  })
+  it('старый формат в order_id по-прежнему распознаётся', () => {
+    expect(resolveMerchantOrder({ order_id: `${U}.pro.1` })).toEqual({ userId: U, plan: 'pro' })
+  })
+  it('без нашего формата / с не-UUID — null (чужой платёж, подделка)', () => {
+    expect(resolveMerchantOrder({ order_id: '48521255', order_num: '48521255' })).toBeNull()
+    expect(resolveMerchantOrder({ order_id: '48521255', order_num: 'admin.producer.1' })).toBeNull()
+    expect(resolveMerchantOrder({})).toBeNull()
+  })
+  it('докупка и «наш платёж» тоже видят order_num', () => {
+    expect(parseTopupPayment({ order_id: '1', order_num: `${U}.topup-solo.5` })).toEqual({ userId: U, plan: 'solo' })
+    expect(isAmaSubscriptionPayment({ orderId: '48521255', orderNum: `${U}.solo.5` })).toBe(true)
+  })
+  it('улика в журнал: ключи + оба номера + customer_extra', () => {
+    const ev = webhookEvidence({ order_id: '1', order_num: 'x', customer_extra: '', sum: '1' })
+    expect(ev).toEqual({ keys: 'order_id,order_num,customer_extra,sum', order_id: '1', order_num: 'x', customer_extra: '' })
+  })
+  it('вебхук: пользователь — по нашему номеру ПЕРВЫМ, потом email/billing_email, подписка — последней и только при одном владельце', () => {
+    const src = readFileSync(`${process.cwd()}/app/api/billing/prodamus/webhook/route.ts`, 'utf8')
+    const iOrder = src.indexOf('resolveMerchantOrder(data')
+    const iEmail = src.indexOf("userId = await findUserByEmail(admin")
+    const iSub = src.indexOf("eq('provider_subscription_id', String(subId)).limit(2)")
+    expect(iOrder).toBeGreaterThan(0)
+    expect(iEmail).toBeGreaterThan(iOrder)
+    expect(iSub).toBeGreaterThan(iEmail)
+    // subscription.id у Продамуса = id продукта (2946756 у 16 клиентов) — maybeSingle тут нельзя
+    expect(src).not.toContain("eq('provider_subscription_id', String(subId)).maybeSingle()")
+    expect(src).toContain("ilike('billing_email', email)")
+    expect(src).toContain('webhookEvidence(data')
+    // миграция и пробник знают про почту плательщика
+    expect(readFileSync(`${process.cwd()}/supabase/migrations/050_billing_email.sql`, 'utf8')).toContain('billing_email')
+    expect(readFileSync(`${process.cwd()}/scripts/prod-probe.mjs`, 'utf8')).toContain("arg('billing-email')")
   })
 })

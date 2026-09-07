@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { prodamusConfigured, prodamusVerify, parseFormNested, parseOrderId, mapProdamusStatus, isAmaSubscriptionPayment, parseTopupPayment } from '@/lib/billing/prodamus'
+import { prodamusConfigured, prodamusVerify, parseFormNested, resolveMerchantOrder, webhookEvidence, mapProdamusStatus, isAmaSubscriptionPayment, parseTopupPayment } from '@/lib/billing/prodamus'
 import { startBillingPeriod } from '@/lib/billing/period'
 import { grantTopup } from '@/lib/billing/topup'
 import type { PaidPlan } from '@/lib/generations-config'
@@ -21,6 +21,18 @@ async function logWebhook(message: string, context: Record<string, unknown>, lev
       level, source: 'webhook', route: '/api/billing/prodamus/webhook', message, context,
     })
   } catch { /* logging must never break the webhook */ }
+}
+
+// Почта на форме оплаты может отличаться от почты аккаунта (Виктория 07.09:
+// автозаполнилась яндекс-почта). Тогда владелец хранит её в profiles.billing_email
+// (миграция 050) — по ней находим человека при рекуррентах. До миграции колонки
+// нет: PostgREST отвечает 42703 — тогда ищем только по email.
+async function findUserByEmail(admin: ReturnType<typeof createAdminClient>, email: string): Promise<string | undefined> {
+  const { data: byEmail } = await admin.from('profiles').select('id').ilike('email', email).limit(2)
+  if (byEmail && byEmail.length === 1) return byEmail[0].id
+  const { data: byBilling, error } = await admin.from('profiles').select('id').ilike('billing_email', email).limit(2)
+  if (error) return undefined // колонки ещё нет (до миграции 050) — не падаем
+  return byBilling && byBilling.length === 1 ? byBilling[0].id : undefined
 }
 
 export async function POST(request: Request) {
@@ -60,14 +72,16 @@ export async function POST(request: Request) {
 
   try {
     if (status.toLowerCase() === 'success') {
-      // Продамус returns its OWN numeric order_id (NOT our userId.plan.ts — ready
-      // subscription links drop appended query params) plus a full `subscription`
-      // object and customer_email. So resolve:
+      // Продамус returns its OWN numeric `order_id` plus OUR order number as
+      // `order_num` («номер заказа на стороне магазина» по докам) — до 07.09 код
+      // читал только order_id и потому терял userId.plan.ts (платёж Виктории на
+      // чужую почту остался без пользователя). Resolve:
       //   • PLAN — from the subscription's real recurring cost (tamper-proof: set
-      //     by Продамус, not the payer), fallback to its RU name.
-      //   • USER — by the payer's email (survives), fallback to a stored
-      //     subscription id (recurring rebills) or our order_id if it ever survives.
-      const parsed = parseOrderId(orderId)
+      //     by Продамус, not the payer), fallback to its RU name, then our order.
+      //   • USER — our order number FIRST (не зависит от почты на форме), then the
+      //     payer's email / billing_email (рекурренты), then stored subscription id.
+      const parsed = resolveMerchantOrder(data as Record<string, unknown>)
+      const orderNum = String((data as Record<string, unknown>).order_num ?? '')
       const sub = (data.subscription && typeof data.subscription === 'object')
         ? (data.subscription as Record<string, unknown>) : null
       const subId = sub?.id ?? (data as Record<string, unknown>).subscription_id ?? null
@@ -83,10 +97,7 @@ export async function POST(request: Request) {
       const topup = parseTopupPayment(data as Record<string, unknown>)
       if (topup && !isAmaSubscriptionPayment({ subscription: sub, subscriptionId: subId, orderId: '' })) {
         let tuUser = topup.userId
-        if (!tuUser && data.customer_email) {
-          const { data: prof } = await admin.from('profiles').select('id').ilike('email', String(data.customer_email)).maybeSingle()
-          tuUser = prof?.id
-        }
+        if (!tuUser && data.customer_email) tuUser = await findUserByEmail(admin, String(data.customer_email))
         if (tuUser && topup.plan) {
           await grantTopup(admin, tuUser, topup.plan as PaidPlan)
           await admin.from('payments').insert({
@@ -99,7 +110,7 @@ export async function POST(request: Request) {
         return new NextResponse('success', { status: 200 })
       }
 
-      if (!isAmaSubscriptionPayment({ subscription: sub, subscriptionId: subId, orderId })) {
+      if (!isAmaSubscriptionPayment({ subscription: sub, subscriptionId: subId, orderId, orderNum })) {
         await logWebhook('prodamus webhook: чужой платёж (не подписка AVA) — пропущен', {
           order_id: orderId, email: data.customer_email ?? null,
           sum: data.sum ?? null, currency: data.currency ?? null,
@@ -117,15 +128,24 @@ export async function POST(request: Request) {
       }
       if (!grantedPlan) grantedPlan = parsed?.plan
 
-      // User: our order_id → payer email → stored subscription id.
+      // User: our order number → payer email (email ИЛИ billing_email) → stored
+      // subscription id. ⚠️ У Продамуса subscription.id — это id ПРОДУКТА
+      // (2946756 у 16 клиентов) — по нему ищем в последнюю очередь и только
+      // если владелец ровно один.
       let userId = parsed?.userId
+      let userSource: 'order' | 'email' | 'subscription' | null = userId ? 'order' : null
+      if (userId) {
+        // Страж: order_num — данные с формы; выдаём тариф только реальному профилю.
+        const { data: prof } = await admin.from('profiles').select('id').eq('id', userId).maybeSingle()
+        if (!prof) { userId = undefined; userSource = null }
+      }
       if (!userId && data.customer_email) {
-        const { data: prof } = await admin.from('profiles').select('id').ilike('email', String(data.customer_email)).maybeSingle()
-        userId = prof?.id
+        userId = await findUserByEmail(admin, String(data.customer_email))
+        if (userId) userSource = 'email'
       }
       if (!userId && subId) {
-        const { data: prof } = await admin.from('profiles').select('id').eq('provider_subscription_id', String(subId)).maybeSingle()
-        userId = prof?.id
+        const { data: profs } = await admin.from('profiles').select('id').eq('provider_subscription_id', String(subId)).limit(2)
+        if (profs && profs.length === 1) { userId = profs[0].id; userSource = 'subscription' }
       }
 
       const paidSum = Number(data.sum ?? (data as Record<string, unknown>).amount ?? NaN)
@@ -143,10 +163,18 @@ export async function POST(request: Request) {
       } catch { /* ledger insert is best-effort */ }
 
       if (!userId) {
-        await logWebhook('prodamus webhook: платёж прошёл, но пользователь не найден (email/подписка не сопоставлены)', {
-          order_id: orderId, email: data.customer_email ?? null, subscription_id: subId, plan: grantedPlan ?? null,
+        await logWebhook('prodamus webhook: платёж прошёл, но пользователь не найден (order_num/email/подписка не сопоставлены)', {
+          ...webhookEvidence(data as Record<string, unknown>),
+          email: data.customer_email ?? null, subscription_id: subId, plan: grantedPlan ?? null,
         })
       } else {
+        // Улика на каждый сопоставленный платёж (1–2 в день): по какому полю
+        // нашли человека и что прислал Продамус. Первый реальный платёж после
+        // 07.09 подтвердит (или опровергнет), что order_num несёт наш номер.
+        await logWebhook('prodamus webhook: платёж сопоставлен', {
+          ...webhookEvidence(data as Record<string, unknown>), user_source: userSource, user_id: userId,
+          email: data.customer_email ?? null, subscription_id: subId, plan: grantedPlan ?? null,
+        }, 'info')
         // Do NOT activate a paid status with an unresolved plan — that would leave
         // status=active but subscription_tier=trial, which isEntitled treats as NOT
         // entitled (money taken, user locked out). Bail loudly for manual grant.

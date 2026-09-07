@@ -50,7 +50,7 @@ describe('докупка объёма раньше срока', () => {
   it('вебхуки выдают объём: Stripe по metadata, Продамус по order_id/названию товара', () => {
     expect(read('app/api/billing/stripe/webhook/route.ts')).toContain("session.mode === 'payment' && session.metadata?.type === 'topup'")
     expect(read('app/api/billing/prodamus/webhook/route.ts')).toContain('parseTopupPayment(data')
-    expect(parseTopupPayment({ order_id: 'u1.topup-solo.123' })).toEqual({ userId: 'u1', plan: 'solo' })
+    expect(parseTopupPayment({ order_id: '6405276f-c82b-4ee9-b346-69e2bde9ff02.topup-solo.123' })).toEqual({ userId: '6405276f-c82b-4ee9-b346-69e2bde9ff02', plan: 'solo' })
     expect(parseTopupPayment({ products: [{ name: 'AVA · докупка Про' }] })).toEqual({ plan: 'pro' })
     expect(parseTopupPayment({ products: [{ name: 'Курс Августы' }] })).toBeNull()
   })

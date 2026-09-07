@@ -216,8 +216,8 @@ export function PricingClient({
         <div className="mx-auto max-w-xl flex gap-2.5 rounded-xl border border-amber-200 dark:border-amber-400/30 bg-amber-50 dark:bg-amber-400/10 p-3">
           <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
           <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-300">
-            На странице оплаты укажи <strong>этот же email</strong>: <strong className="whitespace-nowrap">{userEmail}</strong>
-            {' '}— по нему тариф привяжется к твоему аккаунту. С другой почтой доступ откроется не здесь.
+            На странице оплаты укажи <strong>этот же email</strong>: <strong className="whitespace-nowrap">{userEmail}</strong>.
+            {' '}Если форма подставит другую почту (из прошлых покупок) — исправь на эту: по ней придут чеки и продление.
           </p>
         </div>
       )}

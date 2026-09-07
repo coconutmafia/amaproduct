@@ -50,6 +50,19 @@ function extractMessage(error: unknown): string {
 // would hide them behind the generic «это на нашей стороне» — but these are NOT
 // our fault and the user CAN act on them, so translate them explicitly.
 const DOMAIN_MAP: Array<[RegExp, string]> = [
+  // Обрыв сети / стрима (Евгения 07.09: Chrome кидает «TypeError: network
+  // error», когда стрим ответа рвётся на середине; Safari — «Load failed»). До
+  // этого всё уезжало в голое «Ошибка» — человек не знал, что делать. Это НЕ
+  // «на нашей стороне», а сеть — говорим, что повторить.
+  [/^(TypeError: )?(failed to fetch|load failed|network ?error|the network connection was lost|networkerror when attempting)/i,
+    'Сеть оборвалась — проверь интернет и отправь ещё раз.'],
+  // Вышла новая версия, а вкладка держит старую: браузер не может догрузить
+  // кусок старой сборки (ChunkLoadError). Лечится только перезагрузкой страницы.
+  [/chunkloaderror|loading chunk|failed to load chunk|importing a module script failed|dynamically imported module/i,
+    'Вышла новая версия — обнови страницу (потяни вниз или Ctrl+R) и повтори.'],
+  // 401 от наших роутов: сессия протухла в фоне (вкладка жила дольше токена).
+  [/^unauthorized$|^unauthenticated$|auth session missing|jwt expired/i,
+    'Сессия истекла — обнови страницу и войди заново.'],
   [/project_limit_reached/i, 'На твоём тарифе закончились проекты. Выбери тариф выше на странице «Тарифы» — и создавай больше.'],
   // 402 от requirePaidAccess. До 17.08 код проваливался в generic-фолбэк, и
   // Ира Varshavsky 9 раз видела «Не удалось получить данные профиля» там, где

@@ -144,9 +144,15 @@ async function cascadeDelete() {
 // найти владельца. Запасной путь по provider_subscription_id НЕ спасёт — у
 // Продамуса это id ПРОДУКТА (напр. 2946756), он одинаковый у многих людей.
 //
+// 07.09 (Виктория, «Соло без демо»): --days 30 (месяц от оплаты, не 60 демо),
+// период единиц начинается заново (как startBillingPeriod в вебхуке), а почта
+// плательщика, если она НЕ равна почте аккаунта, — в profiles.billing_email
+// (миграция 050), чтобы рекуррент через месяц нашёл владельца.
+//
 // Использование:
 //   node scripts/prod-probe.mjs link-payment --payer dasha-yurzhic@mail.ru \
-//     --plan solo --order 46842197 --sub 2946756 [--drop-account old@mail.ru] [--run]
+//     --plan solo --order 46842197 --sub 2946756 [--days 60] [--billing-email vika@yandex.ru] \
+//     [--drop-account old@mail.ru] [--run]
 function arg(name) {
   const i = process.argv.indexOf(`--${name}`)
   return i > -1 ? process.argv[i + 1] : undefined
@@ -173,6 +179,9 @@ async function linkPayment() {
   const order = arg('order')
   const sub = arg('sub')
   const drop = arg('drop-account')
+  const days = Math.floor(Number(arg('days') || 60))
+  const billingEmail = (arg('billing-email') || '').trim().toLowerCase() || null
+  if (!Number.isFinite(days) || days < 1 || days > 366) throw new Error('--days 1..366')
   if (!payer || !plan || !order) {
     throw new Error('нужны --payer <email> --plan <solo|pro|producer> --order <orderId>')
   }
@@ -196,9 +205,10 @@ async function linkPayment() {
     throw new Error(`по заказу ${order} найдено платежей: ${Array.isArray(pays) ? pays.length : '?'} (нужен ровно 1)`)
   }
   const pay = pays[0]
-  const periodEnd = new Date(new Date(pay.created_at).getTime() + 60 * 86400000).toISOString()
+  const periodEnd = new Date(new Date(pay.created_at).getTime() + days * 86400000).toISOString()
   log(`платёж: ${pay.amount} ${pay.currency} от ${pay.created_at.slice(0, 19)} (user_id сейчас: ${pay.user_id ?? 'null'})`)
-  log(`доступ до: ${periodEnd.slice(0, 10)} (60 дней от оплаты — как у остальных)`)
+  log(`доступ до: ${periodEnd.slice(0, 10)} (${days} дней от оплаты)`)
+  if (billingEmail && billingEmail !== payer.toLowerCase()) log(`почта плательщика (для рекуррентов): ${billingEmail}`)
 
   // 3. кого удаляем (если просили) — только если пусто
   let dropUser = null
@@ -221,6 +231,8 @@ async function linkPayment() {
   if (!RUN) {
     log(`\n[DRY-RUN] что будет сделано (добавь --run):`)
     log(`  1) ${target.email}: tier=${plan}, status=active, provider=prodamus, до ${periodEnd.slice(0, 10)}${sub ? `, sub_id=${sub}` : ''}`)
+    log(`     период единиц заново: used=0, micro=0, reset_at=${periodEnd.slice(0, 10)}, period_started_at=now`)
+    if (billingEmail) log(`     billing_email=${billingEmail} (миграция 050)`)
     log(`  2) платёж ${order}: user_id → ${target.id}`)
     if (dropUser) log(`  3) удалить аккаунт ${dropUser.email}`)
     return
@@ -233,12 +245,18 @@ async function linkPayment() {
     payment_provider: 'prodamus',
     current_period_end: periodEnd,
     ...(sub ? { provider_subscription_id: String(sub) } : {}),
+    // = startBillingPeriod (lib/billing/period.ts): оплата открывает период
+    generations_used: 0, micro_actions_count: 0, generations_reset_at: periodEnd, period_started_at: new Date().toISOString(),
   }
   const up = await api(`/rest/v1/profiles?id=eq.${target.id}`, {
     method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(patch),
   })
   if (up.status >= 300) throw new Error(`не удалось выдать тариф: ${up.status} ${JSON.stringify(up.body).slice(0, 200)}`)
-  log(`\n✅ 1. тариф выдан: ${plan}/active до ${periodEnd.slice(0, 10)}`)
+  log(`\n✅ 1. тариф выдан: ${plan}/active до ${periodEnd.slice(0, 10)}, период единиц с нуля`)
+  if (billingEmail) {
+    const be = await api(`/rest/v1/profiles?id=eq.${target.id}`, { method: 'PATCH', body: JSON.stringify({ billing_email: billingEmail }) })
+    log(be.status < 300 ? `✅ 1b. billing_email=${billingEmail}` : `⚠️ 1b. billing_email не записан (${be.status}: ${JSON.stringify(be.body).slice(0, 120)}) — примени миграцию 050 и повтори PATCH`)
+  }
 
   const lp = await api(`/rest/v1/payments?id=eq.${pay.id}`, {
     method: 'PATCH', body: JSON.stringify({ user_id: target.id }),
@@ -251,8 +269,29 @@ async function linkPayment() {
   }
 
   // контрольное чтение
-  const { body: after } = await api(`/rest/v1/profiles?id=eq.${target.id}&select=email,subscription_tier,subscription_status,payment_provider,current_period_end,provider_subscription_id`)
+  const { body: after } = await api(`/rest/v1/profiles?id=eq.${target.id}&select=email,subscription_tier,subscription_status,payment_provider,current_period_end,provider_subscription_id,generations_used,generations_reset_at,period_started_at`)
   log(`\n── ИТОГ ──\n${JSON.stringify(after?.[0], null, 2)}`)
+}
+
+// ── ИНСТРУМЕНТ: почта плательщика (миграция 050) ─────────────────────────────
+// Платёж уже привязан (link-payment), а колонки billing_email в момент привязки
+// ещё не было. После миграции 050 дописываем почту с формы Продамуса одной
+// командой — по ней вебхук найдёт владельца при рекурренте.
+//   node scripts/prod-probe.mjs set-billing-email --email viktoriaabertasova529@gmail.com \
+//     --billing-email vika.abertasova@yandex.ru [--run]
+async function setBillingEmail() {
+  const email = (arg('email') || '').trim().toLowerCase()
+  const billing = (arg('billing-email') || '').trim().toLowerCase()
+  if (!email.includes('@') || !billing.includes('@')) throw new Error('нужны --email <почта аккаунта> --billing-email <почта плательщика>')
+  const { body: profs } = await api(`/rest/v1/profiles?email=eq.${encodeURIComponent(email)}&select=id,email,payment_provider,subscription_status`)
+  if (!Array.isArray(profs) || profs.length !== 1) throw new Error(`по ${email} найдено профилей: ${Array.isArray(profs) ? profs.length : '?'}`)
+  const { body: clash } = await api(`/rest/v1/profiles?email=ilike.${encodeURIComponent(billing)}&select=id,email`)
+  if (Array.isArray(clash) && clash.length) throw new Error(`ОТКАЗ: ${billing} — это почта ДРУГОГО аккаунта (${clash[0].id}); рекуррент нашёл бы двоих`)
+  log(`${profs[0].email} (${profs[0].payment_provider}/${profs[0].subscription_status}) → billing_email=${billing}`)
+  if (!RUN) { log('[DRY-RUN] добавь --run'); return }
+  const r = await api(`/rest/v1/profiles?id=eq.${profs[0].id}`, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ billing_email: billing }) })
+  if (r.status >= 300) throw new Error(`не записалось: ${r.status} ${JSON.stringify(r.body).slice(0, 160)} — миграция 050 применена?`)
+  log(`✅ billing_email=${r.body?.[0]?.billing_email}`)
 }
 
 // ── ОЧИСТКА: убрать из леджера ЧУЖИЕ платежи ─────────────────────────────────
@@ -3877,7 +3916,7 @@ async function ruLinksProbe() {
 
 // ── роутинг ──────────────────────────────────────────────────────────────────
 const probe = process.argv[2]
-const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe, 'budget-cap-probe': budgetCapProbe, 'enforce-paid-access': enforcePaidAccess, 'leads-flush': leadsFlush, 'email-probe': emailProbe, 'qa-audit': qaAudit, 'grant-boost': grantBoost, 'research-legs': researchLegsProbe, 'ru-links': ruLinksProbe }
+const PROBES = { 'cascade-delete': cascadeDelete, 'link-payment': linkPayment, 'clean-ledger': cleanLedger, 'recovery-link': recoveryLink, 'recovery-token-hash': recoveryTokenHash, 'storage-limit': storageLimit, 'research-smoke': researchSmoke, 'meanings-smoke': meaningsSmoke, 'rebuild-meanings': rebuildMeanings, 'grant-access': grantAccess, 'canon-questions': canonQuestions, 'english-smoke': englishSmoke, 'set-language': setLanguage, 'angles-smoke': anglesSmoke, 'patch-material': patchMaterial, 'as-user': asUser, 'warmup-smoke': warmupSmoke, 'week-brief-smoke': weekBriefSmoke, 'autofill-smoke': autofillSmoke, 'competitors-smoke': competitorsSmoke, 'chat-unit-fate': chatUnitFate, 'generate-unit-fate': generateUnitFate, 'set-tier': setTier, 'limit-smoke': limitSmoke, 'usage-report': usageReport, 'grant-bonus': grantBonus, 'embed-backfill': embedBackfill, 'cache-probe': cacheProbe, 'reels-context': reelsContext, 'chat-image': chatImage, 'meter-smoke': meterSmoke, 'stories-style-probe': storiesStyleProbe, 'story-font-backfill': storyFontBackfill, 'funnel-probe': funnelProbe, 'budget-cap-probe': budgetCapProbe, 'enforce-paid-access': enforcePaidAccess, 'leads-flush': leadsFlush, 'email-probe': emailProbe, 'qa-audit': qaAudit, 'grant-boost': grantBoost, 'research-legs': researchLegsProbe, 'ru-links': ruLinksProbe, 'set-billing-email': setBillingEmail }
 
 if (!PROBES[probe]) {
   log('Пробники:', Object.keys(PROBES).join(', '))

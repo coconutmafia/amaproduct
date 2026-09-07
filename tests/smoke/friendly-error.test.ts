@@ -10,9 +10,26 @@ describe('friendlyError', () => {
   })
 
   it('hides Latin-only exception/library text', () => {
-    expect(friendlyError(new Error('Failed to fetch'))).toBe(SERVICE_ERROR_MESSAGE)
-    expect(friendlyError(new Error('Unauthorized'))).toBe(SERVICE_ERROR_MESSAGE)
     expect(friendlyError(new Error('Cannot read properties of undefined'))).toBe(SERVICE_ERROR_MESSAGE)
+    expect(friendlyError(new Error('Internal Server Error'))).toBe(SERVICE_ERROR_MESSAGE)
+  })
+
+  // Евгения 07.09: чат «Создать» показал голое «Ошибка» — Chrome рвёт стрим с
+  // «TypeError: network error», Safari — «Load failed». Сеть ≠ «на нашей
+  // стороне»: говорим повторить. Новая сборка при живой вкладке — ChunkLoadError,
+  // лечится только перезагрузкой. 401 — сессия истекла.
+  it('network / new-version / expired-session errors get actionable copy, not a bare fallback', () => {
+    const net = 'Сеть оборвалась — проверь интернет и отправь ещё раз.'
+    expect(friendlyError(new Error('network error'), 'Ошибка')).toBe(net)
+    expect(friendlyError(new Error('TypeError: network error'), 'Ошибка')).toBe(net)
+    expect(friendlyError(new Error('Failed to fetch'))).toBe(net)
+    expect(friendlyError(new Error('Load failed'))).toBe(net)
+    expect(friendlyError(new Error('Failed to load chunk /_next/static/chunks/08kao_fw.k29..js from module 964893'), 'Ошибка'))
+      .toMatch(/новая версия.*обнови страницу/i)
+    expect(friendlyError(new Error('ChunkLoadError: Loading chunk 123 failed'))).toMatch(/новая версия/i)
+    expect(friendlyError(new Error('Unauthorized'), 'Ошибка')).toBe('Сессия истекла — обнови страницу и войди заново.')
+    // но «network» внутри технического хвоста провайдера остаётся скрытым
+    expect(friendlyError(new Error('api.anthropic.com network error'))).toBe(SERVICE_ERROR_MESSAGE)
   })
 
   // Регрессия 17 июля: русский префикс «Ошибка расшифровки:» проходил эвристику
@@ -45,7 +62,7 @@ describe('friendlyError', () => {
 
   it('accepts plain strings and objects with a message field', () => {
     expect(friendlyError('Не удалось')).toBe('Не удалось')
-    expect(friendlyError({ message: 'Failed to fetch' })).toBe(SERVICE_ERROR_MESSAGE)
+    expect(friendlyError({ message: 'permission denied for table projects' })).toBe(SERVICE_ERROR_MESSAGE)
   })
 })
 

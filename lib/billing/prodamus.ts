@@ -65,8 +65,7 @@ export function prodamusTopupLink(plan: PaidPlan): string | undefined {
 // «userId.topup-plan.ts» ИЛИ товар с «докупка» в названии. Чужие разовые
 // платежи Августы (курсы) сюда не проходят — у них нет ни того, ни другого.
 export function parseTopupPayment(data: Record<string, unknown>): { userId?: string; plan?: PaidPlan } | null {
-  const orderId = String(data.order_id ?? '')
-  const parsed = parseOrderId(orderId)
+  const parsed = resolveMerchantOrder(data)
   if (parsed?.plan?.startsWith('topup-')) {
     return { userId: parsed.userId, plan: parsed.plan.slice('topup-'.length) as PaidPlan }
   }
@@ -187,6 +186,34 @@ export function parseOrderId(orderId: string): { userId: string; plan: string } 
   return p.length >= 2 ? { userId: p[0], plan: p[1] } : null
 }
 
+// ── НАШ номер заказа в уведомлении (07.09, Виктория) ────────────────────────
+// В уведомлении Продамуса ДВА номера: `order_id` — «ID заказа в системе
+// Prodamus» (их числовой, напр. 48521255), `order_num` — «номер заказа на
+// стороне магазина», т.е. то, что мы передали в ссылке как order_id
+// (userId.plan.ts). Код с июля читал только order_id и решил, что «Продамус
+// срезает наш order_id у готовых ссылок» — поэтому платёж Виктории 07.09
+// (на форме автозаполнилась другая почта) не нашёл пользователя. Наш формат
+// распознаём в любом из двух полей, order_num — первым.
+export function resolveMerchantOrder(data: Record<string, unknown>): { userId: string; plan: string } | null {
+  for (const key of ['order_num', 'order_id'] as const) {
+    const parsed = parseOrderId(String(data[key] ?? ''))
+    if (parsed && UUID_RE.test(parsed.userId)) return parsed
+  }
+  return null
+}
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Улика для журнала: какие поля пришли и что в них, — чтобы следующий
+// «пользователь не найден» разбирался по факту, а не по догадкам о полях.
+export function webhookEvidence(data: Record<string, unknown>): Record<string, unknown> {
+  return {
+    keys: Object.keys(data).join(','),
+    order_id: data.order_id ?? null,
+    order_num: data.order_num ?? null,
+    customer_extra: data.customer_extra ?? null,
+  }
+}
+
 /**
  * Относится ли вебхук Продамуса к оплате тарифа AVA.
  *
@@ -206,11 +233,12 @@ export function isAmaSubscriptionPayment(opts: {
   subscription?: unknown
   subscriptionId?: unknown
   orderId?: string
+  orderNum?: string // наш номер заказа приходит в order_num (см. resolveMerchantOrder)
 }): boolean {
   const hasSub = Boolean(opts.subscription && typeof opts.subscription === 'object')
   if (hasSub) return true
   if (opts.subscriptionId !== null && opts.subscriptionId !== undefined && opts.subscriptionId !== '') return true
-  const parsed = parseOrderId(opts.orderId ?? '')
+  const parsed = parseOrderId(opts.orderId ?? '') ?? parseOrderId(opts.orderNum ?? '')
   return Boolean(parsed?.userId && parsed?.plan)
 }
 
