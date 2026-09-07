@@ -129,15 +129,15 @@ export default function CreatePage() {
 
   // Честные единицы (05.09): оценка следующего сообщения и последнее списание —
   // человек видит цену ДО отправки и факт ПОСЛЕ, в единицах, без наших долларов.
-  const [est, setEst] = useState<{ units: number; remaining: number; lastCharge: number | null } | null>(null)
+  const [est, setEst] = useState<{ units: number; remaining: number; lastCharge: number | null; mode?: 'warm' | 'cold'; warmUnits?: number } | null>(null)
   useEffect(() => {
     if (loading || streaming) return
     const t = setTimeout(() => {
       fetch('/api/ai/chat/estimate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId: projectId, messages: messages.slice(-60).map(m => ({ role: m.role, content: m.content })) }),
-      }).then(r => (r.ok ? r.json() : null)).then((d: { units?: number; remaining?: number; lastCharge?: number | null } | null) => {
-        if (d && typeof d.units === 'number') setEst({ units: d.units, remaining: d.remaining ?? 0, lastCharge: d.lastCharge ?? null })
+      }).then(r => (r.ok ? r.json() : null)).then((d: { units?: number; remaining?: number; lastCharge?: number | null; mode?: 'warm' | 'cold'; warmUnits?: number } | null) => {
+        if (d && typeof d.units === 'number') setEst({ units: d.units, remaining: d.remaining ?? 0, lastCharge: d.lastCharge ?? null, mode: d.mode, warmUnits: d.warmUnits })
       }).catch(() => {})
     }, 800)
     return () => clearTimeout(t)
@@ -394,7 +394,9 @@ export default function CreatePage() {
       {est && (
         <p className="px-4 pb-2 text-[11px] text-muted-foreground">
           {est.lastCharge != null ? `Списано ${fmtUnits(est.lastCharge)} ед. · ` : ''}
-          Следующее сообщение ≈ {fmtUnits(est.units)} ед. · осталось {est.remaining < 0 ? '∞' : fmtUnits(est.remaining)}
+          {est.mode === 'cold' && est.warmUnits != null && est.units > est.warmUnits
+            ? <>Первое сообщение после перерыва ≈ {fmtUnits(est.units)} ед. (материалы проекта загружаются в память заново), дальше ≈ {fmtUnits(est.warmUnits)} ед. в течение часа · осталось {est.remaining < 0 ? '∞' : fmtUnits(est.remaining)}</>
+            : <>Следующее сообщение ≈ {fmtUnits(est.units)} ед. · осталось {est.remaining < 0 ? '∞' : fmtUnits(est.remaining)}</>}
         </p>
       )}
       <ChatComposer value={input} onChange={setInput} onSend={() => send(input)}

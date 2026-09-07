@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { buildProjectChatContext, buildStandaloneChatContext, type ChatMsg } from '@/lib/ai/chatContext'
-import { estimateChatUnits } from '@/lib/billing/chatPricing'
+import { estimateChatUnits, contextKeyOf, isContextWarm } from '@/lib/billing/chatPricing'
 import { getGenerationStats } from '@/lib/generations'
 import type { Project } from '@/types'
 
@@ -44,7 +44,10 @@ export async function POST(request: Request) {
       const ctx = await buildStandaloneChatContext(supabase, user.id, messages[messages.length - 1]?.content || '')
       systemBlocks = ctx.systemBlocks
     }
-    const est = await estimateChatUnits(systemBlocks.map(text => ({ type: 'text' as const, text })), apiMessages)
+    // Тёплый ли кэш ИМЕННО у этого контекста (а не «есть ли история в чате»):
+    // после перерыва больше часа первое сообщение пишет весь контекст заново.
+    const warm = await isContextWarm(contextKeyOf(systemBlocks))
+    const est = await estimateChatUnits(systemBlocks.map(text => ({ type: 'text' as const, text })), apiMessages, { warm })
     const stats = await getGenerationStats(user.id)
 
     let lastCharge: number | null = null
@@ -65,6 +68,9 @@ export async function POST(request: Request) {
       remaining: stats.remaining,
       limit: stats.monthlyLimit,
       lastCharge,
+      mode: est.warm ? 'warm' : 'cold',
+      warmUnits: est.warmUnits,
+      coldUnits: est.coldUnits,
     })
   } catch {
     return NextResponse.json({ error: 'Не удалось оценить' }, { status: 500 })

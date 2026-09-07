@@ -47,15 +47,24 @@ async function rest(path) {
   if (!r.ok) throw new Error(`${path} → ${r.status}`)
   return r.json()
 }
-async function ask(system, userMsg, max = 1200) {
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'claude-opus-5', max_tokens: max, system, messages: [{ role: 'user', content: userMsg }] }),
-  })
-  const d = await r.json()
-  if (!r.ok) throw new Error(`anthropic ${r.status}: ${JSON.stringify(d).slice(0, 200)}`)
-  return (d.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n')
+async function ask(system, userMsg, max = 1200, cachedBlock = null) {
+  // Материалы проекта — отдельным кэшируемым блоком (07.09): пары одного проекта
+  // читают их из кэша, судейство дешевле в ~8 раз при том же входе модели.
+  const sys = cachedBlock
+    ? [{ type: 'text', text: system }, { type: 'text', text: cachedBlock, cache_control: { type: 'ephemeral' } }]
+    : system
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'claude-opus-5', max_tokens: max, system: sys, messages: [{ role: 'user', content: userMsg }] }),
+    })
+    const d = await r.json()
+    if (r.ok) return (d.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n')
+    if (r.status === 529 || r.status === 429 || r.status >= 500) { await new Promise(res => setTimeout(res, 15000)); continue }
+    throw new Error(`anthropic ${r.status}: ${JSON.stringify(d).slice(0, 200)}`)
+  }
+  throw new Error('anthropic: перегружен после 3 попыток')
 }
 
 // Материалы проекта — судье целиком (он должен знать правду)
@@ -81,10 +90,10 @@ const results = []
 for (const p of pairs) {
   process.stdout.write(`пара ${p.pair} (${p.project}): `)
   const mats = await materialsFor(p.project)
-  const user = `=== МАТЕРИАЛЫ ПРОЕКТА (правда) ===\n${mats}\n\n=== ВОПРОС ===\n${p.question}\n\n=== ОТВЕТ 1 ===\n${p.a1}\n\n=== ОТВЕТ 2 ===\n${p.a2}`
+  const user = `=== ВОПРОС ===\n${p.question}\n\n=== ОТВЕТ 1 ===\n${p.a1}\n\n=== ОТВЕТ 2 ===\n${p.a2}`
   let verdict = null
   try {
-    const raw = await ask(JUDGE_SYSTEM, user, 2000)
+    const raw = await ask(JUDGE_SYSTEM, user, 2000, `=== МАТЕРИАЛЫ ПРОЕКТА (правда) ===\n${mats}`)
     const jm = raw.match(/\{[\s\S]*\}/)
     verdict = JSON.parse(jm ? jm[0] : raw)
   } catch (e) { console.log('❌', e.message.slice(0, 80)); continue }

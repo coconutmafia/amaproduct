@@ -5,7 +5,7 @@ import { anthropic, MODEL, buildCachedSystemBlocks } from '@/lib/ai/client'
 import { buildStandaloneChatContext, buildProjectChatContext, type ChatMsg } from '@/lib/ai/chatContext'
 import { gateContentUnits, refundGenerations } from '@/lib/generations'
 import { UNIT_COSTS } from '@/lib/generations-config'
-import { estimateChatUnits, chargeChatByUsage, type ChatUsage } from '@/lib/billing/chatPricing'
+import { estimateChatUnits, chargeChatByUsage, contextKeyOf, isContextWarm, type ChatUsage } from '@/lib/billing/chatPricing'
 import { getGenerationStats, BILLING_ENFORCED, isEntitled } from '@/lib/generations'
 import { checkBudgetCap } from '@/lib/billing/costCap'
 import { requirePaidAccess } from '@/lib/billing/access'
@@ -281,7 +281,9 @@ export async function POST(request: Request) {
       const { systemBlocks: standaloneBlocks } = await buildStandaloneChatContext(supabase, user.id, messages[messages.length - 1]?.content || '')
 
       const saMessages = messages.map((m, i) => ({ role: m.role, content: m.content, ...(i === messages.length - 1 ? { images } : {}) }))
-      if (!genFormat) chatEstimate = await estimateChatUnits(standaloneBlocks.map(text => ({ type: 'text' as const, text })), saMessages.map(m => ({ role: m.role, content: m.content }))).catch(() => null)
+      // Тёплый ли кэш именно у этого контекста — гейт и оценка считают одинаково (Даша 07.09)
+      const saKey = contextKeyOf(standaloneBlocks)
+      if (!genFormat) chatEstimate = await estimateChatUnits(standaloneBlocks.map(text => ({ type: 'text' as const, text })), saMessages.map(m => ({ role: m.role, content: m.content })), { warm: await isContextWarm(saKey) }).catch(() => null)
       const blocked = await meterGeneration()
       if (blocked) return blocked
       const genJobId = genFormat ? await createGenMailbox(user.id) : null
@@ -290,7 +292,7 @@ export async function POST(request: Request) {
         standaloneBlocks,
         saMessages,
         refundIfMetered, genJobId,
-        (usages) => chargeChatByUsage(user.id, usages, genFormat ? { action: 'content', minUnitsAlreadyCharged: UNIT_COSTS.content } : { action: 'chat' }),
+        (usages) => chargeChatByUsage(user.id, usages, { ...(genFormat ? { action: 'content', minUnitsAlreadyCharged: UNIT_COSTS.content } : { action: 'chat' }), meta: { contextKey: saKey } }),
       )
     }
 
@@ -319,7 +321,8 @@ export async function POST(request: Request) {
     const { systemBlocks: projectBlocks, outMessages } = await buildProjectChatContext({
       supabase, userId: user.id, projectId, project, genFormat, messages, images,
     })
-    if (!genFormat) chatEstimate = await estimateChatUnits(projectBlocks.map(text => ({ type: 'text' as const, text })), outMessages.map(m => ({ role: m.role, content: m.content }))).catch(() => null)
+    const projKey = contextKeyOf(projectBlocks)
+    if (!genFormat) chatEstimate = await estimateChatUnits(projectBlocks.map(text => ({ type: 'text' as const, text })), outMessages.map(m => ({ role: m.role, content: m.content })), { warm: await isContextWarm(projKey) }).catch(() => null)
     const blocked = await meterGeneration()
     if (blocked) return blocked
     const genJobId = genFormat ? await createGenMailbox(user.id) : null
@@ -330,7 +333,7 @@ export async function POST(request: Request) {
     // («пост = 2 ед.» списаны вперёд) — только превышение над фиксированной ценой.
     return streamingChatResponse(
       projectBlocks, outMessages, refundIfMetered, genJobId,
-      (usages) => chargeChatByUsage(user.id, usages, genFormat ? { action: 'content', minUnitsAlreadyCharged: UNIT_COSTS.content } : { action: 'chat' }),
+      (usages) => chargeChatByUsage(user.id, usages, { ...(genFormat ? { action: 'content', minUnitsAlreadyCharged: UNIT_COSTS.content } : { action: 'chat' }), meta: { contextKey: projKey, projectId } }),
     )
   } catch (error) {
     console.error('Chat error:', error)
