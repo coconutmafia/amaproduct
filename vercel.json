@@ -3,5 +3,5 @@
     { "path": "/api/cron/refresh-trends", "schedule": "0 6 * * 1" },
     { "path": "/api/cron/chain-watch", "schedule": "0 7 * * *" }
   ],
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)*.md' ':(exclude)**/*.md'"
+  "ignoreCommand": "sh -c 'base=\"${VERCEL_GIT_PREVIOUS_SHA:-HEAD^}\"; git rev-parse -q --verify \"$base^{commit}\" >/dev/null 2>&1 || exit 1; git diff --quiet \"$base\" HEAD -- . \":(exclude)*.md\" \":(exclude)**/*.md\"'"
 }

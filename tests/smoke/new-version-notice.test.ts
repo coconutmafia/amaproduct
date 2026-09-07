@@ -38,7 +38,10 @@ describe('новая версия при живой вкладке', () => {
 
   it('docs-only коммит не деплоится (vercel.json ignoreCommand): каждая выкладка бьёт по живым вкладкам', () => {
     const v = JSON.parse(readFileSync(`${process.cwd()}/vercel.json`, 'utf8')) as { ignoreCommand?: string }
-    expect(v.ignoreCommand).toContain("':(exclude)*.md'")
-    expect(v.ignoreCommand).toContain('git diff --quiet HEAD^ HEAD')
+    expect(v.ignoreCommand).toContain('(exclude)*.md')
+    // 07.09 вечер: сравнение с HEAD^ отменило сборку пуша из двух коммитов (код + docs) —
+    // база должна быть ПОСЛЕДНИЙ ЗАДЕПЛОЕННЫЙ коммит, а не предыдущий в истории
+    expect(v.ignoreCommand).toContain('VERCEL_GIT_PREVIOUS_SHA')
+    expect(v.ignoreCommand).toContain('|| exit 1') // база неизвестна → собирать
   })
 })
