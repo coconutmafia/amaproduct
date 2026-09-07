@@ -59,6 +59,69 @@
     промпта. Августе: можно ответить Олесе — профиль Кати исправлен, новые
     кастдевы так больше не делают.
 
+### ✅ 7 СЕНТЯБРЯ (2) — ВИКТОРИЯ ПРИВЯЗАНА; ПРОДАМУС ОТДАЁТ НАШ НОМЕР В order_num; «НОВАЯ ВЕРСИЯ — ОБНОВИ»
+66. Виктория Курбатова (viktoriaabertasova529@gmail.com, 6405276f): «Соло без
+    демо» 4 900 ₽ 07.09 09:48 UTC, на форме Продамуса подставилась
+    vika.abertasova@yandex.ru → вебхук «пользователь не найден». ПРИВЯЗАНО
+    07.09 11:03 UTC пробником link-payment (--days 30 --billing-email): profile
+    solo/active/prodamus, provider_subscription_id 3047778, доступ до
+    2026-10-07 09:48 UTC, период единиц с нуля (used 0, reset_at 07.10,
+    period_started_at now), payments 48521255 → её user_id. billing_email НЕ
+    записался — колонки нет до миграции 050; после миграции:
+    `prod-probe set-billing-email --email viktoriaabertasova529@gmail.com
+    --billing-email vika.abertasova@yandex.ru --run` (иначе рекуррент 07.10 с
+    яндекс-почтой снова «не найден»).
+    КОРЕНЬ КЛАССА (по докам Продамуса «Как устроена отправка уведомлений»):
+    в уведомлении `order_id` = «ID заказа в системе Prodamus» (их 48521255),
+    а НАШ userId.plan.ts возвращается полем `order_num` = «номер заказа на
+    стороне магазина». Код с июля читал только order_id → вывод «Продамус
+    срезает наш order_id» был ошибкой наблюдения. Проверено curl'ом: готовая
+    ссылка o5cuHGt редиректит на форму, сохраняя order_id/customer_email/
+    customer_extra в URL. customer_extra для userId НЕ годится: на форме это
+    видимый textarea «примечание к заказу» и из URL он не заполняется.
+    Сделано: lib/billing/prodamus.resolveMerchantOrder (order_num → order_id,
+    только настоящий UUID) + webhookEvidence; вебхук: пользователь — наш
+    номер ПЕРВЫМ (и профиль должен существовать) → email ИЛИ billing_email
+    (findUserByEmail; до миграции 050 колонки нет — глотаем 42703) →
+    provider_subscription_id только при ровно одном владельце (у Продамуса
+    subscription.id = id ПРОДУКТА, 2946756 у 16 клиентов — maybeSingle там
+    возвращал null); на КАЖДЫЙ сопоставленный платёж info-событие «платёж
+    сопоставлен» с user_source и ключами payload — первый реальный платёж
+    после этого коммита подтвердит, что order_num несёт наш номер (в
+    /admin/errors, level info). Витрина: текст под «Карта РФ» — «если форма
+    подставит другую почту — исправь». Миграция 050 (billing_email + индекс)
+    ⚠️ ПРИМЕНИТЬ. Стражи: prodamus.test.ts (resolveMerchantOrder, порядок
+    источников в вебхуке, нет maybeSingle по подписке), billing-period-and-
+    topup (docupka по order_num). Рекурренты первых 60-дневных демо: 13–17.09
+    у 11 клиентов, почты совпадают с аккаунтами — найдутся по email.
+    Евгения Лобова (schicki-micki@mail.ru, 82ad0eba, Chrome/Windows +
+    iPhone): все её ошибки 07.09 — обрывы префетчей/чанков: 08:54 и 09:52 UTC
+    «Uncaught TypeError: network error» с lastFetch=…?_rsc (RSC-префетч
+    /settings, /projects/new), 09:12:54 «network error» на /visual и 09:15:03
+    ChunkLoadError на /stories — секунда в секунду с деплоями 94c51b7 (09:12
+    UTC) и 492e3c0 (09:27). В ai_usage/jobs у неё сегодня НИ ОДНОГО запроса
+    чата — «Ошибка» в «Создать» = fetch не дошёл до сервера (обрыв → Latin
+    «network error» → friendlyError прятал за фолбэком «Ошибка»). Прод по HTML:
+    `data-dpl-id`/`?dpl=` НЕТ → Skew Protection Vercel выключен, старые чанки
+    после деплоя 404. Сделано (класс): components/shared/NewVersionNotice —
+    ChunkLoadError/«Loading chunk»/«Importing a module script failed»/
+    «dynamically imported module» → один авто-reload (sessionStorage, окно 2
+    мин), повтор → плашка «Вышла новая версия — обнови»; app/(dashboard)/
+    error.tsx — граница ошибок рендера с той же веткой + репорт в
+    /api/client-error; friendlyError: «network error / Failed to fetch / Load
+    failed» → «Сеть оборвалась — проверь интернет и отправь ещё раз», chunk →
+    «Вышла новая версия — обнови страницу», Unauthorized → «Сессия истекла».
+    Страж new-version-notice.test.ts. ⚠️ МАТВЕЮ: Vercel → Settings → Advanced →
+    Skew Protection → включить + redeploy (Pro есть — maxDuration 300 s);
+    Next 16 подхватит NEXT_DEPLOYMENT_ID сам, старые ассеты живут сутки.
+    ПРАВИЛО: деплои батчить — один пуш на серию, не в 8–13 МСК.
+    Проверка эффекта у Даши (18d5212d): её сообщения 07.09 были 08:34–08:46
+    UTC, ДО деплоя 492e3c0 (09:27 UTC) — холодный старт 150 901 токен записи
+    (как раньше). После деплоя чужие холодные старты: ff61b78b 115 897 →
+    72 878 (−37%), d6441a19 60 152 → 63 268 (расшифровок мало — эффекта не
+    ждали). Дашу смотреть по ai_usage 08–09.09 (ожидание ≈86k).
+    Миграция 048 — ПРИМЕНЕНА (story_layouts на проде читается), 049 не нужна.
+
 ### ✅ 7 СЕНТЯБРЯ — ЦЕНА ЧАТА: 80% = ЗАПИСЬ КЭША НА ХОЛОДНОМ СТАРТЕ; ЧЕСТНАЯ ОЦЕНКА; РАСШИФРОВКИ ИЗ СЛОЯ В ПОДБОР
 65. Даша: «за сообщение написано 5 единиц, снимается 25; в ChatGPT/Claude
     лимиты недельные и контекста больше». Замер по журналу ai_usage (3–7.09,
@@ -1411,14 +1474,22 @@ scrape 73, blog_audit 13; rate_limits: chat 71/7д). Сделано и живь�
 
 ## 🧭 МАСТЕР-ПЕРЕДАЧА В НОВУЮ СЕССИЮ (7 сентября 2026, день) — ЧИТАТЬ ПОСЛЕ «МОДЕЛЬ БИЛЛИНГА»
 
-Состояние: main = df2436d, CI и прод зелёные, все проверки 06–07.09 сделаны глазами
-клиента (QA-бот ama-qa-bot). Подробности дня — блоки 63, 64, 65 ниже. Память (memory/)
+Состояние: см. git log (07.09 вечер: Виктория привязана, order_num, «новая версия — обнови»),
+CI и прод зелёные. Подробности дня — блоки 63, 64, 65, 66 ниже. Блок 66 = вечер 07.09. Память (memory/)
 дополнена: tool-input-stringified-arrays, serverless-self-continuation-dead-chain,
 wysiwyg-preview-export-one-layout, chat-cost-is-cache-writes (+ браузерный вход QA в
 assistant-can-test-prod).
 
 ### 🔜 ПЕРВЫМ ДЕЛОМ (по приоритету)
-1. **Виктория Курбатова (viktoriaabertasova529@gmail.com, user 5d3e… см. profiles) оплатила
+0. ✅ СДЕЛАНО 07.09 вечер (блок 66): Виктория привязана (solo/active до 07.10, платёж на ней);
+   вебхук читает наш номер из order_num; «новая версия — обнови» + сеть/сессия в friendlyError.
+   ⚠️ ОСТАЛОСЬ МАТВЕЮ: (а) применить миграцию 050 (billing_email) и выполнить
+   `node scripts/prod-probe.mjs set-billing-email --email viktoriaabertasova529@gmail.com --billing-email vika.abertasova@yandex.ru --run`;
+   (б) Vercel → Settings → Advanced → Skew Protection → вкл + redeploy; (в) решения по
+   «Убрать фон» (remove.bg / Replicate) и возврату Стасе ~9 ед. (grant-bonus).
+   Проверить 08–09.09: ai_usage Даши (prompt ≈86k), первый платёж Продамуса → info-событие
+   «платёж сопоставлен» с user_source=order (подтверждает order_num).
+1. (сделано, см. 0) **Виктория Курбатова (viktoriaabertasova529@gmail.com, user 5d3e… см. profiles) оплатила
    «Соло без демо» 4 900 ₽ 07.09 09:48 UTC, но на платёжной форме автозаполнилась ДРУГАЯ почта
    (vika.abertasova@yandex.ru).** Вебхук: «платёж прошёл, но пользователь не найден»
    (error_events 09:48:13; payments: external_id 48521255, provider prodamus, user_id NULL;
@@ -1430,7 +1501,7 @@ assistant-can-test-prod).
    возвращает в вебхуке (`customer_extra`, «дополнительные данные» в чеке), и читать его в
    webhook как первый источник пользователя; (в) на странице тарифов перед переходом в
    Продамус — строка «почта на форме оплаты должна совпадать с почтой аккаунта».
-2. **Евгения Лобова (schicki-micki@mail.ru, 82ad0eba): «Ошибка» в чате «Создать» 12:11 МСК
+2. (сделано, см. 0 и блок 66) **Евгения Лобова (schicki-micki@mail.ru, 82ad0eba): «Ошибка» в чате «Создать» 12:11 МСК
    без кода.** В error_events у неё 08:54/09:12 UTC «Uncaught TypeError: network error»
    на /create и 09:15 ChunkLoadError — совпадает по времени с моими деплоями (5 выкладок
    за 2 часа в рабочее время). Гипотеза: обрыв стрима/чанков при смене деплоя, не баг кода.
@@ -1448,8 +1519,7 @@ assistant-can-test-prod).
    ≈86k вместо ≈155k, холодный старт ≈14 ед., тёплые ≈1,5. Если нет — искать, почему
    excludeAlways не сработал.
 5. Марина: «Убрать фон» у картинок — ждёт решения Матвея (remove.bg ≈ $0,2/шт или Replicate
-   rembg ≈ $0,002/шт). Миграция 048 (story_layouts) — уточнить у Матвея, применил ли: без
-   неё «Сохранить оформление» отвечает «нужна миграция 048».
+   rembg ≈ $0,002/шт). Миграция 048 (story_layouts) — ПРИМЕНЕНА (проверено 07.09 чтением таблицы).
 6. Стася (korzzhik93): предложено вернуть ~9 ед. за впустую сгоревшие прогоны таблицы —
    решение Матвея (prod-probe grant-bonus).
 7. Марина/Продамус: ссылки без демо и докупки подключены и проверены 06.09; первый реальный
