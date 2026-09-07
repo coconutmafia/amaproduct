@@ -14,6 +14,7 @@ import { showUpgrade } from '@/components/billing/UpgradeDialog'
 import { friendlyError } from '@/lib/friendlyError'
 import { useChatPin } from '@/lib/useChatPin'
 import { savePendingAnswer, clearPendingAnswer, takePendingAnswer, saveGenJobId, clearGenJobId, takeGenJobId, fetchMailboxAnswer, PENDING_CUT_NOTE } from '@/lib/chatPending'
+import { streamingDisplay, finalAnswer } from '@/lib/chat/factcheck'
 import { cleanMarkdown } from '@/lib/cleanText'
 import { isReelsScript } from '@/lib/contentKind'
 
@@ -134,12 +135,12 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
             setMessages((prev) => [...prev, { role: 'assistant', content: full.text + (full.complete ? '' : PENDING_CUT_NOTE) }])
             toast.success('Ответ догенерился на сервере — вот он целиком')
           } else if (pending) {
-            setMessages((prev) => [...prev, { role: 'assistant', content: pending + PENDING_CUT_NOTE }])
+            setMessages((prev) => [...prev, { role: 'assistant', content: finalAnswer(pending) + PENDING_CUT_NOTE }])
           }
         })
         return
       }
-      if (pending) restored.push({ role: 'assistant', content: pending + PENDING_CUT_NOTE })
+      if (pending) restored.push({ role: 'assistant', content: finalAnswer(pending) + PENDING_CUT_NOTE })
       if (restored.length) setMessages((prev) => (prev.length ? prev : restored))
     } catch { /* битый черновик — начинаем с чистого */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -217,19 +218,19 @@ export default function AssistantPage({ params }: { params: Promise<{ id: string
         const { value, done } = await reader.read()
         if (done) break
         acc += decoder.decode(value, { stream: true })
-        setStreaming(acc)
+        setStreaming(streamingDisplay(acc))
         savePendingAnswer(pendingKey, acc)
       }
       clearPendingAnswer(pendingKey)
       clearGenJobId(pendingKey)
-      setMessages(prev => [...prev, { role: 'assistant', content: acc }])
+      setMessages(prev => [...prev, { role: 'assistant', content: finalAnswer(acc) }])
       setStreaming('')
     } catch (err) {
       clearPendingAnswer(pendingKey)
       if ((err as Error).name === 'AbortError') {
         // user stopped — keep whatever streamed
         clearGenJobId(pendingKey)
-        if (acc.trim()) setMessages(prev => [...prev, { role: 'assistant', content: acc }])
+        if (acc.trim()) setMessages(prev => [...prev, { role: 'assistant', content: finalAnswer(acc) }])
       } else {
         // Связь моргнула на живой вкладке: сервер достримливает без нас
         // (замерено) — для метеренной генерации догоняем полный ответ из

@@ -13,6 +13,10 @@ import type { Message } from '@/types'
 import { rateLimit } from '@/lib/rateLimit'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { captureException } from '@/lib/sentry'
+import { FACTCHECK_MARKER, FACTCHECK_MIN_CHARS, factcheckPrompt, finalAnswer } from '@/lib/chat/factcheck'
+
+// Факт-чек ответа (A/B №4 07.09: 12:0, выдумок 1 против 27). CHAT_FACTCHECK=0 выключает.
+const FACTCHECK_ENABLED = process.env.CHAT_FACTCHECK !== '0'
 
 // Vercel Pro allows up to 300s. Multi-item answers ("5 рилзов") on top of a
 // large RAG system prompt routinely take well over 60s — the old 60s cap was
@@ -78,6 +82,9 @@ function streamingChatResponse(
   // Честные единицы (05.09): по завершении ответа — фактический usage всех
   // раундов, по нему списываются единицы (см. chargeChatByUsage).
   onUsage?: (usages: ChatUsage[]) => unknown,
+  // Вопрос пользователя для проверочного прохода; undefined = без проверки
+  // (режим без проекта: сверять не с чем).
+  factcheckQuestion?: string,
 ) {
   const encoder = new TextEncoder()
   // Кэш-брейкпоинт на последнем сообщении: следующий ход диалога и раунды
@@ -170,8 +177,32 @@ function streamingChatResponse(
           }
           if (final?.stop_reason !== 'max_tokens') break
         }
+        // ── Проверочный проход (lib/chat/factcheck.ts) ─────────────────────
+        // Те же системные блоки → префикс материалов читается из кэша; сбой
+        // проверки не трогает черновик (маркер без хвоста).
+        if (FACTCHECK_ENABLED && factcheckQuestion && acc.trim().length >= FACTCHECK_MIN_CHARS) {
+          controller.enqueue(encoder.encode(FACTCHECK_MARKER))
+          try {
+            const check = anthropic.messages.stream({
+              model: MODEL, max_tokens: 16000,
+              system: buildCachedSystemBlocks(systemBlocks),
+              messages: [{ role: 'user', content: factcheckPrompt(factcheckQuestion, acc) }],
+            })
+            for await (const chunk of check) {
+              if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+                acc += chunk.delta.text
+                controller.enqueue(encoder.encode(chunk.delta.text))
+              }
+            }
+            const done = await check.finalMessage()
+            usages.push((done as unknown as { usage: ChatUsage }).usage)
+          } catch (err) {
+            await captureException(err, { where: 'chat factcheck', draftChars: acc.length })
+          }
+        }
+        const answer = finalAnswer(acc)
         // Полный ответ — в ящик (инвокация жива даже при умершей вкладке).
-        await mailbox({ status: 'done', result: { text: acc, complete: true } })
+        await mailbox({ status: 'done', result: { text: answer, complete: true } })
         // Списание — ДО закрытия стрима: после close() ответ отдан, и serverless
         // засыпает, не дописав (ход 3 пробника 05.09 пропал из ленты).
         if (onUsage) { try { await onUsage(usages) } catch { /* списание не должно ронять ответ */ } }
@@ -185,7 +216,7 @@ function streamingChatResponse(
         if (acc.length > 0) {
           // Don't present a truncated answer as complete — append a visible note,
           // then close so the partial text is kept.
-          await mailbox({ status: 'done', result: { text: acc, complete: false } })
+          await mailbox({ status: 'done', result: { text: finalAnswer(acc), complete: false } })
           try { controller.enqueue(encoder.encode('\n\n⚠️ Ответ прервался — нажми отправить ещё раз, чтобы продолжить.')) } catch { /* ignore */ }
           if (onUsage && usages.length) { try { await onUsage(usages) } catch { /* ignore */ } }
           try { controller.close() } catch { /* already closed */ }
@@ -322,7 +353,7 @@ export async function POST(request: Request) {
       supabase, userId: user.id, projectId, project, genFormat, messages, images,
     })
     const projKey = contextKeyOf(projectBlocks)
-    if (!genFormat) chatEstimate = await estimateChatUnits(projectBlocks.map(text => ({ type: 'text' as const, text })), outMessages.map(m => ({ role: m.role, content: m.content })), { warm: await isContextWarm(projKey) }).catch(() => null)
+    if (!genFormat) chatEstimate = await estimateChatUnits(projectBlocks.map(text => ({ type: 'text' as const, text })), outMessages.map(m => ({ role: m.role, content: m.content })), { warm: await isContextWarm(projKey), factcheck: FACTCHECK_ENABLED }).catch(() => null)
     const blocked = await meterGeneration()
     if (blocked) return blocked
     const genJobId = genFormat ? await createGenMailbox(user.id) : null
@@ -333,7 +364,8 @@ export async function POST(request: Request) {
     // («пост = 2 ед.» списаны вперёд) — только превышение над фиксированной ценой.
     return streamingChatResponse(
       projectBlocks, outMessages, refundIfMetered, genJobId,
-      (usages) => chargeChatByUsage(user.id, usages, { ...(genFormat ? { action: 'content', minUnitsAlreadyCharged: UNIT_COSTS.content } : { action: 'chat' }), meta: { contextKey: projKey, projectId } }),
+      (usages) => chargeChatByUsage(user.id, usages, { ...(genFormat ? { action: 'content', minUnitsAlreadyCharged: UNIT_COSTS.content } : { action: 'chat' }), meta: { contextKey: projKey, projectId, factcheck: FACTCHECK_ENABLED } }),
+      lastMessage, // факт-чек — только с материалами проекта
     )
   } catch (error) {
     console.error('Chat error:', error)

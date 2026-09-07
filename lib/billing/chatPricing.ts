@@ -78,10 +78,16 @@ export async function isContextWarm(contextKey: string): Promise<boolean> {
   } catch { return false }
 }
 
+/** Себестоимость проверочного прохода: чтение префикса + черновик входом + исправленный выход. */
+export function factcheckEstimateUsd(tokens: number, model = MODEL): number {
+  const p = MODEL_PRICES_USD[model] ?? price()
+  return (tokens * p.inUsd * 0.1 + CHAT_ESTIMATE_OUTPUT_TOKENS * p.inUsd + CHAT_ESTIMATE_OUTPUT_TOKENS * p.outUsd) / 1e6
+}
+
 export async function estimateChatUnits(
   systemBlocks: SystemBlock[],
   messages: ApiMessage[],
-  opts: { warm?: boolean } = {},
+  opts: { warm?: boolean; factcheck?: boolean } = {},
 ): Promise<{ units: number; usd: number; tokens: number; warm: boolean; coldUnits: number; warmUnits: number }> {
   const p = price()
   let tokens = 0
@@ -102,8 +108,11 @@ export async function estimateChatUnits(
   const tailOf = (m?: ApiMessage) => (typeof m?.content === 'string' ? m.content.length : JSON.stringify(m?.content ?? '').length)
   const newTail = Math.min(tokens, Math.round((tailOf(messages[messages.length - 1]) + tailOf(messages[messages.length - 2])) / 2.5) + 400)
   const warm = opts.warm === true
-  const coldUsd = chatEstimateUsd(tokens, newTail, false)
-  const warmUsd = chatEstimateUsd(tokens, newTail, true)
+  // Проверочный проход (07.09): префикс читается из кэша (0.1×), черновик
+  // уходит входом, исправленный текст — выходом того же размера.
+  const factcheckUsd = opts.factcheck ? factcheckEstimateUsd(tokens) : 0
+  const coldUsd = chatEstimateUsd(tokens, newTail, false) + factcheckUsd
+  const warmUsd = chatEstimateUsd(tokens, newTail, true) + factcheckUsd
   const usd = warm ? warmUsd : coldUsd
   void p
   return { units: unitsForUsd(usd), usd, tokens, warm, coldUnits: unitsForUsd(coldUsd), warmUnits: unitsForUsd(warmUsd) }

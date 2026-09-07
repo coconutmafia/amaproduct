@@ -55,7 +55,7 @@ describe('оценка и списание знают про тёплый кэш
   it('чат пишет contextKey в ленту при списании (обе ветки) и гейтит по тому же теплу', () => {
     const c = read('app/api/ai/chat/route.ts')
     expect(c).toContain('meta: { contextKey: saKey }')
-    expect(c).toContain('meta: { contextKey: projKey, projectId }')
+    expect(c).toContain('meta: { contextKey: projKey, projectId, factcheck: FACTCHECK_ENABLED }')
     expect(c.split('isContextWarm(').length - 1).toBe(2)
   })
   it('оба чата объясняют холодный старт словами, а не молча показывают «≈ 2»', () => {

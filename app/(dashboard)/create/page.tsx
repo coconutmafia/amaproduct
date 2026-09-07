@@ -14,6 +14,7 @@ import { AssistantMessageBody } from '@/components/chat/AssistantMessageBody'
 import { showUpgrade } from '@/components/billing/UpgradeDialog'
 import { useChatPin } from '@/lib/useChatPin'
 import { savePendingAnswer, clearPendingAnswer, takePendingAnswer, PENDING_CUT_NOTE } from '@/lib/chatPending'
+import { streamingDisplay, finalAnswer } from '@/lib/chat/factcheck'
 import { cleanMarkdown } from '@/lib/cleanText'
 import { isReelsScript } from '@/lib/contentKind'
 
@@ -111,7 +112,7 @@ export default function CreatePage() {
       if (!raw && !pending) return
       const saved = raw ? (JSON.parse(raw) as ChatMessage[]) : []
       const restored = Array.isArray(saved) ? saved : []
-      if (pending) restored.push({ role: 'assistant', content: pending + PENDING_CUT_NOTE })
+      if (pending) restored.push({ role: 'assistant', content: finalAnswer(pending) + PENDING_CUT_NOTE })
       if (restored.length) setMessages((prev) => (prev.length ? prev : restored))
     } catch { /* битый черновик — начинаем с чистого */ }
   }, [])
@@ -215,14 +216,14 @@ export default function CreatePage() {
       while (true) {
         const { value, done } = await reader.read()
         if (done) break
-        acc += decoder.decode(value, { stream: true }); setStreaming(acc)
+        acc += decoder.decode(value, { stream: true }); setStreaming(streamingDisplay(acc))
         savePendingAnswer('ama_chat_create_pending', acc)
       }
       clearPendingAnswer('ama_chat_create_pending')
-      setMessages(prev => [...prev, { role: 'assistant', content: acc }]); setStreaming('')
+      setMessages(prev => [...prev, { role: 'assistant', content: finalAnswer(acc) }]); setStreaming('')
     } catch (err) {
       clearPendingAnswer('ama_chat_create_pending')
-      if ((err as Error).name === 'AbortError') { if (acc.trim()) setMessages(prev => [...prev, { role: 'assistant', content: acc }]) }
+      if ((err as Error).name === 'AbortError') { if (acc.trim()) setMessages(prev => [...prev, { role: 'assistant', content: finalAnswer(acc) }]) }
       else toast.error(friendlyError(err, 'Ошибка'))
       setStreaming('')
     } finally { setLoading(false); abortRef.current = null }
