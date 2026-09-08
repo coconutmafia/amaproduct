@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { captureException } from '@/lib/sentry'
+import { captureException, captureMessage } from '@/lib/sentry'
+import { normalizeStories, isNoopEdit, NOOP_EDIT_MESSAGE } from '@/lib/ai/editDiff'
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
@@ -153,6 +154,12 @@ ${getAiTells(detectTextLanguage(valuesOnly))}
     // вместо тихой правки без добавления («ничего не добавляет»).
     if (addIntent && out.length <= frames.length) {
       return NextResponse.json({ error: 'Не получилось добавить кадр — попробуй ещё раз или напиши, ЧТО должно быть в новом кадре (например: «добавь кадр с призывом записаться»).' }, { status: 502 })
+    }
+
+    // СТРАЖ «ПРАВКА БЕЗ ИЗМЕНЕНИЙ» (Светлана 08.09, lib/ai/editDiff.ts)
+    if (isNoopEdit(normalizeStories(frames as Record<string, unknown>[]), normalizeStories(out as Record<string, unknown>[]))) {
+      await captureMessage('edit-stories: правка не изменила текст', 'info', { instruction: instruction.slice(0, 300), frames: frames.length, projectId })
+      return NextResponse.json({ error: NOOP_EDIT_MESSAGE, code: 'noop_edit' }, { status: 422 })
     }
 
     return NextResponse.json({ stories: out })

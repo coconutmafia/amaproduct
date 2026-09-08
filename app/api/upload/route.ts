@@ -3,11 +3,12 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { computeCompleteness } from '@/lib/completeness'
 import { ocrPdf, ocrImage, imageMediaType } from '@/lib/ai/ocr'
+import { MAX_UPLOAD_BYTES, isMediaFile, MEDIA_NOT_HERE } from '@/lib/materials/uploadRules'
 
 // 120 секунд — векторизация через OpenAI + возможный OCR скана/картинки через Claude vision
 export const maxDuration = 120
 
-const MAX_FILE_SIZE = 20 * 1024 * 1024 // 20MB
+const MAX_FILE_SIZE = MAX_UPLOAD_BYTES // 20MB; тело запроса Vercel режет на 4,5 МБ — большие файлы идут через storagePath
 
 export async function POST(request: Request) {
   try {
@@ -20,8 +21,23 @@ export async function POST(request: Request) {
     const title       = formData.get('title')       as string
     const materialType = formData.get('materialType') as string
     const textContent = formData.get('textContent') as string | null
-    const file        = formData.get('file')        as File | null
+    let file          = formData.get('file')        as File | null
     const isSystemVault = formData.get('isSystemVault') === 'true'
+    // Прямая загрузка (08.09): файл уже лежит в бакете по подписанной ссылке
+    // (/api/upload/url), сюда приходит только путь. Принимаем строго свой префикс
+    // проекта и читаем объект из хранилища — дальше обработка та же.
+    const storagePath = String(formData.get('storagePath') || '')
+    let viaStorage = false
+    if (storagePath) {
+      if (isSystemVault || !projectId || !storagePath.startsWith(`projects/${projectId}/`) || storagePath.includes('..')) {
+        return NextResponse.json({ error: 'Некорректный путь файла' }, { status: 400 })
+      }
+      const { data: blob, error: dlErr } = await createAdminClient().storage.from('materials').download(storagePath)
+      if (dlErr || !blob) return NextResponse.json({ error: 'Файл не найден в хранилище — загрузи ещё раз' }, { status: 400 })
+      const originalName = storagePath.split('/').pop()!.replace(/^\d+-/, '')
+      file = new File([blob], originalName, { type: blob.type || '' })
+      viaStorage = true
+    }
 
     if (!title?.trim()) {
       return NextResponse.json({ error: 'Введите название' }, { status: 400 })
@@ -35,6 +51,12 @@ export async function POST(request: Request) {
     if (file && file.size > 0) {
       if (file.size > MAX_FILE_SIZE) {
         return NextResponse.json({ error: 'Файл слишком большой (макс 20MB)' }, { status: 400 })
+      }
+      // Аудио/видео — в «Исследование» (расшифровка), не сюда: раньше падало ниже
+      // на «Нет текста», а при больших файлах — вообще 413 до кода (Люба 08.09).
+      if (isMediaFile(file.name, file.type)) {
+        if (viaStorage) await createAdminClient().storage.from('materials').remove([storagePath]).catch(() => {})
+        return NextResponse.json({ error: MEDIA_NOT_HERE, code: 'media_not_here' }, { status: 400 })
       }
 
       fileType = file.name.split('.').pop()?.toLowerCase() || null
@@ -161,27 +183,31 @@ export async function POST(request: Request) {
         }, { status: 400 })
       }
 
-      // Загружаем файл в Supabase Storage
-      const bytes = await file.arrayBuffer()
-      const buffer = Buffer.from(bytes)
-      const safeName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
-      const storagePath = isSystemVault
-        ? `knowledge-vault/${safeName}`
-        : `projects/${projectId}/${safeName}`
-
-      const { error: uploadError } = await supabase.storage
-        .from('materials')
-        .upload(storagePath, buffer, { contentType: file.type })
-
-      if (uploadError) {
-        console.error('Storage upload error:', uploadError)
-        // Продолжаем без файла — главное текст
+      if (viaStorage) {
+        fileUrl = storagePath // уже в хранилище — повторно не грузим
       } else {
-        // 'materials' is a PRIVATE bucket (may hold sensitive business/client
-        // data) — store the bare storage PATH, not a permanent public URL.
-        // The file is served later via a short-lived signed URL, minted
-        // on-demand by GET /api/materials/[id]/file after an ownership check.
-        fileUrl = storagePath
+        // Загружаем файл в Supabase Storage
+        const bytes = await file.arrayBuffer()
+        const buffer = Buffer.from(bytes)
+        const safeName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+        const putPath = isSystemVault
+          ? `knowledge-vault/${safeName}`
+          : `projects/${projectId}/${safeName}`
+
+        const { error: uploadError } = await supabase.storage
+          .from('materials')
+          .upload(putPath, buffer, { contentType: file.type })
+
+        if (uploadError) {
+          console.error('Storage upload error:', uploadError)
+          // Продолжаем без файла — главное текст
+        } else {
+          // 'materials' is a PRIVATE bucket (may hold sensitive business/client
+          // data) — store the bare storage PATH, not a permanent public URL.
+          // The file is served later via a short-lived signed URL, minted
+          // on-demand by GET /api/materials/[id]/file after an ownership check.
+          fileUrl = putPath
+        }
       }
     }
 

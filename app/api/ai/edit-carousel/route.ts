@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { captureException } from '@/lib/sentry'
+import { captureException, captureMessage } from '@/lib/sentry'
+import { normalizeCarousel, isNoopEdit, NOOP_EDIT_MESSAGE } from '@/lib/ai/editDiff'
 import { createClient } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/rateLimit'
 import { requirePaidAccess } from '@/lib/billing/access'
@@ -117,6 +118,14 @@ ${getAiTells(detectTextLanguage(valuesOnly))}
     if (outSlides.length < slides.length && !deleteIntent) {
       await captureException(new Error(`edit-carousel вернул ${outSlides.length} слайдов вместо ${slides.length}`), { where: 'edit-carousel count-guard' })
       return NextResponse.json({ error: `Правка вернула ${outSlides.length} слайдов вместо ${slides.length} — ничего не меняю, чтобы не потерять слайды. Попробуй сформулировать точнее.` }, { status: 502 })
+    }
+
+    // СТРАЖ «ПРАВКА БЕЗ ИЗМЕНЕНИЙ» (Алиса/Светлана 08.09, lib/ai/editDiff.ts):
+    // модель вернула то же самое → не «Правка применена», а честный 422 +
+    // инструкция в журнал для разбора.
+    if (isNoopEdit(normalizeCarousel(carousel), normalizeCarousel(out))) {
+      await captureMessage('edit-carousel: правка не изменила текст', 'info', { instruction: instruction.slice(0, 300), slides: slides.length, userId: user.id })
+      return NextResponse.json({ error: NOOP_EDIT_MESSAGE, code: 'noop_edit' }, { status: 422 })
     }
 
     return NextResponse.json({ carousel: out })

@@ -17,6 +17,8 @@ import { VoiceTextarea } from '@/components/ui/VoiceTextarea'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import { friendlyError } from '@/lib/friendlyError'
+import { createClient as createSupabaseClient } from '@/lib/supabase/client'
+import { isMediaFile, MEDIA_NOT_HERE, DIRECT_UPLOAD_BYTES, MAX_UPLOAD_BYTES, tooLargeMessage } from '@/lib/materials/uploadRules'
 import { computeCompleteness } from '@/lib/completeness'
 // Сборка xlsx/docx и просмотр переехали на сервер и в модалку (20.08):
 // blob-скачивания и window.open глушились Telegram-webview / iOS-PWA / Safari.
@@ -169,14 +171,22 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
   const [textTitle, setTextTitle] = useState('')
   const [textContent, setTextContent] = useState('')
 
+  // Аудио/видео и слишком большие файлы отсеиваем ДО отправки: раньше такой
+  // файл уходил в /api/upload и упирался в потолок Vercel 4,5 МБ — клиент
+  // видел голое «Ошибка 413» (Люба Тонкич 08.09, 35-минутный созвон).
   const addFiles = (files: FileList | File[]) => {
     const arr = Array.from(files)
-    setQueue(prev => [...prev, ...arr.map(f => ({
-      id: `${Date.now()}-${Math.random()}`,
-      file: f,
-      title: f.name.replace(/\.[^.]+$/, ''),
-      status: 'pending' as const,
-    }))])
+    setQueue(prev => [...prev, ...arr.map(f => {
+      const media = isMediaFile(f.name, f.type)
+      const tooLarge = !media && f.size > MAX_UPLOAD_BYTES
+      return {
+        id: `${Date.now()}-${Math.random()}`,
+        file: f,
+        title: f.name.replace(/\.[^.]+$/, ''),
+        status: (media || tooLarge ? 'error' : 'pending') as UploadStatus,
+        ...(media ? { error: MEDIA_NOT_HERE } : tooLarge ? { error: tooLargeMessage(f.size) } : {}),
+      }
+    })])
   }
 
   const handleDrop = (e: React.DragEvent) => {
@@ -197,10 +207,27 @@ function UploadDialog({ projectId, materialType, typeLabel, open, onClose, onSuc
     fd.append('title', item.title || 'Без названия')
     fd.append('materialType', materialType)
     fd.append('isSystemVault', 'false')
-    if (item.file) fd.append('file', item.file)
+    if (item.file && item.file.size > DIRECT_UPLOAD_BYTES) {
+      // Большой файл — напрямую в хранилище по подписанной ссылке, роуту
+      // уходит только путь (потолок Vercel 4,5 МБ на тело запроса).
+      const urlRes = await fetch('/api/upload/url', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, fileName: item.file.name, size: item.file.size, mimeType: item.file.type }),
+      })
+      const u = await urlRes.json().catch(() => ({} as { path?: string; token?: string; error?: string }))
+      if (!urlRes.ok || !u.path || !u.token) throw new Error(u.error || 'Не удалось подготовить загрузку файла')
+      const { error: upErr } = await createSupabaseClient().storage.from('materials').uploadToSignedUrl(u.path, u.token, item.file)
+      if (upErr) throw new Error('Не удалось загрузить файл в хранилище — проверь интернет и попробуй ещё раз')
+      fd.append('storagePath', u.path)
+    } else if (item.file) {
+      fd.append('file', item.file)
+    }
     if (item.text) fd.append('textContent', item.text)
     const res = await fetch('/api/upload', { method: 'POST', body: fd })
-    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Ошибка ${res.status}`) }
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({} as { error?: string }))
+      throw new Error(d.error || (res.status === 413 ? 'Файл слишком большой для загрузки — сожми его или раздели на части' : `Ошибка ${res.status}`))
+    }
     return res.json()
   }
 
