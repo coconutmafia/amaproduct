@@ -13,6 +13,7 @@ import type { ReactElement } from 'react'
 import { ArrowSvg, Badge, SHAPE_ASPECT, type FreeShape } from './shapes'
 import { FONTS, fontFamilyOf } from '@/lib/fonts'
 import { textMetrics, type LayoutLine } from '@/lib/carousel/textLayout'
+import { plateTextColor, plateBackground } from '@/lib/carousel/plateStyle'
 import { cropGeometry, frameRadius } from '@/lib/carousel/imageGeometry'
 import { readableTextOn, resolveBrandAccent, resolveBrandText } from './contrast'
 
@@ -561,6 +562,15 @@ export interface FreeBlock {
   aspect?: number       // w/h ratio for image & shape blocks (height = width/aspect)
   size?: number         // text font size in canvas px (default 56)
   color?: string        // text colour / shape stroke or fill (default white / accent)
+  // 09.09 (Светлана Кундаль): цвет текста НА ПЛАШКЕ раньше всегда брался из
+  // темы, и палитра в редакторе на плашке ничего не меняла («тыкаешь на
+  // кружочки — не меняется»). colorSet = человек выбрал цвет явно → цвет
+  // применяется и на плашке; без флага поведение прежнее (тема), поэтому
+  // сохранённые до этого дня оформления рендерятся как раньше.
+  colorSet?: boolean
+  // Цвет самой плашки. Без него — фон темы (как было). В стиле Светланы
+  // плашки по концепции зелёные и жёлтые, а движок красил их одним bg.
+  plateColor?: string
   plate?: boolean       // brand plate behind the text
   align?: 'left' | 'center' | 'right'
   rotation?: number     // degrees, rotated around the block centre
@@ -994,12 +1004,13 @@ function Free({ s, theme, size }: { s: SlideSpec; theme: CarouselTheme; size: Si
         return (
           <div key={i} style={{ position: 'absolute', left, top, width: blockW, display: 'flex', fontFamily: family, ...rot }}>
             {Array.isArray(b.lines) && b.lines.length > 0
-              ? <FreeLines lines={b.lines} size={b.size ?? 56} plate={!!b.plate} plateBg={theme.bg} platedColor={theme.text}
+              ? <FreeLines lines={b.lines} size={b.size ?? 56} plate={!!b.plate} plateBg={plateBackground(b, theme.bg)}
+                  platedColor={plateTextColor(b, theme.text)}
                   plainColor={b.color || '#FFFFFF'} accent={theme.accent} align={b.align || 'left'}
                   weight={weight} accentWeight={accentWeight} italic={!!b.italic} />
               : b.plate
-                ? <StoryText text={text} size={b.size ?? 56} accent={theme.accent} plateBg={theme.bg}
-                    platedColor={theme.text} plainColor={b.color || '#FFFFFF'} defaultPlated maxWidth={blockW}
+                ? <StoryText text={text} size={b.size ?? 56} accent={theme.accent} plateBg={plateBackground(b, theme.bg)}
+                    platedColor={plateTextColor(b, theme.text)} plainColor={b.color || '#FFFFFF'} defaultPlated maxWidth={blockW}
                     weight={weight} italic={!!b.italic} />
                 : <RichText text={text} o={{ size: b.size ?? 56, weight, accentWeight, color: b.color || '#FFFFFF', accent: theme.accent, align: b.align || 'left', lineGap: 6, italic: !!b.italic }} />}
           </div>

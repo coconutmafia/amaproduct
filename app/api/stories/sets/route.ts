@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { MAX_STORY_FRAMES } from '@/lib/stories/limits'
 import { captureException } from '@/lib/sentry'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
       // 16, не 10 (Станислав, 25.08): серия из 13 кадров МОЛЧА резалась до 10
       // при сохранении — «сделал 13, в сохранённых 10». 16 = потолок серии
       // (13) с запасом; молчаливых обрезаний у сохранения быть не должно.
-      frames: frames.slice(0, 16).map((f) => ({
+      frames: frames.slice(0, MAX_STORY_FRAMES).map((f) => ({
         url: f.url,
         headline: String(f.headline || '').slice(0, 200),
         body: String(f.body || '').slice(0, 300),

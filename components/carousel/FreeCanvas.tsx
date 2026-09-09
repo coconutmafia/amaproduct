@@ -31,6 +31,7 @@ import { UNIT_HINTS } from '@/components/billing/UnitCostHint'
 import { layoutText, textMetrics, wrapWidthFor, type LayoutLine } from '@/lib/carousel/textLayout'
 import { cropGeometry, frameRadius, type Crop } from '@/lib/carousel/imageGeometry'
 import { editorFamilyOf, ensureFonts, makeMeasure } from '@/lib/carousel/measureClient'
+import { plateTextColor, plateBackground } from '@/lib/carousel/plateStyle'
 
 let _idc = 0
 const newId = () => `b${++_idc}`
@@ -49,6 +50,11 @@ export interface Block {
   aspect?: number              // w/h of the FRAME for image & shape (= source ratio until cropped)
   xPct: number; yPct: number; widthPct: number
   size: number; color: string; plate: boolean; align: Align; rotation: number
+  // 09.09 (Светлана): на плашке цвет текста брался из темы, и палитра «не
+  // работала». colorSet — человек выбрал цвет явно (тогда он применяется и на
+  // плашке), plateColor — цвет самой плашки (без него — фон стиля, как было).
+  colorSet?: boolean
+  plateColor?: string
   // Начертание (Марина 24.08: «весь текст жирный, нельзя убрать, нет курсива»).
   // По умолчанию — жирный без курсива, как раньше.
   weight?: 'normal' | 'bold'
@@ -141,7 +147,7 @@ export function buildFreeSlide(v: SlideValue, index = 0, total = 1, brand?: Bran
     blocks: v.blocks.map((b) => ({
       type: b.type, text: b.text, src: b.src, shape: b.shape, aspect: b.aspect,
       xPct: b.xPct, yPct: b.yPct, widthPct: b.widthPct, size: b.size,
-      color: b.color, plate: b.plate, align: b.align, rotation: b.rotation,
+      color: b.color, colorSet: b.colorSet, plateColor: b.plateColor, plate: b.plate, align: b.align, rotation: b.rotation,
       weight: b.weight, italic: b.italic,
       uppercase: b.uppercase, font: b.font, radius: b.radius, opacity: b.opacity, crop: b.crop, srcAspect: b.srcAspect,
       // Готовые строки — сервер рендерит их как есть (WYSIWYG).
@@ -471,6 +477,12 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
     if (s.type === 'text') patch(s.id, { size: clamp(s.size + dir * 8, 22, 240) })
     else patch(s.id, { widthPct: clamp(+(s.widthPct + dir * 0.05).toFixed(3), 0.05, 1) })
   }
+  // Ширина ТЕКСТОВОГО блока = ширина плашки (Светлана 09.09: «изменить размер
+  // плашки — либо неочевидно, либо невозможно»). Двумя пальцами это меняется
+  // жестом, но с мышью жеста нет — на десктопе ширина не менялась ничем.
+  function widthSel(s: Block, dir: 1 | -1) {
+    patch(s.id, { widthPct: clamp(+(s.widthPct + dir * 0.05).toFixed(3), 0.15, 1) })
+  }
   // Центрировать выбранный элемент по горизонтали (кнопкой, без перетаскивания).
   function centerSel(s: Block) {
     const el = blockEls.current.get(s.id)
@@ -498,9 +510,13 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
   const sel = blocks.find((b) => b.id === selected) || null
   const eff = effectiveTheme(value, brand)
   const swatches = [...new Set(['#FFFFFF', brand.text, brand.accentColor, brand.bg, ...PALETTE])]
+  // Плашка: фон стиля и акцент первыми — у Светланы в концепции плашки
+  // зелёные/жёлтые, а акцент стиля как раз зелёный.
+  const plateSwatches = [...new Set([brand.bg, brand.accentColor, brand.text, '#FFFFFF', ...PALETTE])]
   const isBadge = sel?.shape === 'badge'
   const isArrow = sel?.type === 'shape' && !isBadge
   const isImage = sel?.type === 'image'
+  const isText = sel?.type === 'text'
   const addBtn = 'inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold hover:border-primary/40 disabled:opacity-40'
   const chip = (on: boolean) => `h-7 min-w-7 rounded-md border px-1.5 text-xs font-semibold ${on ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground'}`
 
@@ -720,8 +736,8 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
               ) : b.type === 'shape' && b.shape ? (
                 <ArrowSvg w={pxW} h={pxW / (b.aspect || SHAPE_ASPECT[b.shape])} color={b.color} curve={b.shape === 'arrow-curve'} />
               ) : (
-                <PreviewLines lines={lines.get(b.id) ?? []} size={b.size} scale={scale} plate={b.plate} plateBg={eff.bg}
-                  platedColor={eff.text} plainColor={b.color} accent={eff.accent} align={b.align}
+                <PreviewLines lines={lines.get(b.id) ?? []} size={b.size} scale={scale} plate={b.plate} plateBg={plateBackground(b, eff.bg)}
+                  platedColor={plateTextColor(b, eff.text)} plainColor={b.color} accent={eff.accent} align={b.align}
                   weight={weight} accentWeight={accentWeight} italic={!!b.italic} fontFamily={fontStack} />
               )}
             </div>
@@ -757,6 +773,14 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
               <span className="w-10 text-center text-muted-foreground">{sel.type === 'text' ? sel.size : `${Math.round(sel.widthPct * 100)}%`}</span>
               <button type="button" onClick={() => resizeSel(sel, 1)} className="h-7 w-7 rounded-md border border-border font-bold">+</button>
             </div>
+            {sel.type === 'text' && (
+              <div className="inline-flex items-center gap-1" title="ширина плашки с текстом">
+                <span className="text-[11px] text-muted-foreground">ширина</span>
+                <button type="button" onClick={() => widthSel(sel, -1)} aria-label="уже плашку" className="h-7 w-7 rounded-md border border-border font-bold">‹</button>
+                <span className="w-9 text-center text-muted-foreground">{Math.round(sel.widthPct * 100)}%</span>
+                <button type="button" onClick={() => widthSel(sel, 1)} aria-label="шире плашку" className="h-7 w-7 rounded-md border border-border font-bold">›</button>
+              </div>
+            )}
             <button type="button" onClick={() => patch(sel.id, { rotation: sel.rotation - 10 })} className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 font-medium text-muted-foreground"><RotateCw className="h-3 w-3 -scale-x-100" /> −10°</button>
             <button type="button" onClick={() => patch(sel.id, { rotation: sel.rotation + 10 })} className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 font-medium text-muted-foreground"><RotateCw className="h-3 w-3" /> +10°</button>
             {sel.rotation !== 0 && <button type="button" onClick={() => patch(sel.id, { rotation: 0 })} className="text-[11px] text-muted-foreground underline">сброс ↻</button>}
@@ -794,17 +818,42 @@ export function FreeCanvas({ projectId, brand, value, onChange, format = 'story'
             <button type="button" onClick={() => removeBlock(sel.id)} className="ml-auto inline-flex items-center gap-1 rounded-lg border border-rose-300 px-2.5 py-1.5 font-medium text-rose-600"><Trash2 className="h-3.5 w-3.5" /> удалить</button>
           </div>
 
-          {/* Цвет: текст / стрелка / номер — бренд + палитра + любой (Марина 06.09) */}
+          {/* Цвет: текст / стрелка / номер — бренд + палитра + любой (Марина 06.09).
+              09.09 (Светлана): выбор ПРИМЕНЯЕТСЯ и когда текст на плашке —
+              раньше там всегда рисовался цвет темы, и палитра «не работала».
+              Пока цвет не выбран явно, на плашке остаётся цвет стиля. */}
           {!isImage && (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] text-muted-foreground">Цвет:</span>
+              <span className="text-[11px] text-muted-foreground">{isText ? 'Цвет текста:' : 'Цвет:'}</span>
               {swatches.map((c, i) => (
-                <button key={i} type="button" onClick={() => patch(sel.id, { color: c })} aria-label="цвет"
-                  className={`h-6 w-6 rounded-full border ${sel.color.toLowerCase() === c.toLowerCase() ? 'ring-2 ring-primary ring-offset-1' : 'border-border'}`} style={{ background: c }} />
+                <button key={i} type="button" onClick={() => patch(sel.id, { color: c, colorSet: true })} aria-label="цвет"
+                  className={`h-6 w-6 rounded-full border ${(!isText || !sel.plate || sel.colorSet) && sel.color.toLowerCase() === c.toLowerCase() ? 'ring-2 ring-primary ring-offset-1' : 'border-border'}`} style={{ background: c }} />
               ))}
               <label className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                свой <input type="color" value={/^#[0-9a-f]{6}$/i.test(sel.color) ? sel.color : '#ffffff'} onChange={(e) => patch(sel.id, { color: e.target.value })} className="h-5 w-7 cursor-pointer border-0 bg-transparent p-0" aria-label="свой цвет" />
+                свой <input type="color" value={/^#[0-9a-f]{6}$/i.test(sel.color) ? sel.color : '#ffffff'} onChange={(e) => patch(sel.id, { color: e.target.value, colorSet: true })} className="h-5 w-7 cursor-pointer border-0 bg-transparent p-0" aria-label="свой цвет" />
               </label>
+              {isText && sel.colorSet && sel.plate && (
+                <button type="button" onClick={() => patch(sel.id, { colorSet: undefined })} className="text-[11px] text-muted-foreground underline">как в стиле</button>
+              )}
+            </div>
+          )}
+
+          {/* Цвет ПЛАШКИ (Светлана 09.09: «непонятно, почему выбрал именно эти
+              цвета» — плашка красилась фоном стиля и нигде не показывалась).
+              Без выбора — фон стиля, как раньше. */}
+          {isText && sel.plate && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-muted-foreground">Цвет плашки:</span>
+              {plateSwatches.map((c, i) => (
+                <button key={i} type="button" onClick={() => patch(sel.id, { plateColor: c })} aria-label="цвет плашки"
+                  className={`h-6 w-6 rounded-full border ${(sel.plateColor ?? '').toLowerCase() === c.toLowerCase() ? 'ring-2 ring-primary ring-offset-1' : 'border-border'}`} style={{ background: c }} />
+              ))}
+              <label className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                свой <input type="color" value={/^#[0-9a-f]{6}$/i.test(sel.plateColor || '') ? (sel.plateColor as string) : eff.bg} onChange={(e) => patch(sel.id, { plateColor: e.target.value })} className="h-5 w-7 cursor-pointer border-0 bg-transparent p-0" aria-label="свой цвет плашки" />
+              </label>
+              {sel.plateColor && (
+                <button type="button" onClick={() => patch(sel.id, { plateColor: undefined })} className="text-[11px] text-muted-foreground underline">как в стиле</button>
+              )}
             </div>
           )}
 

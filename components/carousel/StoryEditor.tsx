@@ -119,18 +119,26 @@ export function StoryEditor({
   }, [loadReq?.token])
 
   // Brand colours (accent + plate) so the editor matches the project's style.
+  // 9:16 — стиль СТОРИС (brand_kit.story), как в серии: у сторис своя
+  // типографика и свой фон плашек, и раньше ручной кадр открывался в стиле
+  // ПОСТОВ. У Светланы (09.09) серия шла PT Serif на #3a2a20, а «Редактировать
+  // вручную» — PT Sans Narrow: кадр выбивался из серии, и было «непонятно,
+  // почему выбрал эти цвета и шрифт».
   useEffect(() => {
     fetch(`/api/brand-kit?projectId=${projectId}`).then((r) => r.json()).then((d) => {
+      const story = (canvasFormat === 'story' ? (d.kit?.story ?? {}) : {}) as {
+        accentColor?: string; bg?: string; text?: string; bgStyle?: string; font?: string
+      }
       setBrand((b) => ({
-        accentColor: d.accentColor || b.accentColor,
-        bg: d.bg || b.bg,
-        text: d.text || b.text,
-        bgStyle: d.bgStyle || undefined,
-        font: d.font || undefined,
+        accentColor: story.accentColor || d.accentColor || b.accentColor,
+        bg: story.bg || d.bg || b.bg,
+        text: story.text || d.text || b.text,
+        bgStyle: story.bgStyle || d.bgStyle || undefined,
+        font: story.font || d.font || undefined,
         accentStyle: d.accentStyle === 'flat' ? 'flat' : 'gradient',
       }))
     }).catch(() => {})
-  }, [projectId])
+  }, [projectId, canvasFormat])
 
   const hasBg = slideHasBg(slide)
 

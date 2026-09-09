@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { MAX_STORY_MATERIALS, MAX_STORY_FRAMES } from '@/lib/stories/limits'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tokenize } from '../../lib/carousel/engine'
@@ -95,15 +96,20 @@ describe('правка серии не теряет кадры (баг «6 шт�
 })
 
 describe('сохранение серии без молчаливых обрезаний (баг «13 → 10»)', () => {
-  it('потолок кадров сохранения ≥ 16 (макс. серии 13 с запасом)', () => {
+  // 09.09: потолки загрузки и СОХРАНЕНИЯ жили в разных файлах (13 и 16) —
+  // серия длиннее 16 кадров сохранилась бы обрезанной, а файлы хвоста ушли бы
+  // в удаление. Теперь оба берутся из lib/stories/limits.
+  it('потолок сохранения не меньше потолка материалов — серия не режется молча', () => {
     const route = read('app/api/stories/sets/route.ts')
     expect(route).not.toContain('slice(0, 10)')
-    const m = route.match(/frames\.slice\(0,\s*(\d+)\)/)
-    expect(Number(m?.[1] ?? 0)).toBeGreaterThanOrEqual(16)
+    expect(route).not.toMatch(/frames\.slice\(0,\s*\d+\)/)
+    expect(route).toContain('frames.slice(0, MAX_STORY_FRAMES)')
+    expect(MAX_STORY_FRAMES).toBeGreaterThanOrEqual(MAX_STORY_MATERIALS)
   })
-  it('фото хватает на каждый кадр серии (лимит 13, не 8)', () => {
+  it('фото хватает на каждый кадр серии (16 сторис у Светланы — не потолок)', () => {
     const sp = read('components/content/StoriesPanel.tsx')
-    expect(sp).toContain('max={13}')
+    expect(sp).toContain('max={MAX_STORY_MATERIALS}')
     expect(sp).not.toMatch(/uniqueMats\.slice\(0, 8\)/)
+    expect(MAX_STORY_MATERIALS).toBeGreaterThanOrEqual(16)
   })
 })

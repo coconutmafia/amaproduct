@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { MAX_STORY_MATERIALS } from '@/lib/stories/limits'
 import { toast } from 'sonner'
 import { Loader2, Sparkles, Download, Trash2, Wand2 } from 'lucide-react'
 import { downscaleImage } from '@/lib/downscaleImage'
@@ -206,6 +207,33 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
     } finally { setReposIdx(null) }
   }
 
+  // Цвет плашек всей серии. Светлана 09.09: «сделал все одинаково, непонятно,
+  // почему выбрал именно эти цвета (в визуальной концепции у меня было иначе)».
+  // Плашки красились фоном стиля (у неё #3a2a20), при том что в её же стиле
+  // есть зелёный акцент, а концепция просит зелёные/жёлтые плашки. Показываем,
+  // из чего собран кадр, и даём поменять цвет всей серии одним нажатием.
+  async function applyPlateColor(color?: string) {
+    setPlateColor(color)
+    const target = rendered.filter((r) => !r.frame.manual && !r.frame.video)
+    if (target.length === 0) return
+    setRepainting(true)
+    try {
+      const blobs = await Promise.all(rendered.map((r, i) =>
+        (r.frame.manual || r.frame.video) ? Promise.resolve(r.blob) : renderFrame(r.frame, i, color ?? null)))
+      const arr = rendered.map((r, i) => {
+        if (r.frame.manual || r.frame.video) return r
+        URL.revokeObjectURL(r.url)
+        const blob = blobs[i] as Blob
+        return { blob, url: URL.createObjectURL(blob), frame: r.frame }
+      })
+      setRendered(arr)
+      void saveSet(arr.map((r) => r.frame), arr.map((r) => r.blob), savedSetId)
+      toast.success(color ? 'Плашки перекрашены' : 'Вернул цвет плашек из стиля')
+    } catch (e) {
+      toast.error(friendlyError(e, 'Не удалось перекрасить плашки'))
+    } finally { setRepainting(false) }
+  }
+
   // Open a rendered series frame in the free editor (photo + text as blocks).
   function editFrameManually(i: number) {
     const frame = rendered[i]?.frame
@@ -259,6 +287,8 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
   // брендом и плохим интернетом (класс «TypeError: Load failed» с айфонов).
   // brandSettled: восстановление сборки серии ждёт этот сигнал — рендер кадров
   // зависит от бренда, и стартовать до его загрузки нельзя.
+  const [plateColor, setPlateColor] = useState<string | undefined>()
+  const [repainting, setRepainting] = useState(false)
   const [brandFailed, setBrandFailed] = useState(false)
   const [brandSettled, setBrandSettled] = useState(false)
   useEffect(() => {
@@ -451,7 +481,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
       // «видео постоянно исчезают из загруженных материалов» (Лана, 31 июля).
       // У старых серий source не сохранён — их видео не восстановить.
       const uniqueMats = [...new Set(frames.map((f) => f.photo || f.source).filter((p): p is string => !!p))]
-      if (uniqueMats.length) setPhotos(uniqueMats.slice(0, 13))
+      if (uniqueMats.length) setPhotos(uniqueMats.slice(0, MAX_STORY_MATERIALS))
       // Manual frames are stored as finished images — fetch them back instead of
       // re-rendering (re-rendering would wipe the hand-made design).
       const blobs = await Promise.all(frames.map(async (f, i) => {
@@ -525,7 +555,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
     }
   }
 
-  async function renderFrame(frame: Frame, idx: number): Promise<Blob> {
+  async function renderFrame(frame: Frame, idx: number, plateOverride?: string | null): Promise<Blob> {
     const photoUrl = frame.photo
     const f = await resolveLayout(frame, photoUrl, idx)
     let textColor: string | undefined
@@ -533,10 +563,14 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
       const bands = await getBands(photoUrl)
       textColor = bands ? pickPlacement(bands, brand?.text || '#1A1A1A').textColor : '#FFFFFF'
     }
+    // Цвет плашек серии (Светлана 09.09): по умолчанию — фон стиля, как было;
+    // выбранный цвет подменяет только bg, остальной стиль не трогаем.
+    const plate = plateOverride === undefined ? plateColor : (plateOverride ?? undefined)
+    const renderBrand = plate && brand ? { ...brand, bg: plate } : brand
     const res = await fetch('/api/carousel/render', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        format: 'story', brand,
+        format: 'story', brand: renderBrand,
         slide: { kind: 'story', headline: frame.headline, body: frame.body, action: frame.cta, position: f.position, plate: f.plate, textColor, photoUrl },
       }),
     })
@@ -712,10 +746,12 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
       {/* 1. Загрузка материалов — фото И видео одним блоком (просьба Ланы:
           «чтобы видео не жило изолированно, а было частью общего сценария»).
           Видео-материал становится видео-кадром серии на своей позиции. */}
-      {/* max 13 = потолок кадров серии: Станислав (25.08) — «фото только 8, а
-          сторис 12-15, фотографии по кругу идут»; теперь фото хватает на
-          каждый кадр без повторов. */}
-      <PhotoUploader projectId={projectId} photos={photos} kind="story" max={13} allowVideo
+      {/* Потолок материалов = потолок кадров серии. 8 → 13 (Станислав, 25.08:
+          «фото только 8, а сторис 12-15») → 30 (Светлана, 09.09: «сценарий был
+          на 16 сторис, а загрузить удалось 13 — после 13-го кнопка пропала»).
+          Ограничения на длину серии в конвейере нет: раскадровка идёт по
+          маркерам «Сторис N» в тексте, кадры рендерятся по одному. */}
+      <PhotoUploader projectId={projectId} photos={photos} kind="story" max={MAX_STORY_MATERIALS} allowVideo
         title="Загрузка материалов (фото и видео)"
         onChange={(p) => setPhotos(p)} persistKey={persistKey} />
       <p className="-mt-2 text-[11px] text-muted-foreground">
@@ -769,6 +805,31 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
           <p className="mt-1 text-[11px] text-muted-foreground">
             {savingSet ? 'Сохраняю серию в «Мои оформленные сторис»…' : 'Серия автоматически сохраняется в «Мои оформленные сторис» ниже — найдёшь её там в любой момент.'}
           </p>
+
+          {/* Откуда цвета кадров и как их поменять (Светлана 09.09). Плашки
+              всей серии перекрашиваются одним нажатием; ручные и видео-кадры
+              не трогаем — у них своё оформление. */}
+          {brand && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-secondary/30 px-2.5 py-2">
+              <span className="text-[11px] text-muted-foreground">Плашки:</span>
+              {([[undefined, brand.bg || '#1A1A1A', 'фон стиля'], [brand.accentColor, brand.accentColor, 'акцент стиля'], ['#FFFFFF', '#FFFFFF', 'белая'], ['#1A1A1A', '#1A1A1A', 'чёрная']] as const)
+                .filter(([, c]) => !!c)
+                .map(([value, c, label], i) => (
+                  <button key={i} type="button" disabled={repainting} onClick={() => applyPlateColor(value as string | undefined)}
+                    title={label} aria-label={`плашки — ${label}`}
+                    className={`h-6 w-6 rounded-full border disabled:opacity-40 ${(plateColor ?? undefined) === (value as string | undefined) ? 'ring-2 ring-primary ring-offset-1' : 'border-border'}`}
+                    style={{ background: c as string }} />
+                ))}
+              <label className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                свой <input type="color" value={/^#[0-9a-f]{6}$/i.test(plateColor || '') ? (plateColor as string) : (brand.bg || '#1A1A1A')}
+                  onChange={(e) => applyPlateColor(e.target.value)} disabled={repainting}
+                  className="h-5 w-7 cursor-pointer border-0 bg-transparent p-0" aria-label="свой цвет плашек" />
+              </label>
+              <span className="text-[11px] text-muted-foreground">
+                {repainting ? 'перекрашиваю…' : <>цвета и шрифт — из <Link href={`/projects/${projectId}/brand`} className="underline">фирменного стиля</Link></>}
+              </span>
+            </div>
+          )}
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {rendered.map((r, i) => (
               <div key={i} className="flex flex-col gap-1">
