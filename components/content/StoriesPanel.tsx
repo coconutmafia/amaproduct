@@ -244,7 +244,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
       // Ручной кадр: открываем ЕГО раскладку (фон + блоки), а не пустой холст.
       if (frame.design) {
         setEditReq({ token: editTokenRef.current, slide: JSON.parse(JSON.stringify(frame.design)) as SlideValue, index: i })
-        toast.message('Кадр открыт в редакторе ниже — блоки на месте, правь и жми «Добавить в серию»')
+        toast.message('Кадр открыт в редакторе выше — блоки на месте, поменяй и нажми «Вернуть в серию»')
         return
       }
       // Серия сохранена до появления design: раскладки нет — открываем кадр
@@ -257,7 +257,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
       return
     }
     setEditReq({ token: editTokenRef.current, slide: frameToSlide(frame), index: i })
-    toast.message('Кадр открыт в редакторе ниже — меняй и жми «Добавить в серию»')
+    toast.message('Кадр открыт в редакторе выше — поменяй и нажми «Вернуть в серию»')
   }
 
   // A free-editor export goes into the series: replace an existing slot or

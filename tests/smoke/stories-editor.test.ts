@@ -44,7 +44,10 @@ describe('ручной кадр открывается со своей раск�
     const ed = read('components/carousel/StoryEditor.tsx')
     expect(ed).toContain('slide: SlideValue }) => Promise<void> | void')
     expect(ed).toContain('setResultSlide(')
-    expect(ed).toContain('slide: resultSlide ?? slide')
+    // 09.09: в серию уходит копия ТЕКУЩЕЙ раскладки, и картинка ей соответствует —
+    // готовый blob переиспользуется только когда раскладка не менялась после него.
+    expect(ed).toContain('slide: JSON.parse(JSON.stringify(slide)) as SlideValue')
+    expect(ed).toContain('JSON.stringify(resultSlide) === JSON.stringify(slide)')
   })
   it('StoriesPanel: design хранится, повторная правка открывает блоки, легаси — картинкой-фоном', () => {
     const sp = read('components/content/StoriesPanel.tsx')

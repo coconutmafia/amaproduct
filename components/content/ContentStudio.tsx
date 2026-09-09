@@ -319,7 +319,7 @@ function CarouselPanel({ projectId, brand, text, onTextChange, persistKey }: { p
       slide: saved ? (JSON.parse(JSON.stringify(saved)) as SlideValue) : carouselSlideToSlide(carousel, i, photos[i]),
       index: i,
     })
-    toast.message('Слайд открыт в редакторе ниже — меняй и жми «Добавить в серию»')
+    toast.message('Слайд открыт в редакторе выше — поменяй и нажми «Вернуть в серию»')
   }
 
   // Экспорт из свободного редактора → в конкретный слайд серии (или новый).

@@ -142,10 +142,10 @@ export function StoryEditor({
 
   const hasBg = slideHasBg(slide)
 
-  async function exportImg() {
-    if (slide.bgMode === 'photo' && !slide.photoUrl) { toast.error('Сначала загрузи фото или выбери фон'); return }
-    if (slide.bgMode === 'split' && !(slide.photoTop && slide.photoBottom)) { toast.error('Загрузи оба фото — верх и низ'); return }
-    if (slide.blocks.length === 0) { toast.error('Добавь хотя бы один элемент'); return }
+  async function exportImg(): Promise<Blob | null> {
+    if (slide.bgMode === 'photo' && !slide.photoUrl) { toast.error('Сначала загрузи фото или выбери фон'); return null }
+    if (slide.bgMode === 'split' && !(slide.photoTop && slide.photoBottom)) { toast.error('Загрузи оба фото — верх и низ'); return null }
+    if (slide.blocks.length === 0) { toast.error('Добавь хотя бы один элемент'); return null }
     setExporting(true)
     try {
       // Строки текста считаются здесь тем же шрифтом, что на сервере — дождаться его.
@@ -159,16 +159,27 @@ export function StoryEditor({
       setResultBlob(blob)
       setResultSlide(JSON.parse(JSON.stringify(slide)) as SlideValue)
       setResultUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob) })
-    } catch (e) { toast.error(friendlyError(e, 'Ошибка')) }
+      return blob
+    } catch (e) { toast.error(friendlyError(e, 'Ошибка')); return null }
     finally { setExporting(false) }
   }
 
+  // Вернуть правку в серию ОДНИМ действием (09.09, Алиса Овчинникова: «если
+  // каждый слайд отдельно редактировать, тоже не получается»). Кнопка «Добавить
+  // в серию» жила ВНУТРИ блока результата и появлялась только после
+  // «Сохранить картинку» — человек правил слайд, не находил, чем его вернуть,
+  // и решал, что редактирование не работает. Теперь кнопка видна сразу, а
+  // рендер делается по дороге.
   async function addToSeries() {
-    if (!resultBlob || !onAddToSeries) return
+    if (!onAddToSeries) return
     setAddingToSeries(true)
     try {
+      const blob = resultBlob && resultSlide && JSON.stringify(resultSlide) === JSON.stringify(slide)
+        ? resultBlob
+        : await exportImg()
+      if (!blob) return
       const index = target === 'append' ? seriesLen : target
-      await onAddToSeries({ blob: resultBlob, index, slide: resultSlide ?? slide })
+      await onAddToSeries({ blob, index, slide: JSON.parse(JSON.stringify(slide)) as SlideValue })
     } finally { setAddingToSeries(false) }
   }
 
@@ -237,6 +248,23 @@ export function StoryEditor({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
+        {/* Возврат правки в серию — ПЕРВЫМ действием и до экспорта (09.09,
+            Алиса): раньше эта кнопка пряталась под «Сохранить картинку», и
+            отредактированный слайд некуда было деть. */}
+        {onAddToSeries && seriesLen > 0 && (
+          <>
+            <select value={String(target)} onChange={(e) => setTarget(e.target.value === 'append' ? 'append' : Number(e.target.value))}
+              className="h-9 rounded-lg border border-border bg-background px-2 text-xs" aria-label="куда вернуть">
+              {Array.from({ length: seriesLen }).map((_, i) => <option key={i} value={i}>Заменить {unitLabel} {i + 1}</option>)}
+              <option value="append">Новый в конце</option>
+            </select>
+            <button type="button" onClick={addToSeries} disabled={addingToSeries || exporting || !hasBg || slide.blocks.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40">
+              {addingToSeries || exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              {addingToSeries || exporting ? 'Возвращаю в серию…' : 'Вернуть в серию'}
+            </button>
+          </>
+        )}
         <button type="button" onClick={exportImg} disabled={exporting || !hasBg || slide.blocks.length === 0}
           className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40">
           {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
@@ -296,19 +324,8 @@ export function StoryEditor({
               className="inline-flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-xs font-semibold text-foreground hover:border-primary/40">
               <Download className="h-3.5 w-3.5" /> Скачать
             </button>
-            {onAddToSeries && (
-              <>
-                <select value={String(target)} onChange={(e) => setTarget(e.target.value === 'append' ? 'append' : Number(e.target.value))}
-                  className="h-9 rounded-lg border border-border bg-background px-2 text-xs">
-                  {Array.from({ length: seriesLen }).map((_, i) => <option key={i} value={i}>Заменить {unitLabel} {i + 1}</option>)}
-                  <option value="append">Новый в конце</option>
-                </select>
-                <button type="button" onClick={addToSeries} disabled={addingToSeries}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-40">
-                  {addingToSeries ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />} Добавить в серию
-                </button>
-              </>
-            )}
+            {/* Кнопка возврата в серию переехала НАВЕРХ (видна до экспорта) —
+                здесь она дублировалась бы. */}
           </div>
         </div>
       )}

@@ -79,3 +79,31 @@ describe('ручной кадр совпадает со стилем серии'
     expect(s).toContain("(r.frame.manual || r.frame.video) ? Promise.resolve(r.blob) : renderFrame(r.frame, i, color ?? null)")
   })
 })
+
+// Алиса Овчинникова, 09.09: «если каждый слайд отдельно редактировать, тоже не
+// получается». Воспроизведено на проде: слайд ОТКРЫВАЕТСЯ, но кнопка возврата
+// в серию жила внутри блока результата и появлялась только после «Сохранить
+// картинку» — отредактированный слайд некуда было деть. Плюс подсказка звала
+// искать редактор «ниже», хотя он выше списка слайдов.
+describe('правка слайда возвращается в серию', () => {
+  it('кнопка «Вернуть в серию» видна до экспорта и рендерит по дороге', () => {
+    const e = read('components/carousel/StoryEditor.tsx')
+    const iReturn = e.indexOf('Вернуть в серию')
+    const iResult = e.indexOf('{resultUrl && (')
+    expect(iReturn).toBeGreaterThan(0)
+    expect(iReturn, 'кнопка должна быть ДО блока результата').toBeLessThan(iResult)
+    expect(e).toContain('onAddToSeries && seriesLen > 0')
+    // один клик: если картинки ещё нет — собираем её сами
+    expect(e).toContain(': await exportImg()')
+    expect(e).toMatch(/async function exportImg\(\): Promise<Blob \| null>/)
+    // дубля контрола внутри блока результата не осталось
+    expect(e.match(/Вернуть в серию/g)?.length).toBe(1)
+  })
+  it('подсказка указывает верное направление', () => {
+    for (const p of ['components/content/ContentStudio.tsx', 'components/content/StoriesPanel.tsx']) {
+      const s = read(p)
+      expect(s, p).not.toContain('в редакторе ниже')
+      expect(s, p).toContain('в редакторе выше')
+    }
+  })
+})
