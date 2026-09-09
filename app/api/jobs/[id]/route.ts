@@ -18,6 +18,7 @@ import { processCompetitorAnalysisJob } from '@/lib/jobs/runCompetitorAnalysisJo
 import { processChatGenJob } from '@/lib/jobs/chatGenMailbox'
 import { processProjectBriefJob } from '@/lib/jobs/runProjectBriefJob'
 import { stuckJobMessage, settleStuckJob } from '@/lib/jobs/failStuckJob'
+import { overlaySlotFree, isWaitingInQueue } from '@/lib/jobs/overlayQueue'
 
 // Джобы обрабатываются в after()-инвокациях с maxDuration=300s. Если инвокация
 // потерялась (деплой в момент передачи ноги, убитый воркер, несработавший
@@ -96,8 +97,34 @@ export async function GET(
     }
   }
 
+  // ── Очередь тяжёлых видео-джобов (09.09) ───────────────────────────────────
+  // Джоб ждёт слота (progress.queued) — запускаем, как только у пользователя
+  // меньше MAX_PARALLEL_OVERLAY живых обработок. Та же оптимистическая
+  // блокировка по updated_at: из N поллеров стартует ровно один.
+  if (isWaitingInQueue(job.status, job.progress) && RUNNERS[job.type as string]) {
+    const admin = createAdminClient()
+    const { data: { user: me } } = await supabase.auth.getUser()
+    if (me && await overlaySlotFree(admin, me.id, job.type as string)) {
+      const prog = (job.progress ?? {}) as Record<string, unknown>
+      const { data: won } = await admin
+        .from('jobs')
+        .update({ progress: { ...prog, queued: false, stage: 'start' } })
+        .eq('id', id)
+        .eq('updated_at', job.updated_at as string)
+        .select('id')
+      if (won && won.length > 0) {
+        const runner = RUNNERS[job.type as string]
+        after(() => runner(id))
+      }
+    }
+  }
+
   // ── Самолечение застрявшего джоба ──────────────────────────────────────────
+  // Ждущий в очереди (progress.queued) НЕ застрял: он намеренно не запущен,
+  // пока занят слот. Иначе длинная серия видео уводила бы хвост очереди в
+  // error после двух «рестартов» ожидания.
   const stalled =
+    !isWaitingInQueue(job.status, job.progress) &&
     (job.status === 'processing' || job.status === 'queued') &&
     Date.now() - new Date(job.updated_at as string).getTime() > STALE_MS
   if (stalled) {

@@ -6,6 +6,7 @@ import { rateLimit } from '@/lib/rateLimit'
 import { requireProjectAccess } from '@/lib/projects/access'
 import { gateContentUnit, refundGeneration } from '@/lib/generations'
 import { processVideoOverlayJob } from '@/lib/jobs/runVideoOverlayJob'
+import { overlaySlotFree } from '@/lib/jobs/overlayQueue'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -70,7 +71,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Не удалось поставить обработку видео — попробуй ещё раз' }, { status: 500 })
   }
 
-  after(() => processVideoOverlayJob(job.id as string))
+  // Больше двух ffmpeg сразу не запускаем (lib/jobs/overlayQueue.ts): при 5
+  // одновременных 3 вставали и доезжали только самолечением на 10-й минуте.
+  // Лишние ждут в 'queued' — их подхватит поллер клиента, когда слот освободится.
+  if (await overlaySlotFree(admin, user.id)) {
+    after(() => processVideoOverlayJob(job.id as string))
+  } else {
+    await admin.from('jobs').update({ progress: { queued: true, stage: 'queue' } }).eq('id', job.id as string)
+  }
 
   return NextResponse.json({ jobId: job.id })
 }

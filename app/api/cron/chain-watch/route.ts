@@ -60,7 +60,7 @@ async function handle(request: Request) {
     projectsChecked++
     const { data: mats } = await admin
       .from('project_materials')
-      .select('title, material_type, raw_content, processing_status, created_at')
+      .select('id, title, material_type, raw_content, processing_status, created_at')
       .eq('project_id', p.id)
     if (!mats) continue
 
@@ -71,7 +71,27 @@ async function handle(request: Request) {
       if (status === 'error') {
         warnings.push(`⚠️ [${p.name}] «${m.title}» (${m.material_type}) в статусе error — материал не дойдёт до генерации`)
       } else if (BLOCKED_STATUS.has(status) && new Date(m.created_at as string).getTime() < oneHourAgo) {
-        warnings.push(`⚠️ [${p.name}] «${m.title}» (${m.material_type}) завис в «${status}» >1ч`)
+        // НЕ ПРОСТО ЖАЛУЕМСЯ, А ЛЕЧИМ (09.09). Карта смыслов и подобные
+        // собираются в after() без записи в jobs, поэтому самолечения у них
+        // нет: умерла инвокация — заглушка «⏳ генерируется…» висит вечно.
+        // Так у Стаса Клюкова и Яны Дон карты стояли в processing НЕСКОЛЬКО
+        // ДНЕЙ: сторож писал предупреждение каждое утро, клиенты видели
+        // вечный спиннер, а материал (BLOCKED_STATUS) в генерацию не шёл.
+        // Переводим в error с текстом, который объясняет, что делать.
+        if (status === 'processing') {
+          // Результат записи ПРОВЕРЯЕМ (страж background-writes): молча
+          // отброшенная ошибка здесь = материал так и висит, а в отчёте
+          // написано «починено».
+          const { error: healErr } = await admin.from('project_materials').update({
+            processing_status: 'error',
+            raw_content: '❌ Сборка прервалась (сервис перезапустился). Нажми «Обновить карту из исследования» ещё раз — данные кастдевов не потерялись.',
+          }).eq('id', m.id as string)
+          warnings.push(healErr
+            ? `⚠️ [${p.name}] «${m.title}» (${m.material_type}) завис в «${status}» >1ч — починить не удалось: ${healErr.message}`
+            : `🔧 [${p.name}] «${m.title}» (${m.material_type}) висел в processing >1ч — переведён в error с подсказкой «нажми ещё раз»`)
+        } else {
+          warnings.push(`⚠️ [${p.name}] «${m.title}» (${m.material_type}) завис в «${status}» >1ч`)
+        }
       } else if (inChain && empty && !BLOCKED_STATUS.has(status)) {
         warnings.push(`⚠️ [${p.name}] «${m.title}» (${m.material_type}) — пустой raw_content, звено выпадает из цепи`)
       }
@@ -118,11 +138,19 @@ async function handle(request: Request) {
   // ловим её в error_events за сутки и бьём тревогу первой строкой.
   try {
     const dayAgoIso = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+    // ⚠️ НЕ СЧИТАТЬ СВОИ ЖЕ ПРЕДУПРЕЖДЕНИЯ: текст этой тревоги сам содержит
+    // «credit balance», и со 02.09 сторож каждое утро находил вчерашнюю свою
+    // строку и снова кричал «генерации у клиентов ПАДАЮТ» (09.09: «1 ошибка
+    // за сутки», всегда датированная 07:01 — временем предыдущего запуска
+    // крона). Настоящая ошибка провайдера пишется уровнем error; наша тревога —
+    // warning с префиксом chain-watch. Фильтруем по обоим признакам.
     const { data: creditErrs } = await admin
       .from('error_events')
       .select('created_at, message')
       .gte('created_at', dayAgoIso)
       .ilike('message', '%credit balance%')
+      .eq('level', 'error')
+      .not('message', 'ilike', 'chain-watch%')
       .order('created_at', { ascending: false })
       .limit(50)
     if (creditErrs && creditErrs.length > 0) {
