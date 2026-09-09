@@ -809,10 +809,12 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
           {/* Откуда цвета кадров и как их поменять (Светлана 09.09). Плашки
               всей серии перекрашиваются одним нажатием; ручные и видео-кадры
               не трогаем — у них своё оформление. */}
-          {brand && (
+          {/* Не прячем за наличием стиля: если кит не загрузился (сеть мигнула),
+              перекрасить всё равно можно — цвета тогда дефолтные. */}
+          {(
             <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-secondary/30 px-2.5 py-2">
               <span className="text-[11px] text-muted-foreground">Плашки:</span>
-              {([[undefined, brand.bg || '#1A1A1A', 'фон стиля'], [brand.accentColor, brand.accentColor, 'акцент стиля'], ['#FFFFFF', '#FFFFFF', 'белая'], ['#1A1A1A', '#1A1A1A', 'чёрная']] as const)
+              {([[undefined, brand?.bg || '#1A1A1A', 'фон стиля'], [brand?.accentColor, brand?.accentColor, 'акцент стиля'], ['#FFFFFF', '#FFFFFF', 'белая'], ['#1A1A1A', '#1A1A1A', 'чёрная']] as const)
                 .filter(([, c]) => !!c)
                 .map(([value, c, label], i) => (
                   <button key={i} type="button" disabled={repainting} onClick={() => applyPlateColor(value as string | undefined)}
@@ -821,7 +823,7 @@ export function StoriesPanel({ projectId, initialText = '', text, onTextChange, 
                     style={{ background: c as string }} />
                 ))}
               <label className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                свой <input type="color" value={/^#[0-9a-f]{6}$/i.test(plateColor || '') ? (plateColor as string) : (brand.bg || '#1A1A1A')}
+                свой <input type="color" value={/^#[0-9a-f]{6}$/i.test(plateColor || '') ? (plateColor as string) : (brand?.bg || '#1A1A1A')}
                   onChange={(e) => applyPlateColor(e.target.value)} disabled={repainting}
                   className="h-5 w-7 cursor-pointer border-0 bg-transparent p-0" aria-label="свой цвет плашек" />
               </label>
