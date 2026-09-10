@@ -20,21 +20,28 @@ const plan = (days: number): WarmupPlanData => ({
 } as unknown as WarmupPlanData)
 
 describe('дни недели считаются из РЕАЛЬНОЙ даты (не позиционно)', () => {
-  it('план со стартом во вторник 25.08.2026: день 1 = ВТ, день 2 = СР', () => {
-    // 2026-08-25 — вторник (день жалобы)
+  // 10.09.2026 недели стали КАЛЕНДАРНЫМИ (просьба Августы): неделя всегда
+  // ПН…ВС, день 1 стоит на своём месте по календарю, а дни до старта —
+  // пустые ячейки. Даты каждого дня плана при этом прежние.
+  it('план со стартом во вторник 25.08.2026: день 1 = ВТ на своём месте недели', () => {
+    // 2026-08-25 — вторник (день жалобы Даши)
     const days = buildDaysFromWarmupPlan(plan(14), 1, 1, new Date('2026-08-25T00:00:00'))
-    expect(days[0]).toMatchObject({ day: 1, date: '25.08.2026', dayOfWeek: 'ВТ' })
-    expect(days[1]).toMatchObject({ day: 2, date: '26.08.2026', dayOfWeek: 'СР' })
-    expect(days[6]).toMatchObject({ day: 7, date: '31.08.2026', dayOfWeek: 'ПН' })
+    expect(days).toHaveLength(7)
+    expect(days[0]).toMatchObject({ date: '24.08.2026', dayOfWeek: 'ПН', outsidePlan: true })
+    expect(days[1]).toMatchObject({ day: 1, date: '25.08.2026', dayOfWeek: 'ВТ' })
+    expect(days[2]).toMatchObject({ day: 2, date: '26.08.2026', dayOfWeek: 'СР' })
+    expect(days[6]).toMatchObject({ day: 6, date: '30.08.2026', dayOfWeek: 'ВС' })
   })
-  it('вторая неделя продолжает календарь', () => {
+  it('вторая неделя продолжает календарь с понедельника', () => {
     const days = buildDaysFromWarmupPlan(plan(14), 2, 1, new Date('2026-08-25T00:00:00'))
-    expect(days[0]).toMatchObject({ day: 8, date: '01.09.2026', dayOfWeek: 'ВТ' })
+    expect(days[0]).toMatchObject({ day: 7, date: '31.08.2026', dayOfWeek: 'ПН' })
+    expect(days[1]).toMatchObject({ day: 8, date: '01.09.2026', dayOfWeek: 'ВТ' })
   })
-  it('фолбэк-сетка тоже честная: старт в понедельник 24.08 → ПН..ВС', () => {
+  it('фолбэк-сетка тоже честная: старт в понедельник 24.08 → ПН..ВС без пустых', () => {
     const days = buildFallbackDays(1, 45, new Date('2026-08-24T00:00:00'))
-    expect(days[0]).toMatchObject({ date: '24.08.2026', dayOfWeek: 'ПН' })
-    expect(days[6]).toMatchObject({ date: '30.08.2026', dayOfWeek: 'ВС' })
+    expect(days[0]).toMatchObject({ day: 1, date: '24.08.2026', dayOfWeek: 'ПН' })
+    expect(days[6]).toMatchObject({ day: 7, date: '30.08.2026', dayOfWeek: 'ВС' })
+    expect(days.some(d => d.outsidePlan)).toBe(false)
   })
 })
 

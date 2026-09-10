@@ -43,6 +43,8 @@ interface DayContent {
   phase?: WarmupPhase
   theme?: string
   dayBriefs?: Record<string, string>
+  /** день календаря вне плана (до старта / после конца) — см. lib/contentPlanDays */
+  outsidePlan?: boolean
 }
 
 interface ContentPlanGridProps {
@@ -151,6 +153,21 @@ export function ContentPlanGrid({
     return (
       <div className="space-y-2">
         {days.map((day) => {
+          // Календарный день ВНЕ плана (Августа 10.09): до старта прогрева или
+          // после его конца. Неделя читается как календарная — «понедельник,
+          // вторник, среда пустые, в четверг пошли», — поэтому такой день
+          // показываем тихой строкой без форматов и кнопок генерации.
+          if (day.outsidePlan) {
+            return (
+              <div key={`empty-${day.date}`} className="rounded-xl border border-dashed border-[#ECECEC] bg-[#FAFAFA] px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-bold text-[#BBB]">{day.dayOfWeek}</p>
+                  <p className="text-[11px] text-[#BBB]">{day.date}</p>
+                  <span className="ml-auto text-[10px] text-[#BBB]">{day.theme}</span>
+                </div>
+              </div>
+            )
+          }
           // Show exactly what the day has. If the user removed every chip
           // we keep it empty (only + is shown). The defaults are seeded at
           // day construction time in page.tsx, not as a render-time fallback.
@@ -351,7 +368,16 @@ export function ContentPlanGrid({
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8E8E8] text-[#888] hover:bg-[#F7F7F7] hover:text-[#333] transition-all">
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="text-sm font-semibold text-[#333] min-w-[72px] text-center">Неделя {weekNumber}</span>
+          {/* Диапазон дат недели: календарная неделя должна читаться сразу
+              (Августа 10.09 — «он недели прогрева считает со среды по среду»). */}
+          <span className="min-w-[104px] text-center">
+            <span className="block text-sm font-semibold text-[#333]">Неделя {weekNumber}</span>
+            {days.length > 0 && (
+              <span className="block text-[10px] text-[#999]">
+                {days[0].date.slice(0, 5)} – {days[days.length - 1].date.slice(0, 5)}
+              </span>
+            )}
+          </span>
           <button onClick={() => onWeekChange(1)}
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8E8E8] text-[#888] hover:bg-[#F7F7F7] hover:text-[#333] transition-all">
             <ChevronRight className="h-4 w-4" />

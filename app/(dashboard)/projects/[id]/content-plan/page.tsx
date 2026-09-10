@@ -14,7 +14,7 @@ import { AiEditChat } from '@/components/ai/AiEditChat'
 import { toast } from 'sonner'
 import type { ContentItem, ContentType, WarmupPhase, WarmupPlanData, WarmupPhaseData } from '@/types'
 import { downloadTextViaServer } from '@/lib/utils/saveFile'
-import { buildDaysFromWarmupPlan, buildFallbackDays, planAnchorDate, type DayData } from '@/lib/contentPlanDays'
+import { buildDaysFromWarmupPlan, buildFallbackDays, planAnchorDate, calendarWeeksCount, type DayData } from '@/lib/contentPlanDays'
 
 // Сетка дней (постройка дат + дней недели) — в lib/contentPlanDays.ts
 // (25.08, жалоба Даши «даты поехали»: метки дней недели теперь из РЕАЛЬНОЙ
@@ -55,7 +55,6 @@ export default function ContentPlanPage() {
       if (warmupPlan) {
         const duration = warmupPlan.duration_days || 45
         setTotalDays(duration)
-        setTotalWeeks(Math.ceil(duration / 7))
         setPlanName(warmupPlan.name)
         setWarmupPlanId(warmupPlan.id)
         setHasPlan(true)
@@ -66,6 +65,9 @@ export default function ContentPlanPage() {
         const startDateStr = metaStartDate?.start_date
           || warmupPlan.name?.match(/старт (\d{4}-\d{2}-\d{2})/)?.[1]
           || null
+        // Календарных недель, а не duration/7: план со старта в четверг занимает
+        // на неделю больше — ПН-СР первой недели остаются пустыми (Августа 10.09).
+        setTotalWeeks(calendarWeeksCount(duration, planAnchorDate(startDateStr, warmupPlan.created_at as string)))
         // Без start_date (вечнозелёные планы) якорь — ДЕНЬ СОЗДАНИЯ плана, а не
         // «сегодня»: иначе весь план ехал на день вперёд каждые сутки (жалоба
         // Даши 25.08 «у тебя даты поехали»).
@@ -112,7 +114,7 @@ export default function ContentPlanPage() {
 
         if (draftPlan) {
           setTotalDays(draftPlan.duration_days || 45)
-          setTotalWeeks(Math.ceil((draftPlan.duration_days || 45) / 7))
+          setTotalWeeks(calendarWeeksCount(draftPlan.duration_days || 45, undefined))
           setPlanName(draftPlan.name)
         }
         setHasPlan(false)

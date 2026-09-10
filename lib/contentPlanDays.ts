@@ -16,6 +16,9 @@ export interface DayData {
   phase: WarmupPhase
   theme?: string
   dayBriefs?: Record<string, string>
+  /** Календарный день ВНЕ плана: до старта прогрева или после его конца.
+      Показывается пустой ячейкой, чтобы неделя читалась как календарная. */
+  outsidePlan?: boolean
 }
 
 // getDay(): 0 = воскресенье
@@ -38,6 +41,53 @@ export function planAnchorDate(startDateStr: string | null | undefined, createdA
     if (!Number.isNaN(c.getTime())) { c.setHours(0, 0, 0, 0); return c }
   }
   return undefined
+}
+
+// ── Календарные недели (10.09, Августа) ──────────────────────────────────────
+// Было: «неделя N» = дни N*7 подряд от старта. Старт в четверг → первая неделя
+// шла «с четверга по среду», и в контент-плане это читалось как каша: «он
+// недели прогрева считает со среды по среду, как-то не очень».
+// Стало: неделя — календарная (ПН…ВС). Дни до старта и после конца плана
+// остаются пустыми ячейками, как в обычном календаре.
+const DAY_MS = 24 * 3600 * 1000
+
+/** Понедельник той недели, в которую попадает дата. */
+export function mondayOf(d: Date): Date {
+  const m = new Date(d)
+  m.setHours(0, 0, 0, 0)
+  const shift = (m.getDay() + 6) % 7 // ПН=0 … ВС=6
+  m.setDate(m.getDate() - shift)
+  return m
+}
+
+/** Сколько дней недели «съедает» старт: план с четверга оставляет ПН-СР пустыми. */
+export function startOffsetInWeek(anchor: Date): number {
+  return (anchor.getDay() + 6) % 7
+}
+
+/** Сколько КАЛЕНДАРНЫХ недель занимает план (первая и последняя могут быть неполными). */
+export function calendarWeeksCount(totalDays: number, anchor?: Date): number {
+  const a = anchor ?? new Date()
+  return Math.max(1, Math.ceil((startOffsetInWeek(a) + Math.max(1, totalDays)) / 7))
+}
+
+/** Календарные даты недели N (1-based): всегда 7 дней, ПН…ВС. */
+export function calendarWeekDates(weekNumber: number, anchor: Date): Date[] {
+  const start = mondayOf(anchor)
+  start.setDate(start.getDate() + (weekNumber - 1) * 7)
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start)
+    d.setDate(d.getDate() + i)
+    return d
+  })
+}
+
+/** Номер дня плана для даты (1-based); вне плана — null. */
+export function planDayForDate(date: Date, anchor: Date, totalDays: number): number | null {
+  const a = new Date(anchor); a.setHours(0, 0, 0, 0)
+  const d = new Date(date); d.setHours(0, 0, 0, 0)
+  const day = Math.round((d.getTime() - a.getTime()) / DAY_MS) + 1
+  return day >= 1 && day <= totalDays ? day : null
 }
 
 export function buildDaysFromWarmupPlan(planData: WarmupPlanData, weekNumber: number, startDay: number, baseDate?: Date): DayData[] {
@@ -78,19 +128,36 @@ export function buildDaysFromWarmupPlan(planData: WarmupPlanData, weekNumber: nu
   }
 
   allDays.sort((a, b) => a.day - b.day)
+  void startDay
 
-  // Get the 7-day window for this week
-  const weekStart = (weekNumber - 1) * 7 + 1
-  const weekDays = allDays.filter((d) => d.day >= weekStart && d.day < weekStart + 7)
+  // КАЛЕНДАРНАЯ неделя ПН…ВС: берём 7 дат недели и подставляем в них дни плана.
+  // Дни до старта (и после конца) остаются пустыми ячейками — это и просила
+  // Августа: «первая неделя прогрева — понедельник, вторник, среда пустые, в
+  // четверг пошли».
+  const anchor = baseDate ?? new Date()
+  const byDay = new Map(allDays.map((d) => [d.day, d]))
+  const totalDays = allDays.length ? allDays[allDays.length - 1].day : 0
 
-  return weekDays.map((d) => {
-    const base = baseDate ? new Date(baseDate) : new Date()
-    base.setDate(base.getDate() + d.day - 1)
-    const { date, dayOfWeek } = fmtDdMmYyyy(base)
-
+  return calendarWeekDates(weekNumber, anchor).map((date) => {
+    const { date: dateStr, dayOfWeek } = fmtDdMmYyyy(date)
+    const dayNum = planDayForDate(date, anchor, totalDays)
+    const d = dayNum !== null ? byDay.get(dayNum) : undefined
+    if (!d) {
+      return {
+        day: dayNum ?? 0,
+        date: dateStr,
+        dayOfWeek,
+        items: [],
+        plannedTypes: [],
+        phase: 'awareness' as WarmupPhase,
+        outsidePlan: true,
+        theme: date < mondayOf(anchor) || date.getTime() < new Date(anchor).setHours(0, 0, 0, 0)
+          ? 'До старта прогрева' : 'План завершён',
+      }
+    }
     return {
       day: d.day,
-      date,
+      date: dateStr,
       dayOfWeek,
       items: [],
       plannedTypes: d.format,
@@ -108,21 +175,25 @@ export function buildFallbackDays(weekNumber: number, totalDays: number, baseDat
     ['stories'], ['carousel'], ['post'], [],
   ]
 
-  const weekStart = (weekNumber - 1) * 7 + 1
-  return Array.from({ length: 7 }, (_, i) => {
-    const dayNum = weekStart + i
-    if (dayNum > totalDays) return null
-    const phaseIndex = Math.floor(((dayNum - 1) / totalDays) * 4)
-    const d = baseDate ? new Date(baseDate) : new Date()
-    d.setDate(d.getDate() + dayNum - 1)
+  // Та же календарная сетка, что и у плана (см. buildDaysFromWarmupPlan).
+  const anchor = baseDate ?? new Date()
+  return calendarWeekDates(weekNumber, anchor).map((d) => {
     const { date, dayOfWeek } = fmtDdMmYyyy(d)
+    const dayNum = planDayForDate(d, anchor, totalDays)
+    if (dayNum === null) {
+      return {
+        day: 0, date, dayOfWeek, items: [], plannedTypes: [], phase: 'awareness' as WarmupPhase, outsidePlan: true,
+        theme: d.getTime() < new Date(anchor).setHours(0, 0, 0, 0) ? 'До старта прогрева' : 'План завершён',
+      }
+    }
+    const phaseIndex = Math.floor(((dayNum - 1) / totalDays) * 4)
     return {
       day: dayNum,
       date,
       dayOfWeek,
       items: [],
-      plannedTypes: types[i % 7] as ContentType[],
+      plannedTypes: types[(dayNum - 1) % 7] as ContentType[],
       phase: phases[Math.min(phaseIndex, 3)],
     }
-  }).filter(Boolean) as DayData[]
+  })
 }
