@@ -131,6 +131,17 @@ function streamingChatResponse(
     async start(controller) {
       let acc = ''
       const usages: ChatUsage[] = []
+      // Клиент мог закрыть вкладку / оборвать соединение: контроллер тогда
+      // закрыт, и enqueue кидает «Invalid state: Controller is already closed».
+      // Замерено 10.09 (Даша, ответы 22–32 тыс. знаков): падал проверочный
+      // проход, из-за чего в ящик уезжал ЧЕРНОВИК вместо проверенного текста,
+      // а в журнал — «ошибка сервиса», хотя сервис работал. Пишем через
+      // safeSend: ушёл клиент — досчитываем ответ для ящика молча.
+      let clientGone = false
+      const safeSend = (text: string) => {
+        if (clientGone) return
+        try { controller.enqueue(encoder.encode(text)) } catch { clientGone = true }
+      }
       try {
         for (let round = 0; round < 4; round++) {
           // Продолжение через ЗАВЕРШАЮЩИЙ user-ход, а не хвостовой assistant:
@@ -159,7 +170,7 @@ function streamingChatResponse(
               for await (const chunk of stream) {
                 if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
                   acc += chunk.delta.text
-                  controller.enqueue(encoder.encode(chunk.delta.text))
+                  safeSend(chunk.delta.text)
                 }
               }
               final = await stream.finalMessage()
@@ -180,8 +191,13 @@ function streamingChatResponse(
         // ── Проверочный проход (lib/chat/factcheck.ts) ─────────────────────
         // Те же системные блоки → префикс материалов читается из кэша; сбой
         // проверки не трогает черновик (маркер без хвоста).
-        if (FACTCHECK_ENABLED && factcheckQuestion && acc.trim().length >= FACTCHECK_MIN_CHARS) {
-          controller.enqueue(encoder.encode(FACTCHECK_MARKER))
+        // Клиент ушёл и забирать ответ неоткуда (свободный чат без ящика) —
+        // проверять нечего: и его единицы, и наши деньги были бы потрачены в
+        // пустоту. С ящиком (метеренная генерация) проверку доводим до конца:
+        // человек вернётся за ГОТОВЫМ текстом.
+        const factcheckWorthIt = !clientGone || !!genJobId
+        if (FACTCHECK_ENABLED && factcheckQuestion && factcheckWorthIt && acc.trim().length >= FACTCHECK_MIN_CHARS) {
+          safeSend(FACTCHECK_MARKER)
           try {
             const check = anthropic.messages.stream({
               model: MODEL, max_tokens: 16000,
@@ -191,13 +207,15 @@ function streamingChatResponse(
             for await (const chunk of check) {
               if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
                 acc += chunk.delta.text
-                controller.enqueue(encoder.encode(chunk.delta.text))
+                safeSend(chunk.delta.text)
               }
             }
             const done = await check.finalMessage()
             usages.push((done as unknown as { usage: ChatUsage }).usage)
           } catch (err) {
-            await captureException(err, { where: 'chat factcheck', draftChars: acc.length })
+            const closed = err instanceof TypeError && /Controller is already closed|closed stream/i.test(err.message)
+            if (closed) clientGone = true
+            else await captureException(err, { where: 'chat factcheck', draftChars: acc.length })
           }
         }
         const answer = finalAnswer(acc)
@@ -206,18 +224,21 @@ function streamingChatResponse(
         // Списание — ДО закрытия стрима: после close() ответ отдан, и serverless
         // засыпает, не дописав (ход 3 пробника 05.09 пропал из ленты).
         if (onUsage) { try { await onUsage(usages) } catch { /* списание не должно ронять ответ */ } }
-        controller.close()
+        try { controller.close() } catch { /* клиент уже ушёл */ }
       } catch (err) {
         console.error('Chat stream error:', err)
+        // Обрыв клиента — не поломка: контроллер закрыт, писать больше некуда.
+        const closed = err instanceof TypeError && /Controller is already closed|closed stream/i.test(err.message)
+        if (closed) clientGone = true
         // Слепое окно урока 31 июля: обрыв стрима (перегруз/кредиты Anthropic)
         // раньше жил только в console.error — в /admin/errors его не было, и
         // окно сбоев диагностировалось задним числом по косвенным уликам.
-        await captureException(err, { where: 'chat stream', gotChars: acc.length })
+        if (!closed) await captureException(err, { where: 'chat stream', gotChars: acc.length })
         if (acc.length > 0) {
           // Don't present a truncated answer as complete — append a visible note,
           // then close so the partial text is kept.
           await mailbox({ status: 'done', result: { text: finalAnswer(acc), complete: false } })
-          try { controller.enqueue(encoder.encode('\n\n⚠️ Ответ прервался — нажми отправить ещё раз, чтобы продолжить.')) } catch { /* ignore */ }
+          safeSend('\n\n⚠️ Ответ прервался — нажми отправить ещё раз, чтобы продолжить.')
           if (onUsage && usages.length) { try { await onUsage(usages) } catch { /* ignore */ } }
           try { controller.close() } catch { /* already closed */ }
         } else {

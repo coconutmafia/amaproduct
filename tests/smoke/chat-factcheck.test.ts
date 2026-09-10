@@ -38,7 +38,7 @@ describe('факт-чек: роут, страницы, оценка', () => {
   it('роут: проверка после черновика на тех же кэш-блоках, usage проверки списывается, ящик хранит итог', () => {
     const r = read('app/api/ai/chat/route.ts')
     const iDraft = r.indexOf("if (final?.stop_reason !== 'max_tokens') break")
-    const iCheck = r.indexOf('controller.enqueue(encoder.encode(FACTCHECK_MARKER))')
+    const iCheck = r.indexOf('safeSend(FACTCHECK_MARKER)')
     expect(iCheck).toBeGreaterThan(iDraft)
     expect(r).toContain('factcheckPrompt(factcheckQuestion, acc)')
     expect(r).toContain("usages.push((done as unknown as { usage: ChatUsage }).usage)")
@@ -60,5 +60,27 @@ describe('факт-чек: роут, страницы, оценка', () => {
     expect(factcheckEstimateUsd(80_000)).toBeGreaterThan(0.05)
     expect(factcheckEstimateUsd(80_000)).toBeLessThan(0.25)
     expect(read('app/api/ai/chat/route.ts')).toContain('factcheck: FACTCHECK_ENABLED }).catch')
+  })
+})
+
+// 10.09: у Даши ответы на 22–32 тыс. знаков; клиент обрывал соединение, и
+// enqueue в закрытый контроллер валил проверочный проход — «Invalid state:
+// Controller is already closed» ×4 в журнале. В ящик уезжал ЧЕРНОВИК вместо
+// проверенного текста, а обрыв клиента выглядел как поломка сервиса.
+describe('обрыв клиента не ломает ответ и не шумит в журнале', () => {
+  const src = readFileSync(`${process.cwd()}/app/api/ai/chat/route.ts`, 'utf8')
+  it('в контроллер пишем только через safeSend, close — под защитой', () => {
+    expect(src).toContain('const safeSend = (text: string) => {')
+    expect(src).toContain('catch { clientGone = true }')
+    expect(src).not.toMatch(/\n\s+controller\.enqueue\(/) // прямых enqueue не осталось
+    expect(src).toContain('try { controller.close() } catch')
+  })
+  it('«Controller is already closed» не пишется в журнал как ошибка сервиса', () => {
+    expect(src).toContain('Controller is already closed|closed stream')
+    expect(src).toContain('if (!closed) await captureException(err, { where: \'chat stream\'')
+  })
+  it('ушёл клиент без ящика — проверку не запускаем (деньги впустую)', () => {
+    expect(src).toContain('const factcheckWorthIt = !clientGone || !!genJobId')
+    expect(src).toContain('factcheckQuestion && factcheckWorthIt')
   })
 })
